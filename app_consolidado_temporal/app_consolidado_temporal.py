@@ -335,7 +335,9 @@ def generar_df_dolar(anios):
 
     if not df.empty:
         df["Dolar promedio SII"] = convertir_numerico(df["Dolar promedio SII"])
-        df["Dolar ultimo observado SII"] = convertir_numerico(df["Dolar ultimo observado SII"])
+        df["Dolar ultimo observado SII"] = convertir_numerico(
+            df["Dolar ultimo observado SII"]
+        )
 
     return df
 
@@ -648,7 +650,7 @@ def generar_df_ipc_ine():
 
 
 # =========================
-# ICL INE
+# ICL / IR INE
 # =========================
 
 URL_PAGINA_INE_REMUNERACIONES = (
@@ -666,6 +668,18 @@ URL_ARCHIVO_ICL_BASE = (
     "https://www.ine.gob.cl/docs/default-source/sueldos-y-salarios/"
     "cuadros-estadisticos/ir-icl-base-anual-2023-100/"
     "series-base-2023/tabulado_icl.xlsx"
+)
+
+URL_ARCHIVO_IR_DIRECTO = (
+    "https://www.ine.gob.cl/docs/default-source/sueldos-y-salarios/"
+    "cuadros-estadisticos/ir-icl-base-anual-2023-100/"
+    "series-base-2023/tabulado_ir.xlsx?sfvrsn=77d2fe83_52"
+)
+
+URL_ARCHIVO_IR_BASE = (
+    "https://www.ine.gob.cl/docs/default-source/sueldos-y-salarios/"
+    "cuadros-estadisticos/ir-icl-base-anual-2023-100/"
+    "series-base-2023/tabulado_ir.xlsx"
 )
 
 
@@ -703,99 +717,6 @@ def descargar_excel_icl():
         "No se pudo descargar el Excel ICL INE. "
         + " | ".join(errores[:5])
     )
-
-
-def generar_df_icl():
-    try:
-        contenido = descargar_excel_icl()
-
-        hoja_icl = encontrar_hoja_por_columnas(
-            contenido,
-            columnas_objetivo=["año", "mes", "índice"]
-        )
-
-        df = pd.read_excel(
-            BytesIO(contenido),
-            sheet_name=hoja_icl
-        )
-
-        columnas_actuales = {
-            normalizar_texto(col): col
-            for col in df.columns
-        }
-
-        columnas_necesarias = ["año", "mes", "indice"]
-
-        for columna in columnas_necesarias:
-            if columna not in columnas_actuales:
-                return pd.DataFrame()
-
-        df = df.rename(
-            columns={
-                columnas_actuales["año"]: "Año",
-                columnas_actuales["mes"]: "Mes",
-                columnas_actuales["indice"]: "ICL INE indice"
-            }
-        )
-
-        df["Año"] = convertir_numerico(df["Año"])
-        df["Mes"] = convertir_numerico(df["Mes"])
-        df["ICL INE indice"] = convertir_numerico(df["ICL INE indice"])
-
-        df = df.dropna(subset=["Año", "Mes", "ICL INE indice"]).copy()
-
-        df["Año"] = df["Año"].astype(int)
-        df["Mes"] = df["Mes"].astype(int)
-
-        df["Fecha"] = pd.to_datetime(
-            df["Año"].astype(str)
-            + "-"
-            + df["Mes"].astype(str)
-            + "-01"
-        )
-
-        columnas_extra = {}
-
-        for original, nuevo in {
-            "var_mensual": "ICL INE variacion mensual",
-            "var_acum": "ICL INE variacion acumulada",
-            "var_12": "ICL INE variacion 12 meses"
-        }.items():
-            if original in columnas_actuales:
-                df[nuevo] = convertir_numerico(
-                    df[columnas_actuales[original]]
-                )
-                columnas_extra[nuevo] = nuevo
-
-        columnas_salida = [
-            "Fecha",
-            "Año",
-            "Mes",
-            "ICL INE indice"
-        ] + list(columnas_extra.keys())
-
-        return df[columnas_salida].sort_values("Fecha")
-
-    except Exception as e:
-        st.warning(f"ICL INE: {e}")
-        return pd.DataFrame()
-
-
-# =========================
-# IR INE ROBUSTO
-# =========================
-
-URL_ARCHIVO_IR_DIRECTO = (
-    "https://www.ine.gob.cl/docs/default-source/sueldos-y-salarios/"
-    "cuadros-estadisticos/ir-icl-base-anual-2023-100/"
-    "series-base-2023/tabulado_ir.xlsx?sfvrsn=77d2fe83_52"
-)
-
-URL_ARCHIVO_IR_BASE = (
-    "https://www.ine.gob.cl/docs/default-source/sueldos-y-salarios/"
-    "cuadros-estadisticos/ir-icl-base-anual-2023-100/"
-    "series-base-2023/tabulado_ir.xlsx"
-)
 
 
 @st.cache_data
@@ -843,78 +764,109 @@ def descargar_excel_ir():
     )
 
 
+def generar_df_indice_remuneraciones(
+    contenido,
+    nombre_columna_indice,
+    prefijo_salida
+):
+    hoja = encontrar_hoja_por_columnas(
+        contenido,
+        columnas_objetivo=["año", "mes", "índice"]
+    )
+
+    df = pd.read_excel(
+        BytesIO(contenido),
+        sheet_name=hoja
+    )
+
+    columnas_actuales = {
+        normalizar_texto(col): col
+        for col in df.columns
+    }
+
+    columnas_necesarias = ["ano", "mes", "indice"]
+
+    for columna in columnas_necesarias:
+        if columna not in columnas_actuales:
+            st.warning(
+                f"{prefijo_salida}: no se encontró columna requerida '{columna}'. "
+                f"Columnas disponibles: {list(columnas_actuales.keys())}"
+            )
+            return pd.DataFrame()
+
+    df = df.rename(
+        columns={
+            columnas_actuales["ano"]: "Año",
+            columnas_actuales["mes"]: "Mes",
+            columnas_actuales["indice"]: nombre_columna_indice
+        }
+    )
+
+    df["Año"] = convertir_numerico(df["Año"])
+    df["Mes"] = convertir_numerico(df["Mes"])
+    df[nombre_columna_indice] = convertir_numerico(df[nombre_columna_indice])
+
+    df = df.dropna(
+        subset=["Año", "Mes", nombre_columna_indice]
+    ).copy()
+
+    df["Año"] = df["Año"].astype(int)
+    df["Mes"] = df["Mes"].astype(int)
+
+    df["Fecha"] = pd.to_datetime(
+        df["Año"].astype(str)
+        + "-"
+        + df["Mes"].astype(str)
+        + "-01"
+    )
+
+    columnas_extra = {}
+
+    for original, nuevo in {
+        "var_mensual": f"{prefijo_salida} variacion mensual",
+        "var_acum": f"{prefijo_salida} variacion acumulada",
+        "var_12": f"{prefijo_salida} variacion 12 meses"
+    }.items():
+        if original in columnas_actuales:
+            df[nuevo] = convertir_numerico(
+                df[columnas_actuales[original]]
+            )
+            columnas_extra[nuevo] = nuevo
+
+    columnas_salida = [
+        "Fecha",
+        "Año",
+        "Mes",
+        nombre_columna_indice
+    ] + list(columnas_extra.keys())
+
+    return df[columnas_salida].sort_values("Fecha")
+
+
+def generar_df_icl():
+    try:
+        contenido = descargar_excel_icl()
+
+        return generar_df_indice_remuneraciones(
+            contenido=contenido,
+            nombre_columna_indice="ICL INE indice",
+            prefijo_salida="ICL INE"
+        )
+
+    except Exception as e:
+        st.warning(f"ICL INE: {e}")
+        return pd.DataFrame()
+
+
 def generar_df_ir():
     try:
         contenido = descargar_excel_ir()
 
-        hoja_ir = encontrar_hoja_por_columnas(
-            contenido,
-            columnas_objetivo=["año", "mes", "índice"]
+        return generar_df_indice_remuneraciones(
+            contenido=contenido,
+            nombre_columna_indice="IR INE indice",
+            prefijo_salida="IR INE"
         )
-
-        df = pd.read_excel(
-            BytesIO(contenido),
-            sheet_name=hoja_ir
-        )
-
-        columnas_actuales = {
-            normalizar_texto(col): col
-            for col in df.columns
-        }
-
-        columnas_necesarias = ["año", "mes", "indice"]
-
-        for columna in columnas_necesarias:
-            if columna not in columnas_actuales:
-                return pd.DataFrame()
-
-        df = df.rename(
-            columns={
-                columnas_actuales["año"]: "Año",
-                columnas_actuales["mes"]: "Mes",
-                columnas_actuales["indice"]: "IR INE indice"
-            }
-        )
-
-        df["Año"] = convertir_numerico(df["Año"])
-        df["Mes"] = convertir_numerico(df["Mes"])
-        df["IR INE indice"] = convertir_numerico(df["IR INE indice"])
-
-        df = df.dropna(
-            subset=["Año", "Mes", "IR INE indice"]
-        ).copy()
-
-        df["Año"] = df["Año"].astype(int)
-        df["Mes"] = df["Mes"].astype(int)
-
-        df["Fecha"] = pd.to_datetime(
-            df["Año"].astype(str)
-            + "-"
-            + df["Mes"].astype(str)
-            + "-01"
-        )
-
-        columnas_extra = {}
-
-        for original, nuevo in {
-            "var_mensual": "IR INE variacion mensual",
-            "var_acum": "IR INE variacion acumulada",
-            "var_12": "IR INE variacion 12 meses"
-        }.items():
-            if original in columnas_actuales:
-                df[nuevo] = convertir_numerico(
-                    df[columnas_actuales[original]]
-                )
-                columnas_extra[nuevo] = nuevo
-
-        columnas_salida = [
-            "Fecha",
-            "Año",
-            "Mes",
-            "IR INE indice"
-        ] + list(columnas_extra.keys())
-
-        return df[columnas_salida].sort_values("Fecha")
 
     except Exception as e:
         st.warning(f"IR INE: {e}")
@@ -1588,10 +1540,6 @@ if "df_consolidado_temporal" in st.session_state:
             df_consolidado_resumido,
             use_container_width=True
         )
-
-        # =========================
-        # Opción para calcular Ítem 2 e Ítem 3
-        # =========================
 
         st.markdown("---")
 
