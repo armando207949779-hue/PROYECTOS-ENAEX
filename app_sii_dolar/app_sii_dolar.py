@@ -191,18 +191,30 @@ st.set_page_config(
     layout="wide"
 )
 
-# Mostrar banner corporativo
-if BANNER_PATH.exists():
-    st.image(str(BANNER_PATH), use_container_width=True)
-else:
-    st.warning(f"No se encontró el banner en: {BANNER_PATH}")
 
-st.title("Resumen dólar SII por años seleccionados")
+# =========================
+# Encabezado con logo ENAEX
+# =========================
 
-st.write(
-    "Selecciona los años a consultar. El resumen incluirá automáticamente "
-    "todos los meses desde Ene hasta Dic."
-)
+col_logo, col_titulo = st.columns([1, 5])
+
+with col_logo:
+    if LOGO_PATH.exists():
+        st.image(str(LOGO_PATH), width=180)
+    else:
+        st.warning(f"Logo no encontrado: {LOGO_PATH}")
+
+with col_titulo:
+    st.title("Resumen dólar SII por años seleccionados")
+    st.write(
+        "Selecciona los años a consultar. El resumen incluirá automáticamente "
+        "todos los meses desde Ene hasta Dic."
+    )
+
+
+# =========================
+# Selección de años
+# =========================
 
 anios_disponibles = list(range(2009, 2027))
 ultimos_3_anios = anios_disponibles[-3:]
@@ -230,6 +242,10 @@ for posicion, anio in enumerate(anios_disponibles):
 st.write("Años seleccionados:", anios_seleccionados)
 
 
+# =========================
+# Generar resumen
+# =========================
+
 if st.button("Generar resumen"):
     if not anios_seleccionados:
         st.warning("Debes seleccionar al menos un año.")
@@ -244,6 +260,10 @@ if st.button("Generar resumen"):
         st.success("Resumen generado correctamente.")
         st.dataframe(resumen, use_container_width=True)
 
+
+# =========================
+# Descargar Excel
+# =========================
 
 if "resumen_dolar" in st.session_state:
     resumen = st.session_state["resumen_dolar"]
