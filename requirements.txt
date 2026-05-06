@@ -1,5 +1,5 @@
 pandas
 requests
+streamlit
 lxml
 openpyxl
-streamlit
