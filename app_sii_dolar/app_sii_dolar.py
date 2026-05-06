@@ -167,6 +167,53 @@ def generar_resumen_varios_anios_todos_los_meses(anios):
 
 
 # =========================
+# Preparar datos para gráfico temporal
+# =========================
+
+def preparar_datos_grafico(resumen):
+    orden_meses = {
+        "Ene": 1,
+        "Feb": 2,
+        "Mar": 3,
+        "Abr": 4,
+        "May": 5,
+        "Jun": 6,
+        "Jul": 7,
+        "Ago": 8,
+        "Sep": 9,
+        "Oct": 10,
+        "Nov": 11,
+        "Dic": 12
+    }
+
+    df_grafico = resumen.copy()
+
+    df_grafico = df_grafico[df_grafico["Estado"] == "OK"].copy()
+
+    df_grafico["Mes_numero"] = df_grafico["Mes"].map(orden_meses)
+
+    df_grafico["Valor dolar promedio"] = pd.to_numeric(
+        df_grafico["Valor dolar promedio"],
+        errors="coerce"
+    )
+
+    df_grafico = df_grafico.dropna(
+        subset=["Año", "Mes_numero", "Valor dolar promedio"]
+    )
+
+    df_grafico["Fecha"] = pd.to_datetime(
+        df_grafico["Año"].astype(str)
+        + "-"
+        + df_grafico["Mes_numero"].astype(int).astype(str)
+        + "-01"
+    )
+
+    df_grafico = df_grafico.sort_values("Fecha")
+
+    return df_grafico
+
+
+# =========================
 # Crear Excel en memoria
 # =========================
 
@@ -195,7 +242,7 @@ st.set_page_config(
 
 
 # =========================
-# Encabezado con logo ENAEX centrado real
+# Encabezado con logo ENAEX centrado
 # =========================
 
 if LOGO_PATH.exists():
@@ -286,15 +333,28 @@ if st.button("Generar resumen"):
         st.session_state["resumen_dolar"] = resumen
 
         st.success("Resumen generado correctamente.")
-        st.dataframe(resumen, use_container_width=True)
 
 
 # =========================
-# Descargar Excel
+# Mostrar resultados, gráfico y descarga
 # =========================
 
 if "resumen_dolar" in st.session_state:
     resumen = st.session_state["resumen_dolar"]
+
+    st.subheader("Tabla resumen")
+    st.dataframe(resumen, use_container_width=True)
+
+    df_grafico = preparar_datos_grafico(resumen)
+
+    if not df_grafico.empty:
+        st.subheader("Gráfico temporal del dólar promedio")
+
+        datos_linea = df_grafico.set_index("Fecha")["Valor dolar promedio"]
+
+        st.line_chart(datos_linea)
+    else:
+        st.info("No hay datos suficientes para generar el gráfico temporal.")
 
     excel_resumen = crear_excel_resumen(resumen)
 
