@@ -10,8 +10,7 @@ import streamlit as st
 # =========================
 
 BASE_DIR = Path(__file__).resolve().parent
-PROJECT_DIR = BASE_DIR.parent
-LOGO_PATH = PROJECT_DIR / "assets" / "logo-vector-enaex.webp"
+LOGO_PATH = BASE_DIR / "logo.svg"
 
 
 # =========================
