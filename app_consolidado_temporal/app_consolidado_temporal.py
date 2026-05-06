@@ -133,6 +133,100 @@ def convertir_numerico(serie):
     )
 
 
+def descargar_url_excel(url):
+    response = requests.get(
+        url,
+        headers=HEADERS,
+        timeout=30
+    )
+
+    response.raise_for_status()
+
+    content_type = response.headers.get("Content-Type", "").lower()
+
+    es_excel = (
+        "spreadsheet" in content_type
+        or "excel" in content_type
+        or ".xlsx" in url.lower()
+        or ".xls" in url.lower()
+    )
+
+    if not es_excel:
+        raise ValueError(
+            f"La URL no parece ser Excel. Content-Type: {content_type}"
+        )
+
+    return response.content
+
+
+def buscar_links_excel_en_pagina(url_pagina, patrones):
+    response = requests.get(
+        url_pagina,
+        headers=HEADERS,
+        timeout=30
+    )
+
+    response.raise_for_status()
+
+    html = response.text
+
+    hrefs = re.findall(
+        r'href=["\'](.*?)["\']',
+        html,
+        flags=re.IGNORECASE
+    )
+
+    enlaces = []
+
+    for href in hrefs:
+        url_completa = urljoin(url_pagina, href)
+        url_decodificada = unquote(url_completa)
+        url_norm = normalizar_texto(url_decodificada)
+
+        if ".xls" not in url_norm:
+            continue
+
+        if any(normalizar_texto(patron) in url_norm for patron in patrones):
+            enlaces.append(url_completa)
+
+    enlaces = list(dict.fromkeys(enlaces))
+
+    return enlaces
+
+
+def encontrar_hoja_por_columnas(contenido_excel, columnas_objetivo):
+    excel = pd.ExcelFile(BytesIO(contenido_excel))
+
+    columnas_objetivo_norm = [
+        normalizar_texto(col)
+        for col in columnas_objetivo
+    ]
+
+    for hoja in excel.sheet_names:
+        try:
+            df_preview = pd.read_excel(
+                BytesIO(contenido_excel),
+                sheet_name=hoja,
+                nrows=20
+            )
+
+            columnas_preview_norm = [
+                normalizar_texto(col)
+                for col in df_preview.columns
+            ]
+
+            if all(col in columnas_preview_norm for col in columnas_objetivo_norm):
+                return hoja
+
+        except Exception:
+            continue
+
+    if "General" in excel.sheet_names:
+        return "General"
+
+    return excel.sheet_names[0]
+
+
 # =========================
 # DÓLAR SII
 # =========================
@@ -250,6 +344,21 @@ def generar_df_dolar(anios):
 # UTM SII
 # =========================
 
+def encontrar_tabla_utm(tablas):
+    for tabla in tablas:
+        texto = normalizar_texto(tabla.astype(str).to_string())
+
+        tiene_mes = "mes" in texto or "enero" in texto
+        tiene_utm = "utm" in texto
+        tiene_uta = "uta" in texto
+        tiene_ipc = "ipc" in texto
+
+        if tiene_mes and tiene_utm and tiene_uta and tiene_ipc:
+            return tabla.copy()
+
+    return None
+
+
 @st.cache_data
 def cargar_tabla_utm(anio):
     url = f"https://www.sii.cl/valores_y_fechas/utm/utm{anio}.htm"
@@ -267,7 +376,15 @@ def cargar_tabla_utm(anio):
         thousands="."
     )
 
-    tabla_utm = tablas[0].copy()
+    tabla_utm = encontrar_tabla_utm(tablas)
+
+    if tabla_utm is None:
+        raise ValueError("No se encontró una tabla UTM compatible.")
+
+    if len(tabla_utm.columns) < 7:
+        raise ValueError("La tabla UTM tiene menos columnas de las esperadas.")
+
+    tabla_utm = tabla_utm.iloc[:, :7].copy()
 
     tabla_utm.columns = [
         "Mes texto",
@@ -346,6 +463,11 @@ def generar_df_utm(anios):
 # IPC INE
 # =========================
 
+URL_PAGINA_INE_IPC = (
+    "https://www.ine.gob.cl/estadisticas-por-tema/"
+    "precios-e-inflacion/indice-de-precios-al-consumidor"
+)
+
 URL_EXCEL_IPC_DIRECTA = (
     "https://www.ine.gob.cl/docs/default-source/"
     "%C3%ADndice-de-precios-al-consumidor/cuadros-estadisticos/"
@@ -353,27 +475,89 @@ URL_EXCEL_IPC_DIRECTA = (
     "ipc-xls.xlsx?sfvrsn=5b901f39_70"
 )
 
+URL_EXCEL_IPC_BASE = (
+    "https://www.ine.gob.cl/docs/default-source/"
+    "%C3%ADndice-de-precios-al-consumidor/cuadros-estadisticos/"
+    "base-anual-2023_100/series-de-tiempo/"
+    "ipc-xls.xlsx"
+)
+
 
 @st.cache_data
 def descargar_excel_ipc_ine():
-    response = requests.get(
-        URL_EXCEL_IPC_DIRECTA,
-        headers=HEADERS,
-        timeout=30
-    )
-    response.raise_for_status()
+    errores = []
 
-    return response.content
+    for url in [URL_EXCEL_IPC_DIRECTA, URL_EXCEL_IPC_BASE]:
+        try:
+            return descargar_url_excel(url)
+        except Exception as e:
+            errores.append(f"{url}: {e}")
+
+    try:
+        enlaces = buscar_links_excel_en_pagina(
+            URL_PAGINA_INE_IPC,
+            patrones=[
+                "ipc-xls",
+                "series-de-tiempo",
+                "ipc"
+            ]
+        )
+
+        for enlace in enlaces:
+            try:
+                return descargar_url_excel(enlace)
+            except Exception as e:
+                errores.append(f"{enlace}: {e}")
+
+    except Exception as e:
+        errores.append(f"Búsqueda automática IPC: {e}")
+
+    raise ValueError(
+        "No se pudo descargar el Excel IPC INE. "
+        + " | ".join(errores[:5])
+    )
+
+
+def encontrar_hoja_ipc(contenido_excel):
+    excel = pd.ExcelFile(BytesIO(contenido_excel))
+
+    for hoja in excel.sheet_names:
+        try:
+            df_raw = pd.read_excel(
+                BytesIO(contenido_excel),
+                sheet_name=hoja,
+                header=None,
+                nrows=30
+            )
+
+            contiene_header = df_raw.apply(
+                lambda fila: (
+                    fila.astype(str).str.strip().eq("Año").any()
+                    and fila.astype(str).str.strip().eq("Mes").any()
+                    and fila.astype(str).str.strip().eq("Glosa").any()
+                ),
+                axis=1
+            ).any()
+
+            if contiene_header:
+                return hoja
+
+        except Exception:
+            continue
+
+    return excel.sheet_names[0]
 
 
 def leer_excel_ipc_limpio(contenido_excel):
+    hoja_ipc = encontrar_hoja_ipc(contenido_excel)
+
     df_raw = pd.read_excel(
         BytesIO(contenido_excel),
-        sheet_name="IPC 2023=100",
+        sheet_name=hoja_ipc,
         header=None
     )
 
-    fila_header = df_raw[
+    filas_header = df_raw[
         df_raw.apply(
             lambda fila: (
                 fila.astype(str).str.strip().eq("Año").any()
@@ -382,7 +566,12 @@ def leer_excel_ipc_limpio(contenido_excel):
             ),
             axis=1
         )
-    ].index[0]
+    ]
+
+    if filas_header.empty:
+        raise ValueError("No se encontró fila de encabezado IPC con Año, Mes y Glosa.")
+
+    fila_header = filas_header.index[0]
 
     columnas = df_raw.iloc[fila_header].tolist()
 
@@ -462,40 +651,80 @@ def generar_df_ipc_ine():
 # ICL INE
 # =========================
 
-URL_ARCHIVO_ICL = (
+URL_PAGINA_INE_REMUNERACIONES = (
+    "https://www.ine.gob.cl/estadisticas-por-tema/"
+    "mercado-laboral/remuneraciones-y-costos-laborales"
+)
+
+URL_ARCHIVO_ICL_DIRECTO = (
     "https://www.ine.gob.cl/docs/default-source/sueldos-y-salarios/"
     "cuadros-estadisticos/ir-icl-base-anual-2023-100/"
     "series-base-2023/tabulado_icl.xlsx?sfvrsn=43d76e7c_50"
 )
 
+URL_ARCHIVO_ICL_BASE = (
+    "https://www.ine.gob.cl/docs/default-source/sueldos-y-salarios/"
+    "cuadros-estadisticos/ir-icl-base-anual-2023-100/"
+    "series-base-2023/tabulado_icl.xlsx"
+)
+
 
 @st.cache_data
 def descargar_excel_icl():
-    response = requests.get(
-        URL_ARCHIVO_ICL,
-        headers=HEADERS,
-        timeout=30
-    )
-    response.raise_for_status()
+    errores = []
 
-    return response.content
+    for url in [URL_ARCHIVO_ICL_DIRECTO, URL_ARCHIVO_ICL_BASE]:
+        try:
+            return descargar_url_excel(url)
+        except Exception as e:
+            errores.append(f"{url}: {e}")
+
+    try:
+        enlaces = buscar_links_excel_en_pagina(
+            URL_PAGINA_INE_REMUNERACIONES,
+            patrones=[
+                "tabulado_icl",
+                "icl",
+                "ir-icl",
+                "series-base"
+            ]
+        )
+
+        for enlace in enlaces:
+            try:
+                return descargar_url_excel(enlace)
+            except Exception as e:
+                errores.append(f"{enlace}: {e}")
+
+    except Exception as e:
+        errores.append(f"Búsqueda automática ICL: {e}")
+
+    raise ValueError(
+        "No se pudo descargar el Excel ICL INE. "
+        + " | ".join(errores[:5])
+    )
 
 
 def generar_df_icl():
     try:
         contenido = descargar_excel_icl()
 
+        hoja_icl = encontrar_hoja_por_columnas(
+            contenido,
+            columnas_objetivo=["año", "mes", "índice"]
+        )
+
         df = pd.read_excel(
             BytesIO(contenido),
-            sheet_name="General"
+            sheet_name=hoja_icl
         )
 
         columnas_actuales = {
-            str(col).strip(): col
+            normalizar_texto(col): col
             for col in df.columns
         }
 
-        columnas_necesarias = ["año", "mes", "índice"]
+        columnas_necesarias = ["año", "mes", "indice"]
 
         for columna in columnas_necesarias:
             if columna not in columnas_actuales:
@@ -505,7 +734,7 @@ def generar_df_icl():
             columns={
                 columnas_actuales["año"]: "Año",
                 columnas_actuales["mes"]: "Mes",
-                columnas_actuales["índice"]: "ICL INE indice"
+                columnas_actuales["indice"]: "ICL INE indice"
             }
         )
 
@@ -533,7 +762,9 @@ def generar_df_icl():
             "var_12": "ICL INE variacion 12 meses"
         }.items():
             if original in columnas_actuales:
-                df[nuevo] = convertir_numerico(df[columnas_actuales[original]])
+                df[nuevo] = convertir_numerico(
+                    df[columnas_actuales[original]]
+                )
                 columnas_extra[nuevo] = nuevo
 
         columnas_salida = [
@@ -547,6 +778,146 @@ def generar_df_icl():
 
     except Exception as e:
         st.warning(f"ICL INE: {e}")
+        return pd.DataFrame()
+
+
+# =========================
+# IR INE ROBUSTO
+# =========================
+
+URL_ARCHIVO_IR_DIRECTO = (
+    "https://www.ine.gob.cl/docs/default-source/sueldos-y-salarios/"
+    "cuadros-estadisticos/ir-icl-base-anual-2023-100/"
+    "series-base-2023/tabulado_ir.xlsx?sfvrsn=77d2fe83_52"
+)
+
+URL_ARCHIVO_IR_BASE = (
+    "https://www.ine.gob.cl/docs/default-source/sueldos-y-salarios/"
+    "cuadros-estadisticos/ir-icl-base-anual-2023-100/"
+    "series-base-2023/tabulado_ir.xlsx"
+)
+
+
+@st.cache_data
+def descargar_excel_ir():
+    errores = []
+
+    for url in [URL_ARCHIVO_IR_DIRECTO, URL_ARCHIVO_IR_BASE]:
+        try:
+            return descargar_url_excel(url)
+        except Exception as e:
+            errores.append(f"{url}: {e}")
+
+    try:
+        enlaces = buscar_links_excel_en_pagina(
+            URL_PAGINA_INE_REMUNERACIONES,
+            patrones=[
+                "tabulado_ir",
+                "tabulado ir",
+                "ir-icl",
+                "series-base",
+                "remuneraciones"
+            ]
+        )
+
+        enlaces_priorizados = sorted(
+            enlaces,
+            key=lambda x: (
+                "tabulado_ir" not in normalizar_texto(unquote(x)),
+                "series-base" not in normalizar_texto(unquote(x))
+            )
+        )
+
+        for enlace in enlaces_priorizados:
+            try:
+                return descargar_url_excel(enlace)
+            except Exception as e:
+                errores.append(f"{enlace}: {e}")
+
+    except Exception as e:
+        errores.append(f"Búsqueda automática IR: {e}")
+
+    raise ValueError(
+        "No se pudo descargar el Excel IR INE. "
+        + " | ".join(errores[:5])
+    )
+
+
+def generar_df_ir():
+    try:
+        contenido = descargar_excel_ir()
+
+        hoja_ir = encontrar_hoja_por_columnas(
+            contenido,
+            columnas_objetivo=["año", "mes", "índice"]
+        )
+
+        df = pd.read_excel(
+            BytesIO(contenido),
+            sheet_name=hoja_ir
+        )
+
+        columnas_actuales = {
+            normalizar_texto(col): col
+            for col in df.columns
+        }
+
+        columnas_necesarias = ["año", "mes", "indice"]
+
+        for columna in columnas_necesarias:
+            if columna not in columnas_actuales:
+                return pd.DataFrame()
+
+        df = df.rename(
+            columns={
+                columnas_actuales["año"]: "Año",
+                columnas_actuales["mes"]: "Mes",
+                columnas_actuales["indice"]: "IR INE indice"
+            }
+        )
+
+        df["Año"] = convertir_numerico(df["Año"])
+        df["Mes"] = convertir_numerico(df["Mes"])
+        df["IR INE indice"] = convertir_numerico(df["IR INE indice"])
+
+        df = df.dropna(
+            subset=["Año", "Mes", "IR INE indice"]
+        ).copy()
+
+        df["Año"] = df["Año"].astype(int)
+        df["Mes"] = df["Mes"].astype(int)
+
+        df["Fecha"] = pd.to_datetime(
+            df["Año"].astype(str)
+            + "-"
+            + df["Mes"].astype(str)
+            + "-01"
+        )
+
+        columnas_extra = {}
+
+        for original, nuevo in {
+            "var_mensual": "IR INE variacion mensual",
+            "var_acum": "IR INE variacion acumulada",
+            "var_12": "IR INE variacion 12 meses"
+        }.items():
+            if original in columnas_actuales:
+                df[nuevo] = convertir_numerico(
+                    df[columnas_actuales[original]]
+                )
+                columnas_extra[nuevo] = nuevo
+
+        columnas_salida = [
+            "Fecha",
+            "Año",
+            "Mes",
+            "IR INE indice"
+        ] + list(columnas_extra.keys())
+
+        return df[columnas_salida].sort_values("Fecha")
+
+    except Exception as e:
+        st.warning(f"IR INE: {e}")
         return pd.DataFrame()
 
 
@@ -569,17 +940,38 @@ MESES_MOP = {
     "julio": 7,
     "agosto": 8,
     "septiembre": 9,
+    "setiembre": 9,
     "octubre": 10,
     "noviembre": 11,
     "diciembre": 12
 }
 
 CONCEPTOS_OBJETIVO_MOP = {
-    "Índice de precios al consumidor (1)": "MOP indice precios consumidor",
-    "Índice de remuneraciones (2)": "MOP indice remuneraciones",
-    "Petróleo Diesel (4)": "MOP petroleo diesel",
-    "Dólar observado": "MOP dolar observado",
-    "Petróleo Diesel de refinería CONCÓN": "MOP petroleo diesel refineria concon"
+    "MOP indice precios consumidor": [
+        "Índice de precios al consumidor (1)",
+        "Índice de precios al consumidor",
+        "IPC"
+    ],
+    "MOP indice remuneraciones": [
+        "Índice de remuneraciones (2)",
+        "Índice de remuneraciones",
+        "Remuneraciones"
+    ],
+    "MOP petroleo diesel": [
+        "Petróleo Diesel (4)",
+        "Petróleo Diesel",
+        "Petroleo Diesel"
+    ],
+    "MOP dolar observado": [
+        "Dólar observado",
+        "Dolar observado"
+    ],
+    "MOP petroleo diesel refineria concon": [
+        "Petróleo Diesel de refinería CONCÓN",
+        "Petroleo Diesel de refineria CONCON",
+        "Diesel de refinería CONCÓN",
+        "Diesel refinería CONCÓN"
+    ]
 }
 
 
@@ -600,22 +992,36 @@ def extraer_mes_anio_desde_archivo_mop(archivo):
             numero_mes = numero
             break
 
+    if numero_mes is None:
+        match_mes_num = re.search(
+            r"(?:^|[^0-9])(0?[1-9]|1[0-2])(?:[^0-9]|$)",
+            nombre_limpio
+        )
+
+        if match_mes_num:
+            numero_mes = int(match_mes_num.group(1))
+            mes_detectado = MESES_NOMBRE.get(numero_mes, "")
+
     anio_match = re.search(r"(20\d{2})", nombre_limpio)
     anio_detectado = int(anio_match.group(1)) if anio_match else None
 
     return mes_detectado, numero_mes, anio_detectado
 
 
-def obtener_valor_concepto_mop(df, concepto):
-    concepto_norm = normalizar_texto(concepto)
+def obtener_valor_conceptos_mop(df, variantes_concepto):
+    variantes_norm = [
+        normalizar_texto(concepto)
+        for concepto in variantes_concepto
+    ]
 
     for _, fila in df.iterrows():
         detalle = normalizar_texto(fila[1]) if len(fila) > 1 else ""
 
-        if concepto_norm in detalle:
-            if len(fila) > 3:
-                return fila[3]
-            return pd.NA
+        for concepto_norm in variantes_norm:
+            if concepto_norm and concepto_norm in detalle:
+                if len(fila) > 3:
+                    return fila[3]
+                return pd.NA
 
     return pd.NA
 
@@ -704,10 +1110,10 @@ def leer_archivo_excel_mop(url_archivo, archivo):
         "Fecha": pd.Timestamp(year=anio, month=mes_numero, day=1)
     }
 
-    for concepto_original, nombre_columna in CONCEPTOS_OBJETIVO_MOP.items():
-        registro[nombre_columna] = obtener_valor_concepto_mop(
+    for nombre_columna, variantes in CONCEPTOS_OBJETIVO_MOP.items():
+        registro[nombre_columna] = obtener_valor_conceptos_mop(
             df,
-            concepto_original
+            variantes
         )
 
     return registro
@@ -817,6 +1223,7 @@ def preparar_consolidado_resumido(df_consolidado):
         "IPC valor puntos SII",
         "IPC INE indice",
         "ICL INE indice",
+        "IR INE indice",
         "MOP indice precios consumidor",
         "MOP indice remuneraciones",
         "MOP petroleo diesel",
@@ -854,7 +1261,7 @@ def truncar_15_decimales(valor):
     return math.trunc(float(valor) * factor) / factor
 
 
-def calcular_item_2_item_3(df_resumido):
+def calcular_item_2_item_3(df_resumido, columna_indice_item_2):
     df = df_resumido.copy()
 
     df = df.sort_values(
@@ -863,7 +1270,7 @@ def calcular_item_2_item_3(df_resumido):
     ).reset_index(drop=True)
 
     columnas_requeridas = [
-        "ICL INE indice",
+        columna_indice_item_2,
         "UTM",
         "MOP petroleo diesel refineria concon"
     ]
@@ -872,8 +1279,8 @@ def calcular_item_2_item_3(df_resumido):
         if columna not in df.columns:
             df[columna] = pd.NA
 
-    df["ICL INE indice"] = pd.to_numeric(
-        df["ICL INE indice"],
+    df[columna_indice_item_2] = pd.to_numeric(
+        df[columna_indice_item_2],
         errors="coerce"
     )
 
@@ -887,15 +1294,6 @@ def calcular_item_2_item_3(df_resumido):
         errors="coerce"
     )
 
-    # =========================
-    # Ítem 2 automático
-    # Fórmula:
-    # Item2_i = TRUNCAR(ICL_i-2 / ICL_i-3 ; 15) * Item2_i-1
-    #
-    # Base automática:
-    # Para el primer mes calculable, Item2_i-1 se toma como ICL_i-3.
-    # =========================
-
     df["Item 2 calculado"] = pd.NA
 
     item_2_anterior = pd.NA
@@ -904,37 +1302,30 @@ def calcular_item_2_item_3(df_resumido):
         if i < 3:
             continue
 
-        icl_i_menos_2 = df.loc[i - 2, "ICL INE indice"]
-        icl_i_menos_3 = df.loc[i - 3, "ICL INE indice"]
+        indice_i_menos_2 = df.loc[i - 2, columna_indice_item_2]
+        indice_i_menos_3 = df.loc[i - 3, columna_indice_item_2]
 
         if pd.isna(item_2_anterior):
-            item_2_anterior = icl_i_menos_3
+            item_2_anterior = indice_i_menos_3
 
         if (
-            pd.isna(icl_i_menos_2)
-            or pd.isna(icl_i_menos_3)
+            pd.isna(indice_i_menos_2)
+            or pd.isna(indice_i_menos_3)
             or pd.isna(item_2_anterior)
-            or icl_i_menos_3 == 0
+            or indice_i_menos_3 == 0
         ):
             df.loc[i, "Item 2 calculado"] = pd.NA
             continue
 
-        factor_icl = truncar_15_decimales(
-            icl_i_menos_2 / icl_i_menos_3
+        factor_indice = truncar_15_decimales(
+            indice_i_menos_2 / indice_i_menos_3
         )
 
-        item_2_actual = factor_icl * item_2_anterior
+        item_2_actual = factor_indice * item_2_anterior
 
         df.loc[i, "Item 2 calculado"] = item_2_actual
 
         item_2_anterior = item_2_actual
-
-    # =========================
-    # Ítem 3
-    # Fórmula:
-    # Item3 = Item27 * 1.05327007171179 + 1.5 * UTM
-    # donde Item27 = MOP petroleo diesel refineria concon
-    # =========================
 
     df["Item 3 calculado"] = (
         df["MOP petroleo diesel refineria concon"] * 1.05327007171179
@@ -1099,6 +1490,7 @@ with st.expander("Fuentes a incluir"):
     incluir_utm = st.checkbox("UTM SII / IPC valor puntos SII", value=True)
     incluir_ipc_ine = st.checkbox("IPC INE", value=True)
     incluir_icl = st.checkbox("ICL INE", value=True)
+    incluir_ir = st.checkbox("IR INE", value=True)
     incluir_mop = st.checkbox("MOP reajuste polinómico", value=True)
 
 
@@ -1144,6 +1536,17 @@ if st.button("Generar consolidado temporal"):
                     ].copy()
 
                 dataframes.append(df_icl)
+
+            if incluir_ir:
+                st.write("Consultando IR INE...")
+                df_ir = generar_df_ir()
+
+                if not df_ir.empty:
+                    df_ir = df_ir[
+                        df_ir["Año"].isin(anios_seleccionados)
+                    ].copy()
+
+                dataframes.append(df_ir)
 
             if incluir_mop:
                 st.write("Consultando MOP...")
@@ -1201,25 +1604,48 @@ if "df_consolidado_temporal" in st.session_state:
 
         if calcular_items:
             st.info(
-                "Ítem 2 se calcula automáticamente usando la serie ICL INE indice. "
+                "Ítem 2 se calcula automáticamente usando el índice seleccionado. "
                 "Ítem 3 se calcula usando MOP petróleo diesel refinería Concón y UTM."
             )
 
-            df_consolidado_calculado = calcular_item_2_item_3(
-                df_consolidado_resumido
-            )
+            opciones_indice_item_2 = []
 
-            st.subheader("Consolidado resumido con columnas calculadas")
+            if "IR INE indice" in df_consolidado_resumido.columns:
+                if df_consolidado_resumido["IR INE indice"].notna().any():
+                    opciones_indice_item_2.append("IR INE indice")
 
-            st.dataframe(
-                estilo_columnas_calculadas(df_consolidado_calculado),
-                use_container_width=True
-            )
+            if "ICL INE indice" in df_consolidado_resumido.columns:
+                if df_consolidado_resumido["ICL INE indice"].notna().any():
+                    opciones_indice_item_2.append("ICL INE indice")
 
-            st.caption(
-                "Las columnas calculadas se muestran destacadas en amarillo: "
-                "Item 2 calculado e Item 3 calculado."
-            )
+            if not opciones_indice_item_2:
+                st.warning(
+                    "No hay columnas IR INE indice ni ICL INE indice con datos "
+                    "para calcular Ítem 2."
+                )
+            else:
+                columna_indice_item_2 = st.selectbox(
+                    "Índice para calcular Ítem 2",
+                    options=opciones_indice_item_2,
+                    index=0
+                )
+
+                df_consolidado_calculado = calcular_item_2_item_3(
+                    df_consolidado_resumido,
+                    columna_indice_item_2=columna_indice_item_2
+                )
+
+                st.subheader("Consolidado resumido con columnas calculadas")
+
+                st.dataframe(
+                    estilo_columnas_calculadas(df_consolidado_calculado),
+                    use_container_width=True
+                )
+
+                st.caption(
+                    "Las columnas calculadas se muestran destacadas en amarillo: "
+                    "Item 2 calculado e Item 3 calculado."
+                )
 
         columnas_graficables = [
             col for col in df_consolidado.columns
