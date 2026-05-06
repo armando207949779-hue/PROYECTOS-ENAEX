@@ -842,7 +842,7 @@ def preparar_consolidado_resumido(df_consolidado):
 
 
 # =========================
-# Cálculo Ítem 2 e Ítem 3
+# Cálculo automático Ítem 2 e Ítem 3
 # =========================
 
 def truncar_15_decimales(valor):
@@ -854,7 +854,7 @@ def truncar_15_decimales(valor):
     return math.trunc(float(valor) * factor) / factor
 
 
-def calcular_item_2_item_3(df_resumido, item_2_base):
+def calcular_item_2_item_3(df_resumido):
     df = df_resumido.copy()
 
     df = df.sort_values(
@@ -888,14 +888,17 @@ def calcular_item_2_item_3(df_resumido, item_2_base):
     )
 
     # =========================
-    # Ítem 2
+    # Ítem 2 automático
     # Fórmula:
     # Item2_i = TRUNCAR(ICL_i-2 / ICL_i-3 ; 15) * Item2_i-1
+    #
+    # Base automática:
+    # Para el primer mes calculable, Item2_i-1 se toma como ICL_i-3.
     # =========================
 
     df["Item 2 calculado"] = pd.NA
 
-    item_2_anterior = item_2_base
+    item_2_anterior = pd.NA
 
     for i in range(len(df)):
         if i < 3:
@@ -903,6 +906,9 @@ def calcular_item_2_item_3(df_resumido, item_2_base):
 
         icl_i_menos_2 = df.loc[i - 2, "ICL INE indice"]
         icl_i_menos_3 = df.loc[i - 3, "ICL INE indice"]
+
+        if pd.isna(item_2_anterior):
+            item_2_anterior = icl_i_menos_3
 
         if (
             pd.isna(icl_i_menos_2)
@@ -1187,7 +1193,7 @@ if "df_consolidado_temporal" in st.session_state:
         st.markdown("---")
 
         calcular_items = st.checkbox(
-            "Calcular Ítem 2 e Ítem 3 usando el consolidado resumido",
+            "Calcular automáticamente Ítem 2 e Ítem 3 usando el consolidado resumido",
             value=False
         )
 
@@ -1195,22 +1201,12 @@ if "df_consolidado_temporal" in st.session_state:
 
         if calcular_items:
             st.info(
-                "Ítem 2 usa una fórmula recursiva con ICL. "
-                "Debes indicar el valor base del Ítem 2 correspondiente al mes anterior "
-                "al primer mes calculable."
-            )
-
-            item_2_base = st.number_input(
-                "Valor base Ítem 2",
-                min_value=0.0,
-                value=1.0,
-                step=0.000001,
-                format="%.15f"
+                "Ítem 2 se calcula automáticamente usando la serie ICL INE indice. "
+                "Ítem 3 se calcula usando MOP petróleo diesel refinería Concón y UTM."
             )
 
             df_consolidado_calculado = calcular_item_2_item_3(
-                df_consolidado_resumido,
-                item_2_base=item_2_base
+                df_consolidado_resumido
             )
 
             st.subheader("Consolidado resumido con columnas calculadas")
