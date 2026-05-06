@@ -1,6 +1,7 @@
 import re
 import base64
 import unicodedata
+import math
 from io import StringIO, BytesIO
 from pathlib import Path
 from urllib.parse import urljoin, unquote
@@ -840,6 +841,125 @@ def preparar_consolidado_resumido(df_consolidado):
     return df
 
 
+# =========================
+# Cálculo Ítem 2 e Ítem 3
+# =========================
+
+def truncar_15_decimales(valor):
+    if pd.isna(valor):
+        return pd.NA
+
+    factor = 10 ** 15
+
+    return math.trunc(float(valor) * factor) / factor
+
+
+def calcular_item_2_item_3(df_resumido, item_2_base):
+    df = df_resumido.copy()
+
+    df = df.sort_values(
+        ["Año", "Mes"],
+        ascending=[True, True]
+    ).reset_index(drop=True)
+
+    columnas_requeridas = [
+        "ICL INE indice",
+        "UTM",
+        "MOP petroleo diesel refineria concon"
+    ]
+
+    for columna in columnas_requeridas:
+        if columna not in df.columns:
+            df[columna] = pd.NA
+
+    df["ICL INE indice"] = pd.to_numeric(
+        df["ICL INE indice"],
+        errors="coerce"
+    )
+
+    df["UTM"] = pd.to_numeric(
+        df["UTM"],
+        errors="coerce"
+    )
+
+    df["MOP petroleo diesel refineria concon"] = pd.to_numeric(
+        df["MOP petroleo diesel refineria concon"],
+        errors="coerce"
+    )
+
+    # =========================
+    # Ítem 2
+    # Fórmula:
+    # Item2_i = TRUNCAR(ICL_i-2 / ICL_i-3 ; 15) * Item2_i-1
+    # =========================
+
+    df["Item 2 calculado"] = pd.NA
+
+    item_2_anterior = item_2_base
+
+    for i in range(len(df)):
+        if i < 3:
+            continue
+
+        icl_i_menos_2 = df.loc[i - 2, "ICL INE indice"]
+        icl_i_menos_3 = df.loc[i - 3, "ICL INE indice"]
+
+        if (
+            pd.isna(icl_i_menos_2)
+            or pd.isna(icl_i_menos_3)
+            or pd.isna(item_2_anterior)
+            or icl_i_menos_3 == 0
+        ):
+            df.loc[i, "Item 2 calculado"] = pd.NA
+            continue
+
+        factor_icl = truncar_15_decimales(
+            icl_i_menos_2 / icl_i_menos_3
+        )
+
+        item_2_actual = factor_icl * item_2_anterior
+
+        df.loc[i, "Item 2 calculado"] = item_2_actual
+
+        item_2_anterior = item_2_actual
+
+    # =========================
+    # Ítem 3
+    # Fórmula:
+    # Item3 = Item27 * 1.05327007171179 + 1.5 * UTM
+    # donde Item27 = MOP petroleo diesel refineria concon
+    # =========================
+
+    df["Item 3 calculado"] = (
+        df["MOP petroleo diesel refineria concon"] * 1.05327007171179
+        + 1.5 * df["UTM"]
+    )
+
+    return df
+
+
+def estilo_columnas_calculadas(df):
+    columnas_calculadas = [
+        "Item 2 calculado",
+        "Item 3 calculado"
+    ]
+
+    def aplicar_estilo(columna):
+        if columna.name in columnas_calculadas:
+            return [
+                "background-color: #FFF2CC; font-weight: bold;"
+                for _ in columna
+            ]
+
+        return ["" for _ in columna]
+
+    return df.style.apply(aplicar_estilo, axis=0)
+
+
+# =========================
+# Excels
+# =========================
+
 def crear_excel_consolidado(df_consolidado, df_resumido=None):
     buffer = BytesIO()
 
@@ -869,6 +989,44 @@ def crear_excel_consolidado_resumido(df_resumido):
             sheet_name="Consolidado resumido",
             index=False
         )
+
+    return buffer.getvalue()
+
+
+def crear_excel_consolidado_calculado(df_calculado):
+    from openpyxl.styles import PatternFill, Font
+
+    buffer = BytesIO()
+
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        df_calculado.to_excel(
+            writer,
+            sheet_name="Consolidado calculado",
+            index=False
+        )
+
+        worksheet = writer.sheets["Consolidado calculado"]
+
+        color_calculado = PatternFill(
+            start_color="FFF2CC",
+            end_color="FFF2CC",
+            fill_type="solid"
+        )
+
+        fuente_bold = Font(bold=True)
+
+        columnas_calculadas = [
+            "Item 2 calculado",
+            "Item 3 calculado"
+        ]
+
+        for idx, celda in enumerate(worksheet[1], start=1):
+            if celda.value in columnas_calculadas:
+                celda.fill = color_calculado
+                celda.font = fuente_bold
+
+                for fila in range(2, worksheet.max_row + 1):
+                    worksheet.cell(row=fila, column=idx).fill = color_calculado
 
     return buffer.getvalue()
 
@@ -1022,11 +1180,64 @@ if "df_consolidado_temporal" in st.session_state:
             use_container_width=True
         )
 
+        # =========================
+        # Opción para calcular Ítem 2 e Ítem 3
+        # =========================
+
+        st.markdown("---")
+
+        calcular_items = st.checkbox(
+            "Calcular Ítem 2 e Ítem 3 usando el consolidado resumido",
+            value=False
+        )
+
+        df_consolidado_calculado = None
+
+        if calcular_items:
+            st.info(
+                "Ítem 2 usa una fórmula recursiva con ICL. "
+                "Debes indicar el valor base del Ítem 2 correspondiente al mes anterior "
+                "al primer mes calculable."
+            )
+
+            item_2_base = st.number_input(
+                "Valor base Ítem 2",
+                min_value=0.0,
+                value=1.0,
+                step=0.000001,
+                format="%.15f"
+            )
+
+            df_consolidado_calculado = calcular_item_2_item_3(
+                df_consolidado_resumido,
+                item_2_base=item_2_base
+            )
+
+            st.subheader("Consolidado resumido con columnas calculadas")
+
+            st.dataframe(
+                estilo_columnas_calculadas(df_consolidado_calculado),
+                use_container_width=True
+            )
+
+            st.caption(
+                "Las columnas calculadas se muestran destacadas en amarillo: "
+                "Item 2 calculado e Item 3 calculado."
+            )
+
         columnas_graficables = [
             col for col in df_consolidado.columns
             if col not in ["Fecha", "Año", "Mes", "Dolar ultimo dia observado"]
             and pd.api.types.is_numeric_dtype(df_consolidado[col])
         ]
+
+        if calcular_items and df_consolidado_calculado is not None:
+            columnas_calculadas_graficables = [
+                col for col in ["Item 2 calculado", "Item 3 calculado"]
+                if col in df_consolidado_calculado.columns
+            ]
+
+            columnas_graficables = columnas_graficables + columnas_calculadas_graficables
 
         if columnas_graficables:
             st.subheader("Gráfico temporal")
@@ -1038,13 +1249,25 @@ if "df_consolidado_temporal" in st.session_state:
             )
 
             if columnas_seleccionadas:
-                df_grafico = df_consolidado.set_index("Fecha")[columnas_seleccionadas]
+                if calcular_items and df_consolidado_calculado is not None:
+                    df_para_grafico = df_consolidado_calculado.copy()
+                else:
+                    df_para_grafico = df_consolidado.copy()
 
-                st.line_chart(df_grafico)
+                columnas_existentes = [
+                    col for col in columnas_seleccionadas
+                    if col in df_para_grafico.columns
+                ]
+
+                if columnas_existentes:
+                    df_grafico = df_para_grafico.set_index("Fecha")[columnas_existentes]
+                    st.line_chart(df_grafico)
+                else:
+                    st.info("Las columnas seleccionadas no están disponibles para graficar.")
             else:
                 st.info("Selecciona al menos un indicador para graficar.")
 
-        col_descarga_1, col_descarga_2 = st.columns(2)
+        col_descarga_1, col_descarga_2, col_descarga_3 = st.columns(3)
 
         with col_descarga_1:
             excel_resumido = crear_excel_consolidado_resumido(
@@ -1070,3 +1293,21 @@ if "df_consolidado_temporal" in st.session_state:
                 file_name="consolidado_temporal_completo.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
+
+        with col_descarga_3:
+            if df_consolidado_calculado is not None:
+                excel_calculado = crear_excel_consolidado_calculado(
+                    df_consolidado_calculado
+                )
+
+                st.download_button(
+                    label="Descargar Excel calculado",
+                    data=excel_calculado,
+                    file_name="consolidado_temporal_calculado.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            else:
+                st.button(
+                    "Descargar Excel calculado",
+                    disabled=True
+                )
