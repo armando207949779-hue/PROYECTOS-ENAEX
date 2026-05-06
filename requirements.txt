@@ -3,3 +3,4 @@ requests
 streamlit
 lxml
 openpyxl
+xlrd>=2.0.1
