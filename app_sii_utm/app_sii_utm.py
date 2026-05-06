@@ -1,7 +1,18 @@
 import pandas as pd
 import requests
+import base64
 from io import StringIO, BytesIO
+from pathlib import Path
 import streamlit as st
+
+
+# =========================
+# Rutas del proyecto
+# =========================
+
+BASE_DIR = Path(__file__).resolve().parent
+PROJECT_DIR = BASE_DIR.parent
+LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
 
 
 # =========================
@@ -73,6 +84,73 @@ def generar_resumen_utm(anios):
 
 
 # =========================
+# Preparar datos para gráfico temporal
+# =========================
+
+def preparar_datos_grafico_utm(resumen_utm):
+    orden_meses = {
+        "Enero": 1,
+        "Febrero": 2,
+        "Marzo": 3,
+        "Abril": 4,
+        "Mayo": 5,
+        "Junio": 6,
+        "Julio": 7,
+        "Agosto": 8,
+        "Septiembre": 9,
+        "Setiembre": 9,
+        "Octubre": 10,
+        "Noviembre": 11,
+        "Diciembre": 12,
+        "Ene": 1,
+        "Feb": 2,
+        "Mar": 3,
+        "Abr": 4,
+        "May": 5,
+        "Jun": 6,
+        "Jul": 7,
+        "Ago": 8,
+        "Sep": 9,
+        "Oct": 10,
+        "Nov": 11,
+        "Dic": 12
+    }
+
+    df_grafico = resumen_utm.copy()
+
+    if df_grafico.empty:
+        return df_grafico
+
+    df_grafico["Mes_limpio"] = (
+        df_grafico["Mes"]
+        .astype(str)
+        .str.strip()
+    )
+
+    df_grafico["Mes_numero"] = df_grafico["Mes_limpio"].map(orden_meses)
+
+    df_grafico["UTM"] = pd.to_numeric(
+        df_grafico["UTM"],
+        errors="coerce"
+    )
+
+    df_grafico = df_grafico.dropna(
+        subset=["Año", "Mes_numero", "UTM"]
+    )
+
+    df_grafico["Fecha"] = pd.to_datetime(
+        df_grafico["Año"].astype(int).astype(str)
+        + "-"
+        + df_grafico["Mes_numero"].astype(int).astype(str)
+        + "-01"
+    )
+
+    df_grafico = df_grafico.sort_values("Fecha")
+
+    return df_grafico
+
+
+# =========================
 # Crear Excel
 # =========================
 
@@ -102,15 +180,60 @@ def crear_excel_utm(resumen, errores_df):
 
 st.set_page_config(
     page_title="UTM SII Chile",
+    page_icon="🏢",
     layout="wide"
 )
 
-st.title("Consulta UTM SII por años")
 
-st.write(
-    "Selecciona los años a consultar. La aplicación descargará la tabla UTM "
-    "del SII para cada año seleccionado y generará un Excel consolidado."
+# =========================
+# Encabezado con logo ENAEX centrado
+# =========================
+
+if LOGO_PATH.exists():
+    logo_svg = LOGO_PATH.read_text(encoding="utf-8")
+    logo_base64 = base64.b64encode(logo_svg.encode("utf-8")).decode("utf-8")
+
+    st.markdown(
+        f"""
+        <div style="
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-top: 10px;
+            margin-bottom: 20px;
+        ">
+            <img 
+                src="data:image/svg+xml;base64,{logo_base64}" 
+                style="width: 260px; display: block;"
+            >
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+else:
+    st.warning(f"Logo no encontrado: {LOGO_PATH}")
+
+
+st.markdown(
+    "<h1 style='text-align: center;'>Consulta UTM SII por años</h1>",
+    unsafe_allow_html=True
 )
+
+st.markdown(
+    """
+    <p style='text-align: center; font-size: 18px;'>
+        Selecciona los años a consultar. La aplicación descargará la tabla UTM
+        del SII para cada año seleccionado y generará un Excel consolidado.
+    </p>
+    """,
+    unsafe_allow_html=True
+)
+
+
+# =========================
+# Selección de años
+# =========================
 
 anios_disponibles = list(range(2009, 2027))
 ultimos_3_anios = anios_disponibles[-3:]
@@ -137,6 +260,10 @@ for posicion, anio in enumerate(anios_disponibles):
 st.write("Años seleccionados:", anios_seleccionados)
 
 
+# =========================
+# Generar resumen UTM
+# =========================
+
 if st.button("Generar resumen UTM"):
     if not anios_seleccionados:
         st.warning("Debes seleccionar al menos un año.")
@@ -149,20 +276,33 @@ if st.button("Generar resumen UTM"):
 
         if not resumen_utm.empty:
             st.success("Resumen UTM generado correctamente.")
-            st.dataframe(resumen_utm, use_container_width=True)
         else:
             st.error("No se pudo generar el resumen UTM.")
 
-        if not errores_utm.empty:
-            st.warning("Algunos años presentaron errores.")
-            st.dataframe(errores_utm, use_container_width=True)
 
+# =========================
+# Mostrar resultados, gráfico y descarga
+# =========================
 
 if "resumen_utm" in st.session_state:
     resumen_utm = st.session_state["resumen_utm"]
     errores_utm = st.session_state["errores_utm"]
 
     if not resumen_utm.empty:
+        st.subheader("Tabla resumen UTM")
+        st.dataframe(resumen_utm, use_container_width=True)
+
+        df_grafico_utm = preparar_datos_grafico_utm(resumen_utm)
+
+        if not df_grafico_utm.empty:
+            st.subheader("Gráfico temporal de la UTM")
+
+            datos_linea_utm = df_grafico_utm.set_index("Fecha")["UTM"]
+
+            st.line_chart(datos_linea_utm)
+        else:
+            st.info("No hay datos suficientes para generar el gráfico temporal de la UTM.")
+
         excel_utm = crear_excel_utm(resumen_utm, errores_utm)
 
         st.download_button(
@@ -171,3 +311,7 @@ if "resumen_utm" in st.session_state:
             file_name="resumen_utm_sii.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
+    if not errores_utm.empty:
+        st.warning("Algunos años presentaron errores.")
+        st.dataframe(errores_utm, use_container_width=True)
