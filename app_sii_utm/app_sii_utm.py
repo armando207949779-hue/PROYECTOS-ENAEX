@@ -129,13 +129,20 @@ def preparar_datos_grafico_utm(resumen_utm):
 
     df_grafico["Mes_numero"] = df_grafico["Mes_limpio"].map(orden_meses)
 
-    df_grafico["UTM"] = pd.to_numeric(
-        df_grafico["UTM"],
-        errors="coerce"
-    )
+    columnas_numericas = [
+        "UTM",
+        "IPC valor puntos"
+    ]
+
+    for columna in columnas_numericas:
+        if columna in df_grafico.columns:
+            df_grafico[columna] = pd.to_numeric(
+                df_grafico[columna],
+                errors="coerce"
+            )
 
     df_grafico = df_grafico.dropna(
-        subset=["Año", "Mes_numero", "UTM"]
+        subset=["Año", "Mes_numero"]
     )
 
     df_grafico["Fecha"] = pd.to_datetime(
@@ -295,13 +302,32 @@ if "resumen_utm" in st.session_state:
         df_grafico_utm = preparar_datos_grafico_utm(resumen_utm)
 
         if not df_grafico_utm.empty:
-            st.subheader("Gráfico temporal de la UTM")
+            st.subheader("Gráfico temporal")
 
-            datos_linea_utm = df_grafico_utm.set_index("Fecha")["UTM"]
+            opciones_grafico = {
+                "UTM": "UTM",
+                "IPC valor puntos": "IPC valor puntos"
+            }
 
-            st.line_chart(datos_linea_utm)
+            indicador_seleccionado = st.selectbox(
+                "Selecciona indicador para graficar",
+                options=list(opciones_grafico.keys())
+            )
+
+            columna_grafico = opciones_grafico[indicador_seleccionado]
+
+            df_grafico_filtrado = df_grafico_utm.dropna(
+                subset=[columna_grafico]
+            ).copy()
+
+            if not df_grafico_filtrado.empty:
+                datos_linea = df_grafico_filtrado.set_index("Fecha")[columna_grafico]
+
+                st.line_chart(datos_linea)
+            else:
+                st.info(f"No hay datos suficientes para graficar {indicador_seleccionado}.")
         else:
-            st.info("No hay datos suficientes para generar el gráfico temporal de la UTM.")
+            st.info("No hay datos suficientes para generar el gráfico temporal.")
 
         excel_utm = crear_excel_utm(resumen_utm, errores_utm)
 
