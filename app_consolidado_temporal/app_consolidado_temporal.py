@@ -1278,6 +1278,11 @@ def calcular_item_2_desde_icl_y_mop_anterior(df):
 
         df.loc[i, columna_salida] = item_2_calculado
 
+    df[columna_salida] = pd.to_numeric(
+        df[columna_salida],
+        errors="coerce"
+    )
+
     return df
 
 
@@ -1315,9 +1320,19 @@ def calcular_item_2_item_3(df_resumido):
 
     df = calcular_item_2_desde_icl_y_mop_anterior(df)
 
+    df["Item 2 calculado"] = pd.to_numeric(
+        df["Item 2 calculado"],
+        errors="coerce"
+    )
+
     df["Item 3 calculado"] = (
         df[columna_mop_27] * 1.05327007171179
         + 1.5 * df["UTM"]
+    )
+
+    df["Item 3 calculado"] = pd.to_numeric(
+        df["Item 3 calculado"],
+        errors="coerce"
     )
 
     return df
@@ -1367,6 +1382,13 @@ def preparar_consolidado_calculado_ordenado(df_consolidado):
     ]
 
     df_calculado = df_calculado[columnas_existentes + columnas_restantes].copy()
+
+    for columna in ["Item 2 calculado", "Item 3 calculado"]:
+        if columna in df_calculado.columns:
+            df_calculado[columna] = pd.to_numeric(
+                df_calculado[columna],
+                errors="coerce"
+            )
 
     return df_calculado
 
@@ -1593,6 +1615,13 @@ if "df_consolidado_temporal" in st.session_state:
             df_consolidado
         )
 
+        for columna in ["Item 2 calculado", "Item 3 calculado"]:
+            if columna in df_consolidado_calculado.columns:
+                df_consolidado_calculado[columna] = pd.to_numeric(
+                    df_consolidado_calculado[columna],
+                    errors="coerce"
+                )
+
         st.subheader("Consolidado con columnas calculadas")
 
         st.dataframe(
@@ -1626,6 +1655,7 @@ if "df_consolidado_temporal" in st.session_state:
                 options=columnas_graficables,
                 default=[
                     col for col in [
+                        "Item 2 calculado",
                         "MOP 3 (Petróleo Diesel)",
                         "Item 3 calculado"
                     ]
