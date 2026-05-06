@@ -4,7 +4,6 @@ from io import StringIO, BytesIO
 import streamlit as st
 
 
-
 # =========================
 # Detectar tabla dólar SII
 # =========================
