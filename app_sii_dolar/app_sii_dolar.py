@@ -1,5 +1,6 @@
 import pandas as pd
 import requests
+import base64
 from io import StringIO, BytesIO
 from pathlib import Path
 import streamlit as st
@@ -194,14 +195,31 @@ st.set_page_config(
 
 
 # =========================
-# Encabezado con logo ENAEX centrado
+# Encabezado con logo ENAEX centrado real
 # =========================
 
 if LOGO_PATH.exists():
-    col_izq, col_centro, col_der = st.columns([1, 2, 1])
+    logo_svg = LOGO_PATH.read_text(encoding="utf-8")
+    logo_base64 = base64.b64encode(logo_svg.encode("utf-8")).decode("utf-8")
 
-    with col_centro:
-        st.image(str(LOGO_PATH), width=260)
+    st.markdown(
+        f"""
+        <div style="
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-top: 10px;
+            margin-bottom: 20px;
+        ">
+            <img 
+                src="data:image/svg+xml;base64,{logo_base64}" 
+                style="width: 260px; display: block;"
+            >
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 else:
     st.warning(f"Logo no encontrado: {LOGO_PATH}")
 
