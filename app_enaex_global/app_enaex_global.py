@@ -19,6 +19,7 @@ APP_IPC = PROJECT_DIR / "app_ine_ipc" / "app_ine_ipc.py"
 APP_ICL = PROJECT_DIR / "app_ine_icl" / "app_ine_icl.py"
 APP_MOP = PROJECT_DIR / "app_indice_polinomico_mop" / "app_indice_polinomico_mop.py"
 APP_SIEVO = PROJECT_DIR / "app_sievo" / "app_sievo.py"
+APP_CONSOLIDADO = PROJECT_DIR / "app_consolidado_temporal" / "app_consolidado_temporal.py"
 
 
 # =========================
@@ -147,6 +148,17 @@ def pagina_inicio():
             """
         )
 
+    col7, col8, col9 = st.columns(3)
+
+    with col7:
+        st.info(
+            """
+            **Consolidado Temporal**
+
+            Unifica indicadores SII, INE y MOP en una base mensual.
+            """
+        )
+
 
 # =========================
 # Validación rápida de archivos
@@ -159,6 +171,7 @@ apps_requeridas = {
     "ICL INE": APP_ICL,
     "MOP Reajuste": APP_MOP,
     "Savings Bridge": APP_SIEVO,
+    "Consolidado Temporal": APP_CONSOLIDADO,
 }
 
 apps_faltantes = {
@@ -188,6 +201,13 @@ pagina = st.navigation(
                 title="Inicio",
                 icon="🏠"
             )
+        ],
+        "Consolidado": [
+            st.Page(
+                APP_CONSOLIDADO,
+                title="Consolidado Temporal",
+                icon="🧩"
+            ),
         ],
         "Indicadores SII": [
             st.Page(
