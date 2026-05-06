@@ -1,0 +1,189 @@
+import base64
+from pathlib import Path
+
+import streamlit as st
+
+
+# =========================
+# Rutas del proyecto
+# =========================
+
+BASE_DIR = Path(__file__).resolve().parent
+LOGO_PATH = BASE_DIR / "assets" / "logo.svg"
+
+
+# =========================
+# Configuración general
+# =========================
+
+st.set_page_config(
+    page_title="Proyectos ENAEX",
+    page_icon="🏢",
+    layout="wide"
+)
+
+
+# =========================
+# Logo centrado
+# =========================
+
+def mostrar_logo_centrado():
+    if LOGO_PATH.exists():
+        logo_svg = LOGO_PATH.read_text(encoding="utf-8")
+        logo_base64 = base64.b64encode(
+            logo_svg.encode("utf-8")
+        ).decode("utf-8")
+
+        st.markdown(
+            f"""
+            <div style="
+                width: 100%;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                margin-top: 10px;
+                margin-bottom: 20px;
+            ">
+                <img
+                    src="data:image/svg+xml;base64,{logo_base64}"
+                    style="width: 260px; display: block;"
+                >
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+    else:
+        st.warning(f"Logo no encontrado: {LOGO_PATH}")
+
+
+# =========================
+# Página principal
+# =========================
+
+def pagina_inicio():
+    mostrar_logo_centrado()
+
+    st.markdown(
+        "<h1 style='text-align: center;'>Portal de Aplicaciones ENAEX</h1>",
+        unsafe_allow_html=True
+    )
+
+    st.markdown(
+        """
+        <p style='text-align: center; font-size: 18px;'>
+            Selecciona una aplicación desde el menú lateral para consultar indicadores,
+            generar resúmenes y descargar archivos Excel.
+        </p>
+        """,
+        unsafe_allow_html=True
+    )
+
+    st.markdown("---")
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.info(
+            """
+            **Dólar SII**
+
+            Consulta del dólar observado por año y mes.
+            """
+        )
+
+    with col2:
+        st.info(
+            """
+            **UTM SII**
+
+            Consulta de UTM, UTA e IPC valor puntos.
+            """
+        )
+
+    with col3:
+        st.info(
+            """
+            **IPC INE**
+
+            Consulta automática del IPC General publicado por el INE.
+            """
+        )
+
+    col4, col5, col6 = st.columns(3)
+
+    with col4:
+        st.info(
+            """
+            **ICL INE**
+
+            Índice de Remuneraciones y Costos Laborales.
+            """
+        )
+
+    with col5:
+        st.info(
+            """
+            **MOP Reajuste Polinómico**
+
+            Índices y precios para cálculo de reajuste polinómico.
+            """
+        )
+
+    with col6:
+        st.info(
+            """
+            **Descargas**
+
+            Cada aplicación permite generar y descargar su resumen en Excel.
+            """
+        )
+
+
+# =========================
+# Navegación entre apps
+# =========================
+
+pagina = st.navigation(
+    {
+        "Inicio": [
+            st.Page(
+                pagina_inicio,
+                title="Inicio",
+                icon="🏠"
+            )
+        ],
+        "Indicadores SII": [
+            st.Page(
+                "app_sii_dolar/app_sii_dolar.py",
+                title="Dólar SII",
+                icon="💵"
+            ),
+            st.Page(
+                "app_sii_utm/app_sii_utm.py",
+                title="UTM SII",
+                icon="📊"
+            ),
+        ],
+        "Indicadores INE": [
+            st.Page(
+                "app_ine_ipc/app_ine_ipc.py",
+                title="IPC INE",
+                icon="📈"
+            ),
+            st.Page(
+                "app_ine_icl/app_ine_icl.py",
+                title="ICL INE",
+                icon="📉"
+            ),
+        ],
+        "MOP": [
+            st.Page(
+                "app_indice_polinomico_mop/app_indice_polinomico_mop.py",
+                title="Reajuste Polinómico MOP",
+                icon="🏗️"
+            ),
+        ],
+    }
+)
+
+pagina.run()
