@@ -50,21 +50,36 @@ def mostrar_logo_centrado():
         st.warning(f"Logo no encontrado: {LOGO_PATH}")
 
 
-def limpiar_valor(v, separador_decimal="."):
+def limpiar_valor(v, formato_numero="miles_punto"):
     if pd.isna(v):
         return np.nan
 
     v = str(v).strip()
     v = v.replace("$", "")
     v = v.replace(" ", "")
+    v = v.replace("\u00a0", "")
 
-    if separador_decimal == ",":
+    # Quitar separadores o caracteres sobrantes al final
+    v = v.rstrip(",")
+    v = v.rstrip(";")
+
+    if formato_numero == "miles_punto":
+        # Formato chileno sin decimales:
+        # 182.056 -> 182056
+        # -19.452 -> -19452
+        # 1.218 -> 1218
+        # 150.170 -> 150170
+        v = v.replace(".", "")
+        v = v.replace(",", "")
+
+    elif formato_numero == "coma_decimal":
         # Formato con coma decimal:
         # 1.234,56 -> 1234.56
         # 1218,50 -> 1218.50
         v = v.replace(".", "")
         v = v.replace(",", ".")
-    else:
+
+    elif formato_numero == "punto_decimal":
         # Formato con punto decimal:
         # 1,234.56 -> 1234.56
         # 1218.50 -> 1218.50
@@ -89,7 +104,7 @@ def fmt_inside(v):
     return f"{v:,.0f}$"
 
 
-def parsear_tabla_desde_texto(texto, separador_decimal="."):
+def parsear_tabla_desde_texto(texto, formato_numero="miles_punto"):
     texto = texto.strip()
 
     if not texto:
@@ -97,7 +112,8 @@ def parsear_tabla_desde_texto(texto, separador_decimal="."):
 
     df = pd.read_csv(
         io.StringIO(texto),
-        sep="\t"
+        sep="\t",
+        dtype=str
     )
 
     df.columns = df.columns.str.strip()
@@ -118,7 +134,7 @@ def parsear_tabla_desde_texto(texto, separador_decimal="."):
     df["Valor_USD"] = df["Valor_USD"].apply(
         lambda x: limpiar_valor(
             x,
-            separador_decimal=separador_decimal
+            formato_numero=formato_numero
         )
     )
 
@@ -323,15 +339,15 @@ def crear_excel_salida(df):
 # =========================
 
 TEXTO_EJEMPLO = """Concepto\tValor_USD
-Spend Previous Year\t182056
-Volume\t-19452
-IPC\t1218
-Diesel\t4093
-IR\t3699
+Spend Previous Year\t182.056
+Volume\t-19.452
+IPC\t1.218
+Diesel\t4.093
+IR\t3.699
 Currency\t-18
-Final Explained\t171596
-Gap / Mix\t-21426
-Spend Current Year (Real)\t150170"""
+Final Explained\t171.596
+Gap / Mix\t-21.426
+Spend Current Year (Real)\t150.170"""
 
 
 # =========================
@@ -373,20 +389,23 @@ with st.expander("Ver formato esperado"):
         language="text"
     )
 
-separador_decimal = st.radio(
-    "¿Qué separador decimal usan los valores pegados?",
+formato_numero = st.radio(
+    "¿Qué formato usan los valores pegados?",
     options=[
-        "Punto decimal: 1218.50",
-        "Coma decimal: 1218,50"
+        "Miles con punto: 182.056 = 182056",
+        "Coma decimal: 1218,50",
+        "Punto decimal: 1218.50"
     ],
     index=0,
-    horizontal=True
+    horizontal=False
 )
 
-if separador_decimal.startswith("Coma"):
-    separador_decimal_valor = ","
+if formato_numero.startswith("Miles"):
+    formato_numero_valor = "miles_punto"
+elif formato_numero.startswith("Coma"):
+    formato_numero_valor = "coma_decimal"
 else:
-    separador_decimal_valor = "."
+    formato_numero_valor = "punto_decimal"
 
 texto_usuario = st.text_area(
     label="Pega aquí la tabla copiada desde Excel",
@@ -403,11 +422,11 @@ if st.button("Generar Savings Bridge"):
     try:
         df_bridge = parsear_tabla_desde_texto(
             texto_usuario,
-            separador_decimal=separador_decimal_valor
+            formato_numero=formato_numero_valor
         )
 
         st.session_state["df_bridge"] = df_bridge
-        st.session_state["separador_decimal"] = separador_decimal_valor
+        st.session_state["formato_numero"] = formato_numero_valor
 
         st.success("Tabla leída correctamente.")
 
