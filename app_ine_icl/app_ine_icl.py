@@ -1,11 +1,26 @@
 import re
+import base64
 from io import BytesIO
 from urllib.parse import urljoin, unquote
+from pathlib import Path
 
 import pandas as pd
 import requests
 import streamlit as st
 
+
+# =========================
+# Rutas del proyecto
+# =========================
+
+BASE_DIR = Path(__file__).resolve().parent
+PROJECT_DIR = BASE_DIR.parent
+LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
+
+
+# =========================
+# URLs INE
+# =========================
 
 URL_PAGINA_INE = (
     "https://www.ine.gob.cl/estadisticas-por-tema/"
@@ -24,6 +39,11 @@ URL_ARCHIVO_DIRECTO_CONOCIDO = (
     "series-base-2023/tabulado_icl.xlsx?sfvrsn=43d76e7c_50"
 )
 
+
+# =========================
+# Columnas requeridas
+# =========================
+
 COLUMNAS_REQUERIDAS = [
     "año",
     "mes",
@@ -34,6 +54,10 @@ COLUMNAS_REQUERIDAS = [
     "var_12"
 ]
 
+
+# =========================
+# Descargar Excel desde URL
+# =========================
 
 def descargar_url_excel(url):
     headers = {
@@ -61,6 +85,10 @@ def descargar_url_excel(url):
 
     return response.content, response.headers
 
+
+# =========================
+# Buscar URL del archivo tabulado_icl.xlsx
+# =========================
 
 def buscar_url_tabulado_icl():
     headers = {
@@ -113,6 +141,11 @@ def buscar_url_tabulado_icl():
     return url_encontrada, df_enlaces
 
 
+# =========================
+# Obtener Excel ICL
+# =========================
+
+@st.cache_data
 def obtener_excel_icl():
     # 1. Intentar URL directa conocida completa
     try:
@@ -129,7 +162,7 @@ def obtener_excel_icl():
     except Exception:
         pass
 
-    # 2. Intentar URL base hasta tabulado_icl.xlsx, sin sfvrsn
+    # 2. Intentar URL base sin sfvrsn
     try:
         contenido, headers = descargar_url_excel(URL_ARCHIVO_BASE)
 
@@ -144,7 +177,7 @@ def obtener_excel_icl():
     except Exception:
         pass
 
-    # 3. Buscar en la página cualquier link que contenga tabulado_icl.xlsx
+    # 3. Buscar automáticamente en la página INE
     try:
         url_encontrada, df_enlaces = buscar_url_tabulado_icl()
 
@@ -177,6 +210,10 @@ def obtener_excel_icl():
         }
 
 
+# =========================
+# Leer hoja General
+# =========================
+
 def leer_hoja_general(archivo_excel):
     excel = pd.ExcelFile(archivo_excel)
 
@@ -193,6 +230,10 @@ def leer_hoja_general(archivo_excel):
     return df_general, hojas, None
 
 
+# =========================
+# Validar columnas
+# =========================
+
 def validar_columnas(df):
     columnas_actuales = [
         str(col).strip()
@@ -207,6 +248,67 @@ def validar_columnas(df):
     return faltantes
 
 
+# =========================
+# Preparar datos ICL
+# =========================
+
+def preparar_datos_icl(archivo_bytes):
+    archivo_para_leer = BytesIO(archivo_bytes)
+
+    df_general, hojas, error_hoja = leer_hoja_general(archivo_para_leer)
+
+    if error_hoja is not None:
+        return None, error_hoja
+
+    faltantes = validar_columnas(df_general)
+
+    if faltantes:
+        mensaje = (
+            "La hoja General no tiene todas las columnas requeridas. "
+            f"Columnas faltantes: {faltantes}"
+        )
+        return None, mensaje
+
+    df_general = df_general.copy()
+
+    df_general["año"] = pd.to_numeric(
+        df_general["año"],
+        errors="coerce"
+    )
+
+    df_general["mes"] = pd.to_numeric(
+        df_general["mes"],
+        errors="coerce"
+    )
+
+    df_general["índice"] = pd.to_numeric(
+        df_general["índice"],
+        errors="coerce"
+    )
+
+    df_general = df_general.dropna(
+        subset=["año", "mes", "índice"]
+    )
+
+    df_general["año"] = df_general["año"].astype(int)
+    df_general["mes"] = df_general["mes"].astype(int)
+
+    df_general["fecha"] = pd.to_datetime(
+        df_general["año"].astype(str)
+        + "-"
+        + df_general["mes"].astype(str)
+        + "-01"
+    )
+
+    df_general = df_general.sort_values("fecha")
+
+    return df_general, None
+
+
+# =========================
+# Crear Excel de salida
+# =========================
+
 def crear_excel_salida(df):
     buffer = BytesIO()
 
@@ -220,155 +322,177 @@ def crear_excel_salida(df):
     return buffer.getvalue()
 
 
+# =========================
+# Mostrar logo centrado
+# =========================
+
+def mostrar_logo_centrado():
+    if LOGO_PATH.exists():
+        logo_svg = LOGO_PATH.read_text(encoding="utf-8")
+        logo_base64 = base64.b64encode(
+            logo_svg.encode("utf-8")
+        ).decode("utf-8")
+
+        st.markdown(
+            f"""
+            <div style="
+                width: 100%;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                margin-top: 10px;
+                margin-bottom: 20px;
+            ">
+                <img 
+                    src="data:image/svg+xml;base64,{logo_base64}" 
+                    style="width: 260px; display: block;"
+                >
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+    else:
+        st.warning(f"Logo no encontrado: {LOGO_PATH}")
+
+
+# =========================
+# App Streamlit
+# =========================
+
 st.set_page_config(
-    page_title="INE ICL - Hoja General",
+    page_title="INE ICL",
+    page_icon="🏢",
     layout="wide"
 )
 
-st.title("INE - Índice de Remuneraciones y Costos Laborales")
+mostrar_logo_centrado()
 
-st.write(
-    "La aplicación busca el archivo `tabulado_icl.xlsx`. "
-    "La parte posterior de la URL, como `?sfvrsn=...`, puede cambiar."
+st.markdown(
+    "<h1 style='text-align: center;'>Índice de Remuneraciones y Costos Laborales</h1>",
+    unsafe_allow_html=True
+)
+
+st.markdown(
+    """
+    <p style='text-align: center; font-size: 18px;'>
+        Consulta automática del archivo ICL del INE y descarga de la hoja General.
+    </p>
+    """,
+    unsafe_allow_html=True
 )
 
 
-st.subheader("Paso 1: Buscar / descargar archivo INE")
+# =========================
+# Botón principal
+# =========================
 
-if st.button("Buscar / descargar archivo"):
-    resultado = obtener_excel_icl()
+st.markdown("---")
 
-    if resultado["contenido"] is not None:
-        st.session_state["archivo_bytes"] = resultado["contenido"]
-        st.session_state["url_usada"] = resultado["url_usada"]
-        st.session_state["metodo_descarga"] = resultado["metodo"]
+if st.button("Generar resumen ICL"):
+    with st.spinner("Buscando y procesando información del INE..."):
+        resultado = obtener_excel_icl()
 
-        st.success("Archivo descargado correctamente.")
+        if resultado["contenido"] is not None:
+            df_general, error = preparar_datos_icl(resultado["contenido"])
 
-        st.write("Método usado:")
-        st.write(resultado["metodo"])
+            if error is None:
+                st.session_state["df_general_icl"] = df_general
+                st.session_state["url_usada_icl"] = resultado["url_usada"]
+                st.session_state["metodo_descarga_icl"] = resultado["metodo"]
 
-        st.write("URL usada:")
-        st.write(resultado["url_usada"])
-
-        st.write("Tamaño bytes:")
-        st.write(len(resultado["contenido"]))
-
-        if resultado["headers"] is not None:
-            st.write("Content-Type:")
-            st.write(resultado["headers"].get("Content-Type"))
-
-    else:
-        st.warning("No se encontró automáticamente el archivo.")
-        st.info("Puedes subir el Excel manualmente en el Paso 2.")
-
-    if resultado["df_enlaces"] is not None:
-        st.session_state["df_enlaces"] = resultado["df_enlaces"]
-
-
-if "url_usada" in st.session_state:
-    st.success("Archivo disponible en memoria.")
-    st.write("Método:")
-    st.write(st.session_state["metodo_descarga"])
-    st.write("URL:")
-    st.write(st.session_state["url_usada"])
-
-
-if "df_enlaces" in st.session_state:
-    with st.expander("Ver enlaces encontrados en la página"):
-        st.dataframe(
-            st.session_state["df_enlaces"],
-            use_container_width=True
-        )
-
-
-st.subheader("Paso 2: Opción secundaria - subir archivo Excel")
-
-archivo_subido = st.file_uploader(
-    "Sube el archivo Excel si no fue posible descargarlo automáticamente",
-    type=["xlsx", "xls"]
-)
-
-if archivo_subido is not None:
-    st.session_state["archivo_bytes"] = archivo_subido.read()
-    st.session_state["metodo_descarga"] = "Archivo subido manualmente"
-    st.session_state["url_usada"] = "No aplica"
-
-    st.success("Archivo subido correctamente.")
-
-
-st.subheader("Paso 3: Leer hoja General")
-
-if "archivo_bytes" not in st.session_state:
-    st.info("Primero busca el archivo automáticamente o sube un Excel.")
-else:
-    try:
-        archivo_para_leer = BytesIO(st.session_state["archivo_bytes"])
-
-        df_general, hojas, error_hoja = leer_hoja_general(archivo_para_leer)
-
-        st.write("Hojas disponibles:")
-        st.write(hojas)
-
-        if error_hoja is not None:
-            st.error(error_hoja)
+                st.success("Resumen ICL generado correctamente.")
+            else:
+                st.error(error)
 
         else:
-            faltantes = validar_columnas(df_general)
+            st.warning(
+                "No se encontró automáticamente el archivo del INE. "
+                "Puedes usar la carga manual disponible más abajo."
+            )
 
-            if faltantes:
-                st.error("La hoja General no tiene todas las columnas requeridas.")
 
-                st.write("Columnas faltantes:")
-                st.write(faltantes)
+# =========================
+# Opción secundaria: carga manual
+# =========================
 
-                st.write("Columnas encontradas:")
-                st.write(list(df_general.columns))
+with st.expander("Carga manual de archivo Excel"):
+    archivo_subido = st.file_uploader(
+        "Sube el archivo Excel del INE si la búsqueda automática no funciona",
+        type=["xlsx", "xls"]
+    )
 
-            else:
-                st.success("Hoja General leída correctamente.")
+    if archivo_subido is not None:
+        archivo_bytes = archivo_subido.read()
 
-                st.dataframe(
-                    df_general,
-                    use_container_width=True
-                )
+        df_general, error = preparar_datos_icl(archivo_bytes)
 
-                st.subheader("Paso 4: Filtro por año")
+        if error is None:
+            st.session_state["df_general_icl"] = df_general
+            st.session_state["url_usada_icl"] = "Archivo subido manualmente"
+            st.session_state["metodo_descarga_icl"] = "Carga manual"
 
-                anios = sorted(
-                    df_general["año"]
-                    .dropna()
-                    .unique()
-                    .tolist()
-                )
+            st.success("Archivo procesado correctamente.")
+        else:
+            st.error(error)
 
-                anio_filtro = st.selectbox(
-                    "Filtrar por año",
-                    options=["Todos"] + anios
-                )
 
-                df_filtrado = df_general.copy()
+# =========================
+# Mostrar resultados
+# =========================
 
-                if anio_filtro != "Todos":
-                    df_filtrado = df_filtrado[
-                        df_filtrado["año"] == anio_filtro
-                    ]
+if "df_general_icl" in st.session_state:
+    df_general = st.session_state["df_general_icl"]
 
-                st.dataframe(
-                    df_filtrado,
-                    use_container_width=True
-                )
+    st.markdown("---")
+    st.subheader("Resumen ICL")
 
-                st.subheader("Paso 5: Descargar Excel limpio")
+    anios = sorted(
+        df_general["año"]
+        .dropna()
+        .unique()
+        .tolist()
+    )
 
-                excel_salida = crear_excel_salida(df_filtrado)
+    anio_filtro = st.selectbox(
+        "Filtrar por año",
+        options=["Todos"] + anios
+    )
 
-                st.download_button(
-                    label="Descargar Excel",
-                    data=excel_salida,
-                    file_name="ine_icl_general.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
+    df_filtrado = df_general.copy()
 
-    except Exception as e:
-        st.error(f"Error al leer el Excel: {e}")
+    if anio_filtro != "Todos":
+        df_filtrado = df_filtrado[
+            df_filtrado["año"] == anio_filtro
+        ]
+
+    st.dataframe(
+        df_filtrado,
+        use_container_width=True
+    )
+
+    st.subheader("Gráfico temporal del índice")
+
+    df_grafico = df_filtrado.copy()
+
+    if not df_grafico.empty:
+        datos_linea = df_grafico.set_index("fecha")["índice"]
+
+        st.line_chart(datos_linea)
+    else:
+        st.info("No hay datos suficientes para generar el gráfico.")
+
+    excel_salida = crear_excel_salida(df_filtrado)
+
+    st.download_button(
+        label="Descargar Excel",
+        data=excel_salida,
+        file_name="ine_icl_general.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+    with st.expander("Información técnica"):
+        st.write("Método de descarga:")
+        st.write(st.session_state.get("metodo_descarga_icl", "No disponible"))
+
+        st.write("Fuente:")
+        st.write(st.session_state.get("url_usada_icl", "No disponible"))
