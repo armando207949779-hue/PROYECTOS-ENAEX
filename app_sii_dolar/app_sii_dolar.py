@@ -194,23 +194,32 @@ st.set_page_config(
 
 
 # =========================
-# Encabezado con logo ENAEX
+# Encabezado con logo ENAEX centrado
 # =========================
 
-col_logo, col_titulo = st.columns([1, 5])
+if LOGO_PATH.exists():
+    col_izq, col_centro, col_der = st.columns([1, 2, 1])
 
-with col_logo:
-    if LOGO_PATH.exists():
-        st.image(str(LOGO_PATH), width=180)
-    else:
-        st.warning(f"Logo no encontrado: {LOGO_PATH}")
+    with col_centro:
+        st.image(str(LOGO_PATH), width=260)
+else:
+    st.warning(f"Logo no encontrado: {LOGO_PATH}")
 
-with col_titulo:
-    st.title("Resumen dólar SII por años seleccionados")
-    st.write(
-        "Selecciona los años a consultar. El resumen incluirá automáticamente "
-        "todos los meses desde Ene hasta Dic."
-    )
+
+st.markdown(
+    "<h1 style='text-align: center;'>Resumen dólar SII por años seleccionados</h1>",
+    unsafe_allow_html=True
+)
+
+st.markdown(
+    """
+    <p style='text-align: center; font-size: 18px;'>
+        Selecciona los años a consultar. El resumen incluirá automáticamente
+        todos los meses desde Ene hasta Dic.
+    </p>
+    """,
+    unsafe_allow_html=True
+)
 
 
 # =========================
