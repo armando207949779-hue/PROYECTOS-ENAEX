@@ -47,12 +47,27 @@ MESES = {
     "diciembre": 12
 }
 
-CONCEPTOS_OBJETIVO = {
-    "Índice de precios al consumidor (1)": "indice_precios_consumidor",
-    "Índice de remuneraciones (2)": "indice_remuneraciones",
-    "Petróleo Diesel (4)": "petroleo_diesel",
-    "Dólar observado": "dolar_observado",
-    "Petróleo Diesel de refinería CONCÓN": "petroleo_diesel_refineria_concon"
+ITEMS_OBJETIVO = {
+    1: {
+        "nombre": "Índice de precios al consumidor (1)",
+        "columna": "indice_precios_consumidor"
+    },
+    2: {
+        "nombre": "Índice de remuneraciones (2)",
+        "columna": "indice_remuneraciones"
+    },
+    3: {
+        "nombre": "Petróleo Diesel (4)",
+        "columna": "petroleo_diesel"
+    },
+    22: {
+        "nombre": "Dólar observado",
+        "columna": "dolar_observado"
+    },
+    27: {
+        "nombre": "Petróleo Diesel de refinería CONCÓN",
+        "columna": "petroleo_diesel_refineria_concon"
+    }
 }
 
 
@@ -124,18 +139,44 @@ def extraer_mes_anio_desde_archivo(archivo):
     return mes_detectado, numero_mes, anio_detectado
 
 
-def obtener_valor_concepto(df, concepto):
-    concepto_norm = normalizar_texto(concepto)
+def convertir_item_a_entero(valor):
+    if pd.isna(valor):
+        return None
 
+    texto = str(valor).strip()
+
+    if texto.endswith(".0"):
+        texto = texto[:-2]
+
+    if texto.isdigit():
+        return int(texto)
+
+    return None
+
+
+def obtener_valor_item(df, item_objetivo):
     for _, fila in df.iterrows():
-        detalle = normalizar_texto(fila[1]) if len(fila) > 1 else ""
+        item = fila[0] if len(fila) > 0 else pd.NA
+        detalle = fila[1] if len(fila) > 1 else pd.NA
+        unidad = fila[2] if len(fila) > 2 else pd.NA
+        valor = fila[3] if len(fila) > 3 else pd.NA
 
-        if concepto_norm in detalle:
-            if len(fila) > 3:
-                return fila[3]
-            return pd.NA
+        item_numero = convertir_item_a_entero(item)
 
-    return pd.NA
+        if item_numero == item_objetivo:
+            return {
+                "item": item_numero,
+                "detalle": detalle,
+                "unidad": unidad,
+                "valor": valor
+            }
+
+    return {
+        "item": item_objetivo,
+        "detalle": pd.NA,
+        "unidad": pd.NA,
+        "valor": pd.NA
+    }
 
 
 # =========================
@@ -233,11 +274,27 @@ def leer_archivo_excel_mop(url_archivo, archivo):
         "hoja": hoja
     }
 
-    for concepto_original, nombre_columna in CONCEPTOS_OBJETIVO.items():
-        registro[nombre_columna] = obtener_valor_concepto(
-            df,
-            concepto_original
+    for item_objetivo, configuracion in ITEMS_OBJETIVO.items():
+        columna = configuracion["columna"]
+        nombre_base = configuracion["nombre"]
+
+        resultado_item = obtener_valor_item(
+            df=df,
+            item_objetivo=item_objetivo
         )
+
+        detalle = resultado_item["detalle"]
+        unidad = resultado_item["unidad"]
+        valor = resultado_item["valor"]
+
+        if pd.isna(detalle):
+            nombre_item = f"{item_objetivo} ({nombre_base})"
+        else:
+            nombre_item = f"{item_objetivo} ({detalle})"
+
+        registro[f"{columna}_nombre"] = nombre_item
+        registro[f"{columna}_unidad"] = unidad
+        registro[columna] = valor
 
     return registro
 
@@ -445,10 +502,25 @@ if "df_resultado_mop" in st.session_state:
             "año",
             "mes",
             "numero_mes",
+
+            "indice_precios_consumidor_nombre",
+            "indice_precios_consumidor_unidad",
             "indice_precios_consumidor",
+
+            "indice_remuneraciones_nombre",
+            "indice_remuneraciones_unidad",
             "indice_remuneraciones",
+
+            "petroleo_diesel_nombre",
+            "petroleo_diesel_unidad",
             "petroleo_diesel",
+
+            "dolar_observado_nombre",
+            "dolar_observado_unidad",
             "dolar_observado",
+
+            "petroleo_diesel_refineria_concon_nombre",
+            "petroleo_diesel_refineria_concon_unidad",
             "petroleo_diesel_refineria_concon"
         ]
 
@@ -465,11 +537,11 @@ if "df_resultado_mop" in st.session_state:
         st.subheader("Gráfico temporal")
 
         opciones_grafico = {
-            "Índice de precios al consumidor": "indice_precios_consumidor",
-            "Índice de remuneraciones": "indice_remuneraciones",
-            "Petróleo Diesel": "petroleo_diesel",
-            "Dólar observado": "dolar_observado",
-            "Petróleo Diesel refinería CONCÓN": "petroleo_diesel_refineria_concon"
+            "1 (Índice de precios al consumidor)": "indice_precios_consumidor",
+            "2 (Índice de remuneraciones)": "indice_remuneraciones",
+            "3 (Petróleo Diesel (4))": "petroleo_diesel",
+            "22 (Dólar observado)": "dolar_observado",
+            "27 (Petróleo Diesel de refinería CONCÓN)": "petroleo_diesel_refineria_concon"
         }
 
         opciones_disponibles = {
