@@ -18,6 +18,7 @@ APP_UTM = PROJECT_DIR / "app_sii_utm" / "app_sii_utm.py"
 APP_IPC = PROJECT_DIR / "app_ine_ipc" / "app_ine_ipc.py"
 APP_ICL = PROJECT_DIR / "app_ine_icl" / "app_ine_icl.py"
 APP_MOP = PROJECT_DIR / "app_indice_polinomico_mop" / "app_indice_polinomico_mop.py"
+APP_SIEVO = PROJECT_DIR / "app_sievo" / "app_sievo.py"
 
 
 # =========================
@@ -80,7 +81,7 @@ def pagina_inicio():
         """
         <p style='text-align: center; font-size: 18px;'>
             Selecciona una aplicación desde el menú lateral para consultar indicadores,
-            generar resúmenes y descargar archivos Excel.
+            generar resúmenes, visualizar gráficos y descargar archivos Excel.
         </p>
         """,
         unsafe_allow_html=True
@@ -140,9 +141,9 @@ def pagina_inicio():
     with col6:
         st.info(
             """
-            **Descargas**
+            **Savings Bridge**
 
-            Cada aplicación permite generar y descargar su resumen en Excel.
+            Generación de gráfico Savings Bridge desde tabla pegada.
             """
         )
 
@@ -157,6 +158,7 @@ apps_requeridas = {
     "IPC INE": APP_IPC,
     "ICL INE": APP_ICL,
     "MOP Reajuste": APP_MOP,
+    "Savings Bridge": APP_SIEVO,
 }
 
 apps_faltantes = {
@@ -216,6 +218,13 @@ pagina = st.navigation(
                 APP_MOP,
                 title="Reajuste Polinómico MOP",
                 icon="🏗️"
+            ),
+        ],
+        "Análisis": [
+            st.Page(
+                APP_SIEVO,
+                title="Savings Bridge",
+                icon="🌉"
             ),
         ],
     }
