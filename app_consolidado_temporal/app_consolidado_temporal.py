@@ -1226,47 +1226,71 @@ def truncar_15_decimales(valor):
     return math.trunc(float(valor) * factor) / factor
 
 
-def calcular_item_2_desde_indice(df, columna_indice, nombre_columna_salida):
-    df[nombre_columna_salida] = pd.NA
+def calcular_item_2_desde_icl_y_mop_anterior(df):
+    """
+    Cálculo de Item 2:
 
-    if columna_indice not in df.columns:
-        return df
+    Item 2 actual =
+    valor anterior disponible de MOP 2 o Item 2 calculado
+    *
+    (ICL de dos meses atrás / ICL de tres meses atrás)
 
-    df[columna_indice] = pd.to_numeric(
-        df[columna_indice],
+    La fórmula parte recién cuando existen:
+    - ICL i-2
+    - ICL i-3
+    - MOP 2 anterior o Item 2 calculado anterior
+    """
+
+    df = df.copy()
+
+    columna_icl = "ICL INE indice"
+    columna_mop_2 = "MOP 2 (Índice de remuneraciones)"
+    columna_salida = "Item 2 calculado"
+
+    df[columna_salida] = pd.NA
+
+    for columna in [columna_icl, columna_mop_2]:
+        if columna not in df.columns:
+            df[columna] = pd.NA
+
+    df[columna_icl] = pd.to_numeric(
+        df[columna_icl],
         errors="coerce"
     )
 
-    item_2_anterior = pd.NA
+    df[columna_mop_2] = pd.to_numeric(
+        df[columna_mop_2],
+        errors="coerce"
+    )
 
     for i in range(len(df)):
         if i < 3:
             continue
 
-        indice_i_menos_2 = df.loc[i - 2, columna_indice]
-        indice_i_menos_3 = df.loc[i - 3, columna_indice]
+        icl_i_menos_2 = df.loc[i - 2, columna_icl]
+        icl_i_menos_3 = df.loc[i - 3, columna_icl]
 
-        if pd.isna(item_2_anterior):
-            item_2_anterior = indice_i_menos_3
+        mop_2_anterior = df.loc[i - 1, columna_mop_2]
+
+        if pd.isna(mop_2_anterior):
+            mop_2_anterior = df.loc[i - 1, columna_salida]
 
         if (
-            pd.isna(indice_i_menos_2)
-            or pd.isna(indice_i_menos_3)
-            or pd.isna(item_2_anterior)
-            or indice_i_menos_3 == 0
+            pd.isna(icl_i_menos_2)
+            or pd.isna(icl_i_menos_3)
+            or pd.isna(mop_2_anterior)
+            or icl_i_menos_3 == 0
         ):
-            df.loc[i, nombre_columna_salida] = pd.NA
+            df.loc[i, columna_salida] = pd.NA
             continue
 
-        factor_indice = truncar_15_decimales(
-            indice_i_menos_2 / indice_i_menos_3
+        factor_icl = truncar_15_decimales(
+            icl_i_menos_2 / icl_i_menos_3
         )
 
-        item_2_actual = factor_indice * item_2_anterior
+        item_2_calculado = factor_icl * mop_2_anterior
 
-        df.loc[i, nombre_columna_salida] = item_2_actual
-
-        item_2_anterior = item_2_actual
+        df.loc[i, columna_salida] = item_2_calculado
 
     return df
 
@@ -1283,7 +1307,7 @@ def calcular_item_2_item_3(df_resumido):
 
     columnas_requeridas = [
         "ICL INE indice",
-        "IR INE indice",
+        "MOP 2 (Índice de remuneraciones)",
         "UTM",
         columna_mop_27
     ]
@@ -1302,17 +1326,7 @@ def calcular_item_2_item_3(df_resumido):
         errors="coerce"
     )
 
-    df = calcular_item_2_desde_indice(
-        df=df,
-        columna_indice="ICL INE indice",
-        nombre_columna_salida="Item 2 calculado ICL"
-    )
-
-    df = calcular_item_2_desde_indice(
-        df=df,
-        columna_indice="IR INE indice",
-        nombre_columna_salida="Item 2 calculado IR"
-    )
+    df = calcular_item_2_desde_icl_y_mop_anterior(df)
 
     df["Item 3 calculado"] = (
         df[columna_mop_27] * 1.05327007171179
@@ -1324,8 +1338,7 @@ def calcular_item_2_item_3(df_resumido):
 
 def estilo_columnas_calculadas(df):
     columnas_calculadas = [
-        "Item 2 calculado ICL",
-        "Item 2 calculado IR",
+        "Item 2 calculado",
         "Item 3 calculado"
     ]
 
@@ -1401,8 +1414,7 @@ def crear_excel_consolidado_calculado(df_calculado):
         fuente_bold = Font(bold=True)
 
         columnas_calculadas = [
-            "Item 2 calculado ICL",
-            "Item 2 calculado IR",
+            "Item 2 calculado",
             "Item 3 calculado"
         ]
 
@@ -1593,19 +1605,22 @@ if "df_consolidado_temporal" in st.session_state:
                 and df_consolidado_resumido["ICL INE indice"].notna().any()
             )
 
-            tiene_ir = (
-                "IR INE indice" in df_consolidado_resumido.columns
-                and df_consolidado_resumido["IR INE indice"].notna().any()
+            tiene_mop_2 = (
+                "MOP 2 (Índice de remuneraciones)" in df_consolidado_resumido.columns
+                and df_consolidado_resumido[
+                    "MOP 2 (Índice de remuneraciones)"
+                ].notna().any()
             )
 
-            if not tiene_icl and not tiene_ir:
+            if not tiene_icl or not tiene_mop_2:
                 st.warning(
-                    "No hay datos en ICL INE indice ni IR INE indice para calcular Ítem 2."
+                    "No hay datos suficientes de ICL INE indice y MOP 2 anterior "
+                    "para calcular Ítem 2."
                 )
             else:
                 st.info(
-                    "Ítem 2 se calcula automáticamente en dos versiones: "
-                    "una usando ICL INE indice y otra usando IR INE indice. "
+                    "Ítem 2 se calcula usando ICL INE indice y el valor anterior "
+                    "disponible de MOP 2 (Índice de remuneraciones). "
                     "Ítem 3 se calcula usando MOP 27 petróleo diesel refinería Concón y UTM."
                 )
 
@@ -1622,7 +1637,7 @@ if "df_consolidado_temporal" in st.session_state:
 
                 st.caption(
                     "Las columnas calculadas se muestran destacadas en amarillo: "
-                    "Item 2 calculado ICL, Item 2 calculado IR e Item 3 calculado."
+                    "Item 2 calculado e Item 3 calculado."
                 )
 
         columnas_graficables = [
@@ -1634,8 +1649,7 @@ if "df_consolidado_temporal" in st.session_state:
         if calcular_items and df_consolidado_calculado is not None:
             columnas_calculadas_graficables = [
                 col for col in [
-                    "Item 2 calculado ICL",
-                    "Item 2 calculado IR",
+                    "Item 2 calculado",
                     "Item 3 calculado"
                 ]
                 if col in df_consolidado_calculado.columns
