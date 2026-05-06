@@ -55,6 +55,21 @@ MESES_NUM = {
     "Diciembre": 12,
 }
 
+MESES_NOMBRE = {
+    1: "Enero",
+    2: "Febrero",
+    3: "Marzo",
+    4: "Abril",
+    5: "Mayo",
+    6: "Junio",
+    7: "Julio",
+    8: "Agosto",
+    9: "Septiembre",
+    10: "Octubre",
+    11: "Noviembre",
+    12: "Diciembre"
+}
+
 MESES_ABREV = [
     "Ene", "Feb", "Mar", "Abr", "May", "Jun",
     "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"
@@ -97,15 +112,6 @@ def mostrar_logo_centrado():
 # =========================
 # Utilidades
 # =========================
-
-def crear_fecha(anio, mes_numero):
-    return pd.to_datetime(
-        pd.Series(anio).astype(int).astype(str)
-        + "-"
-        + pd.Series(mes_numero).astype(int).astype(str)
-        + "-01"
-    )
-
 
 def normalizar_texto(texto):
     if pd.isna(texto):
@@ -788,13 +794,79 @@ def unir_dataframes_temporales(dataframes):
     return df_final
 
 
-def crear_excel_consolidado(df_consolidado):
+def agregar_mes_nombre(df):
+    df = df.copy()
+
+    if "Mes" in df.columns:
+        df["Mes nombre"] = df["Mes"].map(MESES_NOMBRE)
+
+    return df
+
+
+def preparar_consolidado_resumido(df_consolidado):
+    columnas_resumidas = [
+        "Año",
+        "Mes",
+        "Mes nombre",
+        "Fecha",
+        "Dolar promedio SII",
+        "Dolar ultimo observado SII",
+        "Dolar ultimo dia observado",
+        "UTM",
+        "IPC valor puntos SII",
+        "IPC INE indice",
+        "ICL INE indice",
+        "MOP indice precios consumidor",
+        "MOP indice remuneraciones",
+        "MOP petroleo diesel",
+        "MOP dolar observado",
+        "MOP petroleo diesel refineria concon"
+    ]
+
+    df = df_consolidado.copy()
+    df = agregar_mes_nombre(df)
+
+    for columna in columnas_resumidas:
+        if columna not in df.columns:
+            df[columna] = pd.NA
+
+    df = df[columnas_resumidas].copy()
+
+    df = df.sort_values(
+        ["Año", "Mes"],
+        ascending=[True, True]
+    ).reset_index(drop=True)
+
+    return df
+
+
+def crear_excel_consolidado(df_consolidado, df_resumido=None):
     buffer = BytesIO()
 
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         df_consolidado.to_excel(
             writer,
-            sheet_name="Consolidado",
+            sheet_name="Consolidado completo",
+            index=False
+        )
+
+        if df_resumido is not None:
+            df_resumido.to_excel(
+                writer,
+                sheet_name="Consolidado resumido",
+                index=False
+            )
+
+    return buffer.getvalue()
+
+
+def crear_excel_consolidado_resumido(df_resumido):
+    buffer = BytesIO()
+
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        df_resumido.to_excel(
+            writer,
+            sheet_name="Consolidado resumido",
             index=False
         )
 
@@ -863,7 +935,7 @@ with st.expander("Fuentes a incluir"):
     incluir_utm = st.checkbox("UTM SII / IPC valor puntos SII", value=True)
     incluir_ipc_ine = st.checkbox("IPC INE", value=True)
     incluir_icl = st.checkbox("ICL INE", value=True)
-    incluir_mop = st.checkbox("MOP reajuste polinómico", value=False)
+    incluir_mop = st.checkbox("MOP reajuste polinómico", value=True)
 
 
 # =========================
@@ -933,10 +1005,20 @@ if "df_consolidado_temporal" in st.session_state:
 
     if not df_consolidado.empty:
         st.markdown("---")
-        st.subheader("Tabla consolidada")
+
+        st.subheader("Tabla consolidada completa")
 
         st.dataframe(
             df_consolidado,
+            use_container_width=True
+        )
+
+        df_consolidado_resumido = preparar_consolidado_resumido(df_consolidado)
+
+        st.subheader("Consolidado resumido")
+
+        st.dataframe(
+            df_consolidado_resumido,
             use_container_width=True
         )
 
@@ -962,11 +1044,29 @@ if "df_consolidado_temporal" in st.session_state:
             else:
                 st.info("Selecciona al menos un indicador para graficar.")
 
-        excel_consolidado = crear_excel_consolidado(df_consolidado)
+        col_descarga_1, col_descarga_2 = st.columns(2)
 
-        st.download_button(
-            label="Descargar Excel consolidado",
-            data=excel_consolidado,
-            file_name="consolidado_temporal_indicadores.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        with col_descarga_1:
+            excel_resumido = crear_excel_consolidado_resumido(
+                df_consolidado_resumido
+            )
+
+            st.download_button(
+                label="Descargar Excel resumido",
+                data=excel_resumido,
+                file_name="consolidado_temporal_resumido.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+        with col_descarga_2:
+            excel_completo = crear_excel_consolidado(
+                df_consolidado,
+                df_consolidado_resumido
+            )
+
+            st.download_button(
+                label="Descargar Excel completo",
+                data=excel_completo,
+                file_name="consolidado_temporal_completo.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
