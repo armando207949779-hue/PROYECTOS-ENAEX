@@ -1213,7 +1213,52 @@ def truncar_15_decimales(valor):
     return math.trunc(float(valor) * factor) / factor
 
 
-def calcular_item_2_item_3(df_resumido, columna_indice_item_2):
+def calcular_item_2_desde_indice(df, columna_indice, nombre_columna_salida):
+    df[nombre_columna_salida] = pd.NA
+
+    if columna_indice not in df.columns:
+        return df
+
+    df[columna_indice] = pd.to_numeric(
+        df[columna_indice],
+        errors="coerce"
+    )
+
+    item_2_anterior = pd.NA
+
+    for i in range(len(df)):
+        if i < 3:
+            continue
+
+        indice_i_menos_2 = df.loc[i - 2, columna_indice]
+        indice_i_menos_3 = df.loc[i - 3, columna_indice]
+
+        if pd.isna(item_2_anterior):
+            item_2_anterior = indice_i_menos_3
+
+        if (
+            pd.isna(indice_i_menos_2)
+            or pd.isna(indice_i_menos_3)
+            or pd.isna(item_2_anterior)
+            or indice_i_menos_3 == 0
+        ):
+            df.loc[i, nombre_columna_salida] = pd.NA
+            continue
+
+        factor_indice = truncar_15_decimales(
+            indice_i_menos_2 / indice_i_menos_3
+        )
+
+        item_2_actual = factor_indice * item_2_anterior
+
+        df.loc[i, nombre_columna_salida] = item_2_actual
+
+        item_2_anterior = item_2_actual
+
+    return df
+
+
+def calcular_item_2_item_3(df_resumido):
     df = df_resumido.copy()
 
     df = df.sort_values(
@@ -1222,7 +1267,8 @@ def calcular_item_2_item_3(df_resumido, columna_indice_item_2):
     ).reset_index(drop=True)
 
     columnas_requeridas = [
-        columna_indice_item_2,
+        "ICL INE indice",
+        "IR INE indice",
         "UTM",
         "MOP petroleo diesel refineria concon"
     ]
@@ -1230,11 +1276,6 @@ def calcular_item_2_item_3(df_resumido, columna_indice_item_2):
     for columna in columnas_requeridas:
         if columna not in df.columns:
             df[columna] = pd.NA
-
-    df[columna_indice_item_2] = pd.to_numeric(
-        df[columna_indice_item_2],
-        errors="coerce"
-    )
 
     df["UTM"] = pd.to_numeric(
         df["UTM"],
@@ -1246,38 +1287,17 @@ def calcular_item_2_item_3(df_resumido, columna_indice_item_2):
         errors="coerce"
     )
 
-    df["Item 2 calculado"] = pd.NA
+    df = calcular_item_2_desde_indice(
+        df=df,
+        columna_indice="ICL INE indice",
+        nombre_columna_salida="Item 2 calculado ICL"
+    )
 
-    item_2_anterior = pd.NA
-
-    for i in range(len(df)):
-        if i < 3:
-            continue
-
-        indice_i_menos_2 = df.loc[i - 2, columna_indice_item_2]
-        indice_i_menos_3 = df.loc[i - 3, columna_indice_item_2]
-
-        if pd.isna(item_2_anterior):
-            item_2_anterior = indice_i_menos_3
-
-        if (
-            pd.isna(indice_i_menos_2)
-            or pd.isna(indice_i_menos_3)
-            or pd.isna(item_2_anterior)
-            or indice_i_menos_3 == 0
-        ):
-            df.loc[i, "Item 2 calculado"] = pd.NA
-            continue
-
-        factor_indice = truncar_15_decimales(
-            indice_i_menos_2 / indice_i_menos_3
-        )
-
-        item_2_actual = factor_indice * item_2_anterior
-
-        df.loc[i, "Item 2 calculado"] = item_2_actual
-
-        item_2_anterior = item_2_actual
+    df = calcular_item_2_desde_indice(
+        df=df,
+        columna_indice="IR INE indice",
+        nombre_columna_salida="Item 2 calculado IR"
+    )
 
     df["Item 3 calculado"] = (
         df["MOP petroleo diesel refineria concon"] * 1.05327007171179
@@ -1289,7 +1309,8 @@ def calcular_item_2_item_3(df_resumido, columna_indice_item_2):
 
 def estilo_columnas_calculadas(df):
     columnas_calculadas = [
-        "Item 2 calculado",
+        "Item 2 calculado ICL",
+        "Item 2 calculado IR",
         "Item 3 calculado"
     ]
 
@@ -1365,7 +1386,8 @@ def crear_excel_consolidado_calculado(df_calculado):
         fuente_bold = Font(bold=True)
 
         columnas_calculadas = [
-            "Item 2 calculado",
+            "Item 2 calculado ICL",
+            "Item 2 calculado IR",
             "Item 3 calculado"
         ]
 
@@ -1551,36 +1573,29 @@ if "df_consolidado_temporal" in st.session_state:
         df_consolidado_calculado = None
 
         if calcular_items:
-            st.info(
-                "Ítem 2 se calcula automáticamente usando el índice seleccionado. "
-                "Ítem 3 se calcula usando MOP petróleo diesel refinería Concón y UTM."
+            tiene_icl = (
+                "ICL INE indice" in df_consolidado_resumido.columns
+                and df_consolidado_resumido["ICL INE indice"].notna().any()
             )
 
-            opciones_indice_item_2 = []
+            tiene_ir = (
+                "IR INE indice" in df_consolidado_resumido.columns
+                and df_consolidado_resumido["IR INE indice"].notna().any()
+            )
 
-            if "IR INE indice" in df_consolidado_resumido.columns:
-                if df_consolidado_resumido["IR INE indice"].notna().any():
-                    opciones_indice_item_2.append("IR INE indice")
-
-            if "ICL INE indice" in df_consolidado_resumido.columns:
-                if df_consolidado_resumido["ICL INE indice"].notna().any():
-                    opciones_indice_item_2.append("ICL INE indice")
-
-            if not opciones_indice_item_2:
+            if not tiene_icl and not tiene_ir:
                 st.warning(
-                    "No hay columnas IR INE indice ni ICL INE indice con datos "
-                    "para calcular Ítem 2."
+                    "No hay datos en ICL INE indice ni IR INE indice para calcular Ítem 2."
                 )
             else:
-                columna_indice_item_2 = st.selectbox(
-                    "Índice para calcular Ítem 2",
-                    options=opciones_indice_item_2,
-                    index=0
+                st.info(
+                    "Ítem 2 se calcula automáticamente en dos versiones: "
+                    "una usando ICL INE indice y otra usando IR INE indice. "
+                    "Ítem 3 se calcula usando MOP petróleo diesel refinería Concón y UTM."
                 )
 
                 df_consolidado_calculado = calcular_item_2_item_3(
-                    df_consolidado_resumido,
-                    columna_indice_item_2=columna_indice_item_2
+                    df_consolidado_resumido
                 )
 
                 st.subheader("Consolidado resumido con columnas calculadas")
@@ -1592,7 +1607,7 @@ if "df_consolidado_temporal" in st.session_state:
 
                 st.caption(
                     "Las columnas calculadas se muestran destacadas en amarillo: "
-                    "Item 2 calculado e Item 3 calculado."
+                    "Item 2 calculado ICL, Item 2 calculado IR e Item 3 calculado."
                 )
 
         columnas_graficables = [
@@ -1603,7 +1618,11 @@ if "df_consolidado_temporal" in st.session_state:
 
         if calcular_items and df_consolidado_calculado is not None:
             columnas_calculadas_graficables = [
-                col for col in ["Item 2 calculado", "Item 3 calculado"]
+                col for col in [
+                    "Item 2 calculado ICL",
+                    "Item 2 calculado IR",
+                    "Item 3 calculado"
+                ]
                 if col in df_consolidado_calculado.columns
             ]
 
