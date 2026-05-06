@@ -50,14 +50,25 @@ def mostrar_logo_centrado():
         st.warning(f"Logo no encontrado: {LOGO_PATH}")
 
 
-def limpiar_valor(v):
+def limpiar_valor(v, separador_decimal="."):
     if pd.isna(v):
         return np.nan
 
     v = str(v).strip()
     v = v.replace("$", "")
-    v = v.replace(",", "")
     v = v.replace(" ", "")
+
+    if separador_decimal == ",":
+        # Formato con coma decimal:
+        # 1.234,56 -> 1234.56
+        # 1218,50 -> 1218.50
+        v = v.replace(".", "")
+        v = v.replace(",", ".")
+    else:
+        # Formato con punto decimal:
+        # 1,234.56 -> 1234.56
+        # 1218.50 -> 1218.50
+        v = v.replace(",", "")
 
     return pd.to_numeric(v, errors="coerce")
 
@@ -78,7 +89,7 @@ def fmt_inside(v):
     return f"{v:,.0f}$"
 
 
-def parsear_tabla_desde_texto(texto):
+def parsear_tabla_desde_texto(texto, separador_decimal="."):
     texto = texto.strip()
 
     if not texto:
@@ -104,7 +115,12 @@ def parsear_tabla_desde_texto(texto):
         .str.strip()
     )
 
-    df["Valor_USD"] = df["Valor_USD"].apply(limpiar_valor)
+    df["Valor_USD"] = df["Valor_USD"].apply(
+        lambda x: limpiar_valor(
+            x,
+            separador_decimal=separador_decimal
+        )
+    )
 
     if df["Valor_USD"].isna().any():
         filas_malas = df[df["Valor_USD"].isna()]
@@ -357,6 +373,21 @@ with st.expander("Ver formato esperado"):
         language="text"
     )
 
+separador_decimal = st.radio(
+    "¿Qué separador decimal usan los valores pegados?",
+    options=[
+        "Punto decimal: 1218.50",
+        "Coma decimal: 1218,50"
+    ],
+    index=0,
+    horizontal=True
+)
+
+if separador_decimal.startswith("Coma"):
+    separador_decimal_valor = ","
+else:
+    separador_decimal_valor = "."
+
 texto_usuario = st.text_area(
     label="Pega aquí la tabla copiada desde Excel",
     value=TEXTO_EJEMPLO,
@@ -370,9 +401,13 @@ texto_usuario = st.text_area(
 
 if st.button("Generar Savings Bridge"):
     try:
-        df_bridge = parsear_tabla_desde_texto(texto_usuario)
+        df_bridge = parsear_tabla_desde_texto(
+            texto_usuario,
+            separador_decimal=separador_decimal_valor
+        )
 
         st.session_state["df_bridge"] = df_bridge
+        st.session_state["separador_decimal"] = separador_decimal_valor
 
         st.success("Tabla leída correctamente.")
 
