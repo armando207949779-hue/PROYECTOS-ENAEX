@@ -9,7 +9,15 @@ import streamlit as st
 # =========================
 
 BASE_DIR = Path(__file__).resolve().parent
-LOGO_PATH = BASE_DIR / "assets" / "logo.svg"
+PROJECT_DIR = BASE_DIR.parent
+
+LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
+
+APP_DOLAR = PROJECT_DIR / "app_sii_dolar" / "app_sii_dolar.py"
+APP_UTM = PROJECT_DIR / "app_sii_utm" / "app_sii_utm.py"
+APP_IPC = PROJECT_DIR / "app_ine_ipc" / "app_ine_ipc.py"
+APP_ICL = PROJECT_DIR / "app_ine_icl" / "app_ine_icl.py"
+APP_MOP = PROJECT_DIR / "app_indice_polinomico_mop" / "app_indice_polinomico_mop.py"
 
 
 # =========================
@@ -140,6 +148,33 @@ def pagina_inicio():
 
 
 # =========================
+# Validación rápida de archivos
+# =========================
+
+apps_requeridas = {
+    "Dólar SII": APP_DOLAR,
+    "UTM SII": APP_UTM,
+    "IPC INE": APP_IPC,
+    "ICL INE": APP_ICL,
+    "MOP Reajuste": APP_MOP,
+}
+
+apps_faltantes = {
+    nombre: ruta
+    for nombre, ruta in apps_requeridas.items()
+    if not ruta.exists()
+}
+
+if apps_faltantes:
+    st.error("No se encontraron una o más apps. Revisa los nombres de carpetas y archivos.")
+
+    for nombre, ruta in apps_faltantes.items():
+        st.write(f"**{nombre}:** {ruta}")
+
+    st.stop()
+
+
+# =========================
 # Navegación entre apps
 # =========================
 
@@ -154,31 +189,31 @@ pagina = st.navigation(
         ],
         "Indicadores SII": [
             st.Page(
-                "app_sii_dolar/app_sii_dolar.py",
+                APP_DOLAR,
                 title="Dólar SII",
                 icon="💵"
             ),
             st.Page(
-                "app_sii_utm/app_sii_utm.py",
+                APP_UTM,
                 title="UTM SII",
                 icon="📊"
             ),
         ],
         "Indicadores INE": [
             st.Page(
-                "app_ine_ipc/app_ine_ipc.py",
+                APP_IPC,
                 title="IPC INE",
                 icon="📈"
             ),
             st.Page(
-                "app_ine_icl/app_ine_icl.py",
+                APP_ICL,
                 title="ICL INE",
                 icon="📉"
             ),
         ],
         "MOP": [
             st.Page(
-                "app_indice_polinomico_mop/app_indice_polinomico_mop.py",
+                APP_MOP,
                 title="Reajuste Polinómico MOP",
                 icon="🏗️"
             ),
