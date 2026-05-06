@@ -1,7 +1,9 @@
 import re
+import base64
 import unicodedata
 from io import BytesIO
 from urllib.parse import urljoin, unquote
+from pathlib import Path
 
 import pandas as pd
 import requests
@@ -9,10 +11,22 @@ import streamlit as st
 
 
 # =========================
+# Rutas del proyecto
+# =========================
+
+BASE_DIR = Path(__file__).resolve().parent
+PROJECT_DIR = BASE_DIR.parent
+LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
+
+
+# =========================
 # Configuración
 # =========================
 
-URL_PAGINA_MOP = "https://planeamiento.mop.gob.cl/indices-y-precios-para-calculo-del-reajuste-polinomico/"
+URL_PAGINA_MOP = (
+    "https://planeamiento.mop.gob.cl/"
+    "indices-y-precios-para-calculo-del-reajuste-polinomico/"
+)
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0"
@@ -45,6 +59,35 @@ CONCEPTOS_OBJETIVO = {
 # =========================
 # Funciones auxiliares
 # =========================
+
+def mostrar_logo_centrado():
+    if LOGO_PATH.exists():
+        logo_svg = LOGO_PATH.read_text(encoding="utf-8")
+        logo_base64 = base64.b64encode(
+            logo_svg.encode("utf-8")
+        ).decode("utf-8")
+
+        st.markdown(
+            f"""
+            <div style="
+                width: 100%;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                margin-top: 10px;
+                margin-bottom: 20px;
+            ">
+                <img 
+                    src="data:image/svg+xml;base64,{logo_base64}" 
+                    style="width: 260px; display: block;"
+                >
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+    else:
+        st.warning(f"Logo no encontrado: {LOGO_PATH}")
+
 
 def normalizar_texto(texto):
     if pd.isna(texto):
@@ -94,6 +137,10 @@ def obtener_valor_concepto(df, concepto):
 
     return pd.NA
 
+
+# =========================
+# Obtener archivos Excel MOP
+# =========================
 
 @st.cache_data
 def obtener_archivos_excel_mop():
@@ -150,6 +197,10 @@ def obtener_archivos_excel_mop():
     return df_excel
 
 
+# =========================
+# Leer archivo Excel MOP
+# =========================
+
 @st.cache_data
 def leer_archivo_excel_mop(url_archivo, archivo):
     response = requests.get(
@@ -191,25 +242,28 @@ def leer_archivo_excel_mop(url_archivo, archivo):
     return registro
 
 
+# =========================
+# Generar resumen MOP
+# =========================
+
 def generar_resumen_mop(df_archivos_filtrado):
     registros = []
     errores = []
 
     total_archivos = len(df_archivos_filtrado)
 
+    if total_archivos == 0:
+        return pd.DataFrame(), pd.DataFrame()
+
     barra_progreso = st.progress(0)
     texto_estado = st.empty()
-
-    if total_archivos == 0:
-        texto_estado.write("No hay archivos para procesar.")
-        return pd.DataFrame(), pd.DataFrame()
 
     for posicion, (_, row) in enumerate(df_archivos_filtrado.iterrows(), start=1):
         archivo = row["archivo"]
         url_archivo = row["url_decodificada"]
 
         texto_estado.write(
-            f"Procesando archivo {posicion} de {total_archivos}: {archivo}"
+            f"Procesando archivo {posicion} de {total_archivos}"
         )
 
         try:
@@ -230,7 +284,8 @@ def generar_resumen_mop(df_archivos_filtrado):
         avance = posicion / total_archivos
         barra_progreso.progress(avance)
 
-    texto_estado.write("Procesamiento finalizado.")
+    texto_estado.empty()
+    barra_progreso.empty()
 
     df_resultado = pd.DataFrame(registros)
 
@@ -240,10 +295,21 @@ def generar_resumen_mop(df_archivos_filtrado):
             ascending=[True, True]
         ).reset_index(drop=True)
 
+        df_resultado["fecha"] = pd.to_datetime(
+            df_resultado["año"].astype(int).astype(str)
+            + "-"
+            + df_resultado["numero_mes"].astype(int).astype(str)
+            + "-01"
+        )
+
     df_errores = pd.DataFrame(errores)
 
     return df_resultado, df_errores
 
+
+# =========================
+# Crear Excel de salida
+# =========================
 
 def crear_excel_salida(df_resultado, df_errores):
     buffer = BytesIO()
@@ -271,163 +337,198 @@ def crear_excel_salida(df_resultado, df_errores):
 
 st.set_page_config(
     page_title="MOP - Reajuste Polinómico",
+    page_icon="🏢",
     layout="wide"
 )
 
-st.title("MOP - Índices y precios para reajuste polinómico")
+mostrar_logo_centrado()
 
-st.write(
-    "Esta aplicación obtiene los archivos Excel publicados por el MOP y extrae "
-    "los valores principales para cada mes y año disponible."
+st.markdown(
+    "<h1 style='text-align: center;'>MOP - Índices y precios para reajuste polinómico</h1>",
+    unsafe_allow_html=True
 )
 
+st.markdown(
+    """
+    <p style='text-align: center; font-size: 18px;'>
+        Consulta automática de archivos publicados por el MOP y generación de resumen mensual.
+    </p>
+    """,
+    unsafe_allow_html=True
+)
+
+st.markdown("---")
+
 
 # =========================
-# Paso 1: Buscar archivos
+# Cargar archivos disponibles
 # =========================
 
-st.subheader("Paso 1: Buscar archivos Excel disponibles")
+try:
+    df_archivos = obtener_archivos_excel_mop()
 
-if st.button("Buscar archivos MOP"):
-    try:
-        df_archivos = obtener_archivos_excel_mop()
-
-        st.session_state["df_archivos_mop"] = df_archivos
-
-        if df_archivos.empty:
-            st.warning("No se encontraron archivos Excel.")
-        else:
-            st.success(f"Se encontraron {len(df_archivos)} archivos Excel.")
-            st.dataframe(
-                df_archivos[["año", "mes", "numero_mes", "archivo", "url_decodificada"]],
-                use_container_width=True
-            )
-
-    except Exception as e:
-        st.error(f"Error al buscar archivos: {e}")
-
-
-if "df_archivos_mop" in st.session_state:
-    df_archivos = st.session_state["df_archivos_mop"]
-
-    st.success("Archivos disponibles cargados en memoria.")
-
-    with st.expander("Ver archivos Excel encontrados"):
-        st.dataframe(
-            df_archivos[["año", "mes", "numero_mes", "archivo", "url_decodificada"]],
-            use_container_width=True
+    if df_archivos.empty:
+        st.warning("No se encontraron archivos Excel disponibles.")
+    else:
+        anios_disponibles = sorted(
+            df_archivos["año"].dropna().unique().tolist(),
+            reverse=True
         )
 
-    # =========================
-    # Paso 2: Seleccionar años
-    # =========================
+        ultimos_3_anios = anios_disponibles[:3]
 
-    st.subheader("Paso 2: Selecciona los años a consultar")
+        st.subheader("Selecciona los años")
 
-    anios_disponibles = sorted(
-        df_archivos["año"].dropna().unique().tolist(),
-        reverse=True
-    )
+        columnas_checkbox = st.columns(6)
 
-    ultimos_3_anios = anios_disponibles[:3]
+        anios_seleccionados = []
 
-    columnas_checkbox = st.columns(6)
+        for posicion, anio in enumerate(anios_disponibles):
+            columna_actual = columnas_checkbox[posicion % 6]
 
-    anios_seleccionados = []
-
-    for posicion, anio in enumerate(anios_disponibles):
-        columna_actual = columnas_checkbox[posicion % 6]
-
-        with columna_actual:
-            seleccionado = st.checkbox(
-                str(anio),
-                value=(anio in ultimos_3_anios),
-                key=f"checkbox_anio_mop_{anio}"
-            )
-
-            if seleccionado:
-                anios_seleccionados.append(anio)
-
-    st.write("Años seleccionados:", anios_seleccionados)
-
-    df_archivos_filtrado = df_archivos[
-        df_archivos["año"].isin(anios_seleccionados)
-    ].copy()
-
-    df_archivos_filtrado = df_archivos_filtrado.sort_values(
-        ["año", "numero_mes"],
-        ascending=[True, True]
-    )
-
-    st.write("Archivos que serán procesados:")
-
-    st.dataframe(
-        df_archivos_filtrado[["año", "mes", "numero_mes", "archivo"]],
-        use_container_width=True
-    )
-
-    # =========================
-    # Paso 3: Generar resumen
-    # =========================
-
-    st.subheader("Paso 3: Generar resumen")
-
-    if st.button("Generar resumen MOP"):
-        if not anios_seleccionados:
-            st.warning("Debes seleccionar al menos un año.")
-        else:
-            df_resultado, df_errores = generar_resumen_mop(
-                df_archivos_filtrado
-            )
-
-            st.session_state["df_resultado_mop"] = df_resultado
-            st.session_state["df_errores_mop"] = df_errores
-
-            if not df_resultado.empty:
-                st.success("Resumen generado correctamente.")
-                st.dataframe(
-                    df_resultado,
-                    use_container_width=True
+            with columna_actual:
+                seleccionado = st.checkbox(
+                    str(anio),
+                    value=(anio in ultimos_3_anios),
+                    key=f"checkbox_anio_mop_{anio}"
                 )
+
+                if seleccionado:
+                    anios_seleccionados.append(anio)
+
+        st.write("Años seleccionados:", anios_seleccionados)
+
+        if st.button("Generar resumen MOP"):
+            if not anios_seleccionados:
+                st.warning("Debes seleccionar al menos un año.")
             else:
-                st.warning("No se generaron registros.")
+                df_archivos_filtrado = df_archivos[
+                    df_archivos["año"].isin(anios_seleccionados)
+                ].copy()
 
-            if not df_errores.empty:
-                st.warning("Algunos archivos presentaron errores.")
-                st.dataframe(
-                    df_errores,
-                    use_container_width=True
+                df_archivos_filtrado = df_archivos_filtrado.sort_values(
+                    ["año", "numero_mes"],
+                    ascending=[True, True]
                 )
+
+                with st.spinner("Generando resumen MOP..."):
+                    df_resultado, df_errores = generar_resumen_mop(
+                        df_archivos_filtrado
+                    )
+
+                st.session_state["df_resultado_mop"] = df_resultado
+                st.session_state["df_errores_mop"] = df_errores
+                st.session_state["df_archivos_mop"] = df_archivos_filtrado
+
+                if not df_resultado.empty:
+                    st.success("Resumen generado correctamente.")
+                else:
+                    st.warning("No se generaron registros.")
+
+except Exception as e:
+    st.error(f"Error al cargar información del MOP: {e}")
 
 
 # =========================
-# Paso 4: Mostrar y descargar
+# Mostrar resultados
 # =========================
 
 if "df_resultado_mop" in st.session_state:
-    st.subheader("Paso 4: Descargar Excel")
-
     df_resultado = st.session_state["df_resultado_mop"]
     df_errores = st.session_state["df_errores_mop"]
 
-    df_resultado = df_resultado.sort_values(
-        ["año", "numero_mes"],
-        ascending=[True, True]
-    ).reset_index(drop=True)
+    if not df_resultado.empty:
+        st.markdown("---")
+        st.subheader("Tabla resumen MOP")
 
-    st.dataframe(
-        df_resultado,
-        use_container_width=True
-    )
+        columnas_mostrar = [
+            "año",
+            "mes",
+            "numero_mes",
+            "indice_precios_consumidor",
+            "indice_remuneraciones",
+            "petroleo_diesel",
+            "dolar_observado",
+            "petroleo_diesel_refineria_concon"
+        ]
 
-    excel_salida = crear_excel_salida(
-        df_resultado,
-        df_errores
-    )
+        columnas_mostrar = [
+            col for col in columnas_mostrar
+            if col in df_resultado.columns
+        ]
 
-    st.download_button(
-        label="Descargar Excel MOP",
-        data=excel_salida,
-        file_name="mop_indices_reajuste_polinomico.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+        st.dataframe(
+            df_resultado[columnas_mostrar],
+            use_container_width=True
+        )
+
+        st.subheader("Gráfico temporal")
+
+        opciones_grafico = {
+            "Índice de precios al consumidor": "indice_precios_consumidor",
+            "Índice de remuneraciones": "indice_remuneraciones",
+            "Petróleo Diesel": "petroleo_diesel",
+            "Dólar observado": "dolar_observado",
+            "Petróleo Diesel refinería CONCÓN": "petroleo_diesel_refineria_concon"
+        }
+
+        opciones_disponibles = {
+            nombre: columna
+            for nombre, columna in opciones_grafico.items()
+            if columna in df_resultado.columns
+        }
+
+        indicador_seleccionado = st.selectbox(
+            "Selecciona indicador para graficar",
+            options=list(opciones_disponibles.keys())
+        )
+
+        columna_grafico = opciones_disponibles[indicador_seleccionado]
+
+        df_grafico = df_resultado.copy()
+
+        df_grafico[columna_grafico] = pd.to_numeric(
+            df_grafico[columna_grafico],
+            errors="coerce"
+        )
+
+        df_grafico = df_grafico.dropna(
+            subset=["fecha", columna_grafico]
+        )
+
+        if not df_grafico.empty:
+            datos_linea = df_grafico.set_index("fecha")[columna_grafico]
+
+            st.line_chart(datos_linea)
+        else:
+            st.info("No hay datos suficientes para generar el gráfico.")
+
+        excel_salida = crear_excel_salida(
+            df_resultado,
+            df_errores
+        )
+
+        st.download_button(
+            label="Descargar Excel MOP",
+            data=excel_salida,
+            file_name="mop_indices_reajuste_polinomico.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
+    if not df_errores.empty:
+        with st.expander("Ver errores de procesamiento"):
+            st.dataframe(
+                df_errores,
+                use_container_width=True
+            )
+
+    if "df_archivos_mop" in st.session_state:
+        with st.expander("Ver archivos procesados"):
+            df_archivos_procesados = st.session_state["df_archivos_mop"]
+
+            st.dataframe(
+                df_archivos_procesados[
+                    ["año", "mes", "numero_mes", "archivo", "url_decodificada"]
+                ],
+                use_container_width=True
+            )
