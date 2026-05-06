@@ -1,7 +1,17 @@
 import pandas as pd
 import requests
 from io import StringIO, BytesIO
+from pathlib import Path
 import streamlit as st
+
+
+# =========================
+# Rutas del proyecto
+# =========================
+
+BASE_DIR = Path(__file__).resolve().parent
+PROJECT_DIR = BASE_DIR.parent
+BANNER_PATH = PROJECT_DIR / "assets" / "banner_enaex.png"
 
 
 # =========================
@@ -178,8 +188,15 @@ def crear_excel_resumen(df):
 
 st.set_page_config(
     page_title="Resumen dólar SII",
+    page_icon="🏢",
     layout="wide"
 )
+
+# Mostrar banner corporativo
+if BANNER_PATH.exists():
+    st.image(str(BANNER_PATH), use_container_width=True)
+else:
+    st.warning(f"No se encontró el banner en: {BANNER_PATH}")
 
 st.title("Resumen dólar SII por años seleccionados")
 
