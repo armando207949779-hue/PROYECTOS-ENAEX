@@ -1,7 +1,6 @@
 import io
 import pandas as pd
 import streamlit as st
-import plotly.express as px
 from pandas.api.types import is_datetime64_any_dtype
 
 
@@ -17,16 +16,7 @@ st.set_page_config(
 # =========================================================
 
 def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Aplica solo transformaciones de fechas y números.
-    No modifica nombres de columnas ni textos.
-    """
-
     df = df.copy()
-
-    # =========================
-    # 1. Transformar fechas
-    # =========================
 
     cols_fecha = [
         "Fecha de solicitud",
@@ -40,17 +30,12 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
         if col in df.columns:
             df[col] = pd.to_datetime(df[col], errors="coerce")
 
-    # Fecha de entrega viene como entero tipo 20240101
     if "Fecha de entrega" in df.columns:
         df["Fecha de entrega"] = pd.to_datetime(
             df["Fecha de entrega"].astype("string"),
             format="%Y%m%d",
             errors="coerce"
         )
-
-    # =========================
-    # 2. Transformar números
-    # =========================
 
     cols_numericas = [
         "Cantidad solicitada",
@@ -61,7 +46,6 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    # Pedido como entero nullable para evitar notación científica
     if "Pedido" in df.columns:
         df["Pedido"] = pd.to_numeric(
             df["Pedido"],
@@ -89,11 +73,6 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
 # =========================================================
 
 def leer_archivo(uploaded_file, separador_csv: str) -> pd.DataFrame:
-    """
-    Lee archivos Excel o CSV.
-    Para CSV permite elegir separador y omitir líneas problemáticas.
-    """
-
     nombre = uploaded_file.name.lower()
 
     if nombre.endswith(".xlsx"):
@@ -160,6 +139,16 @@ def convertir_a_csv(df: pd.DataFrame) -> bytes:
 def tabla_diagnostico_columnas(df: pd.DataFrame) -> pd.DataFrame:
     total_filas = len(df)
 
+    if total_filas == 0:
+        return pd.DataFrame({
+            "Columna": df.columns,
+            "Tipo de dato": [str(dtype) for dtype in df.dtypes],
+            "No nulos": 0,
+            "Nulos": 0,
+            "% Nulos": 0,
+            "Valores únicos": 0
+        })
+
     diagnostico = pd.DataFrame({
         "Columna": df.columns,
         "Tipo de dato": [str(dtype) for dtype in df.dtypes],
@@ -200,12 +189,6 @@ def diagnostico_general(df: pd.DataFrame) -> dict:
 
 
 def columnas_fecha(df: pd.DataFrame) -> list:
-    """
-    Detecta columnas datetime sin depender de datetime64[ns] o datetime64[us].
-    Esto evita el error:
-    'datetime64[us]' is too specific of a frequency.
-    """
-
     return [
         col for col in df.columns
         if is_datetime64_any_dtype(df[col])
@@ -244,156 +227,59 @@ def resumen_numerico(df: pd.DataFrame) -> pd.DataFrame:
     return resumen
 
 
-# =========================================================
-# Gráficos
-# =========================================================
+def chart_nulos_por_columna(diag_cols: pd.DataFrame):
+    data = diag_cols.set_index("Columna")["% Nulos"].sort_values(ascending=False)
+    st.bar_chart(data)
 
-def grafico_nulos_por_columna(diag_cols: pd.DataFrame):
-    data = diag_cols.copy()
-    data = data.sort_values("% Nulos", ascending=True)
 
-    fig = px.bar(
-        data,
-        x="% Nulos",
-        y="Columna",
-        orientation="h",
-        title="Porcentaje de nulos por columna",
-        text="% Nulos"
+def chart_tipos_dato(df: pd.DataFrame):
+    tipos = (
+        pd.Series(df.dtypes.astype(str), name="Tipo de dato")
+        .value_counts()
+        .sort_values(ascending=False)
     )
 
-    fig.update_traces(texttemplate="%{text:.2f}%", textposition="outside")
-    fig.update_layout(height=max(500, len(data) * 28))
-
-    return fig
+    st.bar_chart(tipos)
 
 
-def grafico_tipos_dato(df: pd.DataFrame):
-    tipos_df = (
-        pd.DataFrame(df.dtypes.astype(str), columns=["Tipo de dato"])
-        .reset_index()
-        .rename(columns={"index": "Columna"})
-        .groupby("Tipo de dato")
-        .size()
-        .reset_index(name="Cantidad de columnas")
+def chart_valores_unicos(diag_cols: pd.DataFrame, top_n: int = 10):
+    data = (
+        diag_cols
+        .sort_values("Valores únicos", ascending=False)
+        .head(top_n)
+        .set_index("Columna")["Valores únicos"]
     )
 
-    fig = px.pie(
-        tipos_df,
-        names="Tipo de dato",
-        values="Cantidad de columnas",
-        title="Distribución de tipos de datos"
-    )
-
-    return fig
+    st.bar_chart(data)
 
 
-def grafico_nulos_vs_no_nulos(df: pd.DataFrame):
-    total_celdas = df.shape[0] * df.shape[1]
-    total_nulos = int(df.isna().sum().sum())
-    total_no_nulos = int(total_celdas - total_nulos)
+def chart_histograma_numerico(df: pd.DataFrame, columna: str):
+    serie = df[columna].dropna()
 
-    data = pd.DataFrame({
-        "Estado": ["No nulos", "Nulos"],
-        "Cantidad": [total_no_nulos, total_nulos]
-    })
+    if serie.empty:
+        st.info("La columna seleccionada no tiene datos numéricos válidos.")
+        return
 
-    fig = px.pie(
-        data,
-        names="Estado",
-        values="Cantidad",
-        title="Proporción total de celdas nulas vs no nulas"
-    )
+    hist = pd.cut(serie, bins=20).value_counts().sort_index()
+    hist.index = hist.index.astype(str)
 
-    return fig
+    st.bar_chart(hist)
 
 
-def grafico_columnas_mas_nulos(diag_cols: pd.DataFrame, top_n: int = 10):
-    data = diag_cols.sort_values("% Nulos", ascending=False).head(top_n)
-    data = data.sort_values("% Nulos", ascending=True)
-
-    fig = px.bar(
-        data,
-        x="% Nulos",
-        y="Columna",
-        orientation="h",
-        title=f"Top {top_n} columnas con mayor porcentaje de nulos",
-        text="% Nulos"
-    )
-
-    fig.update_traces(texttemplate="%{text:.2f}%", textposition="outside")
-    fig.update_layout(height=450)
-
-    return fig
-
-
-def grafico_valores_unicos(diag_cols: pd.DataFrame, top_n: int = 10):
-    data = diag_cols.sort_values("Valores únicos", ascending=False).head(top_n)
-    data = data.sort_values("Valores únicos", ascending=True)
-
-    fig = px.bar(
-        data,
-        x="Valores únicos",
-        y="Columna",
-        orientation="h",
-        title=f"Top {top_n} columnas con más valores únicos",
-        text="Valores únicos"
-    )
-
-    fig.update_traces(textposition="outside")
-    fig.update_layout(height=450)
-
-    return fig
-
-
-def grafico_fechas_rango(diag_fechas: pd.DataFrame):
-    data = diag_fechas.copy()
-
-    fig = px.timeline(
-        data,
-        x_start="Fecha mínima",
-        x_end="Fecha máxima",
-        y="Columna",
-        title="Rango temporal por columna de fecha"
-    )
-
-    fig.update_yaxes(autorange="reversed")
-    fig.update_layout(height=400)
-
-    return fig
-
-
-def grafico_histograma_numerico(df: pd.DataFrame, columna: str):
-    fig = px.histogram(
-        df,
-        x=columna,
-        title=f"Distribución de {columna}",
-        nbins=40
-    )
-
-    return fig
-
-
-def grafico_serie_fecha(df: pd.DataFrame, columna_fecha: str):
+def chart_serie_fecha(df: pd.DataFrame, columna_fecha: str):
     data = (
         df[columna_fecha]
         .dropna()
         .dt.date
         .value_counts()
-        .reset_index()
+        .sort_index()
     )
 
-    data.columns = ["Fecha", "Cantidad"]
-    data = data.sort_values("Fecha")
+    if data.empty:
+        st.info("La columna seleccionada no tiene fechas válidas.")
+        return
 
-    fig = px.line(
-        data,
-        x="Fecha",
-        y="Cantidad",
-        title=f"Cantidad de registros por fecha: {columna_fecha}",
-        markers=True
-    )
-
-    return fig
+    st.line_chart(data)
 
 
 # =========================================================
@@ -441,10 +327,6 @@ if uploaded_file is not None:
             "Diagnóstico data limpia"
         ])
 
-        # =====================================================
-        # PESTAÑA 1: Limpieza y descarga
-        # =====================================================
-
         with tab_limpieza:
             st.success("Archivo cargado correctamente.")
 
@@ -459,14 +341,10 @@ if uploaded_file is not None:
             st.subheader("Vista previa limpia")
             st.dataframe(df_limpio.head(), use_container_width=True)
 
-            st.subheader("Resumen de columnas")
+            st.subheader("Porcentaje de nulos por columna")
 
             diag_cols = tabla_diagnostico_columnas(df_limpio)
-
-            st.plotly_chart(
-                grafico_nulos_por_columna(diag_cols),
-                use_container_width=True
-            )
+            chart_nulos_por_columna(diag_cols)
 
             with st.expander("Ver detalle de columnas"):
                 st.dataframe(diag_cols, use_container_width=True)
@@ -494,10 +372,6 @@ if uploaded_file is not None:
                     mime="text/csv"
                 )
 
-        # =====================================================
-        # PESTAÑA 2: Diagnóstico
-        # =====================================================
-
         with tab_diagnostico:
             st.subheader("Diagnóstico general")
 
@@ -519,28 +393,11 @@ if uploaded_file is not None:
 
             st.divider()
 
-            st.subheader("Calidad general de datos")
+            st.subheader("Distribución de tipos de datos")
+            chart_tipos_dato(df_limpio)
 
-            col_a, col_b = st.columns(2)
-
-            with col_a:
-                st.plotly_chart(
-                    grafico_nulos_vs_no_nulos(df_limpio),
-                    use_container_width=True
-                )
-
-            with col_b:
-                st.plotly_chart(
-                    grafico_tipos_dato(df_limpio),
-                    use_container_width=True
-                )
-
-            st.subheader("Nulos por columna")
-
-            st.plotly_chart(
-                grafico_columnas_mas_nulos(diag_cols, top_n=10),
-                use_container_width=True
-            )
+            st.subheader("Top columnas con mayor porcentaje de nulos")
+            chart_nulos_por_columna(diag_cols.head(10))
 
             columnas_50 = diag_cols[diag_cols["% Nulos"] >= 50]
 
@@ -548,17 +405,10 @@ if uploaded_file is not None:
                 st.success("No hay columnas con 50% o más de nulos.")
             else:
                 st.warning("Existen columnas con 50% o más de datos nulos.")
-                st.plotly_chart(
-                    grafico_nulos_por_columna(columnas_50),
-                    use_container_width=True
-                )
+                chart_nulos_por_columna(columnas_50)
 
-            st.subheader("Valores únicos")
-
-            st.plotly_chart(
-                grafico_valores_unicos(diag_cols, top_n=10),
-                use_container_width=True
-            )
+            st.subheader("Top columnas con más valores únicos")
+            chart_valores_unicos(diag_cols, top_n=10)
 
             st.divider()
 
@@ -574,15 +424,10 @@ if uploaded_file is not None:
                     options=cols_num
                 )
 
-                st.plotly_chart(
-                    grafico_histograma_numerico(df_limpio, col_num),
-                    use_container_width=True
-                )
-
-                resumen_num = resumen_numerico(df_limpio)
+                chart_histograma_numerico(df_limpio, col_num)
 
                 with st.expander("Ver resumen estadístico numérico"):
-                    st.dataframe(resumen_num, use_container_width=True)
+                    st.dataframe(resumen_numerico(df_limpio), use_container_width=True)
 
             st.divider()
 
@@ -593,25 +438,15 @@ if uploaded_file is not None:
             if len(cols_fecha_detectadas) == 0:
                 st.info("No se encontraron columnas de fecha.")
             else:
-                diag_fecha = diagnostico_fechas(df_limpio)
-
-                st.plotly_chart(
-                    grafico_fechas_rango(diag_fecha),
-                    use_container_width=True
-                )
-
                 col_fecha = st.selectbox(
                     "Selecciona una columna de fecha",
                     options=cols_fecha_detectadas
                 )
 
-                st.plotly_chart(
-                    grafico_serie_fecha(df_limpio, col_fecha),
-                    use_container_width=True
-                )
+                chart_serie_fecha(df_limpio, col_fecha)
 
                 with st.expander("Ver detalle de fechas"):
-                    st.dataframe(diag_fecha, use_container_width=True)
+                    st.dataframe(diagnostico_fechas(df_limpio), use_container_width=True)
 
     except Exception as e:
         st.error(f"Ocurrió un error al procesar el archivo: {e}")
