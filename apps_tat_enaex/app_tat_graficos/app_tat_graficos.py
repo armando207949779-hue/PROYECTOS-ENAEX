@@ -163,6 +163,13 @@ def preparar_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         .astype("string")
     )
 
+    # Fecha real mensual para ordenar bien el bar chart interactivo
+    df["periodo_fecha"] = (
+        df["fecha_recepcion_final"]
+        .dt.to_period("M")
+        .dt.to_timestamp()
+    )
+
     meses = {
         1: "enero",
         2: "febrero",
@@ -233,6 +240,7 @@ def crear_resumen_mensual(df: pd.DataFrame) -> pd.DataFrame:
         df
         .groupby(
             [
+                "periodo_fecha",
                 "periodo_mes",
                 "periodo_label",
                 "anio",
@@ -248,6 +256,7 @@ def crear_resumen_mensual(df: pd.DataFrame) -> pd.DataFrame:
 
     tabla = resumen.pivot_table(
         index=[
+            "periodo_fecha",
             "periodo_mes",
             "periodo_label",
             "anio",
@@ -289,7 +298,7 @@ def crear_resumen_mensual(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     tabla = tabla.sort_values(
-        ["anio", "mes_num"]
+        ["periodo_fecha"]
     ).reset_index(drop=True)
 
     return tabla
@@ -321,6 +330,10 @@ def completar_meses_anio(tabla: pd.DataFrame, anio: int) -> pd.DataFrame:
         f"{anio}-{mes:02d}" for mes in range(1, 13)
     ]
 
+    base["periodo_fecha"] = pd.to_datetime(
+        [f"{anio}-{mes:02d}-01" for mes in range(1, 13)]
+    )
+
     base["periodo_label"] = (
         base["mes_nombre"].astype(str)
         + " "
@@ -338,6 +351,7 @@ def completar_meses_anio(tabla: pd.DataFrame, anio: int) -> pd.DataFrame:
             "mes_num",
             "mes_nombre",
             "periodo_mes",
+            "periodo_fecha",
             "periodo_label"
         ],
         how="left"
@@ -357,11 +371,13 @@ def completar_meses_anio(tabla: pd.DataFrame, anio: int) -> pd.DataFrame:
         if col in salida.columns:
             salida[col] = salida[col].fillna(0)
 
+    salida = salida.sort_values("periodo_fecha").reset_index(drop=True)
+
     return salida
 
 
 # =========================================================
-# Performance 100% estilo original
+# Performance 100% estilo original con matplotlib
 # =========================================================
 
 def grafico_performance_original(
@@ -374,7 +390,7 @@ def grafico_performance_original(
         return
 
     tabla = tabla.copy()
-    tabla = tabla.sort_values(["anio", "mes_num"]).reset_index(drop=True)
+    tabla = tabla.sort_values(["periodo_fecha"]).reset_index(drop=True)
 
     x = np.arange(len(tabla))
 
@@ -554,25 +570,21 @@ def crear_tabla_barplot_interactivo(
         return pd.DataFrame()
 
     tabla = tabla.copy()
-    tabla = tabla.sort_values(["anio", "mes_num"]).reset_index(drop=True)
+    tabla = tabla.sort_values("periodo_fecha").reset_index(drop=True)
 
-    columnas = ["Cumple", "No cumple"]
+    columnas_base = ["Cumple", "No cumple"]
 
     if mostrar_sin_info:
-        columnas.append("Sin información")
+        columnas_base.append("Sin información")
 
     if modo_y == "Recuento":
         valores = tabla[
-            [
-                "periodo_label",
-                "anio",
-                "mes_num"
-            ] + columnas
+            ["periodo_fecha"] + columnas_base
         ].copy()
 
-        valores = valores.sort_values(["anio", "mes_num"])
+        valores = valores.sort_values("periodo_fecha")
 
-        valores = valores.set_index("periodo_label")[columnas]
+        valores = valores.set_index("periodo_fecha")[columnas_base]
 
     else:
         columnas_pct = ["% Cumple", "% No cumple"]
@@ -581,14 +593,10 @@ def crear_tabla_barplot_interactivo(
             columnas_pct.append("% Sin información")
 
         valores = tabla[
-            [
-                "periodo_label",
-                "anio",
-                "mes_num"
-            ] + columnas_pct
+            ["periodo_fecha"] + columnas_pct
         ].copy()
 
-        valores = valores.sort_values(["anio", "mes_num"])
+        valores = valores.sort_values("periodo_fecha")
 
         rename_dict = {
             "% Cumple": "Cumple",
@@ -598,12 +606,29 @@ def crear_tabla_barplot_interactivo(
 
         valores = valores.rename(columns=rename_dict)
 
-        valores = valores.set_index("periodo_label")[
+        valores = valores.set_index("periodo_fecha")[
             [rename_dict[col] for col in columnas_pct]
         ]
 
     return valores
 
+
+def colores_bar_chart(tabla_bar: pd.DataFrame):
+    mapa_colores = {
+        "Cumple": "#5B5B5B",
+        "No cumple": "#D94555",
+        "Sin información": "#BDBDBD"
+    }
+
+    return [
+        mapa_colores.get(col, "#888888")
+        for col in tabla_bar.columns
+    ]
+
+
+# =========================================================
+# Exportación
+# =========================================================
 
 def convertir_a_csv(df: pd.DataFrame) -> bytes:
     return df.to_csv(
@@ -683,7 +708,7 @@ with st.sidebar:
     )
 
     modo_y_barplot = st.radio(
-        "Métrica barplot",
+        "Métrica barplot interactivo",
         options=[
             "Recuento",
             "Porcentaje"
@@ -825,7 +850,8 @@ if uploaded_file is not None:
 
                     st.bar_chart(
                         tabla_bar,
-                        use_container_width=True
+                        use_container_width=True,
+                        color=colores_bar_chart(tabla_bar)
                     )
 
         elif modo_visualizacion == "Año específico":
@@ -854,7 +880,8 @@ if uploaded_file is not None:
 
                 st.bar_chart(
                     tabla_bar,
-                    use_container_width=True
+                    use_container_width=True,
+                    color=colores_bar_chart(tabla_bar)
                 )
 
         elif modo_visualizacion == "Todos los años juntos":
@@ -876,7 +903,8 @@ if uploaded_file is not None:
 
                 st.bar_chart(
                     tabla_bar,
-                    use_container_width=True
+                    use_container_width=True,
+                    color=colores_bar_chart(tabla_bar)
                 )
 
         st.subheader("Resumen mensual ordenado cronológicamente")
@@ -885,6 +913,7 @@ if uploaded_file is not None:
             st.info("No hay resumen mensual disponible.")
         else:
             columnas_tabla = [
+                "periodo_fecha",
                 "periodo_mes",
                 "periodo_label",
                 "anio",
