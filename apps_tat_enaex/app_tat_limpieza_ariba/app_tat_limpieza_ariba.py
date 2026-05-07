@@ -412,9 +412,9 @@ def chart_conteo_categoria(df_filtrado: pd.DataFrame):
 def convertir_a_excel(
     df_limpio: pd.DataFrame,
     df_filtrado: pd.DataFrame,
-    diagnostico_columnas: pd.DataFrame,
-    resumen_fechas: pd.DataFrame,
-    resumen_num: pd.DataFrame
+    diagnostico_columnas: pd.DataFrame | None = None,
+    resumen_fechas: pd.DataFrame | None = None,
+    resumen_num: pd.DataFrame | None = None
 ) -> bytes:
     output = io.BytesIO()
 
@@ -429,12 +429,6 @@ def convertir_a_excel(
             writer,
             index=False,
             sheet_name="Final_Limpio_CEN1"
-        )
-
-        diagnostico_columnas.to_excel(
-            writer,
-            index=False,
-            sheet_name="Diagnostico_Columnas"
         )
 
         if "Categoria Tipo de Compra" in df_filtrado.columns:
@@ -455,14 +449,21 @@ def convertir_a_excel(
                 sheet_name="Conteo_Categoria"
             )
 
-        if not resumen_fechas.empty:
+        if diagnostico_columnas is not None:
+            diagnostico_columnas.to_excel(
+                writer,
+                index=False,
+                sheet_name="Diagnostico_Columnas"
+            )
+
+        if resumen_fechas is not None and not resumen_fechas.empty:
             resumen_fechas.to_excel(
                 writer,
                 index=False,
                 sheet_name="Resumen_Fechas"
             )
 
-        if not resumen_num.empty:
+        if resumen_num is not None and not resumen_num.empty:
             resumen_num.to_excel(
                 writer,
                 index=False,
@@ -507,6 +508,21 @@ st.markdown(
 st.divider()
 
 
+# =========================================================
+# Menú lateral
+# =========================================================
+
+with st.sidebar:
+    pagina = st.radio(
+        "Menú",
+        options=[
+            "Limpieza",
+            "Diagnóstico"
+        ],
+        index=0
+    )
+
+
 uploaded_file = st.file_uploader(
     "Selecciona archivo Excel",
     type=["xlsx"]
@@ -515,50 +531,45 @@ uploaded_file = st.file_uploader(
 
 if uploaded_file is not None:
     try:
+        # Estas transformaciones son necesarias para ambas páginas
         df_original = leer_excel_data_desde_b14(uploaded_file)
         df_limpio = limpiar_fechas_y_numeros(df_original)
         df_final_limpio = aplicar_filtros_y_categoria(df_limpio)
 
-        diagnostico_columnas = tabla_diagnostico_columnas(df_limpio)
-        resumen_general = diagnostico_general(df_limpio)
-        resumen_fechas = diagnostico_fechas(df_limpio)
-        resumen_num = resumen_numerico(df_limpio)
+        # El diagnóstico solo se calcula si se selecciona la página Diagnóstico
+        diagnostico_columnas = None
+        resumen_general = None
+        resumen_fechas = None
+        resumen_num = None
+
+        if pagina == "Diagnóstico":
+            diagnostico_columnas = tabla_diagnostico_columnas(df_limpio)
+            resumen_general = diagnostico_general(df_limpio)
+            resumen_fechas = diagnostico_fechas(df_limpio)
+            resumen_num = resumen_numerico(df_limpio)
 
         # =================================================
-        # Sidebar: Diagnóstico
+        # Página Limpieza
         # =================================================
 
-        with st.sidebar:
-            st.header("Diagnóstico")
+        if pagina == "Limpieza":
+            st.success("Archivo procesado correctamente.")
 
-            st.metric(
+            col1, col2, col3, col4 = st.columns(4)
+
+            col1.metric(
                 "Filas originales",
                 f"{len(df_original):,}"
             )
 
-            st.metric(
+            col2.metric(
                 "Filas data limpia",
                 f"{len(df_limpio):,}"
             )
 
-            st.metric(
+            col3.metric(
                 "Filas final limpio",
                 f"{len(df_final_limpio):,}"
-            )
-
-            st.metric(
-                "Columnas",
-                f"{resumen_general['total_columnas']:,}"
-            )
-
-            st.metric(
-                "% nulos total",
-                f"{resumen_general['porcentaje_nulos']}%"
-            )
-
-            st.metric(
-                "% duplicados",
-                f"{resumen_general['porcentaje_duplicados']}%"
             )
 
             nulos_tipo_compra = (
@@ -567,108 +578,182 @@ if uploaded_file is not None:
                 else 0
             )
 
-            st.metric(
+            col4.metric(
                 "Nulos Tipo de Compra",
                 f"{nulos_tipo_compra:,}"
             )
 
-            with st.expander("Detalle de columnas"):
-                st.dataframe(
-                    diagnostico_columnas,
-                    use_container_width=True
+            st.subheader("Vista previa original")
+            st.dataframe(
+                df_original.head(50),
+                use_container_width=True
+            )
+
+            st.subheader("Vista previa final limpio")
+            st.dataframe(
+                df_final_limpio.head(100),
+                use_container_width=True
+            )
+
+            st.subheader("Conteo por Categoria Tipo de Compra")
+            chart_conteo_categoria(df_final_limpio)
+
+            st.divider()
+
+            st.subheader("Descargar resultado")
+
+            excel_bytes = convertir_a_excel(
+                df_limpio=df_limpio,
+                df_filtrado=df_final_limpio
+            )
+
+            csv_bytes = convertir_a_csv(df_final_limpio)
+
+            col_a, col_b = st.columns(2)
+
+            with col_a:
+                st.download_button(
+                    label="Descargar Excel completo",
+                    data=excel_bytes,
+                    file_name="resultado_limpieza_transaccion_2_ariba.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
-            with st.expander("Resumen de fechas"):
-                if resumen_fechas.empty:
-                    st.info("No se encontraron columnas de fecha.")
-                else:
-                    st.dataframe(
-                        resumen_fechas,
-                        use_container_width=True
-                    )
+            with col_b:
+                st.download_button(
+                    label="Descargar CSV final limpio",
+                    data=csv_bytes,
+                    file_name="resultado_limpieza_transaccion_2_ariba_final.csv",
+                    mime="text/csv"
+                )
 
-            with st.expander("Resumen numérico"):
-                if resumen_num.empty:
-                    st.info("No se encontraron columnas numéricas.")
-                else:
+        # =================================================
+        # Página Diagnóstico
+        # =================================================
+
+        elif pagina == "Diagnóstico":
+            st.subheader("Diagnóstico general")
+
+            col1, col2, col3, col4 = st.columns(4)
+
+            col1.metric(
+                "Filas",
+                f"{resumen_general['total_filas']:,}"
+            )
+
+            col2.metric(
+                "Columnas",
+                f"{resumen_general['total_columnas']:,}"
+            )
+
+            col3.metric(
+                "% nulos total",
+                f"{resumen_general['porcentaje_nulos']}%"
+            )
+
+            col4.metric(
+                "% duplicados",
+                f"{resumen_general['porcentaje_duplicados']}%"
+            )
+
+            col5, col6 = st.columns(2)
+
+            col5.metric(
+                "Celdas nulas",
+                f"{resumen_general['total_nulos']:,}"
+            )
+
+            col6.metric(
+                "Filas duplicadas",
+                f"{resumen_general['duplicados']:,}"
+            )
+
+            st.divider()
+
+            st.subheader("Detalle de columnas")
+            st.dataframe(
+                diagnostico_columnas,
+                use_container_width=True
+            )
+
+            st.subheader("Porcentaje de nulos por columna")
+            chart_nulos_por_columna(diagnostico_columnas)
+
+            st.subheader("Distribución de tipos de datos")
+            chart_tipos_dato(df_limpio)
+
+            st.subheader("Top columnas con mayor porcentaje de nulos")
+            chart_nulos_por_columna(
+                diagnostico_columnas.head(10)
+            )
+
+            columnas_50 = diagnostico_columnas[
+                diagnostico_columnas["% Nulos"] >= 50
+            ]
+
+            if columnas_50.empty:
+                st.success("No hay columnas con 50% o más de nulos.")
+            else:
+                st.warning("Existen columnas con 50% o más de datos nulos.")
+                chart_nulos_por_columna(columnas_50)
+
+            st.subheader("Top columnas con más valores únicos")
+            chart_valores_unicos(
+                diagnostico_columnas,
+                top_n=10
+            )
+
+            st.divider()
+
+            st.subheader("Análisis de columnas numéricas")
+
+            cols_num = list(
+                df_limpio.select_dtypes(include=["number"]).columns
+            )
+
+            if len(cols_num) == 0:
+                st.info("No se encontraron columnas numéricas.")
+            else:
+                col_num = st.selectbox(
+                    "Selecciona una columna numérica",
+                    options=cols_num
+                )
+
+                chart_histograma_numerico(
+                    df_limpio,
+                    col_num
+                )
+
+                with st.expander("Ver resumen estadístico numérico"):
                     st.dataframe(
                         resumen_num,
                         use_container_width=True
                     )
 
-        # =================================================
-        # Pantalla principal
-        # =================================================
+            st.divider()
 
-        st.success("Archivo procesado correctamente.")
+            st.subheader("Análisis de columnas de fecha")
 
-        col1, col2, col3 = st.columns(3)
+            cols_fecha_detectadas = columnas_fecha(df_limpio)
 
-        col1.metric(
-            "Filas originales",
-            f"{len(df_original):,}"
-        )
+            if len(cols_fecha_detectadas) == 0:
+                st.info("No se encontraron columnas de fecha.")
+            else:
+                col_fecha = st.selectbox(
+                    "Selecciona una columna de fecha",
+                    options=cols_fecha_detectadas
+                )
 
-        col2.metric(
-            "Filas data limpia",
-            f"{len(df_limpio):,}"
-        )
+                chart_serie_fecha(
+                    df_limpio,
+                    col_fecha
+                )
 
-        col3.metric(
-            "Filas final limpio",
-            f"{len(df_final_limpio):,}"
-        )
-
-        st.subheader("Vista previa original")
-        st.dataframe(
-            df_original.head(50),
-            use_container_width=True
-        )
-
-        st.subheader("Vista previa final limpio")
-        st.dataframe(
-            df_final_limpio.head(100),
-            use_container_width=True
-        )
-
-        st.subheader("Conteo por Categoria Tipo de Compra")
-        chart_conteo_categoria(df_final_limpio)
-
-        st.divider()
-
-        # =================================================
-        # Descarga en pantalla principal
-        # =================================================
-
-        st.subheader("Descargar resultado")
-
-        excel_bytes = convertir_a_excel(
-            df_limpio=df_limpio,
-            df_filtrado=df_final_limpio,
-            diagnostico_columnas=diagnostico_columnas,
-            resumen_fechas=resumen_fechas,
-            resumen_num=resumen_num
-        )
-
-        csv_bytes = convertir_a_csv(df_final_limpio)
-
-        col_a, col_b = st.columns(2)
-
-        with col_a:
-            st.download_button(
-                label="Descargar Excel completo",
-                data=excel_bytes,
-                file_name="resultado_limpieza_transaccion_2_ariba.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-
-        with col_b:
-            st.download_button(
-                label="Descargar CSV final limpio",
-                data=csv_bytes,
-                file_name="resultado_limpieza_transaccion_2_ariba_final.csv",
-                mime="text/csv"
-            )
+                with st.expander("Ver detalle de fechas"):
+                    st.dataframe(
+                        resumen_fechas,
+                        use_container_width=True
+                    )
 
     except Exception as e:
         st.error("Ocurrió un error al procesar el archivo.")
