@@ -561,7 +561,7 @@ def grafico_performance_original(
 
 def crear_data_barplot_interactivo(
     tabla: pd.DataFrame,
-    modo_y: str = "Recuento",
+    modo_y: str = "Porcentaje",
     mostrar_sin_info: bool = False
 ) -> pd.DataFrame:
     if tabla.empty:
@@ -579,12 +579,12 @@ def crear_data_barplot_interactivo(
 
     for _, row in tabla.iterrows():
         for estado in estados:
+            porcentaje = row.get(f"% {estado}", 0)
+
             if modo_y == "Recuento":
                 valor = row.get(estado, 0)
-                porcentaje = row.get(f"% {estado}", 0)
             else:
-                valor = row.get(f"% {estado}", 0)
-                porcentaje = row.get(f"% {estado}", 0)
+                valor = porcentaje
 
             data.append({
                 "periodo_fecha": row["periodo_fecha"],
@@ -619,9 +619,8 @@ def crear_data_barplot_interactivo(
         + "%"
     )
 
-    # Ocultar etiquetas muy pequeñas para no saturar el gráfico
     df_plot["texto_barra_visible"] = np.where(
-        df_plot["porcentaje"] >= 5,
+        df_plot["porcentaje"] >= 12,
         df_plot["texto_barra"],
         ""
     )
@@ -631,7 +630,7 @@ def crear_data_barplot_interactivo(
 
 def grafico_barplot_interactivo_altair(
     df_plot: pd.DataFrame,
-    modo_y: str = "Recuento",
+    modo_y: str = "Porcentaje",
     titulo: str = "Barplot interactivo Performance TAT"
 ):
     if df_plot.empty:
@@ -662,13 +661,15 @@ def grafico_barplot_interactivo_altair(
                 title="Mes / Año",
                 axis=alt.Axis(
                     labelAngle=-45,
-                    labelOverlap=False
+                    labelOverlap=False,
+                    labelLimit=140
                 )
             ),
             y=alt.Y(
                 "valor:Q",
                 stack="zero",
-                title=titulo_y
+                title=titulo_y,
+                scale=alt.Scale(domain=[0, 100]) if modo_y == "Porcentaje" else alt.Undefined
             ),
             color=alt.Color(
                 "estado:N",
@@ -696,14 +697,15 @@ def grafico_barplot_interactivo_altair(
         )
     )
 
-    barras = base.mark_bar()
+    barras = base.mark_bar(size=48)
 
     etiquetas = (
         base
         .mark_text(
             color="white",
             fontWeight="bold",
-            fontSize=11
+            fontSize=10,
+            baseline="middle"
         )
         .encode(
             text=alt.Text("texto_barra_visible:N")
@@ -714,7 +716,14 @@ def grafico_barplot_interactivo_altair(
         (barras + etiquetas)
         .properties(
             title=titulo,
-            height=420
+            height=430
+        )
+        .configure_axis(
+            grid=True,
+            gridOpacity=0.25
+        )
+        .configure_view(
+            strokeWidth=0
         )
         .interactive()
     )
@@ -809,8 +818,8 @@ with st.sidebar:
     modo_y_barplot = st.radio(
         "Métrica barplot interactivo",
         options=[
-            "Recuento",
-            "Porcentaje"
+            "Porcentaje",
+            "Recuento"
         ],
         index=0
     )
