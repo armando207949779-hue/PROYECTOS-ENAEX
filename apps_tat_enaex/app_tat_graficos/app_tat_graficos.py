@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import streamlit as st
+import matplotlib.pyplot as plt
 
 
 # =========================
@@ -43,18 +44,18 @@ if LOGO_PATH.exists():
             justify-content: center;
             align-items: center;
             margin-top: 10px;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
         ">
             <img 
                 src="data:image/svg+xml;base64,{logo_base64}" 
-                style="width: 260px; display: block;"
+                style="width: 230px; display: block;"
             >
         </div>
         """,
         unsafe_allow_html=True
     )
 else:
-    st.error(f"Logo no encontrado en ruta correcta: {LOGO_PATH}")
+    st.error(f"Logo no encontrado: {LOGO_PATH}")
 
 
 # =========================================================
@@ -129,7 +130,6 @@ def normalizar_performance(valor):
 
 def preparar_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
-
     df.columns = df.columns.astype(str).str.strip()
 
     columnas_requeridas = [
@@ -182,7 +182,7 @@ def preparar_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
     df["periodo_label"] = np.where(
         df["anio"].notna() & df["mes_nombre"].notna(),
-        df["mes_nombre"].astype(str) + " " + df["anio"].astype("Int64").astype(str),
+        df["mes_nombre"].astype(str),
         pd.NA
     )
 
@@ -234,7 +234,6 @@ def agrupar_performance_mensual(df: pd.DataFrame) -> pd.DataFrame:
         .groupby(
             [
                 "periodo_mes",
-                "periodo_label",
                 "anio",
                 "mes_num",
                 "mes_nombre",
@@ -265,70 +264,9 @@ def agrupar_performance_mensual(df: pd.DataFrame) -> pd.DataFrame:
         0
     )
 
-    resumen = resumen.sort_values(
-        [
-            "anio",
-            "mes_num",
-            "performance_tat_estado"
-        ]
-    )
+    resumen = resumen.sort_values(["anio", "mes_num"])
 
     return resumen
-
-
-def crear_tabla_grafico_performance(
-    resumen: pd.DataFrame,
-    modo_y: str,
-    mostrar_sin_info: bool
-) -> pd.DataFrame:
-    if resumen.empty:
-        return pd.DataFrame()
-
-    data = resumen.copy()
-
-    if not mostrar_sin_info:
-        data = data[
-            data["performance_tat_estado"].isin(["Cumple", "No cumple"])
-        ].copy()
-
-    if data.empty:
-        return pd.DataFrame()
-
-    if modo_y == "Recuento":
-        valores = data.pivot_table(
-            index="periodo_mes",
-            columns="performance_tat_estado",
-            values="cantidad",
-            aggfunc="sum",
-            fill_value=0
-        )
-    else:
-        valores = data.pivot_table(
-            index="periodo_mes",
-            columns="performance_tat_estado",
-            values="porcentaje",
-            aggfunc="sum",
-            fill_value=0
-        )
-
-    orden = (
-        data[["periodo_mes", "anio", "mes_num", "periodo_label"]]
-        .drop_duplicates()
-        .sort_values(["anio", "mes_num"])
-    )
-
-    valores = valores.reindex(orden["periodo_mes"])
-
-    valores.index = orden["periodo_label"].values
-
-    columnas_ordenadas = [
-        col for col in ["Cumple", "No cumple", "Sin información"]
-        if col in valores.columns
-    ]
-
-    valores = valores[columnas_ordenadas]
-
-    return valores
 
 
 def crear_tabla_resumen_mensual(resumen: pd.DataFrame) -> pd.DataFrame:
@@ -338,9 +276,9 @@ def crear_tabla_resumen_mensual(resumen: pd.DataFrame) -> pd.DataFrame:
     tabla = resumen.pivot_table(
         index=[
             "periodo_mes",
-            "periodo_label",
             "anio",
-            "mes_num"
+            "mes_num",
+            "mes_nombre"
         ],
         columns="performance_tat_estado",
         values="cantidad",
@@ -348,30 +286,164 @@ def crear_tabla_resumen_mensual(resumen: pd.DataFrame) -> pd.DataFrame:
         fill_value=0
     ).reset_index()
 
-    columnas_estado = [
-        col for col in ["Cumple", "No cumple", "Sin información"]
-        if col in tabla.columns
-    ]
+    for col in ["Cumple", "No cumple", "Sin información"]:
+        if col not in tabla.columns:
+            tabla[col] = 0
 
-    tabla["Total"] = tabla[columnas_estado].sum(axis=1)
+    tabla["Total"] = tabla["Cumple"] + tabla["No cumple"] + tabla["Sin información"]
 
-    if "Cumple" in tabla.columns:
-        tabla["% Cumple"] = (
-            tabla["Cumple"] / tabla["Total"] * 100
-        ).round(2)
-    else:
-        tabla["% Cumple"] = 0
+    tabla["% Cumple"] = np.where(
+        tabla["Total"].gt(0),
+        tabla["Cumple"] / tabla["Total"] * 100,
+        0
+    )
 
-    if "No cumple" in tabla.columns:
-        tabla["% No cumple"] = (
-            tabla["No cumple"] / tabla["Total"] * 100
-        ).round(2)
-    else:
-        tabla["% No cumple"] = 0
+    tabla["% No cumple"] = np.where(
+        tabla["Total"].gt(0),
+        tabla["No cumple"] / tabla["Total"] * 100,
+        0
+    )
 
     tabla = tabla.sort_values(["anio", "mes_num"])
 
     return tabla
+
+
+def grafico_performance_tat(
+    tabla: pd.DataFrame,
+    meta_cumplimiento: float = 65.0,
+    titulo: str = "Performance TAT"
+):
+    if tabla.empty:
+        st.warning("No hay datos para graficar con los filtros seleccionados.")
+        return
+
+    tabla = tabla.copy()
+
+    x = np.arange(len(tabla))
+
+    pct_cumple = tabla["% Cumple"].fillna(0)
+    pct_no_cumple = tabla["% No cumple"].fillna(0)
+
+    etiquetas_mes = tabla["mes_nombre"].astype(str).tolist()
+
+    anios = tabla["anio"].dropna().astype(int).unique().tolist()
+    texto_anios = " / ".join([str(a) for a in anios])
+
+    fig, ax = plt.subplots(figsize=(15, 4.6))
+
+    color_cumple = "#5B5B5B"
+    color_no_cumple = "#D94555"
+    color_meta = "#006B3F"
+
+    ax.bar(
+        x,
+        pct_cumple,
+        color=color_cumple,
+        label="Cumple",
+        width=0.78
+    )
+
+    ax.bar(
+        x,
+        pct_no_cumple,
+        bottom=pct_cumple,
+        color=color_no_cumple,
+        label="No cumple",
+        width=0.78
+    )
+
+    # Etiquetas internas
+    for i, (cumple, no_cumple) in enumerate(zip(pct_cumple, pct_no_cumple)):
+        if cumple > 5:
+            ax.text(
+                i,
+                cumple / 2,
+                f"{cumple:.2f}%",
+                ha="center",
+                va="center",
+                fontsize=8,
+                color="white",
+                fontweight="bold"
+            )
+
+        if no_cumple > 5:
+            ax.text(
+                i,
+                cumple + no_cumple / 2,
+                f"{no_cumple:.2f}%",
+                ha="center",
+                va="center",
+                fontsize=8,
+                color="white",
+                fontweight="bold"
+            )
+
+    # Línea objetivo
+    ax.axhline(
+        meta_cumplimiento,
+        color=color_meta,
+        linestyle=(0, (2, 2)),
+        linewidth=2
+    )
+
+    ax.text(
+        -0.6,
+        meta_cumplimiento + 1,
+        f"{meta_cumplimiento:.0f}%",
+        color=color_meta,
+        fontsize=9,
+        fontweight="bold"
+    )
+
+    # Formato ejes
+    ax.set_ylim(0, 100)
+    ax.set_yticks([0, 50, 100])
+    ax.set_yticklabels(["0%", "50%", "100%"])
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(
+        etiquetas_mes,
+        rotation=0,
+        fontsize=8
+    )
+
+    ax.set_title(
+        f"{titulo} {texto_anios}",
+        loc="left",
+        fontsize=14,
+        fontweight="bold"
+    )
+
+    ax.set_xlabel(texto_anios, fontsize=8)
+
+    # Estética similar a la imagen
+    ax.grid(
+        axis="y",
+        linestyle=":",
+        linewidth=1,
+        alpha=0.6
+    )
+
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_visible(False)
+    ax.spines["bottom"].set_visible(False)
+
+    ax.tick_params(axis="y", length=0)
+    ax.tick_params(axis="x", length=0)
+
+    ax.legend(
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.18),
+        ncol=2,
+        frameon=False,
+        fontsize=9
+    )
+
+    fig.tight_layout()
+
+    st.pyplot(fig)
 
 
 def convertir_a_csv(df: pd.DataFrame) -> bytes:
@@ -410,8 +482,8 @@ st.markdown(
     """
     <p style='text-align: center; font-size: 18px;'>
         Sube el archivo <b>match_integrado_me5a_ariba_nme80fn_performance.parquet</b>.
-        La app grafica <b>performance_tat</b> usando como eje X
-        <b>fecha_recepcion_final</b> agrupada por año y mes.
+        El gráfico usa <b>fecha_recepcion_final</b> como eje temporal y
+        <b>performance_tat</b> como estado de cumplimiento.
     </p>
     """,
     unsafe_allow_html=True
@@ -434,18 +506,12 @@ with st.sidebar:
         index=0
     )
 
-    modo_y = st.radio(
-        "Eje Y",
-        options=[
-            "Recuento",
-            "Porcentaje"
-        ],
-        index=0
-    )
-
-    mostrar_sin_info = st.checkbox(
-        "Mostrar Sin información",
-        value=False
+    meta_cumplimiento = st.number_input(
+        "Meta cumplimiento (%)",
+        min_value=0.0,
+        max_value=100.0,
+        value=65.0,
+        step=1.0
     )
 
 
@@ -540,12 +606,6 @@ if uploaded_file is not None:
                 options=opciones_columna(df_filtrado, "ariba_proveedor_erp")
             )
 
-            performance_sel = st.multiselect(
-                "Performance TAT",
-                options=["Cumple", "No cumple", "Sin información"],
-                default=["Cumple", "No cumple"]
-            )
-
         df_filtrado = aplicar_filtro_multiselect(
             df_filtrado,
             "Centro",
@@ -606,12 +666,8 @@ if uploaded_file is not None:
             proveedor_sel
         )
 
-        if performance_sel:
-            df_filtrado = df_filtrado[
-                df_filtrado["performance_tat_estado"].isin(performance_sel)
-            ].copy()
-
         resumen = agrupar_performance_mensual(df_filtrado)
+        tabla_resumen = crear_tabla_resumen_mensual(resumen)
 
         total = len(df_filtrado)
         cumple = df_filtrado["performance_tat_estado"].eq("Cumple").sum()
@@ -631,25 +687,13 @@ if uploaded_file is not None:
 
         st.divider()
 
-        tabla_grafico = crear_tabla_grafico_performance(
-            resumen=resumen,
-            modo_y=modo_y,
-            mostrar_sin_info=mostrar_sin_info
+        grafico_performance_tat(
+            tabla=tabla_resumen,
+            meta_cumplimiento=meta_cumplimiento,
+            titulo="Performance TAT"
         )
 
-        if tabla_grafico.empty:
-            st.warning("No hay datos para graficar con los filtros seleccionados.")
-        else:
-            st.subheader("Performance TAT por mes de recepción")
-
-            st.bar_chart(
-                tabla_grafico,
-                use_container_width=True
-            )
-
         st.subheader("Resumen mensual")
-
-        tabla_resumen = crear_tabla_resumen_mensual(resumen)
 
         if tabla_resumen.empty:
             st.info("No hay resumen mensual disponible.")
