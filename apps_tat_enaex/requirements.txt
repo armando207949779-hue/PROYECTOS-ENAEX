@@ -3,4 +3,4 @@ pandas
 numpy
 pyarrow
 openpyxl
-plotly
+plotly==5.24.1
