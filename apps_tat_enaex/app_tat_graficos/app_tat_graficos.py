@@ -336,11 +336,14 @@ def completar_meses_anio(tabla: pd.DataFrame, anio: int) -> pd.DataFrame:
     return salida
 
 
+# =========================================================
+# Gráfico Performance 100%
+# =========================================================
+
 def grafico_performance_original(
     tabla: pd.DataFrame,
     meta_cumplimiento: float = 65.0,
-    titulo: str = "Performance TAT",
-    mostrar_meses_sin_datos: bool = False
+    titulo: str = "Performance TAT"
 ):
     if tabla.empty:
         st.warning("No hay datos para graficar con los filtros seleccionados.")
@@ -359,7 +362,6 @@ def grafico_performance_original(
     anios = tabla["anio"].dropna().astype(int).unique().tolist()
     titulo_anios = " / ".join(str(a) for a in anios)
 
-    # Más ancho solo si hay muchos meses
     ancho = max(10, len(tabla) * 0.7)
 
     fig, ax = plt.subplots(figsize=(ancho, 4.4))
@@ -515,6 +517,189 @@ def grafico_performance_original(
     st.pyplot(fig, use_container_width=True)
 
 
+# =========================================================
+# Gráfico Barplot
+# =========================================================
+
+def grafico_barplot_performance(
+    tabla: pd.DataFrame,
+    modo_y: str = "Recuento",
+    titulo: str = "Barplot Performance TAT"
+):
+    if tabla.empty:
+        st.warning("No hay datos para graficar con los filtros seleccionados.")
+        return
+
+    tabla = tabla.copy()
+    tabla = tabla.sort_values(["anio", "mes_num"]).reset_index(drop=True)
+
+    x = np.arange(len(tabla))
+    width = 0.38
+
+    if modo_y == "Recuento":
+        y_cumple = tabla["Cumple"].fillna(0)
+        y_no_cumple = tabla["No cumple"].fillna(0)
+        ylabel = "Recuento"
+        formato_etiqueta = "{:.0f}"
+    else:
+        y_cumple = tabla["% Cumple"].fillna(0)
+        y_no_cumple = tabla["% No cumple"].fillna(0)
+        ylabel = "Porcentaje"
+        formato_etiqueta = "{:.1f}%"
+
+    etiquetas_mes = tabla["mes_nombre"].astype(str).tolist()
+
+    anios = tabla["anio"].dropna().astype(int).unique().tolist()
+    titulo_anios = " / ".join(str(a) for a in anios)
+
+    ancho = max(10, len(tabla) * 0.75)
+
+    fig, ax = plt.subplots(figsize=(ancho, 4.6))
+
+    color_cumple = "#5B5B5B"
+    color_no_cumple = "#D94555"
+
+    barras_cumple = ax.bar(
+        x - width / 2,
+        y_cumple,
+        width=width,
+        color=color_cumple,
+        label="Cumple"
+    )
+
+    barras_no_cumple = ax.bar(
+        x + width / 2,
+        y_no_cumple,
+        width=width,
+        color=color_no_cumple,
+        label="No cumple"
+    )
+
+    for barra in barras_cumple:
+        alto = barra.get_height()
+
+        if alto > 0:
+            ax.text(
+                barra.get_x() + barra.get_width() / 2,
+                alto,
+                formato_etiqueta.format(alto),
+                ha="center",
+                va="bottom",
+                fontsize=8,
+                color="#333333"
+            )
+
+    for barra in barras_no_cumple:
+        alto = barra.get_height()
+
+        if alto > 0:
+            ax.text(
+                barra.get_x() + barra.get_width() / 2,
+                alto,
+                formato_etiqueta.format(alto),
+                ha="center",
+                va="bottom",
+                fontsize=8,
+                color="#333333"
+            )
+
+    cambios_anio = tabla["anio"].ne(tabla["anio"].shift()).to_numpy()
+
+    for i, cambio in enumerate(cambios_anio):
+        if i > 0 and cambio:
+            ax.axvline(
+                i - 0.5,
+                color="#BDBDBD",
+                linestyle=":",
+                linewidth=1
+            )
+
+    for anio in anios:
+        posiciones = tabla.index[tabla["anio"].eq(anio)].tolist()
+
+        if posiciones:
+            centro = np.mean(posiciones)
+
+            ax.text(
+                centro,
+                -0.12,
+                str(anio),
+                ha="center",
+                va="top",
+                fontsize=8,
+                color="#444444",
+                transform=ax.get_xaxis_transform()
+            )
+
+    ax.set_xticks(x)
+
+    rotacion = 0 if len(tabla) <= 14 else 45
+
+    ax.set_xticklabels(
+        etiquetas_mes,
+        rotation=rotacion,
+        ha="right" if rotacion else "center",
+        fontsize=8
+    )
+
+    ax.set_title(
+        f"{titulo} {titulo_anios}",
+        loc="left",
+        fontsize=13,
+        fontweight="bold"
+    )
+
+    ax.set_ylabel(ylabel)
+
+    if modo_y == "Porcentaje":
+        max_y = max(100, y_cumple.max(), y_no_cumple.max())
+        ax.set_ylim(0, max_y * 1.15)
+        ax.yaxis.set_major_formatter(lambda x, pos: f"{x:.0f}%")
+    else:
+        max_y = max(y_cumple.max(), y_no_cumple.max())
+
+        if max_y > 0:
+            ax.set_ylim(0, max_y * 1.18)
+
+    ax.grid(
+        axis="y",
+        linestyle=":",
+        linewidth=1,
+        alpha=0.6
+    )
+
+    ax.set_axisbelow(True)
+
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_visible(False)
+    ax.spines["bottom"].set_visible(False)
+
+    ax.tick_params(axis="y", length=0)
+    ax.tick_params(axis="x", length=0)
+
+    ax.legend(
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.18),
+        ncol=2,
+        frameon=False,
+        fontsize=9
+    )
+
+    fig.subplots_adjust(
+        left=0.05,
+        right=0.99,
+        top=0.86,
+        bottom=0.28
+    )
+
+    st.pyplot(fig, use_container_width=True)
+
+
+# =========================================================
+# Exportación
+# =========================================================
+
 def convertir_a_csv(df: pd.DataFrame) -> bytes:
     return df.to_csv(
         index=False,
@@ -564,6 +749,15 @@ st.divider()
 with st.sidebar:
     st.header("Filtros")
 
+    pagina = st.radio(
+        "Vista",
+        options=[
+            "Performance 100%",
+            "Barplot"
+        ],
+        index=0
+    )
+
     separador_csv = st.selectbox(
         "Separador CSV",
         options=[
@@ -581,6 +775,15 @@ with st.sidebar:
         max_value=100.0,
         value=65.0,
         step=1.0
+    )
+
+    modo_y_barplot = st.radio(
+        "Métrica Barplot",
+        options=[
+            "Recuento",
+            "Porcentaje"
+        ],
+        index=0
     )
 
     modo_visualizacion = st.radio(
@@ -694,11 +897,19 @@ if uploaded_file is not None:
                 if mostrar_meses_sin_datos:
                     tabla_anio = completar_meses_anio(tabla_resumen, anio)
 
-                grafico_performance_original(
-                    tabla=tabla_anio,
-                    meta_cumplimiento=meta_cumplimiento,
-                    titulo="Performance TAT"
-                )
+                if pagina == "Performance 100%":
+                    grafico_performance_original(
+                        tabla=tabla_anio,
+                        meta_cumplimiento=meta_cumplimiento,
+                        titulo="Performance TAT"
+                    )
+
+                elif pagina == "Barplot":
+                    grafico_barplot_performance(
+                        tabla=tabla_anio,
+                        modo_y=modo_y_barplot,
+                        titulo="Barplot Performance TAT"
+                    )
 
         elif modo_visualizacion == "Año específico":
             tabla_anio = tabla_resumen[
@@ -708,18 +919,34 @@ if uploaded_file is not None:
             if mostrar_meses_sin_datos:
                 tabla_anio = completar_meses_anio(tabla_resumen, anios_sel[0])
 
-            grafico_performance_original(
-                tabla=tabla_anio,
-                meta_cumplimiento=meta_cumplimiento,
-                titulo="Performance TAT"
-            )
+            if pagina == "Performance 100%":
+                grafico_performance_original(
+                    tabla=tabla_anio,
+                    meta_cumplimiento=meta_cumplimiento,
+                    titulo="Performance TAT"
+                )
+
+            elif pagina == "Barplot":
+                grafico_barplot_performance(
+                    tabla=tabla_anio,
+                    modo_y=modo_y_barplot,
+                    titulo="Barplot Performance TAT"
+                )
 
         elif modo_visualizacion == "Todos los años juntos":
-            grafico_performance_original(
-                tabla=tabla_resumen,
-                meta_cumplimiento=meta_cumplimiento,
-                titulo="Performance TAT"
-            )
+            if pagina == "Performance 100%":
+                grafico_performance_original(
+                    tabla=tabla_resumen,
+                    meta_cumplimiento=meta_cumplimiento,
+                    titulo="Performance TAT"
+                )
+
+            elif pagina == "Barplot":
+                grafico_barplot_performance(
+                    tabla=tabla_resumen,
+                    modo_y=modo_y_barplot,
+                    titulo="Barplot Performance TAT"
+                )
 
         st.subheader("Resumen mensual ordenado cronológicamente")
 
