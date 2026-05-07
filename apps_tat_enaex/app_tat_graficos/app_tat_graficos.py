@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
+import altair as alt
 
 
 # =========================
@@ -157,17 +158,16 @@ def preparar_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df["anio"] = df["fecha_recepcion_final"].dt.year
     df["mes_num"] = df["fecha_recepcion_final"].dt.month
 
-    df["periodo_mes"] = (
-        df["fecha_recepcion_final"]
-        .dt.to_period("M")
-        .astype("string")
-    )
-
-    # Fecha real mensual para ordenar bien el bar chart interactivo
     df["periodo_fecha"] = (
         df["fecha_recepcion_final"]
         .dt.to_period("M")
         .dt.to_timestamp()
+    )
+
+    df["periodo_mes"] = (
+        df["fecha_recepcion_final"]
+        .dt.to_period("M")
+        .astype("string")
     )
 
     meses = {
@@ -297,9 +297,7 @@ def crear_resumen_mensual(df: pd.DataFrame) -> pd.DataFrame:
         0
     )
 
-    tabla = tabla.sort_values(
-        ["periodo_fecha"]
-    ).reset_index(drop=True)
+    tabla = tabla.sort_values("periodo_fecha").reset_index(drop=True)
 
     return tabla
 
@@ -326,13 +324,13 @@ def completar_meses_anio(tabla: pd.DataFrame, anio: int) -> pd.DataFrame:
         "mes_nombre": [meses[i] for i in range(1, 13)]
     })
 
-    base["periodo_mes"] = [
-        f"{anio}-{mes:02d}" for mes in range(1, 13)
-    ]
-
     base["periodo_fecha"] = pd.to_datetime(
         [f"{anio}-{mes:02d}-01" for mes in range(1, 13)]
     )
+
+    base["periodo_mes"] = [
+        f"{anio}-{mes:02d}" for mes in range(1, 13)
+    ]
 
     base["periodo_label"] = (
         base["mes_nombre"].astype(str)
@@ -350,8 +348,8 @@ def completar_meses_anio(tabla: pd.DataFrame, anio: int) -> pd.DataFrame:
             "anio",
             "mes_num",
             "mes_nombre",
-            "periodo_mes",
             "periodo_fecha",
+            "periodo_mes",
             "periodo_label"
         ],
         how="left"
@@ -377,7 +375,7 @@ def completar_meses_anio(tabla: pd.DataFrame, anio: int) -> pd.DataFrame:
 
 
 # =========================================================
-# Performance 100% estilo original con matplotlib
+# Gráfico Performance 100% con matplotlib
 # =========================================================
 
 def grafico_performance_original(
@@ -390,7 +388,7 @@ def grafico_performance_original(
         return
 
     tabla = tabla.copy()
-    tabla = tabla.sort_values(["periodo_fecha"]).reset_index(drop=True)
+    tabla = tabla.sort_values("periodo_fecha").reset_index(drop=True)
 
     x = np.arange(len(tabla))
 
@@ -558,10 +556,10 @@ def grafico_performance_original(
 
 
 # =========================================================
-# Barplot interactivo con st.bar_chart
+# Barplot interactivo con Altair
 # =========================================================
 
-def crear_tabla_barplot_interactivo(
+def crear_data_barplot_interactivo(
     tabla: pd.DataFrame,
     modo_y: str = "Recuento",
     mostrar_sin_info: bool = False
@@ -572,58 +570,124 @@ def crear_tabla_barplot_interactivo(
     tabla = tabla.copy()
     tabla = tabla.sort_values("periodo_fecha").reset_index(drop=True)
 
-    columnas_base = ["Cumple", "No cumple"]
+    estados = ["Cumple", "No cumple"]
 
     if mostrar_sin_info:
-        columnas_base.append("Sin información")
+        estados.append("Sin información")
 
-    if modo_y == "Recuento":
-        valores = tabla[
-            ["periodo_fecha"] + columnas_base
-        ].copy()
+    data = []
 
-        valores = valores.sort_values("periodo_fecha")
+    for _, row in tabla.iterrows():
+        for estado in estados:
+            if modo_y == "Recuento":
+                valor = row.get(estado, 0)
+            else:
+                valor = row.get(f"% {estado}", 0)
 
-        valores = valores.set_index("periodo_fecha")[columnas_base]
+            data.append({
+                "periodo_fecha": row["periodo_fecha"],
+                "periodo_label": row["periodo_label"],
+                "anio": row["anio"],
+                "mes_num": row["mes_num"],
+                "mes_nombre": row["mes_nombre"],
+                "estado": estado,
+                "valor": valor,
+                "total": row.get("Total", 0)
+            })
 
-    else:
-        columnas_pct = ["% Cumple", "% No cumple"]
+    df_plot = pd.DataFrame(data)
 
-        if mostrar_sin_info:
-            columnas_pct.append("% Sin información")
+    orden_estado = {
+        "Cumple": 1,
+        "No cumple": 2,
+        "Sin información": 3
+    }
 
-        valores = tabla[
-            ["periodo_fecha"] + columnas_pct
-        ].copy()
+    df_plot["orden_estado"] = df_plot["estado"].map(orden_estado)
 
-        valores = valores.sort_values("periodo_fecha")
+    df_plot = df_plot.sort_values(
+        ["periodo_fecha", "orden_estado"]
+    ).reset_index(drop=True)
 
-        rename_dict = {
-            "% Cumple": "Cumple",
-            "% No cumple": "No cumple",
-            "% Sin información": "Sin información"
-        }
-
-        valores = valores.rename(columns=rename_dict)
-
-        valores = valores.set_index("periodo_fecha")[
-            [rename_dict[col] for col in columnas_pct]
-        ]
-
-    return valores
+    return df_plot
 
 
-def colores_bar_chart(tabla_bar: pd.DataFrame):
-    mapa_colores = {
+def grafico_barplot_interactivo_altair(
+    df_plot: pd.DataFrame,
+    modo_y: str = "Recuento",
+    titulo: str = "Barplot interactivo Performance TAT"
+):
+    if df_plot.empty:
+        st.warning("No hay datos para graficar con los filtros seleccionados.")
+        return
+
+    titulo_y = "Recuento" if modo_y == "Recuento" else "Porcentaje"
+
+    colores = {
         "Cumple": "#5B5B5B",
         "No cumple": "#D94555",
         "Sin información": "#BDBDBD"
     }
 
-    return [
-        mapa_colores.get(col, "#888888")
-        for col in tabla_bar.columns
-    ]
+    orden_periodos = (
+        df_plot[["periodo_label", "periodo_fecha"]]
+        .drop_duplicates()
+        .sort_values("periodo_fecha")["periodo_label"]
+        .tolist()
+    )
+
+    chart = (
+        alt.Chart(df_plot)
+        .mark_bar()
+        .encode(
+            x=alt.X(
+                "periodo_label:N",
+                sort=orden_periodos,
+                title="Mes / Año",
+                axis=alt.Axis(
+                    labelAngle=-45,
+                    labelOverlap=False
+                )
+            ),
+            y=alt.Y(
+                "valor:Q",
+                stack="zero",
+                title=titulo_y
+            ),
+            color=alt.Color(
+                "estado:N",
+                scale=alt.Scale(
+                    domain=["Cumple", "No cumple", "Sin información"],
+                    range=[
+                        colores["Cumple"],
+                        colores["No cumple"],
+                        colores["Sin información"]
+                    ]
+                ),
+                legend=alt.Legend(title="")
+            ),
+            order=alt.Order(
+                "orden_estado:Q",
+                sort="ascending"
+            ),
+            tooltip=[
+                alt.Tooltip("periodo_label:N", title="Periodo"),
+                alt.Tooltip("estado:N", title="Estado"),
+                alt.Tooltip("valor:Q", title=titulo_y, format=",.2f"),
+                alt.Tooltip("total:Q", title="Total mes", format=",.0f")
+            ]
+        )
+        .properties(
+            title=titulo,
+            height=420
+        )
+        .interactive()
+    )
+
+    st.altair_chart(
+        chart,
+        use_container_width=True
+    )
 
 
 # =========================================================
@@ -840,18 +904,16 @@ if uploaded_file is not None:
                     )
 
                 elif pagina == "Barplot interactivo":
-                    tabla_bar = crear_tabla_barplot_interactivo(
+                    df_plot = crear_data_barplot_interactivo(
                         tabla=tabla_anio,
                         modo_y=modo_y_barplot,
                         mostrar_sin_info=mostrar_sin_info
                     )
 
-                    st.subheader(f"Barplot interactivo {anio}")
-
-                    st.bar_chart(
-                        tabla_bar,
-                        use_container_width=True,
-                        color=colores_bar_chart(tabla_bar)
+                    grafico_barplot_interactivo_altair(
+                        df_plot=df_plot,
+                        modo_y=modo_y_barplot,
+                        titulo=f"Barplot interactivo {anio}"
                     )
 
         elif modo_visualizacion == "Año específico":
@@ -870,18 +932,16 @@ if uploaded_file is not None:
                 )
 
             elif pagina == "Barplot interactivo":
-                tabla_bar = crear_tabla_barplot_interactivo(
+                df_plot = crear_data_barplot_interactivo(
                     tabla=tabla_anio,
                     modo_y=modo_y_barplot,
                     mostrar_sin_info=mostrar_sin_info
                 )
 
-                st.subheader(f"Barplot interactivo {anios_sel[0]}")
-
-                st.bar_chart(
-                    tabla_bar,
-                    use_container_width=True,
-                    color=colores_bar_chart(tabla_bar)
+                grafico_barplot_interactivo_altair(
+                    df_plot=df_plot,
+                    modo_y=modo_y_barplot,
+                    titulo=f"Barplot interactivo {anios_sel[0]}"
                 )
 
         elif modo_visualizacion == "Todos los años juntos":
@@ -893,18 +953,16 @@ if uploaded_file is not None:
                 )
 
             elif pagina == "Barplot interactivo":
-                tabla_bar = crear_tabla_barplot_interactivo(
+                df_plot = crear_data_barplot_interactivo(
                     tabla=tabla_resumen,
                     modo_y=modo_y_barplot,
                     mostrar_sin_info=mostrar_sin_info
                 )
 
-                st.subheader("Barplot interactivo todos los años")
-
-                st.bar_chart(
-                    tabla_bar,
-                    use_container_width=True,
-                    color=colores_bar_chart(tabla_bar)
+                grafico_barplot_interactivo_altair(
+                    df_plot=df_plot,
+                    modo_y=modo_y_barplot,
+                    titulo="Barplot interactivo todos los años"
                 )
 
         st.subheader("Resumen mensual ordenado cronológicamente")
