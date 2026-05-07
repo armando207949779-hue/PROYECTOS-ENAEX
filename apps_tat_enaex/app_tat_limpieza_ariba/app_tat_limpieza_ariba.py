@@ -64,78 +64,20 @@ else:
 
 
 # =========================================================
-# Lectura del archivo
+# Funciones base
 # =========================================================
 
-def leer_excel_data_desde_b14(uploaded_file) -> pd.DataFrame:
-    """
-    Lee hoja Data desde fila 14 como encabezado y elimina columna A.
-    Equivale a empezar desde B14.
-    """
-    uploaded_file.seek(0)
+def obtener_separador(separador_csv: str):
+    if separador_csv == "Automático":
+        return None
+    if separador_csv == "Punto y coma (;)":
+        return ";"
+    if separador_csv == "Coma (,)":
+        return ","
+    if separador_csv == "Tabulación":
+        return "\t"
+    return None
 
-    df = pd.read_excel(
-        uploaded_file,
-        sheet_name="Data",
-        header=13
-    )
-
-    # Empezar desde columna B
-    df = df.iloc[:, 1:].copy()
-
-    return df
-
-
-def leer_archivo(uploaded_file, separador_csv: str) -> pd.DataFrame:
-    nombre = uploaded_file.name.lower()
-
-    if nombre.endswith(".parquet"):
-        uploaded_file.seek(0)
-        return pd.read_parquet(uploaded_file)
-
-    if nombre.endswith(".xlsx"):
-        return leer_excel_data_desde_b14(uploaded_file)
-
-    if nombre.endswith(".csv"):
-        uploaded_file.seek(0)
-
-        if separador_csv == "Automático":
-            sep = None
-        elif separador_csv == "Punto y coma (;)":
-            sep = ";"
-        elif separador_csv == "Coma (,)":
-            sep = ","
-        elif separador_csv == "Tabulación":
-            sep = "\t"
-        else:
-            sep = None
-
-        try:
-            return pd.read_csv(
-                uploaded_file,
-                sep=sep,
-                engine="python",
-                encoding="utf-8-sig",
-                on_bad_lines="skip"
-            )
-
-        except Exception:
-            uploaded_file.seek(0)
-
-            return pd.read_csv(
-                uploaded_file,
-                sep=sep,
-                engine="python",
-                encoding="latin1",
-                on_bad_lines="skip"
-            )
-
-    raise ValueError("Formato no soportado. Usa .parquet, .xlsx o .csv")
-
-
-# =========================================================
-# Limpieza y transformación
-# =========================================================
 
 def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
@@ -254,6 +196,70 @@ def aplicar_filtros_y_categoria(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # =========================================================
+# Lectura con caché
+# =========================================================
+
+@st.cache_data(show_spinner="Leyendo archivo...")
+def leer_archivo_cache(
+    bytes_archivo: bytes,
+    nombre_archivo: str,
+    separador_csv: str
+) -> pd.DataFrame:
+    buffer = io.BytesIO(bytes_archivo)
+    nombre = nombre_archivo.lower()
+
+    if nombre.endswith(".parquet"):
+        return pd.read_parquet(buffer)
+
+    if nombre.endswith(".xlsx"):
+        df = pd.read_excel(
+            buffer,
+            sheet_name="Data",
+            header=13
+        )
+
+        # Empezar desde columna B
+        df = df.iloc[:, 1:].copy()
+
+        return df
+
+    if nombre.endswith(".csv"):
+        sep = obtener_separador(separador_csv)
+
+        try:
+            return pd.read_csv(
+                buffer,
+                sep=sep,
+                engine="python",
+                encoding="utf-8-sig",
+                on_bad_lines="skip"
+            )
+
+        except Exception:
+            buffer.seek(0)
+
+            return pd.read_csv(
+                buffer,
+                sep=sep,
+                engine="python",
+                encoding="latin1",
+                on_bad_lines="skip"
+            )
+
+    raise ValueError("Formato no soportado. Usa .parquet, .xlsx o .csv")
+
+
+@st.cache_data(show_spinner="Limpiando fechas, números y textos...")
+def limpiar_cache(df: pd.DataFrame) -> pd.DataFrame:
+    return limpiar_fechas_y_numeros(df)
+
+
+@st.cache_data(show_spinner="Aplicando filtros...")
+def filtrar_cache(df: pd.DataFrame) -> pd.DataFrame:
+    return aplicar_filtros_y_categoria(df)
+
+
+# =========================================================
 # Diagnósticos
 # =========================================================
 
@@ -358,11 +364,25 @@ def resumen_numerico(df: pd.DataFrame) -> pd.DataFrame:
     return resumen
 
 
+@st.cache_data(show_spinner="Generando diagnóstico...")
+def diagnostico_cache(df: pd.DataFrame):
+    diagnostico_columnas = tabla_diagnostico_columnas(df)
+    resumen_general = diagnostico_general(df)
+    resumen_fechas = diagnostico_fechas(df)
+    resumen_num = resumen_numerico(df)
+
+    return diagnostico_columnas, resumen_general, resumen_fechas, resumen_num
+
+
 # =========================================================
 # Gráficos nativos Streamlit
 # =========================================================
 
 def chart_nulos_por_columna(diag_cols: pd.DataFrame):
+    if diag_cols.empty:
+        st.info("No hay columnas para graficar.")
+        return
+
     data = (
         diag_cols
         .set_index("Columna")["% Nulos"]
@@ -383,6 +403,10 @@ def chart_tipos_dato(df: pd.DataFrame):
 
 
 def chart_valores_unicos(diag_cols: pd.DataFrame, top_n: int = 10):
+    if diag_cols.empty:
+        st.info("No hay columnas para graficar.")
+        return
+
     data = (
         diag_cols
         .sort_values("Valores únicos", ascending=False)
@@ -540,6 +564,33 @@ def convertir_a_parquet(df: pd.DataFrame) -> bytes:
     return output.getvalue()
 
 
+@st.cache_data(show_spinner="Preparando Excel...")
+def convertir_a_excel_cache(
+    df_limpio: pd.DataFrame,
+    df_filtrado: pd.DataFrame,
+    diagnostico_columnas: pd.DataFrame,
+    resumen_fechas: pd.DataFrame,
+    resumen_num: pd.DataFrame
+) -> bytes:
+    return convertir_a_excel(
+        df_limpio=df_limpio,
+        df_filtrado=df_filtrado,
+        diagnostico_columnas=diagnostico_columnas,
+        resumen_fechas=resumen_fechas,
+        resumen_num=resumen_num
+    )
+
+
+@st.cache_data(show_spinner="Preparando CSV...")
+def convertir_a_csv_cache(df: pd.DataFrame) -> bytes:
+    return convertir_a_csv(df)
+
+
+@st.cache_data(show_spinner="Preparando Parquet...")
+def convertir_a_parquet_cache(df: pd.DataFrame) -> bytes:
+    return convertir_a_parquet(df)
+
+
 # =========================================================
 # Interfaz Streamlit
 # =========================================================
@@ -610,60 +661,22 @@ uploaded_file = st.file_uploader(
 
 if uploaded_file is not None:
     try:
-        progreso = st.progress(0)
-        estado = st.empty()
+        bytes_archivo = uploaded_file.getvalue()
 
-        # =================================================
-        # Carga y transformación principal
-        # =================================================
-
-        estado.info("Leyendo archivo...")
-        df_original = leer_archivo(
-            uploaded_file=uploaded_file,
+        df_original = leer_archivo_cache(
+            bytes_archivo=bytes_archivo,
+            nombre_archivo=uploaded_file.name,
             separador_csv=separador_csv
         )
-        progreso.progress(20)
 
-        estado.info("Limpiando fechas, números y textos...")
-        df_limpio = limpiar_fechas_y_numeros(df_original)
-        progreso.progress(40)
-
-        estado.info("Aplicando filtros y creando Categoria Tipo de Compra...")
-        df_final_limpio = aplicar_filtros_y_categoria(df_limpio)
-        progreso.progress(60)
+        df_limpio = limpiar_cache(df_original)
+        df_final_limpio = filtrar_cache(df_limpio)
 
         # =================================================
-        # Diagnósticos
-        # =================================================
-
-        estado.info("Generando diagnóstico...")
-        diagnostico_columnas = tabla_diagnostico_columnas(df_limpio)
-        resumen_general = diagnostico_general(df_limpio)
-        resumen_fechas = diagnostico_fechas(df_limpio)
-        resumen_num = resumen_numerico(df_limpio)
-        progreso.progress(80)
-
-        # =================================================
-        # Página Limpieza
+        # Vista Limpieza
         # =================================================
 
         if pagina == "Limpieza":
-            estado.info("Preparando archivos de descarga...")
-
-            excel_bytes = convertir_a_excel(
-                df_limpio=df_limpio,
-                df_filtrado=df_final_limpio,
-                diagnostico_columnas=diagnostico_columnas,
-                resumen_fechas=resumen_fechas,
-                resumen_num=resumen_num
-            )
-
-            csv_bytes = convertir_a_csv(df_final_limpio)
-            parquet_bytes = convertir_a_parquet(df_final_limpio)
-
-            progreso.progress(100)
-            estado.success("Archivo listo para revisar y descargar.")
-
             st.success("Archivo procesado correctamente.")
 
             col1, col2, col3, col4 = st.columns(4)
@@ -713,9 +726,29 @@ if uploaded_file is not None:
 
             st.subheader("Descargar resultado final limpio")
 
-            col_a, col_b, col_c = st.columns(3)
+            formato_descarga = st.radio(
+                "Formato de descarga",
+                options=[
+                    "Excel",
+                    "CSV",
+                    "Parquet"
+                ],
+                horizontal=True
+            )
 
-            with col_a:
+            if formato_descarga == "Excel":
+                diagnostico_columnas, resumen_general, resumen_fechas, resumen_num = diagnostico_cache(
+                    df_limpio
+                )
+
+                excel_bytes = convertir_a_excel_cache(
+                    df_limpio=df_limpio,
+                    df_filtrado=df_final_limpio,
+                    diagnostico_columnas=diagnostico_columnas,
+                    resumen_fechas=resumen_fechas,
+                    resumen_num=resumen_num
+                )
+
                 st.download_button(
                     label="Descargar como Excel",
                     data=excel_bytes,
@@ -723,7 +756,9 @@ if uploaded_file is not None:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
-            with col_b:
+            elif formato_descarga == "CSV":
+                csv_bytes = convertir_a_csv_cache(df_final_limpio)
+
                 st.download_button(
                     label="Descargar como CSV",
                     data=csv_bytes,
@@ -731,7 +766,9 @@ if uploaded_file is not None:
                     mime="text/csv"
                 )
 
-            with col_c:
+            elif formato_descarga == "Parquet":
+                parquet_bytes = convertir_a_parquet_cache(df_final_limpio)
+
                 st.download_button(
                     label="Descargar como Parquet",
                     data=parquet_bytes,
@@ -740,12 +777,13 @@ if uploaded_file is not None:
                 )
 
         # =================================================
-        # Página Diagnóstico desde sidebar
+        # Vista Diagnóstico
         # =================================================
 
         elif pagina == "Diagnóstico":
-            progreso.progress(100)
-            estado.success("Diagnóstico listo.")
+            diagnostico_columnas, resumen_general, resumen_fechas, resumen_num = diagnostico_cache(
+                df_limpio
+            )
 
             st.subheader("Diagnóstico general")
 
