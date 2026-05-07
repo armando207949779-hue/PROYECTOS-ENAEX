@@ -1,23 +1,95 @@
+import base64
+from pathlib import Path
+from io import BytesIO
+from difflib import SequenceMatcher
+
 import pandas as pd
 import numpy as np
 import streamlit as st
-from difflib import SequenceMatcher
-from io import BytesIO
+
 
 # =========================================================
-# CONFIGURACIÓN APP
+# RUTA DEL LOGO
 # =========================================================
+
+BASE_DIR = Path(__file__).resolve().parent
+
+# Si tu app está dentro de una carpeta, sube un nivel hasta la raíz del repo
+ROOT_DIR = BASE_DIR.parent
+
+# Ruta esperada:
+# proyectos-enaex/assets/logo.svg
+LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
+
+
+# =========================================================
+# CONFIGURACIÓN STREAMLIT
+# =========================================================
+
 st.set_page_config(
     page_title="Match ME5A vs Ariba",
+    page_icon="📊",
     layout="wide"
 )
 
-st.title("Match ME5A vs Ariba")
-st.write("Carga los archivos, aplica el algoritmo de coincidencia y descarga los resultados.")
+
+# =========================================================
+# ENCABEZADO CON LOGO
+# =========================================================
+
+if LOGO_PATH.exists():
+    logo_svg = LOGO_PATH.read_text(encoding="utf-8")
+    logo_base64 = base64.b64encode(logo_svg.encode("utf-8")).decode("utf-8")
+
+    st.markdown(
+        f"""
+        <div style="
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-top: 10px;
+            margin-bottom: 20px;
+        ">
+            <img 
+                src="data:image/svg+xml;base64,{logo_base64}" 
+                style="width: 260px; display: block;"
+            >
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+else:
+    st.warning(f"Logo no encontrado en ruta: {LOGO_PATH}")
+
+
+st.markdown(
+    """
+    <h1 style='text-align: center;'>
+        Match ME5A vs Ariba
+    </h1>
+    """,
+    unsafe_allow_html=True
+)
+
+st.markdown(
+    """
+    <p style='text-align: center; font-size: 18px;'>
+        Carga los archivos ME5A y ARIBA_FINAL. La app aplicará la lógica de coincidencia
+        por solicitud, línea, pedido y descripción, agregando prefijos de origen
+        <b>me5a_</b> y <b>ariba_</b>.
+    </p>
+    """,
+    unsafe_allow_html=True
+)
+
+st.divider()
+
 
 # =========================================================
 # FUNCIONES AUXILIARES
 # =========================================================
+
 def limpiar_id(valor):
     if pd.isna(valor):
         return None
@@ -83,8 +155,10 @@ def leer_archivo(archivo):
 
 def dataframe_a_excel_bytes(df):
     salida = BytesIO()
+
     with pd.ExcelWriter(salida, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="resultado")
+
     salida.seek(0)
     return salida
 
@@ -96,15 +170,22 @@ def aplicar_algoritmo(me5a, ariba_final, umbral_similitud=0.70):
     me5a_base = me5a.copy()
     ariba_base = ariba_final.copy()
 
-    # ID interno para mantener una fila por cada registro original de ME5A
     me5a_base["me5a_id_fila_original"] = me5a_base.index
 
     # =========================
     # LIMPIEZA ME5A
     # =========================
-    me5a_base["Solicitud de pedido limpia"] = me5a_base["Solicitud de pedido"].apply(limpiar_id)
-    me5a_base["Pedido limpio"] = me5a_base["Pedido"].apply(limpiar_id)
-    me5a_base["Texto breve limpio"] = me5a_base["Texto breve"].apply(limpiar_texto)
+    me5a_base["Solicitud de pedido limpia"] = (
+        me5a_base["Solicitud de pedido"].apply(limpiar_id)
+    )
+
+    me5a_base["Pedido limpio"] = (
+        me5a_base["Pedido"].apply(limpiar_id)
+    )
+
+    me5a_base["Texto breve limpio"] = (
+        me5a_base["Texto breve"].apply(limpiar_texto)
+    )
 
     me5a_base["Linea Ariba esperada"] = pd.to_numeric(
         me5a_base["Pos.solicitud pedido"],
@@ -114,9 +195,17 @@ def aplicar_algoritmo(me5a, ariba_final, umbral_similitud=0.70):
     # =========================
     # LIMPIEZA ARIBA
     # =========================
-    ariba_base["ID ERP limpio"] = ariba_base["ID de solicitud de compra del ERP"].apply(limpiar_id)
-    ariba_base["ID pedido limpio"] = ariba_base["ID de pedido"].apply(limpiar_id)
-    ariba_base["Descripcion limpia"] = ariba_base["Descripción"].apply(limpiar_texto)
+    ariba_base["ID ERP limpio"] = (
+        ariba_base["ID de solicitud de compra del ERP"].apply(limpiar_id)
+    )
+
+    ariba_base["ID pedido limpio"] = (
+        ariba_base["ID de pedido"].apply(limpiar_id)
+    )
+
+    ariba_base["Descripcion limpia"] = (
+        ariba_base["Descripción"].apply(limpiar_texto)
+    )
 
     ariba_base["Linea Ariba"] = pd.to_numeric(
         ariba_base["Número de línea de la solicitud de compra"],
@@ -143,19 +232,23 @@ def aplicar_algoritmo(me5a, ariba_final, umbral_similitud=0.70):
     # VALIDACIONES
     # =========================
     df_unido["match_solicitud"] = (
-        df_unido["me5a_Solicitud de pedido limpia"] == df_unido["ariba_ID ERP limpio"]
+        df_unido["me5a_Solicitud de pedido limpia"] ==
+        df_unido["ariba_ID ERP limpio"]
     )
 
     df_unido["match_linea"] = (
-        df_unido["me5a_Linea Ariba esperada"] == df_unido["ariba_Linea Ariba"]
+        df_unido["me5a_Linea Ariba esperada"] ==
+        df_unido["ariba_Linea Ariba"]
     )
 
     df_unido["match_pedido"] = (
-        df_unido["me5a_Pedido limpio"] == df_unido["ariba_ID pedido limpio"]
+        df_unido["me5a_Pedido limpio"] ==
+        df_unido["ariba_ID pedido limpio"]
     )
 
     df_unido["match_descripcion_exacta"] = (
-        df_unido["me5a_Texto breve limpio"] == df_unido["ariba_Descripcion limpia"]
+        df_unido["me5a_Texto breve limpio"] ==
+        df_unido["ariba_Descripcion limpia"]
     )
 
     df_unido["match_descripcion_parcial"] = df_unido.apply(
@@ -250,8 +343,9 @@ def aplicar_algoritmo(me5a, ariba_final, umbral_similitud=0.70):
 
 
 # =========================================================
-# CARGA DE ARCHIVOS
+# SIDEBAR
 # =========================================================
+
 st.sidebar.header("Carga de archivos")
 
 archivo_me5a = st.sidebar.file_uploader(
@@ -274,11 +368,13 @@ umbral = st.sidebar.slider(
 
 procesar = st.sidebar.button("Procesar match")
 
+
 # =========================================================
-# VALIDACIÓN Y PROCESAMIENTO
+# PROCESAMIENTO
 # =========================================================
+
 if archivo_me5a is None or archivo_ariba is None:
-    st.info("Carga ambos archivos para comenzar.")
+    st.warning("Carga ambos archivos para comenzar.")
 
 else:
     try:
@@ -291,12 +387,12 @@ else:
 
         with col1:
             st.write("ME5A")
-            st.write(f"Filas: {len(me5a)} | Columnas: {len(me5a.columns)}")
+            st.write(f"Filas: {len(me5a):,} | Columnas: {len(me5a.columns):,}")
             st.dataframe(me5a.head(10), use_container_width=True)
 
         with col2:
             st.write("ARIBA_FINAL")
-            st.write(f"Filas: {len(ariba_final)} | Columnas: {len(ariba_final.columns)}")
+            st.write(f"Filas: {len(ariba_final):,} | Columnas: {len(ariba_final.columns):,}")
             st.dataframe(ariba_final.head(10), use_container_width=True)
 
         columnas_requeridas_me5a = [
@@ -313,8 +409,15 @@ else:
             "Número de línea de la solicitud de compra"
         ]
 
-        faltantes_me5a = [c for c in columnas_requeridas_me5a if c not in me5a.columns]
-        faltantes_ariba = [c for c in columnas_requeridas_ariba if c not in ariba_final.columns]
+        faltantes_me5a = [
+            c for c in columnas_requeridas_me5a
+            if c not in me5a.columns
+        ]
+
+        faltantes_ariba = [
+            c for c in columnas_requeridas_ariba
+            if c not in ariba_final.columns
+        ]
 
         if faltantes_me5a:
             st.error(f"Faltan columnas en ME5A: {faltantes_me5a}")
@@ -323,38 +426,40 @@ else:
             st.error(f"Faltan columnas en ARIBA_FINAL: {faltantes_ariba}")
 
         if procesar and not faltantes_me5a and not faltantes_ariba:
-            with st.spinner("Procesando coincidencias..."):
-                df_todas, df_mejor = aplicar_algoritmo(
-                    me5a,
-                    ariba_final,
-                    umbral_similitud=umbral
-                )
+            progreso = st.progress(0)
+            estado = st.empty()
 
-            st.success("Proceso terminado.")
+            estado.info("Aplicando algoritmo de coincidencia...")
+            progreso.progress(30)
 
-            # =========================================================
-            # MÉTRICAS
-            # =========================================================
-            st.subheader("Resumen")
+            df_todas, df_mejor = aplicar_algoritmo(
+                me5a,
+                ariba_final,
+                umbral_similitud=umbral
+            )
+
+            progreso.progress(80)
+            estado.info("Preparando resultados...")
 
             total_me5a = len(me5a)
             total_ariba = len(ariba_final)
             total_todas = len(df_todas)
-            total_mejor = len(df_mejor)
             con_match = (df_mejor["tipo_match"] != "SIN MATCH ARIBA").sum()
             sin_match = (df_mejor["tipo_match"] == "SIN MATCH ARIBA").sum()
 
+            progreso.progress(100)
+            estado.success("Proceso terminado correctamente.")
+
+            st.subheader("Resumen")
+
             m1, m2, m3, m4, m5 = st.columns(5)
 
-            m1.metric("Filas ME5A", total_me5a)
-            m2.metric("Filas ARIBA", total_ariba)
-            m3.metric("Todas coincidencias", total_todas)
-            m4.metric("Con match", con_match)
-            m5.metric("Sin match", sin_match)
+            m1.metric("Filas ME5A", f"{total_me5a:,}")
+            m2.metric("Filas ARIBA", f"{total_ariba:,}")
+            m3.metric("Todas coincidencias", f"{total_todas:,}")
+            m4.metric("Con match", f"{con_match:,}")
+            m5.metric("Sin match", f"{sin_match:,}")
 
-            # =========================================================
-            # RESUMEN TIPO MATCH
-            # =========================================================
             st.subheader("Resumen por tipo de match")
 
             resumen = (
@@ -362,22 +467,23 @@ else:
                 .value_counts(dropna=False)
                 .reset_index()
             )
+
             resumen.columns = ["tipo_match", "cantidad"]
 
             st.dataframe(resumen, use_container_width=True)
 
-            # =========================================================
-            # RESULTADOS
-            # =========================================================
+            st.bar_chart(
+                resumen.set_index("tipo_match")["cantidad"]
+            )
+
             st.subheader("Mejor match por registro ME5A")
             st.dataframe(df_mejor, use_container_width=True)
 
             with st.expander("Ver todas las coincidencias posibles"):
                 st.dataframe(df_todas, use_container_width=True)
 
-            # =========================================================
-            # DESCARGAS
-            # =========================================================
+            st.divider()
+
             st.subheader("Descargar resultados")
 
             excel_mejor = dataframe_a_excel_bytes(df_mejor)
