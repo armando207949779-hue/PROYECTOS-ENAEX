@@ -1,6 +1,7 @@
 import io
 import pandas as pd
 import streamlit as st
+import matplotlib.pyplot as plt
 from pandas.api.types import is_datetime64_any_dtype
 
 
@@ -123,7 +124,7 @@ def convertir_a_excel(df: pd.DataFrame) -> bytes:
     output = io.BytesIO()
 
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="limpio")
+        df.to_excel(writer, index=False, sheet_name="ME5A_LIMPIO")
 
     return output.getvalue()
 
@@ -227,22 +228,75 @@ def resumen_numerico(df: pd.DataFrame) -> pd.DataFrame:
     return resumen
 
 
-def chart_nulos_por_columna(diag_cols: pd.DataFrame):
-    data = diag_cols.set_index("Columna")["% Nulos"].sort_values(ascending=False)
-    st.bar_chart(data)
+# =========================================================
+# Gráficos con matplotlib
+# =========================================================
+
+def grafico_barras_verticales(
+    data: pd.Series,
+    titulo: str,
+    eje_y: str,
+    limite_y: float | None = None
+):
+    data = data.sort_values(ascending=False)
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    ax.bar(data.index.astype(str), data.values)
+
+    ax.set_title(titulo)
+    ax.set_ylabel(eje_y)
+    ax.set_xlabel("")
+
+    if limite_y is not None:
+        ax.set_ylim(0, limite_y)
+
+    ax.tick_params(axis="x", labelrotation=35)
+
+    for label in ax.get_xticklabels():
+        label.set_ha("right")
+
+    for i, value in enumerate(data.values):
+        if pd.notna(value):
+            ax.text(
+                i,
+                value,
+                f"{value:.2f}" if isinstance(value, float) else f"{value}",
+                ha="center",
+                va="bottom",
+                fontsize=8
+            )
+
+    fig.tight_layout()
+
+    st.pyplot(fig)
+    plt.close(fig)
 
 
-def chart_tipos_dato(df: pd.DataFrame):
-    tipos = (
-        pd.Series(df.dtypes.astype(str), name="Tipo de dato")
-        .value_counts()
-        .sort_values(ascending=False)
+def grafico_nulos_por_columna(diag_cols: pd.DataFrame):
+    data = diag_cols.set_index("Columna")["% Nulos"]
+    grafico_barras_verticales(
+        data=data,
+        titulo="Porcentaje de nulos por columna",
+        eje_y="% Nulos",
+        limite_y=100
     )
 
-    st.bar_chart(tipos)
+
+def grafico_tipos_dato(df: pd.DataFrame):
+    data = (
+        pd.Series(df.dtypes.astype(str), name="Tipo de dato")
+        .value_counts()
+    )
+
+    grafico_barras_verticales(
+        data=data,
+        titulo="Distribución de tipos de datos",
+        eje_y="Cantidad de columnas"
+    )
 
 
-def chart_valores_unicos(diag_cols: pd.DataFrame, top_n: int = 10):
+def grafico_valores_unicos(diag_cols: pd.DataFrame, top_n: int = 10):
     data = (
         diag_cols
         .sort_values("Valores únicos", ascending=False)
@@ -250,23 +304,39 @@ def chart_valores_unicos(diag_cols: pd.DataFrame, top_n: int = 10):
         .set_index("Columna")["Valores únicos"]
     )
 
-    st.bar_chart(data)
+    grafico_barras_verticales(
+        data=data,
+        titulo=f"Top {top_n} columnas con más valores únicos",
+        eje_y="Valores únicos"
+    )
 
 
-def chart_histograma_numerico(df: pd.DataFrame, columna: str):
+def grafico_histograma_numerico(df: pd.DataFrame, columna: str):
     serie = df[columna].dropna()
 
     if serie.empty:
         st.info("La columna seleccionada no tiene datos numéricos válidos.")
         return
 
-    hist = pd.cut(serie, bins=20).value_counts().sort_index()
-    hist.index = hist.index.astype(str)
+    fig, ax = plt.subplots(figsize=(12, 6))
 
-    st.bar_chart(hist)
+    ax.hist(serie, bins=20)
+
+    ax.set_title(f"Distribución de {columna}")
+    ax.set_xlabel(columna)
+    ax.set_ylabel("Frecuencia")
+    ax.tick_params(axis="x", labelrotation=35)
+
+    for label in ax.get_xticklabels():
+        label.set_ha("right")
+
+    fig.tight_layout()
+
+    st.pyplot(fig)
+    plt.close(fig)
 
 
-def chart_serie_fecha(df: pd.DataFrame, columna_fecha: str):
+def grafico_serie_fecha(df: pd.DataFrame, columna_fecha: str):
     data = (
         df[columna_fecha]
         .dropna()
@@ -279,7 +349,22 @@ def chart_serie_fecha(df: pd.DataFrame, columna_fecha: str):
         st.info("La columna seleccionada no tiene fechas válidas.")
         return
 
-    st.line_chart(data)
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    ax.plot(data.index.astype(str), data.values, marker="o")
+
+    ax.set_title(f"Cantidad de registros por fecha: {columna_fecha}")
+    ax.set_xlabel("Fecha")
+    ax.set_ylabel("Cantidad de registros")
+    ax.tick_params(axis="x", labelrotation=35)
+
+    for label in ax.get_xticklabels():
+        label.set_ha("right")
+
+    fig.tight_layout()
+
+    st.pyplot(fig)
+    plt.close(fig)
 
 
 # =========================================================
@@ -344,7 +429,7 @@ if uploaded_file is not None:
             st.subheader("Porcentaje de nulos por columna")
 
             diag_cols = tabla_diagnostico_columnas(df_limpio)
-            chart_nulos_por_columna(diag_cols)
+            grafico_nulos_por_columna(diag_cols)
 
             with st.expander("Ver detalle de columnas"):
                 st.dataframe(diag_cols, use_container_width=True)
@@ -358,17 +443,17 @@ if uploaded_file is not None:
 
             with col1:
                 st.download_button(
-                    label="Descargar como Excel",
+                    label="Descargar ME5A_LIMPIO.xlsx",
                     data=excel_bytes,
-                    file_name="archivo_limpio.xlsx",
+                    file_name="ME5A_LIMPIO.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
             with col2:
                 st.download_button(
-                    label="Descargar como CSV",
+                    label="Descargar ME5A_LIMPIO.csv",
                     data=csv_bytes,
-                    file_name="archivo_limpio.csv",
+                    file_name="ME5A_LIMPIO.csv",
                     mime="text/csv"
                 )
 
@@ -394,10 +479,10 @@ if uploaded_file is not None:
             st.divider()
 
             st.subheader("Distribución de tipos de datos")
-            chart_tipos_dato(df_limpio)
+            grafico_tipos_dato(df_limpio)
 
-            st.subheader("Top columnas con mayor porcentaje de nulos")
-            chart_nulos_por_columna(diag_cols.head(10))
+            st.subheader("Top 10 columnas con mayor porcentaje de nulos")
+            grafico_nulos_por_columna(diag_cols.head(10))
 
             columnas_50 = diag_cols[diag_cols["% Nulos"] >= 50]
 
@@ -405,10 +490,10 @@ if uploaded_file is not None:
                 st.success("No hay columnas con 50% o más de nulos.")
             else:
                 st.warning("Existen columnas con 50% o más de datos nulos.")
-                chart_nulos_por_columna(columnas_50)
+                grafico_nulos_por_columna(columnas_50)
 
-            st.subheader("Top columnas con más valores únicos")
-            chart_valores_unicos(diag_cols, top_n=10)
+            st.subheader("Top 10 columnas con más valores únicos")
+            grafico_valores_unicos(diag_cols, top_n=10)
 
             st.divider()
 
@@ -424,7 +509,7 @@ if uploaded_file is not None:
                     options=cols_num
                 )
 
-                chart_histograma_numerico(df_limpio, col_num)
+                grafico_histograma_numerico(df_limpio, col_num)
 
                 with st.expander("Ver resumen estadístico numérico"):
                     st.dataframe(resumen_numerico(df_limpio), use_container_width=True)
@@ -443,7 +528,7 @@ if uploaded_file is not None:
                     options=cols_fecha_detectadas
                 )
 
-                chart_serie_fecha(df_limpio, col_fecha)
+                grafico_serie_fecha(df_limpio, col_fecha)
 
                 with st.expander("Ver detalle de fechas"):
                     st.dataframe(diagnostico_fechas(df_limpio), use_container_width=True)
