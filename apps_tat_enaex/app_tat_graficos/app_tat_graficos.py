@@ -22,7 +22,7 @@ LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
 # =========================
 
 st.set_page_config(
-    page_title="Dashboard Performance TAT",
+    page_title="Performance TAT",
     page_icon="📊",
     layout="wide"
 )
@@ -130,6 +130,7 @@ def normalizar_performance(valor):
 
 def preparar_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
+
     df.columns = df.columns.astype(str).str.strip()
 
     columnas_requeridas = [
@@ -178,29 +179,7 @@ def preparar_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         12: "diciembre"
     }
 
-    meses_abrev = {
-        1: "ene",
-        2: "feb",
-        3: "mar",
-        4: "abr",
-        5: "may",
-        6: "jun",
-        7: "jul",
-        8: "ago",
-        9: "sep",
-        10: "oct",
-        11: "nov",
-        12: "dic"
-    }
-
     df["mes_nombre"] = df["mes_num"].map(meses)
-    df["mes_abrev"] = df["mes_num"].map(meses_abrev)
-
-    df["periodo_label"] = np.where(
-        df["anio"].notna() & df["mes_nombre"].notna(),
-        df["mes_nombre"].astype(str) + " " + df["anio"].astype("Int64").astype(str),
-        pd.NA
-    )
 
     return df
 
@@ -235,7 +214,7 @@ def aplicar_filtro_multiselect(
     ].copy()
 
 
-def agrupar_performance_mensual(df: pd.DataFrame) -> pd.DataFrame:
+def crear_resumen_mensual(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
     df = df[
@@ -253,7 +232,6 @@ def agrupar_performance_mensual(df: pd.DataFrame) -> pd.DataFrame:
                 "anio",
                 "mes_num",
                 "mes_nombre",
-                "mes_abrev",
                 "performance_tat_estado"
             ],
             dropna=False
@@ -262,41 +240,12 @@ def agrupar_performance_mensual(df: pd.DataFrame) -> pd.DataFrame:
         .reset_index(name="cantidad")
     )
 
-    total_mes = (
-        resumen
-        .groupby("periodo_mes")["cantidad"]
-        .sum()
-        .reset_index(name="total_mes")
-    )
-
-    resumen = resumen.merge(
-        total_mes,
-        on="periodo_mes",
-        how="left"
-    )
-
-    resumen["porcentaje"] = np.where(
-        resumen["total_mes"].gt(0),
-        resumen["cantidad"] / resumen["total_mes"] * 100,
-        0
-    )
-
-    resumen = resumen.sort_values(["anio", "mes_num"])
-
-    return resumen
-
-
-def crear_tabla_resumen_mensual(resumen: pd.DataFrame) -> pd.DataFrame:
-    if resumen.empty:
-        return pd.DataFrame()
-
     tabla = resumen.pivot_table(
         index=[
             "periodo_mes",
             "anio",
             "mes_num",
-            "mes_nombre",
-            "mes_abrev"
+            "mes_nombre"
         ],
         columns="performance_tat_estado",
         values="cantidad",
@@ -308,7 +257,11 @@ def crear_tabla_resumen_mensual(resumen: pd.DataFrame) -> pd.DataFrame:
         if col not in tabla.columns:
             tabla[col] = 0
 
-    tabla["Total"] = tabla["Cumple"] + tabla["No cumple"] + tabla["Sin información"]
+    tabla["Total"] = (
+        tabla["Cumple"]
+        + tabla["No cumple"]
+        + tabla["Sin información"]
+    )
 
     tabla["% Cumple"] = np.where(
         tabla["Total"].gt(0),
@@ -328,19 +281,17 @@ def crear_tabla_resumen_mensual(resumen: pd.DataFrame) -> pd.DataFrame:
         0
     )
 
-    tabla = tabla.sort_values(["anio", "mes_num"]).reset_index(drop=True)
+    # Orden cronológico correcto
+    tabla = tabla.sort_values(
+        ["anio", "mes_num"]
+    ).reset_index(drop=True)
 
     return tabla
 
 
-# =========================================================
-# Gráfico 1: versión estilo dashboard con matplotlib
-# =========================================================
-
-def grafico_performance_tat_dashboard(
+def grafico_performance_original(
     tabla: pd.DataFrame,
-    meta_cumplimiento: float = 65.0,
-    titulo: str = "Performance TAT"
+    meta_cumplimiento: float = 65.0
 ):
     if tabla.empty:
         st.warning("No hay datos para graficar con los filtros seleccionados.")
@@ -354,17 +305,16 @@ def grafico_performance_tat_dashboard(
     pct_cumple = tabla["% Cumple"].fillna(0)
     pct_no_cumple = tabla["% No cumple"].fillna(0)
 
-    etiquetas_mes = tabla["mes_abrev"].astype(str).tolist()
+    etiquetas_mes = tabla["mes_nombre"].astype(str).tolist()
 
     anios = tabla["anio"].dropna().astype(int).unique().tolist()
-    texto_anios = " / ".join([str(a) for a in anios])
+    titulo_anios = " / ".join(str(a) for a in anios)
 
-    ancho = max(12, len(tabla) * 0.55)
-    alto = 5.2
+    ancho = max(12, len(tabla) * 0.45)
 
-    fig, ax = plt.subplots(figsize=(ancho, alto))
+    fig, ax = plt.subplots(figsize=(ancho, 4.4))
 
-    color_cumple = "#1F7A4D"
+    color_cumple = "#5B5B5B"
     color_no_cumple = "#D94555"
     color_meta = "#006B3F"
 
@@ -385,13 +335,12 @@ def grafico_performance_tat_dashboard(
         width=0.72
     )
 
-    # Etiquetas internas
     for i, (cumple, no_cumple) in enumerate(zip(pct_cumple, pct_no_cumple)):
         if cumple >= 8:
             ax.text(
                 i,
                 cumple / 2,
-                f"{cumple:.1f}%",
+                f"{cumple:.2f}%",
                 ha="center",
                 va="center",
                 fontsize=8,
@@ -403,7 +352,7 @@ def grafico_performance_tat_dashboard(
             ax.text(
                 i,
                 cumple + no_cumple / 2,
-                f"{no_cumple:.1f}%",
+                f"{no_cumple:.2f}%",
                 ha="center",
                 va="center",
                 fontsize=8,
@@ -411,7 +360,6 @@ def grafico_performance_tat_dashboard(
                 fontweight="bold"
             )
 
-    # Línea objetivo
     ax.axhline(
         meta_cumplimiento,
         color=color_meta,
@@ -420,15 +368,15 @@ def grafico_performance_tat_dashboard(
     )
 
     ax.text(
-        -0.9,
-        meta_cumplimiento + 1.5,
+        -0.8,
+        meta_cumplimiento + 1,
         f"{meta_cumplimiento:.0f}%",
         color=color_meta,
         fontsize=9,
         fontweight="bold"
     )
 
-    # Separadores por año
+    # Separadores entre años
     cambios_anio = tabla["anio"].ne(tabla["anio"].shift()).to_numpy()
 
     for i, cambio in enumerate(cambios_anio):
@@ -440,7 +388,7 @@ def grafico_performance_tat_dashboard(
                 linewidth=1
             )
 
-    # Etiquetas de año debajo de bloques
+    # Año debajo de cada bloque
     for anio in anios:
         posiciones = tabla.index[tabla["anio"].eq(anio)].tolist()
 
@@ -449,19 +397,17 @@ def grafico_performance_tat_dashboard(
 
             ax.text(
                 centro,
-                -13,
+                -11,
                 str(anio),
                 ha="center",
                 va="top",
-                fontsize=9,
-                color="#444444",
-                fontweight="bold"
+                fontsize=8,
+                color="#444444"
             )
 
-    # Ejes
-    ax.set_ylim(0, 105)
+    ax.set_ylim(0, 100)
     ax.set_yticks([0, 50, 100])
-    ax.set_yticklabels(["0%", "50%", "100%"], fontsize=9)
+    ax.set_yticklabels(["0%", "50%", "100%"])
 
     ax.set_xticks(x)
     ax.set_xticklabels(
@@ -471,21 +417,17 @@ def grafico_performance_tat_dashboard(
     )
 
     ax.set_title(
-        f"{titulo} {texto_anios}",
+        f"Performance TAT {titulo_anios}",
         loc="left",
-        fontsize=16,
-        fontweight="bold",
-        pad=12
+        fontsize=13,
+        fontweight="bold"
     )
-
-    ax.set_xlabel("")
-    ax.set_ylabel("")
 
     ax.grid(
         axis="y",
         linestyle=":",
         linewidth=1,
-        alpha=0.55
+        alpha=0.6
     )
 
     ax.set_axisbelow(True)
@@ -503,85 +445,18 @@ def grafico_performance_tat_dashboard(
         bbox_to_anchor=(0.5, -0.18),
         ncol=2,
         frameon=False,
-        fontsize=10
+        fontsize=9
     )
 
     fig.subplots_adjust(
         left=0.04,
         right=0.99,
         top=0.86,
-        bottom=0.25
+        bottom=0.26
     )
 
     st.pyplot(fig, use_container_width=True)
 
-
-# =========================================================
-# Gráfico 2: versión inicial con st.bar_chart
-# =========================================================
-
-def crear_tabla_grafico_bar_chart(
-    resumen: pd.DataFrame,
-    modo_y: str,
-    mostrar_sin_info: bool
-) -> pd.DataFrame:
-    if resumen.empty:
-        return pd.DataFrame()
-
-    data = resumen.copy()
-
-    if not mostrar_sin_info:
-        data = data[
-            data["performance_tat_estado"].isin(["Cumple", "No cumple"])
-        ].copy()
-
-    if data.empty:
-        return pd.DataFrame()
-
-    if modo_y == "Recuento":
-        valores = data.pivot_table(
-            index="periodo_mes",
-            columns="performance_tat_estado",
-            values="cantidad",
-            aggfunc="sum",
-            fill_value=0
-        )
-    else:
-        valores = data.pivot_table(
-            index="periodo_mes",
-            columns="performance_tat_estado",
-            values="porcentaje",
-            aggfunc="sum",
-            fill_value=0
-        )
-
-    orden = (
-        data[["periodo_mes", "anio", "mes_num", "mes_nombre"]]
-        .drop_duplicates()
-        .sort_values(["anio", "mes_num"])
-    )
-
-    valores = valores.reindex(orden["periodo_mes"])
-
-    valores.index = (
-        orden["mes_nombre"].astype(str)
-        + " "
-        + orden["anio"].astype("Int64").astype(str)
-    ).values
-
-    columnas_ordenadas = [
-        col for col in ["Cumple", "No cumple", "Sin información"]
-        if col in valores.columns
-    ]
-
-    valores = valores[columnas_ordenadas]
-
-    return valores
-
-
-# =========================================================
-# Exportación
-# =========================================================
 
 def convertir_a_csv(df: pd.DataFrame) -> bytes:
     return df.to_csv(
@@ -619,7 +494,7 @@ st.markdown(
     """
     <p style='text-align: center; font-size: 18px;'>
         Sube el archivo <b>match_integrado_me5a_ariba_nme80fn_performance.parquet</b>.
-        El gráfico usa <b>fecha_recepcion_final</b> como eje temporal y
+        El gráfico usa <b>fecha_recepcion_final</b> como eje temporal mensual y
         <b>performance_tat</b> como estado de cumplimiento.
     </p>
     """,
@@ -643,35 +518,12 @@ with st.sidebar:
         index=0
     )
 
-    tipo_grafico = st.radio(
-        "Tipo de gráfico",
-        options=[
-            "Dashboard 100%",
-            "Bar chart simple"
-        ],
-        index=0
-    )
-
-    modo_y = st.radio(
-        "Eje Y",
-        options=[
-            "Porcentaje",
-            "Recuento"
-        ],
-        index=0
-    )
-
     meta_cumplimiento = st.number_input(
         "Meta cumplimiento (%)",
         min_value=0.0,
         max_value=100.0,
         value=65.0,
         step=1.0
-    )
-
-    mostrar_sin_info = st.checkbox(
-        "Mostrar Sin información",
-        value=False
     )
 
 
@@ -716,60 +568,11 @@ if uploaded_file is not None:
             else:
                 df_filtrado = df.copy()
 
+            centros_disponibles = opciones_columna(df_filtrado, "Centro")
+
             centros_sel = st.multiselect(
                 "Centro",
-                options=opciones_columna(df_filtrado, "Centro")
-            )
-
-            nme_centros_sel = st.multiselect(
-                "Centro NME",
-                options=opciones_columna(df_filtrado, "nme_centro")
-            )
-
-            tipo_oc_sel = st.multiselect(
-                "Tipo OC",
-                options=opciones_columna(df_filtrado, "tipo_oc")
-            )
-
-            origen_sel = st.multiselect(
-                "Origen OC",
-                options=opciones_columna(df_filtrado, "origen_oc")
-            )
-
-            sistema_sel = st.multiselect(
-                "Sistema OC",
-                options=opciones_columna(df_filtrado, "sistema_oc")
-            )
-
-            tipo_compra_sel = st.multiselect(
-                "Nombre tipo compra",
-                options=opciones_columna(df_filtrado, "nombre_tipo_compra")
-            )
-
-            categoria_ariba_sel = st.multiselect(
-                "Categoría ARIBA",
-                options=opciones_columna(df_filtrado, "ariba_categoria_tipo_compra")
-            )
-
-            rango_inc_sel = st.multiselect(
-                "Rango incumplimiento",
-                options=opciones_columna(df_filtrado, "rango_incumplimiento")
-            )
-
-            estado_match_sel = st.multiselect(
-                "Estado match",
-                options=opciones_columna(df_filtrado, "estado_match")
-            )
-
-            proveedor_sel = st.multiselect(
-                "Proveedor ARIBA",
-                options=opciones_columna(df_filtrado, "ariba_proveedor_erp")
-            )
-
-            performance_sel = st.multiselect(
-                "Performance TAT",
-                options=["Cumple", "No cumple", "Sin información"],
-                default=["Cumple", "No cumple"]
+                options=centros_disponibles
             )
 
         df_filtrado = aplicar_filtro_multiselect(
@@ -778,67 +581,7 @@ if uploaded_file is not None:
             centros_sel
         )
 
-        df_filtrado = aplicar_filtro_multiselect(
-            df_filtrado,
-            "nme_centro",
-            nme_centros_sel
-        )
-
-        df_filtrado = aplicar_filtro_multiselect(
-            df_filtrado,
-            "tipo_oc",
-            tipo_oc_sel
-        )
-
-        df_filtrado = aplicar_filtro_multiselect(
-            df_filtrado,
-            "origen_oc",
-            origen_sel
-        )
-
-        df_filtrado = aplicar_filtro_multiselect(
-            df_filtrado,
-            "sistema_oc",
-            sistema_sel
-        )
-
-        df_filtrado = aplicar_filtro_multiselect(
-            df_filtrado,
-            "nombre_tipo_compra",
-            tipo_compra_sel
-        )
-
-        df_filtrado = aplicar_filtro_multiselect(
-            df_filtrado,
-            "ariba_categoria_tipo_compra",
-            categoria_ariba_sel
-        )
-
-        df_filtrado = aplicar_filtro_multiselect(
-            df_filtrado,
-            "rango_incumplimiento",
-            rango_inc_sel
-        )
-
-        df_filtrado = aplicar_filtro_multiselect(
-            df_filtrado,
-            "estado_match",
-            estado_match_sel
-        )
-
-        df_filtrado = aplicar_filtro_multiselect(
-            df_filtrado,
-            "ariba_proveedor_erp",
-            proveedor_sel
-        )
-
-        if performance_sel:
-            df_filtrado = df_filtrado[
-                df_filtrado["performance_tat_estado"].isin(performance_sel)
-            ].copy()
-
-        resumen = agrupar_performance_mensual(df_filtrado)
-        tabla_resumen = crear_tabla_resumen_mensual(resumen)
+        tabla_resumen = crear_resumen_mensual(df_filtrado)
 
         total = len(df_filtrado)
         cumple = df_filtrado["performance_tat_estado"].eq("Cumple").sum()
@@ -858,41 +601,36 @@ if uploaded_file is not None:
 
         st.divider()
 
-        if tipo_grafico == "Dashboard 100%":
-            if modo_y != "Porcentaje":
-                st.info(
-                    "El gráfico Dashboard 100% usa porcentajes para mantener barras apiladas al 100%."
-                )
+        grafico_performance_original(
+            tabla=tabla_resumen,
+            meta_cumplimiento=meta_cumplimiento
+        )
 
-            grafico_performance_tat_dashboard(
-                tabla=tabla_resumen,
-                meta_cumplimiento=meta_cumplimiento,
-                titulo="Performance TAT"
-            )
-
-        elif tipo_grafico == "Bar chart simple":
-            tabla_grafico = crear_tabla_grafico_bar_chart(
-                resumen=resumen,
-                modo_y=modo_y,
-                mostrar_sin_info=mostrar_sin_info
-            )
-
-            if tabla_grafico.empty:
-                st.warning("No hay datos para graficar con los filtros seleccionados.")
-            else:
-                st.subheader("Performance TAT por mes de recepción")
-                st.bar_chart(
-                    tabla_grafico,
-                    use_container_width=True
-                )
-
-        st.subheader("Resumen mensual")
+        st.subheader("Resumen mensual ordenado cronológicamente")
 
         if tabla_resumen.empty:
             st.info("No hay resumen mensual disponible.")
         else:
+            columnas_tabla = [
+                "periodo_mes",
+                "anio",
+                "mes_num",
+                "mes_nombre",
+                "Cumple",
+                "No cumple",
+                "Sin información",
+                "Total",
+                "% Cumple",
+                "% No cumple"
+            ]
+
+            columnas_tabla = [
+                col for col in columnas_tabla
+                if col in tabla_resumen.columns
+            ]
+
             st.dataframe(
-                tabla_resumen,
+                tabla_resumen[columnas_tabla],
                 use_container_width=True
             )
 
