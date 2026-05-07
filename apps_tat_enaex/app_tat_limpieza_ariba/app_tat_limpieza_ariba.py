@@ -531,28 +531,61 @@ uploaded_file = st.file_uploader(
 
 if uploaded_file is not None:
     try:
-        # Estas transformaciones son necesarias para ambas páginas
-        df_original = leer_excel_data_desde_b14(uploaded_file)
-        df_limpio = limpiar_fechas_y_numeros(df_original)
-        df_final_limpio = aplicar_filtros_y_categoria(df_limpio)
+        progreso = st.progress(0)
+        estado = st.empty()
 
-        # El diagnóstico solo se calcula si se selecciona la página Diagnóstico
+        # =================================================
+        # Carga y transformación principal
+        # =================================================
+
+        estado.info("Leyendo archivo...")
+        df_original = leer_excel_data_desde_b14(uploaded_file)
+        progreso.progress(20)
+
+        estado.info("Limpiando fechas, números y textos...")
+        df_limpio = limpiar_fechas_y_numeros(df_original)
+        progreso.progress(40)
+
+        estado.info("Aplicando filtros y creando Categoria Tipo de Compra...")
+        df_final_limpio = aplicar_filtros_y_categoria(df_limpio)
+        progreso.progress(60)
+
+        # =================================================
+        # Diagnóstico opcional
+        # =================================================
+
         diagnostico_columnas = None
         resumen_general = None
         resumen_fechas = None
         resumen_num = None
 
         if pagina == "Diagnóstico":
+            estado.info("Generando diagnóstico...")
             diagnostico_columnas = tabla_diagnostico_columnas(df_limpio)
             resumen_general = diagnostico_general(df_limpio)
             resumen_fechas = diagnostico_fechas(df_limpio)
             resumen_num = resumen_numerico(df_limpio)
+            progreso.progress(85)
+        else:
+            progreso.progress(75)
 
         # =================================================
         # Página Limpieza
         # =================================================
 
         if pagina == "Limpieza":
+            estado.info("Preparando archivos de descarga...")
+
+            excel_bytes = convertir_a_excel(
+                df_limpio=df_limpio,
+                df_filtrado=df_final_limpio
+            )
+
+            csv_bytes = convertir_a_csv(df_final_limpio)
+
+            progreso.progress(100)
+            estado.success("Archivo listo para revisar y descargar.")
+
             st.success("Archivo procesado correctamente.")
 
             col1, col2, col3, col4 = st.columns(4)
@@ -602,13 +635,6 @@ if uploaded_file is not None:
 
             st.subheader("Descargar resultado")
 
-            excel_bytes = convertir_a_excel(
-                df_limpio=df_limpio,
-                df_filtrado=df_final_limpio
-            )
-
-            csv_bytes = convertir_a_csv(df_final_limpio)
-
             col_a, col_b = st.columns(2)
 
             with col_a:
@@ -632,6 +658,9 @@ if uploaded_file is not None:
         # =================================================
 
         elif pagina == "Diagnóstico":
+            progreso.progress(100)
+            estado.success("Diagnóstico listo.")
+
             st.subheader("Diagnóstico general")
 
             col1, col2, col3, col4 = st.columns(4)
