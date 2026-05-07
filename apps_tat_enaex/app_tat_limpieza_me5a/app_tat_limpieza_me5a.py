@@ -8,10 +8,18 @@ from pandas.api.types import is_datetime64_any_dtype
 
 
 # =========================
-# Ruta exacta del logo
+# Ruta del logo ENAEX
 # =========================
 
-LOGO_PATH = Path("/mount/src/proyectos-enaex/assets/logo.svg")
+BASE_DIR = Path(__file__).resolve().parent
+
+# app.py está dentro de apps_tat_enaex.
+# Subimos un nivel hasta la raíz del repo: proyectos-enaex
+ROOT_DIR = BASE_DIR.parent
+
+# Ruta correcta:
+# proyectos-enaex/assets/logo.svg
+LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
 
 
 # =========================
@@ -52,7 +60,7 @@ if LOGO_PATH.exists():
         unsafe_allow_html=True
     )
 else:
-    st.warning(f"Logo no encontrado: {LOGO_PATH}")
+    st.error(f"Logo no encontrado en ruta correcta: {LOGO_PATH}")
 
 
 # =========================================================
@@ -62,10 +70,13 @@ else:
 def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
+    # Limpiar nombres de columnas
     df.columns = df.columns.astype(str).str.strip()
 
+    # Eliminar columnas completamente vacías
     df = df.dropna(axis=1, how="all")
 
+    # Limpiar textos
     cols_texto = df.select_dtypes(include=["object", "string"]).columns
 
     for col in cols_texto:
@@ -77,6 +88,7 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
 
         df[col] = df[col].replace("", pd.NA)
 
+    # Convertir fechas
     cols_fecha = [
         "Fecha de solicitud",
         "Fecha modificación",
@@ -93,6 +105,7 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
                 dayfirst=True
             )
 
+    # Fecha de entrega suele venir como YYYYMMDD
     if "Fecha de entrega" in df.columns:
         df["Fecha de entrega"] = pd.to_datetime(
             df["Fecha de entrega"].astype("string"),
@@ -100,6 +113,7 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
             errors="coerce"
         )
 
+    # Convertir numéricos decimales
     cols_numericas = [
         "Cantidad solicitada",
         "Precio de valoración"
@@ -112,12 +126,14 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
                 errors="coerce"
             )
 
+    # Convertir Pedido a entero nullable
     if "Pedido" in df.columns:
         df["Pedido"] = pd.to_numeric(
             df["Pedido"],
             errors="coerce"
         ).astype("Int64")
 
+    # Convertir enteros
     cols_enteras = [
         "Solicitud de pedido",
         "Pos.solicitud pedido",
