@@ -8,12 +8,10 @@ from pandas.api.types import is_datetime64_any_dtype
 
 
 # =========================
-# Rutas del proyecto
+# Ruta exacta del logo
 # =========================
 
-BASE_DIR = Path(__file__).resolve().parent
-PROJECT_DIR = BASE_DIR.parent
-LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
+LOGO_PATH = Path("/mount/src/proyectos-enaex/assets/logo.svg")
 
 
 # =========================
@@ -76,6 +74,7 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
             .astype("string")
             .str.strip()
         )
+
         df[col] = df[col].replace("", pd.NA)
 
     cols_fecha = [
@@ -476,6 +475,10 @@ if uploaded_file is not None:
             "Descarga"
         ])
 
+        # =================================================
+        # Tab limpieza
+        # =================================================
+
         with tab_limpieza:
             st.success("Archivo cargado correctamente.")
 
@@ -521,6 +524,10 @@ if uploaded_file is not None:
                     diagnostico_columnas,
                     use_container_width=True
                 )
+
+        # =================================================
+        # Tab diagnóstico
+        # =================================================
 
         with tab_diagnostico:
             st.subheader("Diagnóstico general")
@@ -636,6 +643,10 @@ if uploaded_file is not None:
                         resumen_fechas,
                         use_container_width=True
                     )
+
+        # =================================================
+        # Tab descarga
+        # =================================================
 
         with tab_descarga:
             st.subheader("Descargar resultado")
