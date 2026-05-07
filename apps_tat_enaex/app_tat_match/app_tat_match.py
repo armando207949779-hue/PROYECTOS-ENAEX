@@ -169,6 +169,16 @@ def normalizar_texto(valor):
     return " ".join(texto.split())
 
 
+def limpiar_booleanos(df: pd.DataFrame, columnas: list) -> pd.DataFrame:
+    df = df.copy()
+
+    for col in columnas:
+        if col in df.columns:
+            df[col] = df[col].fillna(False).astype(bool)
+
+    return df
+
+
 # =========================================================
 # Match ME5A vs NME80FN
 # =========================================================
@@ -274,32 +284,52 @@ def match_me5a_nme80fn(
     )
 
     candidatos["_match_nme_pedido_documento"] = (
-        candidatos["_pedido_norm"].eq(candidatos["_documento_norm"])
+        candidatos["_pedido_norm"].fillna("")
+        .eq(candidatos["_documento_norm"].fillna(""))
     )
 
     candidatos["_match_nme_posicion"] = (
-        candidatos["_posicion_pedido_norm"].eq(candidatos["_posicion_norm"])
+        candidatos["_posicion_pedido_norm"].fillna("")
+        .eq(candidatos["_posicion_norm"].fillna(""))
     )
 
     candidatos["_match_nme_material"] = (
-        candidatos["_material_norm_me5a"].eq(candidatos["_material_norm_nme"])
+        candidatos["_material_norm_me5a"].fillna("")
+        .eq(candidatos["_material_norm_nme"].fillna(""))
     )
 
     candidatos["_match_nme_centro"] = (
-        candidatos["_centro_norm_me5a"].eq(candidatos["_centro_norm_nme"])
+        candidatos["_centro_norm_me5a"].fillna("")
+        .eq(candidatos["_centro_norm_nme"].fillna(""))
     )
 
     candidatos["_match_nme_cantidad"] = (
-        candidatos["_cantidad_norm_me5a"].eq(candidatos["_cantidad_norm_nme"])
+        candidatos["_cantidad_norm_me5a"]
+        .eq(candidatos["_cantidad_norm_nme"])
+        .fillna(False)
     )
 
     candidatos["_match_nme_unidad"] = (
-        candidatos["_unidad_norm_me5a"].eq(candidatos["_unidad_norm_nme"])
+        candidatos["_unidad_norm_me5a"].fillna("")
+        .eq(candidatos["_unidad_norm_nme"].fillna(""))
     )
 
     candidatos["_match_nme_moneda"] = (
-        candidatos["_moneda_norm_me5a"].eq(candidatos["_moneda_norm_nme"])
+        candidatos["_moneda_norm_me5a"].fillna("")
+        .eq(candidatos["_moneda_norm_nme"].fillna(""))
     )
+
+    cols_bool_nme = [
+        "_match_nme_pedido_documento",
+        "_match_nme_posicion",
+        "_match_nme_material",
+        "_match_nme_centro",
+        "_match_nme_cantidad",
+        "_match_nme_unidad",
+        "_match_nme_moneda"
+    ]
+
+    candidatos = limpiar_booleanos(candidatos, cols_bool_nme)
 
     candidatos["score_nme80fn"] = (
         np.where(candidatos["_match_nme_pedido_documento"], 60, 0)
@@ -505,27 +535,25 @@ def match_me5a_ariba(
     )
 
     candidatos["_match_ariba_solicitud"] = (
-        candidatos["_solicitud_norm"].eq(candidatos["_id_erp_norm"])
+        candidatos["_solicitud_norm"].fillna("")
+        .eq(candidatos["_id_erp_norm"].fillna(""))
     )
 
     candidatos["_match_ariba_linea"] = np.isclose(
-        candidatos["_linea_esperada_ariba"],
-        candidatos["_linea_ariba_num"],
+        pd.to_numeric(candidatos["_linea_esperada_ariba"], errors="coerce"),
+        pd.to_numeric(candidatos["_linea_ariba_num"], errors="coerce"),
         equal_nan=False
     )
 
     candidatos["_match_ariba_pedido"] = (
-        candidatos["_pedido_norm"].eq(candidatos["_id_pedido_norm"])
+        candidatos["_pedido_norm"].fillna("")
+        .eq(candidatos["_id_pedido_norm"].fillna(""))
     )
 
-    candidatos["_similitud_ariba_descripcion"] = candidatos.apply(
-        lambda row: (
-            1.0
-            if row.get("_texto_me5a_norm", "") == row.get("_descripcion_norm", "")
-            and row.get("_texto_me5a_norm", "") != ""
-            else 0.0
-        ),
-        axis=1
+    candidatos["_similitud_ariba_descripcion"] = (
+        candidatos["_texto_me5a_norm"].fillna("")
+        .eq(candidatos["_descripcion_norm"].fillna(""))
+        & candidatos["_texto_me5a_norm"].fillna("").ne("")
     )
 
     candidatos["_dias_ariba_fecha"] = (
@@ -538,12 +566,21 @@ def match_me5a_ariba(
         0
     )
 
+    cols_bool_ariba = [
+        "_match_ariba_solicitud",
+        "_match_ariba_linea",
+        "_match_ariba_pedido",
+        "_similitud_ariba_descripcion"
+    ]
+
+    candidatos = limpiar_booleanos(candidatos, cols_bool_ariba)
+
     candidatos["score_ariba"] = (
         np.where(candidatos["_match_ariba_solicitud"], 60, 0)
         + np.where(candidatos["_match_ariba_linea"], 40, 0)
         + np.where(candidatos["_match_ariba_pedido"], 10, 0)
-        + np.where(candidatos["_similitud_ariba_descripcion"].eq(1), 20, 0)
-        + candidatos["_score_ariba_fecha"]
+        + np.where(candidatos["_similitud_ariba_descripcion"], 20, 0)
+        + candidatos["_score_ariba_fecha"].fillna(0)
     )
 
     idx_mejor = (
