@@ -157,7 +157,12 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
 def leer_archivo(uploaded_file, separador_csv: str) -> pd.DataFrame:
     nombre = uploaded_file.name.lower()
 
+    if nombre.endswith(".parquet"):
+        uploaded_file.seek(0)
+        return pd.read_parquet(uploaded_file)
+
     if nombre.endswith(".xlsx"):
+        uploaded_file.seek(0)
         return pd.read_excel(uploaded_file)
 
     if nombre.endswith(".csv"):
@@ -194,7 +199,7 @@ def leer_archivo(uploaded_file, separador_csv: str) -> pd.DataFrame:
                 on_bad_lines="skip"
             )
 
-    raise ValueError("Formato no soportado. Usa .xlsx o .csv")
+    raise ValueError("Formato no soportado. Usa .parquet, .xlsx o .csv")
 
 
 # =========================================================
@@ -244,6 +249,18 @@ def convertir_a_csv(df: pd.DataFrame) -> bytes:
         index=False,
         encoding="utf-8-sig"
     ).encode("utf-8-sig")
+
+
+def convertir_a_parquet(df: pd.DataFrame) -> bytes:
+    output = io.BytesIO()
+
+    df.to_parquet(
+        output,
+        index=False,
+        engine="pyarrow"
+    )
+
+    return output.getvalue()
 
 
 # =========================================================
@@ -435,7 +452,7 @@ st.markdown(
 st.markdown(
     """
     <p style='text-align: center; font-size: 18px;'>
-        Sube un archivo Excel o CSV para aplicar limpieza sobre columnas
+        Sube un archivo Parquet, Excel o CSV para aplicar limpieza sobre columnas
         de fechas, números y textos de la transacción <b>ME5A</b>.
     </p>
     """,
@@ -460,14 +477,14 @@ with st.sidebar:
     )
 
     st.caption(
-        "Si el CSV falla, prueba con 'Punto y coma (;)', "
-        "que suele ser común en archivos exportados desde Excel/SAP."
+        "Esta opción solo aplica para archivos CSV. "
+        "Para Parquet y Excel no se usa separador."
     )
 
 
 uploaded_file = st.file_uploader(
     "Selecciona archivo",
-    type=["xlsx", "csv"]
+    type=["parquet", "xlsx", "csv"]
 )
 
 
@@ -675,8 +692,9 @@ if uploaded_file is not None:
             )
 
             csv_bytes = convertir_a_csv(df_limpio)
+            parquet_bytes = convertir_a_parquet(df_limpio)
 
-            col_a, col_b = st.columns(2)
+            col_a, col_b, col_c = st.columns(3)
 
             with col_a:
                 st.download_button(
@@ -692,6 +710,14 @@ if uploaded_file is not None:
                     data=csv_bytes,
                     file_name="resultado_limpieza_transaccion_1_me5a.csv",
                     mime="text/csv"
+                )
+
+            with col_c:
+                st.download_button(
+                    label="Descargar Parquet limpio",
+                    data=parquet_bytes,
+                    file_name="resultado_limpieza_transaccion_1_me5a.parquet",
+                    mime="application/octet-stream"
                 )
 
     except Exception as e:
