@@ -465,6 +465,17 @@ st.divider()
 with st.sidebar:
     st.header("Configuración")
 
+    vista_sidebar = st.radio(
+        "Vista",
+        options=[
+            "Limpieza",
+            "Diagnóstico"
+        ],
+        index=0
+    )
+
+    st.divider()
+
     separador_csv = st.selectbox(
         "Separador CSV",
         options=[
@@ -502,67 +513,106 @@ if uploaded_file is not None:
         resumen_fechas = diagnostico_fechas(df_limpio)
         resumen_num = resumen_numerico(df_limpio)
 
-        tab_limpieza, tab_diagnostico, tab_descarga = st.tabs([
-            "Limpieza",
-            "Diagnóstico",
-            "Descarga"
-        ])
-
         # =================================================
-        # Tab limpieza
+        # Vista Limpieza
         # =================================================
 
-        with tab_limpieza:
+        if vista_sidebar == "Limpieza":
             st.success("Archivo cargado correctamente.")
 
-            col1, col2, col3, col4 = st.columns(4)
+            tab_limpieza, = st.tabs([
+                "Limpieza"
+            ])
 
-            col1.metric(
-                "Filas originales",
-                f"{len(df_original):,}"
-            )
+            with tab_limpieza:
+                col1, col2, col3, col4 = st.columns(4)
 
-            col2.metric(
-                "Columnas originales",
-                f"{df_original.shape[1]:,}"
-            )
+                col1.metric(
+                    "Filas originales",
+                    f"{len(df_original):,}"
+                )
 
-            col3.metric(
-                "Filas limpias",
-                f"{len(df_limpio):,}"
-            )
+                col2.metric(
+                    "Columnas originales",
+                    f"{df_original.shape[1]:,}"
+                )
 
-            col4.metric(
-                "Columnas limpias",
-                f"{df_limpio.shape[1]:,}"
-            )
+                col3.metric(
+                    "Filas limpias",
+                    f"{len(df_limpio):,}"
+                )
 
-            st.subheader("Vista previa original")
-            st.dataframe(
-                df_original.head(50),
-                use_container_width=True
-            )
+                col4.metric(
+                    "Columnas limpias",
+                    f"{df_limpio.shape[1]:,}"
+                )
 
-            st.subheader("Vista previa limpia")
-            st.dataframe(
-                df_limpio.head(50),
-                use_container_width=True
-            )
-
-            st.subheader("Porcentaje de nulos por columna")
-            chart_nulos_por_columna(diagnostico_columnas)
-
-            with st.expander("Ver detalle de columnas"):
+                st.subheader("Vista previa original")
                 st.dataframe(
-                    diagnostico_columnas,
+                    df_original.head(50),
                     use_container_width=True
                 )
 
+                st.subheader("Vista previa limpia")
+                st.dataframe(
+                    df_limpio.head(50),
+                    use_container_width=True
+                )
+
+                st.subheader("Porcentaje de nulos por columna")
+                chart_nulos_por_columna(diagnostico_columnas)
+
+                with st.expander("Ver detalle de columnas"):
+                    st.dataframe(
+                        diagnostico_columnas,
+                        use_container_width=True
+                    )
+
+                st.divider()
+
+                st.subheader("Descargar resultado limpio")
+
+                excel_bytes = convertir_a_excel(
+                    df_limpio=df_limpio,
+                    diagnostico_columnas=diagnostico_columnas,
+                    resumen_fechas=resumen_fechas,
+                    resumen_num=resumen_num
+                )
+
+                csv_bytes = convertir_a_csv(df_limpio)
+                parquet_bytes = convertir_a_parquet(df_limpio)
+
+                col_a, col_b, col_c = st.columns(3)
+
+                with col_a:
+                    st.download_button(
+                        label="Descargar como Excel",
+                        data=excel_bytes,
+                        file_name="resultado_limpieza_transaccion_1_me5a.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+
+                with col_b:
+                    st.download_button(
+                        label="Descargar como CSV",
+                        data=csv_bytes,
+                        file_name="resultado_limpieza_transaccion_1_me5a.csv",
+                        mime="text/csv"
+                    )
+
+                with col_c:
+                    st.download_button(
+                        label="Descargar como Parquet",
+                        data=parquet_bytes,
+                        file_name="resultado_limpieza_transaccion_1_me5a.parquet",
+                        mime="application/octet-stream"
+                    )
+
         # =================================================
-        # Tab diagnóstico
+        # Vista Diagnóstico desde sidebar
         # =================================================
 
-        with tab_diagnostico:
+        elif vista_sidebar == "Diagnóstico":
             st.subheader("Diagnóstico general")
 
             col1, col2, col3, col4 = st.columns(4)
@@ -676,49 +726,6 @@ if uploaded_file is not None:
                         resumen_fechas,
                         use_container_width=True
                     )
-
-        # =================================================
-        # Tab descarga
-        # =================================================
-
-        with tab_descarga:
-            st.subheader("Descargar resultado")
-
-            excel_bytes = convertir_a_excel(
-                df_limpio=df_limpio,
-                diagnostico_columnas=diagnostico_columnas,
-                resumen_fechas=resumen_fechas,
-                resumen_num=resumen_num
-            )
-
-            csv_bytes = convertir_a_csv(df_limpio)
-            parquet_bytes = convertir_a_parquet(df_limpio)
-
-            col_a, col_b, col_c = st.columns(3)
-
-            with col_a:
-                st.download_button(
-                    label="Descargar Excel completo",
-                    data=excel_bytes,
-                    file_name="resultado_limpieza_transaccion_1_me5a.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-
-            with col_b:
-                st.download_button(
-                    label="Descargar CSV limpio",
-                    data=csv_bytes,
-                    file_name="resultado_limpieza_transaccion_1_me5a.csv",
-                    mime="text/csv"
-                )
-
-            with col_c:
-                st.download_button(
-                    label="Descargar Parquet limpio",
-                    data=parquet_bytes,
-                    file_name="resultado_limpieza_transaccion_1_me5a.parquet",
-                    mime="application/octet-stream"
-                )
 
     except Exception as e:
         st.error("Ocurrió un error al procesar el archivo.")
