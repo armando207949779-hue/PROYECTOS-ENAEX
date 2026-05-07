@@ -72,6 +72,8 @@ def leer_excel_data_desde_b14(uploaded_file) -> pd.DataFrame:
     Lee hoja Data desde fila 14 como encabezado y elimina columna A.
     Equivale a empezar desde B14.
     """
+    uploaded_file.seek(0)
+
     df = pd.read_excel(
         uploaded_file,
         sheet_name="Data",
@@ -82,6 +84,53 @@ def leer_excel_data_desde_b14(uploaded_file) -> pd.DataFrame:
     df = df.iloc[:, 1:].copy()
 
     return df
+
+
+def leer_archivo(uploaded_file, separador_csv: str) -> pd.DataFrame:
+    nombre = uploaded_file.name.lower()
+
+    if nombre.endswith(".parquet"):
+        uploaded_file.seek(0)
+        return pd.read_parquet(uploaded_file)
+
+    if nombre.endswith(".xlsx"):
+        return leer_excel_data_desde_b14(uploaded_file)
+
+    if nombre.endswith(".csv"):
+        uploaded_file.seek(0)
+
+        if separador_csv == "Automático":
+            sep = None
+        elif separador_csv == "Punto y coma (;)":
+            sep = ";"
+        elif separador_csv == "Coma (,)":
+            sep = ","
+        elif separador_csv == "Tabulación":
+            sep = "\t"
+        else:
+            sep = None
+
+        try:
+            return pd.read_csv(
+                uploaded_file,
+                sep=sep,
+                engine="python",
+                encoding="utf-8-sig",
+                on_bad_lines="skip"
+            )
+
+        except Exception:
+            uploaded_file.seek(0)
+
+            return pd.read_csv(
+                uploaded_file,
+                sep=sep,
+                engine="python",
+                encoding="latin1",
+                on_bad_lines="skip"
+            )
+
+    raise ValueError("Formato no soportado. Usa .parquet, .xlsx o .csv")
 
 
 # =========================================================
@@ -97,10 +146,10 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
     # Eliminar columnas completamente vacías
     df = df.dropna(axis=1, how="all")
 
-    # Eliminar columnas tipo Unnamed si están vacías o no aportan
+    # Eliminar columnas tipo Unnamed si están vacías
     columnas_unnamed = [
         col for col in df.columns
-        if col.startswith("Unnamed")
+        if str(col).startswith("Unnamed")
     ]
 
     for col in columnas_unnamed:
@@ -156,7 +205,6 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
             .str.strip()
         )
 
-        # Convertir strings vacíos en nulos reales
         df[col] = df[col].replace("", pd.NA)
 
     return df
@@ -480,6 +528,18 @@ def convertir_a_csv(df: pd.DataFrame) -> bytes:
     ).encode("utf-8-sig")
 
 
+def convertir_a_parquet(df: pd.DataFrame) -> bytes:
+    output = io.BytesIO()
+
+    df.to_parquet(
+        output,
+        index=False,
+        engine="pyarrow"
+    )
+
+    return output.getvalue()
+
+
 # =========================================================
 # Interfaz Streamlit
 # =========================================================
@@ -496,9 +556,10 @@ st.markdown(
 st.markdown(
     """
     <p style='text-align: center; font-size: 18px;'>
-        Sube el archivo Excel. La app leerá la hoja <b>Data</b> desde <b>B14</b>,
-        estandarizará fechas y números, excluirá nulos en <b>Tipo de Compra</b>,
-        dejará solo <b>ID de unidad de negocio = CEN1</b> y creará la columna
+        Sube un archivo Parquet, Excel o CSV. Si subes Excel, la app leerá la hoja
+        <b>Data</b> desde <b>B14</b>. Luego estandarizará fechas y números,
+        excluirá nulos en <b>Tipo de Compra</b>, dejará solo
+        <b>ID de unidad de negocio = CEN1</b> y creará la columna
         <b>Categoria Tipo de Compra</b>.
     </p>
     """,
@@ -522,10 +583,28 @@ with st.sidebar:
         index=0
     )
 
+    st.divider()
+
+    separador_csv = st.selectbox(
+        "Separador CSV",
+        options=[
+            "Automático",
+            "Punto y coma (;)",
+            "Coma (,)",
+            "Tabulación"
+        ],
+        index=0
+    )
+
+    st.caption(
+        "Esta opción solo aplica para archivos CSV. "
+        "Para Parquet y Excel no se usa separador."
+    )
+
 
 uploaded_file = st.file_uploader(
-    "Selecciona archivo Excel",
-    type=["xlsx"]
+    "Selecciona archivo",
+    type=["parquet", "xlsx", "csv"]
 )
 
 
@@ -539,7 +618,10 @@ if uploaded_file is not None:
         # =================================================
 
         estado.info("Leyendo archivo...")
-        df_original = leer_excel_data_desde_b14(uploaded_file)
+        df_original = leer_archivo(
+            uploaded_file=uploaded_file,
+            separador_csv=separador_csv
+        )
         progreso.progress(20)
 
         estado.info("Limpiando fechas, números y textos...")
@@ -551,23 +633,15 @@ if uploaded_file is not None:
         progreso.progress(60)
 
         # =================================================
-        # Diagnóstico opcional
+        # Diagnósticos
         # =================================================
 
-        diagnostico_columnas = None
-        resumen_general = None
-        resumen_fechas = None
-        resumen_num = None
-
-        if pagina == "Diagnóstico":
-            estado.info("Generando diagnóstico...")
-            diagnostico_columnas = tabla_diagnostico_columnas(df_limpio)
-            resumen_general = diagnostico_general(df_limpio)
-            resumen_fechas = diagnostico_fechas(df_limpio)
-            resumen_num = resumen_numerico(df_limpio)
-            progreso.progress(85)
-        else:
-            progreso.progress(75)
+        estado.info("Generando diagnóstico...")
+        diagnostico_columnas = tabla_diagnostico_columnas(df_limpio)
+        resumen_general = diagnostico_general(df_limpio)
+        resumen_fechas = diagnostico_fechas(df_limpio)
+        resumen_num = resumen_numerico(df_limpio)
+        progreso.progress(80)
 
         # =================================================
         # Página Limpieza
@@ -578,10 +652,14 @@ if uploaded_file is not None:
 
             excel_bytes = convertir_a_excel(
                 df_limpio=df_limpio,
-                df_filtrado=df_final_limpio
+                df_filtrado=df_final_limpio,
+                diagnostico_columnas=diagnostico_columnas,
+                resumen_fechas=resumen_fechas,
+                resumen_num=resumen_num
             )
 
             csv_bytes = convertir_a_csv(df_final_limpio)
+            parquet_bytes = convertir_a_parquet(df_final_limpio)
 
             progreso.progress(100)
             estado.success("Archivo listo para revisar y descargar.")
@@ -633,13 +711,13 @@ if uploaded_file is not None:
 
             st.divider()
 
-            st.subheader("Descargar resultado")
+            st.subheader("Descargar resultado final limpio")
 
-            col_a, col_b = st.columns(2)
+            col_a, col_b, col_c = st.columns(3)
 
             with col_a:
                 st.download_button(
-                    label="Descargar Excel completo",
+                    label="Descargar como Excel",
                     data=excel_bytes,
                     file_name="resultado_limpieza_transaccion_2_ariba.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -647,14 +725,22 @@ if uploaded_file is not None:
 
             with col_b:
                 st.download_button(
-                    label="Descargar CSV final limpio",
+                    label="Descargar como CSV",
                     data=csv_bytes,
                     file_name="resultado_limpieza_transaccion_2_ariba_final.csv",
                     mime="text/csv"
                 )
 
+            with col_c:
+                st.download_button(
+                    label="Descargar como Parquet",
+                    data=parquet_bytes,
+                    file_name="resultado_limpieza_transaccion_2_ariba_final.parquet",
+                    mime="application/octet-stream"
+                )
+
         # =================================================
-        # Página Diagnóstico
+        # Página Diagnóstico desde sidebar
         # =================================================
 
         elif pagina == "Diagnóstico":
@@ -789,4 +875,4 @@ if uploaded_file is not None:
         st.exception(e)
 
 else:
-    st.warning("Carga un archivo Excel para comenzar.")
+    st.warning("Carga un archivo para comenzar.")
