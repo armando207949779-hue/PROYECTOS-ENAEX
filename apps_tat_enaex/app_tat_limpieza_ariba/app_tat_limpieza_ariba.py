@@ -1,47 +1,66 @@
 import io
-import os
+import base64
+from pathlib import Path
+
 import pandas as pd
 import streamlit as st
 from pandas.api.types import is_datetime64_any_dtype
 
 
-# =========================================================
-# Configuración general
-# =========================================================
+# =========================
+# Ruta del logo ENAEX
+# =========================
+
+BASE_DIR = Path(__file__).resolve().parent
+
+# app.py está dentro de apps_tat_enaex.
+# Subimos un nivel hasta la raíz del repo: proyectos-enaex
+ROOT_DIR = BASE_DIR.parent
+
+# Ruta correcta:
+# proyectos-enaex/assets/logo.svg
+LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
+
+
+# =========================
+# Configuración Streamlit
+# =========================
 
 st.set_page_config(
-    page_title="Transacción 2 Ariba",
+    page_title="Limpieza Transacción N°2 ARIBA",
     page_icon="📊",
     layout="wide"
 )
 
 
-# =========================================================
-# Logo
-# =========================================================
+# =========================
+# Encabezado con logo ENAEX centrado
+# =========================
 
-# Usa aquí la misma ruta de la imagen que tenías en tu otro código
-LOGO_PATH = r"C:\Users\Usuario\Downloads\logo.png"
+if LOGO_PATH.exists():
+    logo_svg = LOGO_PATH.read_text(encoding="utf-8")
+    logo_base64 = base64.b64encode(logo_svg.encode("utf-8")).decode("utf-8")
 
-
-def mostrar_logo_y_titulo():
-    """
-    Muestra el logo y el título principal.
-    """
-    if os.path.exists(LOGO_PATH):
-        with st.sidebar:
-            st.image(LOGO_PATH, use_container_width=True)
-
-        col_logo, col_titulo = st.columns([1, 5])
-
-        with col_logo:
-            st.image(LOGO_PATH, width=120)
-
-        with col_titulo:
-            st.title("Transacción 2 Ariba")
-    else:
-        st.title("Transacción 2 Ariba")
-        st.sidebar.warning("No se encontró el logo en la ruta indicada.")
+    st.markdown(
+        f"""
+        <div style="
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-top: 10px;
+            margin-bottom: 20px;
+        ">
+            <img 
+                src="data:image/svg+xml;base64,{logo_base64}" 
+                style="width: 260px; display: block;"
+            >
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+else:
+    st.error(f"Logo no encontrado en ruta correcta: {LOGO_PATH}")
 
 
 # =========================================================
@@ -50,7 +69,7 @@ def mostrar_logo_y_titulo():
 
 def leer_excel_data_desde_b14(uploaded_file) -> pd.DataFrame:
     """
-    Lee la hoja Data desde fila 14 como encabezado y elimina columna A.
+    Lee hoja Data desde fila 14 como encabezado y elimina columna A.
     Equivale a empezar desde B14.
     """
     df = pd.read_excel(
@@ -78,7 +97,7 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
     # Eliminar columnas completamente vacías
     df = df.dropna(axis=1, how="all")
 
-    # Eliminar columnas tipo Unnamed si están vacías
+    # Eliminar columnas tipo Unnamed si están vacías o no aportan
     columnas_unnamed = [
         col for col in df.columns
         if col.startswith("Unnamed")
@@ -111,7 +130,10 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
 
     for col in cols_numericas:
         if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+            df[col] = pd.to_numeric(
+                df[col],
+                errors="coerce"
+            )
 
     # Tipo de Compra como entero nullable
     if "Tipo de Compra" in df.columns:
@@ -209,10 +231,12 @@ def tabla_diagnostico_columnas(df: pd.DataFrame) -> pd.DataFrame:
         "Valores únicos": df.nunique(dropna=True).values
     })
 
-    return diagnostico.sort_values(
+    diagnostico = diagnostico.sort_values(
         by="% Nulos",
         ascending=False
     ).reset_index(drop=True)
+
+    return diagnostico
 
 
 def diagnostico_general(df: pd.DataFrame) -> dict:
@@ -257,7 +281,7 @@ def columnas_fecha(df: pd.DataFrame) -> list:
 def diagnostico_fechas(df: pd.DataFrame) -> pd.DataFrame:
     cols = columnas_fecha(df)
 
-    if not cols:
+    if len(cols) == 0:
         return pd.DataFrame()
 
     data = []
@@ -280,17 +304,14 @@ def resumen_numerico(df: pd.DataFrame) -> pd.DataFrame:
     if len(cols_num) == 0:
         return pd.DataFrame()
 
-    return (
-        df[cols_num]
-        .describe()
-        .T
-        .reset_index()
-        .rename(columns={"index": "Columna"})
-    )
+    resumen = df[cols_num].describe().T.reset_index()
+    resumen = resumen.rename(columns={"index": "Columna"})
+
+    return resumen
 
 
 # =========================================================
-# Gráficos Streamlit
+# Gráficos nativos Streamlit
 # =========================================================
 
 def chart_nulos_por_columna(diag_cols: pd.DataFrame):
@@ -324,30 +345,6 @@ def chart_valores_unicos(diag_cols: pd.DataFrame, top_n: int = 10):
     st.bar_chart(data)
 
 
-def chart_conteo_categoria(df_filtrado: pd.DataFrame):
-    if "Tipo de Compra Categoria" not in df_filtrado.columns:
-        st.info("No existe la columna Tipo de Compra Categoria.")
-        return
-
-    conteo_categoria = (
-        df_filtrado["Tipo de Compra Categoria"]
-        .value_counts(dropna=False)
-        .reset_index()
-    )
-
-    conteo_categoria.columns = [
-        "Tipo de Compra Categoria",
-        "Cantidad"
-    ]
-
-    st.dataframe(conteo_categoria, use_container_width=True)
-
-    st.bar_chart(
-        conteo_categoria
-        .set_index("Tipo de Compra Categoria")["Cantidad"]
-    )
-
-
 def chart_histograma_numerico(df: pd.DataFrame, columna: str):
     serie = df[columna].dropna()
 
@@ -355,7 +352,11 @@ def chart_histograma_numerico(df: pd.DataFrame, columna: str):
         st.info("La columna seleccionada no tiene datos numéricos válidos.")
         return
 
-    hist = pd.cut(serie, bins=20).value_counts().sort_index()
+    hist = pd.cut(
+        serie,
+        bins=20
+    ).value_counts().sort_index()
+
     hist.index = hist.index.astype(str)
 
     st.bar_chart(hist)
@@ -377,11 +378,44 @@ def chart_serie_fecha(df: pd.DataFrame, columna_fecha: str):
     st.line_chart(data)
 
 
+def chart_conteo_categoria(df_filtrado: pd.DataFrame):
+    if "Tipo de Compra Categoria" not in df_filtrado.columns:
+        st.info("No existe la columna Tipo de Compra Categoria.")
+        return
+
+    conteo_categoria = (
+        df_filtrado["Tipo de Compra Categoria"]
+        .value_counts(dropna=False)
+        .reset_index()
+    )
+
+    conteo_categoria.columns = [
+        "Tipo de Compra Categoria",
+        "Cantidad"
+    ]
+
+    st.dataframe(
+        conteo_categoria,
+        use_container_width=True
+    )
+
+    st.bar_chart(
+        conteo_categoria
+        .set_index("Tipo de Compra Categoria")["Cantidad"]
+    )
+
+
 # =========================================================
 # Exportación
 # =========================================================
 
-def convertir_a_excel(df_limpio: pd.DataFrame, df_filtrado: pd.DataFrame) -> bytes:
+def convertir_a_excel(
+    df_limpio: pd.DataFrame,
+    df_filtrado: pd.DataFrame,
+    diagnostico_columnas: pd.DataFrame,
+    resumen_fechas: pd.DataFrame,
+    resumen_num: pd.DataFrame
+) -> bytes:
     output = io.BytesIO()
 
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -395,6 +429,12 @@ def convertir_a_excel(df_limpio: pd.DataFrame, df_filtrado: pd.DataFrame) -> byt
             writer,
             index=False,
             sheet_name="CEN1_Filtrado"
+        )
+
+        diagnostico_columnas.to_excel(
+            writer,
+            index=False,
+            sheet_name="Diagnostico_Columnas"
         )
 
         if "Tipo de Compra Categoria" in df_filtrado.columns:
@@ -415,25 +455,57 @@ def convertir_a_excel(df_limpio: pd.DataFrame, df_filtrado: pd.DataFrame) -> byt
                 sheet_name="Conteo_Categoria"
             )
 
+        if not resumen_fechas.empty:
+            resumen_fechas.to_excel(
+                writer,
+                index=False,
+                sheet_name="Resumen_Fechas"
+            )
+
+        if not resumen_num.empty:
+            resumen_num.to_excel(
+                writer,
+                index=False,
+                sheet_name="Resumen_Numerico"
+            )
+
     return output.getvalue()
 
 
 def convertir_a_csv(df: pd.DataFrame) -> bytes:
-    return df.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
+    return df.to_csv(
+        index=False,
+        encoding="utf-8-sig"
+    ).encode("utf-8-sig")
 
 
 # =========================================================
 # Interfaz Streamlit
 # =========================================================
 
-mostrar_logo_y_titulo()
-
-st.write(
-    "Sube el archivo Excel. La app leerá la hoja **Data** desde **B14**, "
-    "estandarizará fechas y números, excluirá nulos en **Tipo de Compra**, "
-    "dejará solo **ID de unidad de negocio = CEN1** y creará la columna "
-    "**Tipo de Compra Categoria**."
+st.markdown(
+    """
+    <h1 style='text-align: center;'>
+        Limpieza Transacción N°2 ARIBA
+    </h1>
+    """,
+    unsafe_allow_html=True
 )
+
+st.markdown(
+    """
+    <p style='text-align: center; font-size: 18px;'>
+        Sube el archivo Excel. La app leerá la hoja <b>Data</b> desde <b>B14</b>,
+        estandarizará fechas y números, excluirá nulos en <b>Tipo de Compra</b>,
+        dejará solo <b>ID de unidad de negocio = CEN1</b> y creará la columna
+        <b>Tipo de Compra Categoria</b>.
+    </p>
+    """,
+    unsafe_allow_html=True
+)
+
+st.divider()
+
 
 with st.sidebar:
     st.header("Configuración")
@@ -443,17 +515,9 @@ with st.sidebar:
         "La lectura inicia desde B14."
     )
 
-    mostrar_vistas_originales = st.checkbox(
+    mostrar_vistas = st.checkbox(
         "Mostrar vistas previas",
         value=True
-    )
-
-    top_n_unicos = st.slider(
-        "Top columnas con más valores únicos",
-        min_value=5,
-        max_value=30,
-        value=10,
-        step=5
     )
 
 
@@ -469,19 +533,40 @@ if uploaded_file is not None:
         df_limpio = limpiar_fechas_y_numeros(df_original)
         df_filtrado = aplicar_filtros_y_categoria(df_limpio)
 
-        tab_limpieza, tab_diagnostico = st.tabs([
-            "Limpieza y descarga",
-            "Diagnóstico"
+        diagnostico_columnas = tabla_diagnostico_columnas(df_limpio)
+        resumen_general = diagnostico_general(df_limpio)
+        resumen_fechas = diagnostico_fechas(df_limpio)
+        resumen_num = resumen_numerico(df_limpio)
+
+        tab_limpieza, tab_diagnostico, tab_descarga = st.tabs([
+            "Limpieza",
+            "Diagnóstico",
+            "Descarga"
         ])
+
+        # =================================================
+        # Tab limpieza
+        # =================================================
 
         with tab_limpieza:
             st.success("Archivo procesado correctamente.")
 
             col1, col2, col3, col4 = st.columns(4)
 
-            col1.metric("Filas originales", f"{len(df_original):,}")
-            col2.metric("Filas limpias", f"{len(df_limpio):,}")
-            col3.metric("Filas CEN1 filtradas", f"{len(df_filtrado):,}")
+            col1.metric(
+                "Filas originales",
+                f"{len(df_original):,}"
+            )
+
+            col2.metric(
+                "Filas limpias",
+                f"{len(df_limpio):,}"
+            )
+
+            col3.metric(
+                "Filas CEN1 filtradas",
+                f"{len(df_filtrado):,}"
+            )
 
             nulos_tipo_compra = (
                 df_limpio["Tipo de Compra"].isna().sum()
@@ -489,9 +574,12 @@ if uploaded_file is not None:
                 else 0
             )
 
-            col4.metric("Nulos Tipo de Compra", f"{nulos_tipo_compra:,}")
+            col4.metric(
+                "Nulos Tipo de Compra",
+                f"{nulos_tipo_compra:,}"
+            )
 
-            if mostrar_vistas_originales:
+            if mostrar_vistas:
                 st.subheader("Vista previa original")
                 st.dataframe(
                     df_original.head(50),
@@ -513,63 +601,69 @@ if uploaded_file is not None:
             st.subheader("Conteo por Tipo de Compra Categoria")
             chart_conteo_categoria(df_filtrado)
 
-            st.subheader("Descargar resultado")
-
-            excel_bytes = convertir_a_excel(df_limpio, df_filtrado)
-            csv_bytes = convertir_a_csv(df_filtrado)
-
-            col_a, col_b = st.columns(2)
-
-            with col_a:
-                st.download_button(
-                    label="Descargar Excel",
-                    data=excel_bytes,
-                    file_name="resultado_limpio_filtrado_CEN1.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-
-            with col_b:
-                st.download_button(
-                    label="Descargar CSV filtrado",
-                    data=csv_bytes,
-                    file_name="resultado_filtrado_CEN1.csv",
-                    mime="text/csv"
-                )
+        # =================================================
+        # Tab diagnóstico
+        # =================================================
 
         with tab_diagnostico:
-            st.subheader("Diagnóstico general data limpia")
-
-            resumen = diagnostico_general(df_limpio)
+            st.subheader("Diagnóstico general")
 
             col1, col2, col3, col4 = st.columns(4)
 
-            col1.metric("Filas", f"{resumen['total_filas']:,}")
-            col2.metric("Columnas", f"{resumen['total_columnas']:,}")
-            col3.metric("% nulos total", f"{resumen['porcentaje_nulos']}%")
-            col4.metric("% duplicados", f"{resumen['porcentaje_duplicados']}%")
+            col1.metric(
+                "Filas",
+                f"{resumen_general['total_filas']:,}"
+            )
+
+            col2.metric(
+                "Columnas",
+                f"{resumen_general['total_columnas']:,}"
+            )
+
+            col3.metric(
+                "% nulos total",
+                f"{resumen_general['porcentaje_nulos']}%"
+            )
+
+            col4.metric(
+                "% duplicados",
+                f"{resumen_general['porcentaje_duplicados']}%"
+            )
 
             col5, col6 = st.columns(2)
 
-            col5.metric("Celdas nulas", f"{resumen['total_nulos']:,}")
-            col6.metric("Filas duplicadas", f"{resumen['duplicados']:,}")
+            col5.metric(
+                "Celdas nulas",
+                f"{resumen_general['total_nulos']:,}"
+            )
 
-            diag_cols = tabla_diagnostico_columnas(df_limpio)
+            col6.metric(
+                "Filas duplicadas",
+                f"{resumen_general['duplicados']:,}"
+            )
 
             st.divider()
 
             st.subheader("Detalle de columnas")
-            st.dataframe(diag_cols, use_container_width=True)
+            st.dataframe(
+                diagnostico_columnas,
+                use_container_width=True
+            )
 
             st.subheader("Porcentaje de nulos por columna")
-            chart_nulos_por_columna(diag_cols)
+            chart_nulos_por_columna(diagnostico_columnas)
 
-            st.subheader("Distribución de tipos de dato")
+            st.subheader("Distribución de tipos de datos")
             chart_tipos_dato(df_limpio)
 
-            st.subheader("Top columnas con más valores únicos")
-            chart_valores_unicos(diag_cols, top_n=top_n_unicos)
+            st.subheader("Top columnas con mayor porcentaje de nulos")
+            chart_nulos_por_columna(
+                diagnostico_columnas.head(10)
+            )
 
-            columnas_50 = diag_cols[diag_cols["% Nulos"] >= 50]
+            columnas_50 = diagnostico_columnas[
+                diagnostico_columnas["% Nulos"] >= 50
+            ]
 
             if columnas_50.empty:
                 st.success("No hay columnas con 50% o más de nulos.")
@@ -577,45 +671,98 @@ if uploaded_file is not None:
                 st.warning("Existen columnas con 50% o más de datos nulos.")
                 chart_nulos_por_columna(columnas_50)
 
+            st.subheader("Top columnas con más valores únicos")
+            chart_valores_unicos(
+                diagnostico_columnas,
+                top_n=10
+            )
+
             st.divider()
 
-            st.subheader("Resumen numérico")
+            st.subheader("Análisis de columnas numéricas")
 
-            resumen_num = resumen_numerico(df_limpio)
+            cols_num = list(
+                df_limpio.select_dtypes(include=["number"]).columns
+            )
 
-            if resumen_num.empty:
+            if len(cols_num) == 0:
                 st.info("No se encontraron columnas numéricas.")
             else:
-                st.dataframe(resumen_num, use_container_width=True)
-
-                cols_num = list(df_limpio.select_dtypes(include=["number"]).columns)
-
                 col_num = st.selectbox(
                     "Selecciona una columna numérica",
                     options=cols_num
                 )
 
-                chart_histograma_numerico(df_limpio, col_num)
+                chart_histograma_numerico(
+                    df_limpio,
+                    col_num
+                )
+
+                with st.expander("Ver resumen estadístico numérico"):
+                    st.dataframe(
+                        resumen_num,
+                        use_container_width=True
+                    )
 
             st.divider()
 
-            st.subheader("Resumen de fechas")
+            st.subheader("Análisis de columnas de fecha")
 
-            resumen_fechas = diagnostico_fechas(df_limpio)
+            cols_fecha_detectadas = columnas_fecha(df_limpio)
 
-            if resumen_fechas.empty:
+            if len(cols_fecha_detectadas) == 0:
                 st.info("No se encontraron columnas de fecha.")
             else:
-                st.dataframe(resumen_fechas, use_container_width=True)
-
-                cols_fecha_detectadas = columnas_fecha(df_limpio)
-
                 col_fecha = st.selectbox(
                     "Selecciona una columna de fecha",
                     options=cols_fecha_detectadas
                 )
 
-                chart_serie_fecha(df_limpio, col_fecha)
+                chart_serie_fecha(
+                    df_limpio,
+                    col_fecha
+                )
+
+                with st.expander("Ver detalle de fechas"):
+                    st.dataframe(
+                        resumen_fechas,
+                        use_container_width=True
+                    )
+
+        # =================================================
+        # Tab descarga
+        # =================================================
+
+        with tab_descarga:
+            st.subheader("Descargar resultado")
+
+            excel_bytes = convertir_a_excel(
+                df_limpio=df_limpio,
+                df_filtrado=df_filtrado,
+                diagnostico_columnas=diagnostico_columnas,
+                resumen_fechas=resumen_fechas,
+                resumen_num=resumen_num
+            )
+
+            csv_bytes = convertir_a_csv(df_filtrado)
+
+            col_a, col_b = st.columns(2)
+
+            with col_a:
+                st.download_button(
+                    label="Descargar Excel completo",
+                    data=excel_bytes,
+                    file_name="resultado_limpieza_transaccion_2_ariba.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+
+            with col_b:
+                st.download_button(
+                    label="Descargar CSV filtrado CEN1",
+                    data=csv_bytes,
+                    file_name="resultado_limpieza_transaccion_2_ariba_cen1.csv",
+                    mime="text/csv"
+                )
 
     except Exception as e:
         st.error("Ocurrió un error al procesar el archivo.")
