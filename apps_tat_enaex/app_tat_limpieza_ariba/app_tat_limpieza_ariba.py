@@ -13,7 +13,18 @@ from pandas.api.types import is_datetime64_any_dtype
 
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
-LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
+
+LOGO_CANDIDATOS = [
+    PROJECT_DIR / "assets" / "logo.svg",
+    PROJECT_DIR / "assets" / "logo.png",
+    PROJECT_DIR / "assets" / "logo.jpg",
+    PROJECT_DIR / "assets" / "logo.jpeg",
+]
+
+LOGO_PATH = next(
+    (path for path in LOGO_CANDIDATOS if path.exists()),
+    None
+)
 
 
 # =========================================================
@@ -32,32 +43,53 @@ st.set_page_config(
 # =========================================================
 
 def mostrar_logo():
-    if LOGO_PATH.exists():
+    if LOGO_PATH is None:
+        st.warning(
+            "Logo no encontrado. Revisa que exista en la carpeta "
+            f"{PROJECT_DIR / 'assets'}"
+        )
+        return
+
+    extension = LOGO_PATH.suffix.lower()
+
+    if extension == ".svg":
         logo_svg = LOGO_PATH.read_text(encoding="utf-8")
         logo_base64 = base64.b64encode(
             logo_svg.encode("utf-8")
         ).decode("utf-8")
+        mime_type = "image/svg+xml"
 
-        st.markdown(
-            f"""
-            <div style="
-                width: 100%;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                margin-top: 10px;
-                margin-bottom: 20px;
-            ">
-                <img 
-                    src="data:image/svg+xml;base64,{logo_base64}" 
-                    style="width: 260px; display: block;"
-                >
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+    elif extension in [".png", ".jpg", ".jpeg"]:
+        logo_bytes = LOGO_PATH.read_bytes()
+        logo_base64 = base64.b64encode(logo_bytes).decode("utf-8")
+
+        if extension == ".png":
+            mime_type = "image/png"
+        else:
+            mime_type = "image/jpeg"
+
     else:
-        st.warning(f"Logo no encontrado: {LOGO_PATH}")
+        st.warning(f"Formato de logo no soportado: {LOGO_PATH}")
+        return
+
+    st.markdown(
+        f"""
+        <div style="
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-top: 10px;
+            margin-bottom: 20px;
+        ">
+            <img 
+                src="data:{mime_type};base64,{logo_base64}" 
+                style="width: 260px; display: block;"
+            >
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 
 # =========================================================
