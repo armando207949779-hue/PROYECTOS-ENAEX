@@ -612,19 +612,6 @@ def crear_data_barplot_interactivo(
         ["periodo_fecha", "orden_estado"]
     ).reset_index(drop=True)
 
-    df_plot["texto_barra"] = (
-        df_plot["porcentaje"]
-        .round(1)
-        .astype(str)
-        + "%"
-    )
-
-    df_plot["texto_barra_visible"] = np.where(
-        df_plot["porcentaje"] >= 12,
-        df_plot["texto_barra"],
-        ""
-    )
-
     return df_plot
 
 
@@ -652,8 +639,9 @@ def grafico_barplot_interactivo_altair(
         .tolist()
     )
 
-    base = (
+    chart = (
         alt.Chart(df_plot)
+        .mark_bar()
         .encode(
             x=alt.X(
                 "periodo_label:N",
@@ -695,25 +683,6 @@ def grafico_barplot_interactivo_altair(
                 alt.Tooltip("total:Q", title="Total mes", format=",.0f")
             ]
         )
-    )
-
-    barras = base.mark_bar(size=48)
-
-    etiquetas = (
-        base
-        .mark_text(
-            color="white",
-            fontWeight="bold",
-            fontSize=10,
-            baseline="middle"
-        )
-        .encode(
-            text=alt.Text("texto_barra_visible:N")
-        )
-    )
-
-    chart = (
-        (barras + etiquetas)
         .properties(
             title=titulo,
             height=430
