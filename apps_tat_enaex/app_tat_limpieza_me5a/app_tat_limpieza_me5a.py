@@ -12,30 +12,8 @@ from pandas.api.types import is_datetime64_any_dtype
 # =========================
 
 BASE_DIR = Path(__file__).resolve().parent
-
-
-def encontrar_logo() -> Path | None:
-    """
-    Busca assets/logo.svg desde la carpeta actual de la app
-    y también en carpetas superiores.
-
-    Ejemplo esperado:
-    proyectos-enaex/
-    ├── assets/
-    │   └── logo.svg
-    └── apps_tat_enaex/
-        └── app.py
-    """
-    for carpeta in [BASE_DIR, *BASE_DIR.parents]:
-        candidato = carpeta / "assets" / "logo.svg"
-
-        if candidato.exists():
-            return candidato
-
-    return None
-
-
-LOGO_PATH = encontrar_logo()
+PROJECT_DIR = BASE_DIR.parent
+LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
 
 
 # =========================
@@ -53,18 +31,9 @@ st.set_page_config(
 # Encabezado con logo ENAEX centrado
 # =========================
 
-def mostrar_logo():
-    if LOGO_PATH is None:
-        st.warning(
-            "Logo no encontrado. Revisa que exista en: "
-            "proyectos-enaex/assets/logo.svg"
-        )
-        return
-
+if LOGO_PATH.exists():
     logo_svg = LOGO_PATH.read_text(encoding="utf-8")
-    logo_base64 = base64.b64encode(
-        logo_svg.encode("utf-8")
-    ).decode("utf-8")
+    logo_base64 = base64.b64encode(logo_svg.encode("utf-8")).decode("utf-8")
 
     st.markdown(
         f"""
@@ -84,6 +53,8 @@ def mostrar_logo():
         """,
         unsafe_allow_html=True
     )
+else:
+    st.warning(f"Logo no encontrado: {LOGO_PATH}")
 
 
 # =========================================================
@@ -93,13 +64,10 @@ def mostrar_logo():
 def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
-    # Limpiar nombres de columnas
     df.columns = df.columns.astype(str).str.strip()
 
-    # Eliminar columnas completamente vacías
     df = df.dropna(axis=1, how="all")
 
-    # Limpiar textos
     cols_texto = df.select_dtypes(include=["object", "string"]).columns
 
     for col in cols_texto:
@@ -108,11 +76,8 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
             .astype("string")
             .str.strip()
         )
-
-        # Convertir strings vacíos en nulos reales
         df[col] = df[col].replace("", pd.NA)
 
-    # Convertir fechas
     cols_fecha = [
         "Fecha de solicitud",
         "Fecha modificación",
@@ -129,7 +94,6 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
                 dayfirst=True
             )
 
-    # Fecha de entrega suele venir como YYYYMMDD
     if "Fecha de entrega" in df.columns:
         df["Fecha de entrega"] = pd.to_datetime(
             df["Fecha de entrega"].astype("string"),
@@ -137,7 +101,6 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
             errors="coerce"
         )
 
-    # Convertir numéricos decimales
     cols_numericas = [
         "Cantidad solicitada",
         "Precio de valoración"
@@ -150,14 +113,12 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
                 errors="coerce"
             )
 
-    # Convertir Pedido a entero nullable
     if "Pedido" in df.columns:
         df["Pedido"] = pd.to_numeric(
             df["Pedido"],
             errors="coerce"
         ).astype("Int64")
 
-    # Convertir enteros
     cols_enteras = [
         "Solicitud de pedido",
         "Pos.solicitud pedido",
@@ -447,8 +408,6 @@ def chart_serie_fecha(df: pd.DataFrame, columna_fecha: str):
 # Interfaz Streamlit
 # =========================================================
 
-mostrar_logo()
-
 st.markdown(
     """
     <h1 style='text-align: center;'>
@@ -517,10 +476,6 @@ if uploaded_file is not None:
             "Descarga"
         ])
 
-        # =================================================
-        # Tab limpieza
-        # =================================================
-
         with tab_limpieza:
             st.success("Archivo cargado correctamente.")
 
@@ -566,10 +521,6 @@ if uploaded_file is not None:
                     diagnostico_columnas,
                     use_container_width=True
                 )
-
-        # =================================================
-        # Tab diagnóstico
-        # =================================================
 
         with tab_diagnostico:
             st.subheader("Diagnóstico general")
@@ -685,10 +636,6 @@ if uploaded_file is not None:
                         resumen_fechas,
                         use_container_width=True
                     )
-
-        # =================================================
-        # Tab descarga
-        # =================================================
 
         with tab_descarga:
             st.subheader("Descargar resultado")
