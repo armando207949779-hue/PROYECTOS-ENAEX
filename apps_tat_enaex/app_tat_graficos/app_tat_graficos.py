@@ -5,7 +5,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import streamlit as st
-import plotly.graph_objects as go
 
 
 # =========================
@@ -130,6 +129,7 @@ def normalizar_performance(valor):
 
 def preparar_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
+
     df.columns = df.columns.astype(str).str.strip()
 
     columnas_requeridas = [
@@ -156,6 +156,7 @@ def preparar_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
     df["anio"] = df["fecha_recepcion_final"].dt.year
     df["mes_num"] = df["fecha_recepcion_final"].dt.month
+
     df["periodo_mes"] = (
         df["fecha_recepcion_final"]
         .dt.to_period("M")
@@ -179,6 +180,12 @@ def preparar_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
     df["mes_nombre"] = df["mes_num"].map(meses)
 
+    df["periodo_label"] = np.where(
+        df["anio"].notna() & df["mes_nombre"].notna(),
+        df["mes_nombre"].astype(str) + " " + df["anio"].astype("Int64").astype(str),
+        pd.NA
+    )
+
     return df
 
 
@@ -186,7 +193,7 @@ def opciones_columna(df: pd.DataFrame, columna: str):
     if columna not in df.columns:
         return []
 
-    valores = (
+    return (
         df[columna]
         .dropna()
         .astype(str)
@@ -194,8 +201,6 @@ def opciones_columna(df: pd.DataFrame, columna: str):
         .unique()
         .tolist()
     )
-
-    return valores
 
 
 def aplicar_filtro_multiselect(
@@ -224,29 +229,21 @@ def agrupar_performance_mensual(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame()
 
-    orden_periodos = (
-        df[["periodo_mes", "anio", "mes_num", "mes_nombre"]]
-        .drop_duplicates()
-        .sort_values(["anio", "mes_num"])
-    )
-
     resumen = (
         df
         .groupby(
             [
                 "periodo_mes",
+                "periodo_label",
+                "anio",
+                "mes_num",
+                "mes_nombre",
                 "performance_tat_estado"
             ],
             dropna=False
         )
         .size()
         .reset_index(name="cantidad")
-    )
-
-    resumen = resumen.merge(
-        orden_periodos,
-        on="periodo_mes",
-        how="left"
     )
 
     total_mes = (
@@ -268,18 +265,24 @@ def agrupar_performance_mensual(df: pd.DataFrame) -> pd.DataFrame:
         0
     )
 
-    resumen = resumen.sort_values(["anio", "mes_num"])
+    resumen = resumen.sort_values(
+        [
+            "anio",
+            "mes_num",
+            "performance_tat_estado"
+        ]
+    )
 
     return resumen
 
 
-def crear_grafico_performance(
+def crear_tabla_grafico_performance(
     resumen: pd.DataFrame,
     modo_y: str,
     mostrar_sin_info: bool
-):
+) -> pd.DataFrame:
     if resumen.empty:
-        return None
+        return pd.DataFrame()
 
     data = resumen.copy()
 
@@ -288,83 +291,87 @@ def crear_grafico_performance(
             data["performance_tat_estado"].isin(["Cumple", "No cumple"])
         ].copy()
 
-    estados = ["Cumple", "No cumple"]
+    if data.empty:
+        return pd.DataFrame()
 
-    if mostrar_sin_info:
-        estados.append("Sin información")
+    if modo_y == "Recuento":
+        valores = data.pivot_table(
+            index="periodo_mes",
+            columns="performance_tat_estado",
+            values="cantidad",
+            aggfunc="sum",
+            fill_value=0
+        )
+    else:
+        valores = data.pivot_table(
+            index="periodo_mes",
+            columns="performance_tat_estado",
+            values="porcentaje",
+            aggfunc="sum",
+            fill_value=0
+        )
 
-    periodos = (
-        data[["periodo_mes", "anio", "mes_num", "mes_nombre"]]
+    orden = (
+        data[["periodo_mes", "anio", "mes_num", "periodo_label"]]
         .drop_duplicates()
         .sort_values(["anio", "mes_num"])
     )
 
-    x_labels = [
-        f"{row.mes_nombre}<br>{int(row.anio)}"
-        for row in periodos.itertuples()
+    valores = valores.reindex(orden["periodo_mes"])
+
+    valores.index = orden["periodo_label"].values
+
+    columnas_ordenadas = [
+        col for col in ["Cumple", "No cumple", "Sin información"]
+        if col in valores.columns
     ]
 
-    fig = go.Figure()
+    valores = valores[columnas_ordenadas]
 
-    colores = {
-        "Cumple": "#5A5A5A",
-        "No cumple": "#D94A5B",
-        "Sin información": "#BDBDBD"
-    }
+    return valores
 
-    for estado in estados:
-        temp = data[
-            data["performance_tat_estado"].eq(estado)
-        ].copy()
 
-        temp = periodos[["periodo_mes"]].merge(
-            temp[["periodo_mes", "cantidad", "porcentaje"]],
-            on="periodo_mes",
-            how="left"
-        )
+def crear_tabla_resumen_mensual(resumen: pd.DataFrame) -> pd.DataFrame:
+    if resumen.empty:
+        return pd.DataFrame()
 
-        temp["cantidad"] = temp["cantidad"].fillna(0)
-        temp["porcentaje"] = temp["porcentaje"].fillna(0)
+    tabla = resumen.pivot_table(
+        index=[
+            "periodo_mes",
+            "periodo_label",
+            "anio",
+            "mes_num"
+        ],
+        columns="performance_tat_estado",
+        values="cantidad",
+        aggfunc="sum",
+        fill_value=0
+    ).reset_index()
 
-        if modo_y == "Recuento":
-            y = temp["cantidad"]
-            texto = temp["cantidad"].astype(int).astype(str)
-            titulo_y = "Recuento"
-        else:
-            y = temp["porcentaje"]
-            texto = temp["porcentaje"].round(2).astype(str) + "%"
-            titulo_y = "% Performance TAT"
+    columnas_estado = [
+        col for col in ["Cumple", "No cumple", "Sin información"]
+        if col in tabla.columns
+    ]
 
-        fig.add_trace(
-            go.Bar(
-                name=estado,
-                x=x_labels,
-                y=y,
-                text=texto,
-                textposition="inside",
-                marker_color=colores.get(estado),
-                hovertemplate=(
-                    "Estado: %{fullData.name}<br>"
-                    "Periodo: %{x}<br>"
-                    f"{titulo_y}: %{{y}}<extra></extra>"
-                )
-            )
-        )
+    tabla["Total"] = tabla[columnas_estado].sum(axis=1)
 
-    fig.update_layout(
-        barmode="stack",
-        title="Performance TAT por mes de recepción",
-        xaxis_title="Fecha de recepción: Año / Mes",
-        yaxis_title=titulo_y,
-        legend_title="Performance TAT",
-        height=520,
-        margin=dict(l=20, r=20, t=70, b=80)
-    )
+    if "Cumple" in tabla.columns:
+        tabla["% Cumple"] = (
+            tabla["Cumple"] / tabla["Total"] * 100
+        ).round(2)
+    else:
+        tabla["% Cumple"] = 0
 
-    if modo_y == "Porcentaje":
-        fig.update_yaxes(range=[0, 100], ticksuffix="%")
+    if "No cumple" in tabla.columns:
+        tabla["% No cumple"] = (
+            tabla["No cumple"] / tabla["Total"] * 100
+        ).round(2)
+    else:
+        tabla["% No cumple"] = 0
 
-    return fig
+    tabla = tabla.sort_values(["anio", "mes_num"])
+
+    return tabla
 
 
 def convertir_a_csv(df: pd.DataFrame) -> bytes:
@@ -376,7 +383,13 @@ def convertir_a_csv(df: pd.DataFrame) -> bytes:
 
 def convertir_a_parquet(df: pd.DataFrame) -> bytes:
     output = io.BytesIO()
-    df.to_parquet(output, index=False, engine="pyarrow")
+
+    df.to_parquet(
+        output,
+        index=False,
+        engine="pyarrow"
+    )
+
     return output.getvalue()
 
 
@@ -397,8 +410,8 @@ st.markdown(
     """
     <p style='text-align: center; font-size: 18px;'>
         Sube el archivo <b>match_integrado_me5a_ariba_nme80fn_performance.parquet</b>.
-        La app grafica el recuento de <b>performance_tat</b> usando como eje X
-        la <b>fecha_recepcion_final</b> agrupada por año y mes.
+        La app grafica <b>performance_tat</b> usando como eje X
+        <b>fecha_recepcion_final</b> agrupada por año y mes.
     </p>
     """,
     unsafe_allow_html=True
@@ -482,6 +495,11 @@ if uploaded_file is not None:
                 options=opciones_columna(df_filtrado, "Centro")
             )
 
+            nme_centros_sel = st.multiselect(
+                "Centro NME",
+                options=opciones_columna(df_filtrado, "nme_centro")
+            )
+
             tipo_oc_sel = st.multiselect(
                 "Tipo OC",
                 options=opciones_columna(df_filtrado, "tipo_oc")
@@ -502,9 +520,19 @@ if uploaded_file is not None:
                 options=opciones_columna(df_filtrado, "nombre_tipo_compra")
             )
 
+            categoria_ariba_sel = st.multiselect(
+                "Categoría ARIBA",
+                options=opciones_columna(df_filtrado, "ariba_categoria_tipo_compra")
+            )
+
             rango_inc_sel = st.multiselect(
                 "Rango incumplimiento",
                 options=opciones_columna(df_filtrado, "rango_incumplimiento")
+            )
+
+            estado_match_sel = st.multiselect(
+                "Estado match",
+                options=opciones_columna(df_filtrado, "estado_match")
             )
 
             proveedor_sel = st.multiselect(
@@ -512,10 +540,22 @@ if uploaded_file is not None:
                 options=opciones_columna(df_filtrado, "ariba_proveedor_erp")
             )
 
+            performance_sel = st.multiselect(
+                "Performance TAT",
+                options=["Cumple", "No cumple", "Sin información"],
+                default=["Cumple", "No cumple"]
+            )
+
         df_filtrado = aplicar_filtro_multiselect(
             df_filtrado,
             "Centro",
             centros_sel
+        )
+
+        df_filtrado = aplicar_filtro_multiselect(
+            df_filtrado,
+            "nme_centro",
+            nme_centros_sel
         )
 
         df_filtrado = aplicar_filtro_multiselect(
@@ -544,8 +584,20 @@ if uploaded_file is not None:
 
         df_filtrado = aplicar_filtro_multiselect(
             df_filtrado,
+            "ariba_categoria_tipo_compra",
+            categoria_ariba_sel
+        )
+
+        df_filtrado = aplicar_filtro_multiselect(
+            df_filtrado,
             "rango_incumplimiento",
             rango_inc_sel
+        )
+
+        df_filtrado = aplicar_filtro_multiselect(
+            df_filtrado,
+            "estado_match",
+            estado_match_sel
         )
 
         df_filtrado = aplicar_filtro_multiselect(
@@ -553,6 +605,11 @@ if uploaded_file is not None:
             "ariba_proveedor_erp",
             proveedor_sel
         )
+
+        if performance_sel:
+            df_filtrado = df_filtrado[
+                df_filtrado["performance_tat_estado"].isin(performance_sel)
+            ].copy()
 
         resumen = agrupar_performance_mensual(df_filtrado)
 
@@ -574,56 +631,29 @@ if uploaded_file is not None:
 
         st.divider()
 
-        fig = crear_grafico_performance(
+        tabla_grafico = crear_tabla_grafico_performance(
             resumen=resumen,
             modo_y=modo_y,
             mostrar_sin_info=mostrar_sin_info
         )
 
-        if fig is None:
+        if tabla_grafico.empty:
             st.warning("No hay datos para graficar con los filtros seleccionados.")
         else:
-            st.plotly_chart(
-                fig,
+            st.subheader("Performance TAT por mes de recepción")
+
+            st.bar_chart(
+                tabla_grafico,
                 use_container_width=True
             )
 
         st.subheader("Resumen mensual")
 
-        if not resumen.empty:
-            tabla_resumen = resumen.pivot_table(
-                index=["periodo_mes", "anio", "mes_num", "mes_nombre"],
-                columns="performance_tat_estado",
-                values="cantidad",
-                aggfunc="sum",
-                fill_value=0
-            ).reset_index()
+        tabla_resumen = crear_tabla_resumen_mensual(resumen)
 
-            columnas_estado = [
-                col for col in ["Cumple", "No cumple", "Sin información"]
-                if col in tabla_resumen.columns
-            ]
-
-            tabla_resumen["Total"] = tabla_resumen[columnas_estado].sum(axis=1)
-
-            if "Cumple" in tabla_resumen.columns:
-                tabla_resumen["% Cumple"] = (
-                    tabla_resumen["Cumple"] / tabla_resumen["Total"] * 100
-                ).round(2)
-            else:
-                tabla_resumen["% Cumple"] = 0
-
-            if "No cumple" in tabla_resumen.columns:
-                tabla_resumen["% No cumple"] = (
-                    tabla_resumen["No cumple"] / tabla_resumen["Total"] * 100
-                ).round(2)
-            else:
-                tabla_resumen["% No cumple"] = 0
-
-            tabla_resumen = tabla_resumen.sort_values(
-                ["anio", "mes_num"]
-            )
-
+        if tabla_resumen.empty:
+            st.info("No hay resumen mensual disponible.")
+        else:
             st.dataframe(
                 tabla_resumen,
                 use_container_width=True
