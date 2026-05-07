@@ -196,7 +196,7 @@ def aplicar_filtros_y_categoria(df: pd.DataFrame) -> pd.DataFrame:
         3: "COMPRA DIRECTA"
     }
 
-    df["Tipo de Compra Categoria"] = (
+    df["Categoria Tipo de Compra"] = (
         df["Tipo de Compra"]
         .map(mapa_tipo_compra)
         .astype("string")
@@ -379,18 +379,18 @@ def chart_serie_fecha(df: pd.DataFrame, columna_fecha: str):
 
 
 def chart_conteo_categoria(df_filtrado: pd.DataFrame):
-    if "Tipo de Compra Categoria" not in df_filtrado.columns:
-        st.info("No existe la columna Tipo de Compra Categoria.")
+    if "Categoria Tipo de Compra" not in df_filtrado.columns:
+        st.info("No existe la columna Categoria Tipo de Compra.")
         return
 
     conteo_categoria = (
-        df_filtrado["Tipo de Compra Categoria"]
+        df_filtrado["Categoria Tipo de Compra"]
         .value_counts(dropna=False)
         .reset_index()
     )
 
     conteo_categoria.columns = [
-        "Tipo de Compra Categoria",
+        "Categoria Tipo de Compra",
         "Cantidad"
     ]
 
@@ -401,7 +401,7 @@ def chart_conteo_categoria(df_filtrado: pd.DataFrame):
 
     st.bar_chart(
         conteo_categoria
-        .set_index("Tipo de Compra Categoria")["Cantidad"]
+        .set_index("Categoria Tipo de Compra")["Cantidad"]
     )
 
 
@@ -428,7 +428,7 @@ def convertir_a_excel(
         df_filtrado.to_excel(
             writer,
             index=False,
-            sheet_name="CEN1_Filtrado"
+            sheet_name="Final_Limpio_CEN1"
         )
 
         diagnostico_columnas.to_excel(
@@ -437,15 +437,15 @@ def convertir_a_excel(
             sheet_name="Diagnostico_Columnas"
         )
 
-        if "Tipo de Compra Categoria" in df_filtrado.columns:
+        if "Categoria Tipo de Compra" in df_filtrado.columns:
             conteo_categoria = (
-                df_filtrado["Tipo de Compra Categoria"]
+                df_filtrado["Categoria Tipo de Compra"]
                 .value_counts(dropna=False)
                 .reset_index()
             )
 
             conteo_categoria.columns = [
-                "Tipo de Compra Categoria",
+                "Categoria Tipo de Compra",
                 "Cantidad"
             ]
 
@@ -498,27 +498,13 @@ st.markdown(
         Sube el archivo Excel. La app leerá la hoja <b>Data</b> desde <b>B14</b>,
         estandarizará fechas y números, excluirá nulos en <b>Tipo de Compra</b>,
         dejará solo <b>ID de unidad de negocio = CEN1</b> y creará la columna
-        <b>Tipo de Compra Categoria</b>.
+        <b>Categoria Tipo de Compra</b>.
     </p>
     """,
     unsafe_allow_html=True
 )
 
 st.divider()
-
-
-with st.sidebar:
-    st.header("Configuración")
-
-    st.caption(
-        "El archivo debe ser Excel `.xlsx` y debe contener la hoja **Data**. "
-        "La lectura inicia desde B14."
-    )
-
-    mostrar_vistas = st.checkbox(
-        "Mostrar vistas previas",
-        value=True
-    )
 
 
 uploaded_file = st.file_uploader(
@@ -531,7 +517,7 @@ if uploaded_file is not None:
     try:
         df_original = leer_excel_data_desde_b14(uploaded_file)
         df_limpio = limpiar_fechas_y_numeros(df_original)
-        df_filtrado = aplicar_filtros_y_categoria(df_limpio)
+        df_final_limpio = aplicar_filtros_y_categoria(df_limpio)
 
         diagnostico_columnas = tabla_diagnostico_columnas(df_limpio)
         resumen_general = diagnostico_general(df_limpio)
@@ -559,13 +545,13 @@ if uploaded_file is not None:
             )
 
             col2.metric(
-                "Filas limpias",
+                "Filas data limpia",
                 f"{len(df_limpio):,}"
             )
 
             col3.metric(
-                "Filas CEN1 filtradas",
-                f"{len(df_filtrado):,}"
+                "Filas final limpio",
+                f"{len(df_final_limpio):,}"
             )
 
             nulos_tipo_compra = (
@@ -579,27 +565,20 @@ if uploaded_file is not None:
                 f"{nulos_tipo_compra:,}"
             )
 
-            if mostrar_vistas:
-                st.subheader("Vista previa original")
-                st.dataframe(
-                    df_original.head(50),
-                    use_container_width=True
-                )
+            st.subheader("Vista previa original")
+            st.dataframe(
+                df_original.head(50),
+                use_container_width=True
+            )
 
-                st.subheader("Vista previa limpia")
-                st.dataframe(
-                    df_limpio.head(50),
-                    use_container_width=True
-                )
+            st.subheader("Vista previa final limpio")
+            st.dataframe(
+                df_final_limpio.head(100),
+                use_container_width=True
+            )
 
-                st.subheader("Vista previa filtrada CEN1")
-                st.dataframe(
-                    df_filtrado.head(100),
-                    use_container_width=True
-                )
-
-            st.subheader("Conteo por Tipo de Compra Categoria")
-            chart_conteo_categoria(df_filtrado)
+            st.subheader("Conteo por Categoria Tipo de Compra")
+            chart_conteo_categoria(df_final_limpio)
 
         # =================================================
         # Tab diagnóstico
@@ -738,13 +717,13 @@ if uploaded_file is not None:
 
             excel_bytes = convertir_a_excel(
                 df_limpio=df_limpio,
-                df_filtrado=df_filtrado,
+                df_filtrado=df_final_limpio,
                 diagnostico_columnas=diagnostico_columnas,
                 resumen_fechas=resumen_fechas,
                 resumen_num=resumen_num
             )
 
-            csv_bytes = convertir_a_csv(df_filtrado)
+            csv_bytes = convertir_a_csv(df_final_limpio)
 
             col_a, col_b = st.columns(2)
 
@@ -758,9 +737,9 @@ if uploaded_file is not None:
 
             with col_b:
                 st.download_button(
-                    label="Descargar CSV filtrado CEN1",
+                    label="Descargar CSV final limpio",
                     data=csv_bytes,
-                    file_name="resultado_limpieza_transaccion_2_ariba_cen1.csv",
+                    file_name="resultado_limpieza_transaccion_2_ariba_final.csv",
                     mime="text/csv"
                 )
 
