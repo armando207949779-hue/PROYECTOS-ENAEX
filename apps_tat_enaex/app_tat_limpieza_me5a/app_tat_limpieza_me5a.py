@@ -12,8 +12,30 @@ from pandas.api.types import is_datetime64_any_dtype
 # =========================
 
 BASE_DIR = Path(__file__).resolve().parent
-PROJECT_DIR = BASE_DIR.parent
-LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
+
+
+def encontrar_logo() -> Path | None:
+    """
+    Busca assets/logo.svg desde la carpeta actual de la app
+    y también en carpetas superiores.
+
+    Ejemplo esperado:
+    proyectos-enaex/
+    ├── assets/
+    │   └── logo.svg
+    └── apps_tat_enaex/
+        └── app.py
+    """
+    for carpeta in [BASE_DIR, *BASE_DIR.parents]:
+        candidato = carpeta / "assets" / "logo.svg"
+
+        if candidato.exists():
+            return candidato
+
+    return None
+
+
+LOGO_PATH = encontrar_logo()
 
 
 # =========================
@@ -31,9 +53,18 @@ st.set_page_config(
 # Encabezado con logo ENAEX centrado
 # =========================
 
-if LOGO_PATH.exists():
+def mostrar_logo():
+    if LOGO_PATH is None:
+        st.warning(
+            "Logo no encontrado. Revisa que exista en: "
+            "proyectos-enaex/assets/logo.svg"
+        )
+        return
+
     logo_svg = LOGO_PATH.read_text(encoding="utf-8")
-    logo_base64 = base64.b64encode(logo_svg.encode("utf-8")).decode("utf-8")
+    logo_base64 = base64.b64encode(
+        logo_svg.encode("utf-8")
+    ).decode("utf-8")
 
     st.markdown(
         f"""
@@ -53,8 +84,6 @@ if LOGO_PATH.exists():
         """,
         unsafe_allow_html=True
     )
-else:
-    st.warning(f"Logo no encontrado: {LOGO_PATH}")
 
 
 # =========================================================
@@ -80,6 +109,7 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
             .str.strip()
         )
 
+        # Convertir strings vacíos en nulos reales
         df[col] = df[col].replace("", pd.NA)
 
     # Convertir fechas
@@ -416,6 +446,8 @@ def chart_serie_fecha(df: pd.DataFrame, columna_fecha: str):
 # =========================================================
 # Interfaz Streamlit
 # =========================================================
+
+mostrar_logo()
 
 st.markdown(
     """
