@@ -581,8 +581,10 @@ def crear_data_barplot_interactivo(
         for estado in estados:
             if modo_y == "Recuento":
                 valor = row.get(estado, 0)
+                porcentaje = row.get(f"% {estado}", 0)
             else:
                 valor = row.get(f"% {estado}", 0)
+                porcentaje = row.get(f"% {estado}", 0)
 
             data.append({
                 "periodo_fecha": row["periodo_fecha"],
@@ -592,6 +594,7 @@ def crear_data_barplot_interactivo(
                 "mes_nombre": row["mes_nombre"],
                 "estado": estado,
                 "valor": valor,
+                "porcentaje": porcentaje,
                 "total": row.get("Total", 0)
             })
 
@@ -608,6 +611,20 @@ def crear_data_barplot_interactivo(
     df_plot = df_plot.sort_values(
         ["periodo_fecha", "orden_estado"]
     ).reset_index(drop=True)
+
+    df_plot["texto_barra"] = (
+        df_plot["porcentaje"]
+        .round(1)
+        .astype(str)
+        + "%"
+    )
+
+    # Ocultar etiquetas muy pequeñas para no saturar el gráfico
+    df_plot["texto_barra_visible"] = np.where(
+        df_plot["porcentaje"] >= 5,
+        df_plot["texto_barra"],
+        ""
+    )
 
     return df_plot
 
@@ -636,9 +653,8 @@ def grafico_barplot_interactivo_altair(
         .tolist()
     )
 
-    chart = (
+    base = (
         alt.Chart(df_plot)
-        .mark_bar()
         .encode(
             x=alt.X(
                 "periodo_label:N",
@@ -674,9 +690,28 @@ def grafico_barplot_interactivo_altair(
                 alt.Tooltip("periodo_label:N", title="Periodo"),
                 alt.Tooltip("estado:N", title="Estado"),
                 alt.Tooltip("valor:Q", title=titulo_y, format=",.2f"),
+                alt.Tooltip("porcentaje:Q", title="Porcentaje", format=".2f"),
                 alt.Tooltip("total:Q", title="Total mes", format=",.0f")
             ]
         )
+    )
+
+    barras = base.mark_bar()
+
+    etiquetas = (
+        base
+        .mark_text(
+            color="white",
+            fontWeight="bold",
+            fontSize=11
+        )
+        .encode(
+            text=alt.Text("texto_barra_visible:N")
+        )
+    )
+
+    chart = (
+        (barras + etiquetas)
         .properties(
             title=titulo,
             height=420
@@ -982,7 +1017,8 @@ if uploaded_file is not None:
                 "Sin información",
                 "Total",
                 "% Cumple",
-                "% No cumple"
+                "% No cumple",
+                "% Sin información"
             ]
 
             columnas_tabla = [
