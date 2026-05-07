@@ -130,7 +130,6 @@ def normalizar_performance(valor):
 
 def preparar_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
-
     df.columns = df.columns.astype(str).str.strip()
 
     columnas_requeridas = [
@@ -281,7 +280,6 @@ def crear_resumen_mensual(df: pd.DataFrame) -> pd.DataFrame:
         0
     )
 
-    # Orden cronológico correcto
     tabla = tabla.sort_values(
         ["anio", "mes_num"]
     ).reset_index(drop=True)
@@ -289,9 +287,60 @@ def crear_resumen_mensual(df: pd.DataFrame) -> pd.DataFrame:
     return tabla
 
 
+def completar_meses_anio(tabla: pd.DataFrame, anio: int) -> pd.DataFrame:
+    meses = {
+        1: "enero",
+        2: "febrero",
+        3: "marzo",
+        4: "abril",
+        5: "mayo",
+        6: "junio",
+        7: "julio",
+        8: "agosto",
+        9: "septiembre",
+        10: "octubre",
+        11: "noviembre",
+        12: "diciembre"
+    }
+
+    base = pd.DataFrame({
+        "anio": anio,
+        "mes_num": list(range(1, 13)),
+        "mes_nombre": [meses[i] for i in range(1, 13)]
+    })
+
+    tabla_anio = tabla[
+        tabla["anio"].eq(anio)
+    ].copy()
+
+    salida = base.merge(
+        tabla_anio,
+        on=["anio", "mes_num", "mes_nombre"],
+        how="left"
+    )
+
+    columnas_rellenar = [
+        "Cumple",
+        "No cumple",
+        "Sin información",
+        "Total",
+        "% Cumple",
+        "% No cumple",
+        "% Sin información"
+    ]
+
+    for col in columnas_rellenar:
+        if col in salida.columns:
+            salida[col] = salida[col].fillna(0)
+
+    return salida
+
+
 def grafico_performance_original(
     tabla: pd.DataFrame,
-    meta_cumplimiento: float = 65.0
+    meta_cumplimiento: float = 65.0,
+    titulo: str = "Performance TAT",
+    mostrar_meses_sin_datos: bool = False
 ):
     if tabla.empty:
         st.warning("No hay datos para graficar con los filtros seleccionados.")
@@ -310,7 +359,8 @@ def grafico_performance_original(
     anios = tabla["anio"].dropna().astype(int).unique().tolist()
     titulo_anios = " / ".join(str(a) for a in anios)
 
-    ancho = max(12, len(tabla) * 0.45)
+    # Más ancho solo si hay muchos meses
+    ancho = max(10, len(tabla) * 0.7)
 
     fig, ax = plt.subplots(figsize=(ancho, 4.4))
 
@@ -335,7 +385,12 @@ def grafico_performance_original(
         width=0.72
     )
 
-    for i, (cumple, no_cumple) in enumerate(zip(pct_cumple, pct_no_cumple)):
+    for i, (cumple, no_cumple, total) in enumerate(
+        zip(pct_cumple, pct_no_cumple, tabla["Total"].fillna(0))
+    ):
+        if total == 0:
+            continue
+
         if cumple >= 8:
             ax.text(
                 i,
@@ -368,7 +423,7 @@ def grafico_performance_original(
     )
 
     ax.text(
-        -0.8,
+        -0.45,
         meta_cumplimiento + 1,
         f"{meta_cumplimiento:.0f}%",
         color=color_meta,
@@ -376,7 +431,6 @@ def grafico_performance_original(
         fontweight="bold"
     )
 
-    # Separadores entre años
     cambios_anio = tabla["anio"].ne(tabla["anio"].shift()).to_numpy()
 
     for i, cambio in enumerate(cambios_anio):
@@ -388,7 +442,6 @@ def grafico_performance_original(
                 linewidth=1
             )
 
-    # Año debajo de cada bloque
     for anio in anios:
         posiciones = tabla.index[tabla["anio"].eq(anio)].tolist()
 
@@ -410,14 +463,18 @@ def grafico_performance_original(
     ax.set_yticklabels(["0%", "50%", "100%"])
 
     ax.set_xticks(x)
+
+    rotacion = 0 if len(tabla) <= 14 else 45
+
     ax.set_xticklabels(
         etiquetas_mes,
-        rotation=0,
+        rotation=rotacion,
+        ha="right" if rotacion else "center",
         fontsize=8
     )
 
     ax.set_title(
-        f"Performance TAT {titulo_anios}",
+        f"{titulo} {titulo_anios}",
         loc="left",
         fontsize=13,
         fontweight="bold"
@@ -442,7 +499,7 @@ def grafico_performance_original(
 
     ax.legend(
         loc="upper center",
-        bbox_to_anchor=(0.5, -0.18),
+        bbox_to_anchor=(0.5, -0.20),
         ncol=2,
         frameon=False,
         fontsize=9
@@ -452,7 +509,7 @@ def grafico_performance_original(
         left=0.04,
         right=0.99,
         top=0.86,
-        bottom=0.26
+        bottom=0.30
     )
 
     st.pyplot(fig, use_container_width=True)
@@ -526,6 +583,21 @@ with st.sidebar:
         step=1.0
     )
 
+    modo_visualizacion = st.radio(
+        "Visualización",
+        options=[
+            "Un gráfico por año",
+            "Año específico",
+            "Todos los años juntos"
+        ],
+        index=0
+    )
+
+    mostrar_meses_sin_datos = st.checkbox(
+        "Mostrar meses sin datos",
+        value=False
+    )
+
 
 uploaded_file = st.file_uploader(
     "Selecciona archivo performance TAT",
@@ -555,11 +627,20 @@ if uploaded_file is not None:
                 .tolist()
             )
 
-            anios_sel = st.multiselect(
-                "Año recepción",
-                options=anios_disponibles,
-                default=anios_disponibles
-            )
+            if modo_visualizacion == "Año específico":
+                anio_especifico = st.selectbox(
+                    "Año a visualizar",
+                    options=anios_disponibles,
+                    index=len(anios_disponibles) - 1 if anios_disponibles else 0
+                )
+                anios_sel = [anio_especifico]
+
+            else:
+                anios_sel = st.multiselect(
+                    "Años recepción",
+                    options=anios_disponibles,
+                    default=anios_disponibles
+                )
 
             if anios_sel:
                 df_filtrado = df[
@@ -601,10 +682,44 @@ if uploaded_file is not None:
 
         st.divider()
 
-        grafico_performance_original(
-            tabla=tabla_resumen,
-            meta_cumplimiento=meta_cumplimiento
-        )
+        if tabla_resumen.empty:
+            st.warning("No hay datos para graficar con los filtros seleccionados.")
+
+        elif modo_visualizacion == "Un gráfico por año":
+            for anio in sorted(tabla_resumen["anio"].dropna().astype(int).unique()):
+                tabla_anio = tabla_resumen[
+                    tabla_resumen["anio"].eq(anio)
+                ].copy()
+
+                if mostrar_meses_sin_datos:
+                    tabla_anio = completar_meses_anio(tabla_resumen, anio)
+
+                grafico_performance_original(
+                    tabla=tabla_anio,
+                    meta_cumplimiento=meta_cumplimiento,
+                    titulo="Performance TAT"
+                )
+
+        elif modo_visualizacion == "Año específico":
+            tabla_anio = tabla_resumen[
+                tabla_resumen["anio"].eq(anios_sel[0])
+            ].copy()
+
+            if mostrar_meses_sin_datos:
+                tabla_anio = completar_meses_anio(tabla_resumen, anios_sel[0])
+
+            grafico_performance_original(
+                tabla=tabla_anio,
+                meta_cumplimiento=meta_cumplimiento,
+                titulo="Performance TAT"
+            )
+
+        elif modo_visualizacion == "Todos los años juntos":
+            grafico_performance_original(
+                tabla=tabla_resumen,
+                meta_cumplimiento=meta_cumplimiento,
+                titulo="Performance TAT"
+            )
 
         st.subheader("Resumen mensual ordenado cronológicamente")
 
