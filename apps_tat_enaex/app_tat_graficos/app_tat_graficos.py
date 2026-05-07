@@ -178,11 +178,27 @@ def preparar_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         12: "diciembre"
     }
 
+    meses_abrev = {
+        1: "ene",
+        2: "feb",
+        3: "mar",
+        4: "abr",
+        5: "may",
+        6: "jun",
+        7: "jul",
+        8: "ago",
+        9: "sep",
+        10: "oct",
+        11: "nov",
+        12: "dic"
+    }
+
     df["mes_nombre"] = df["mes_num"].map(meses)
+    df["mes_abrev"] = df["mes_num"].map(meses_abrev)
 
     df["periodo_label"] = np.where(
         df["anio"].notna() & df["mes_nombre"].notna(),
-        df["mes_nombre"].astype(str),
+        df["mes_nombre"].astype(str) + " " + df["anio"].astype("Int64").astype(str),
         pd.NA
     )
 
@@ -237,6 +253,7 @@ def agrupar_performance_mensual(df: pd.DataFrame) -> pd.DataFrame:
                 "anio",
                 "mes_num",
                 "mes_nombre",
+                "mes_abrev",
                 "performance_tat_estado"
             ],
             dropna=False
@@ -278,7 +295,8 @@ def crear_tabla_resumen_mensual(resumen: pd.DataFrame) -> pd.DataFrame:
             "periodo_mes",
             "anio",
             "mes_num",
-            "mes_nombre"
+            "mes_nombre",
+            "mes_abrev"
         ],
         columns="performance_tat_estado",
         values="cantidad",
@@ -304,12 +322,22 @@ def crear_tabla_resumen_mensual(resumen: pd.DataFrame) -> pd.DataFrame:
         0
     )
 
-    tabla = tabla.sort_values(["anio", "mes_num"])
+    tabla["% Sin información"] = np.where(
+        tabla["Total"].gt(0),
+        tabla["Sin información"] / tabla["Total"] * 100,
+        0
+    )
+
+    tabla = tabla.sort_values(["anio", "mes_num"]).reset_index(drop=True)
 
     return tabla
 
 
-def grafico_performance_tat(
+# =========================================================
+# Gráfico 1: versión estilo dashboard con matplotlib
+# =========================================================
+
+def grafico_performance_tat_dashboard(
     tabla: pd.DataFrame,
     meta_cumplimiento: float = 65.0,
     titulo: str = "Performance TAT"
@@ -319,20 +347,24 @@ def grafico_performance_tat(
         return
 
     tabla = tabla.copy()
+    tabla = tabla.sort_values(["anio", "mes_num"]).reset_index(drop=True)
 
     x = np.arange(len(tabla))
 
     pct_cumple = tabla["% Cumple"].fillna(0)
     pct_no_cumple = tabla["% No cumple"].fillna(0)
 
-    etiquetas_mes = tabla["mes_nombre"].astype(str).tolist()
+    etiquetas_mes = tabla["mes_abrev"].astype(str).tolist()
 
     anios = tabla["anio"].dropna().astype(int).unique().tolist()
     texto_anios = " / ".join([str(a) for a in anios])
 
-    fig, ax = plt.subplots(figsize=(15, 4.6))
+    ancho = max(12, len(tabla) * 0.55)
+    alto = 5.2
 
-    color_cumple = "#5B5B5B"
+    fig, ax = plt.subplots(figsize=(ancho, alto))
+
+    color_cumple = "#1F7A4D"
     color_no_cumple = "#D94555"
     color_meta = "#006B3F"
 
@@ -341,7 +373,7 @@ def grafico_performance_tat(
         pct_cumple,
         color=color_cumple,
         label="Cumple",
-        width=0.78
+        width=0.72
     )
 
     ax.bar(
@@ -350,16 +382,16 @@ def grafico_performance_tat(
         bottom=pct_cumple,
         color=color_no_cumple,
         label="No cumple",
-        width=0.78
+        width=0.72
     )
 
     # Etiquetas internas
     for i, (cumple, no_cumple) in enumerate(zip(pct_cumple, pct_no_cumple)):
-        if cumple > 5:
+        if cumple >= 8:
             ax.text(
                 i,
                 cumple / 2,
-                f"{cumple:.2f}%",
+                f"{cumple:.1f}%",
                 ha="center",
                 va="center",
                 fontsize=8,
@@ -367,11 +399,11 @@ def grafico_performance_tat(
                 fontweight="bold"
             )
 
-        if no_cumple > 5:
+        if no_cumple >= 8:
             ax.text(
                 i,
                 cumple + no_cumple / 2,
-                f"{no_cumple:.2f}%",
+                f"{no_cumple:.1f}%",
                 ha="center",
                 va="center",
                 fontsize=8,
@@ -388,18 +420,48 @@ def grafico_performance_tat(
     )
 
     ax.text(
-        -0.6,
-        meta_cumplimiento + 1,
+        -0.9,
+        meta_cumplimiento + 1.5,
         f"{meta_cumplimiento:.0f}%",
         color=color_meta,
         fontsize=9,
         fontweight="bold"
     )
 
-    # Formato ejes
-    ax.set_ylim(0, 100)
+    # Separadores por año
+    cambios_anio = tabla["anio"].ne(tabla["anio"].shift()).to_numpy()
+
+    for i, cambio in enumerate(cambios_anio):
+        if i > 0 and cambio:
+            ax.axvline(
+                i - 0.5,
+                color="#BDBDBD",
+                linestyle=":",
+                linewidth=1
+            )
+
+    # Etiquetas de año debajo de bloques
+    for anio in anios:
+        posiciones = tabla.index[tabla["anio"].eq(anio)].tolist()
+
+        if posiciones:
+            centro = np.mean(posiciones)
+
+            ax.text(
+                centro,
+                -13,
+                str(anio),
+                ha="center",
+                va="top",
+                fontsize=9,
+                color="#444444",
+                fontweight="bold"
+            )
+
+    # Ejes
+    ax.set_ylim(0, 105)
     ax.set_yticks([0, 50, 100])
-    ax.set_yticklabels(["0%", "50%", "100%"])
+    ax.set_yticklabels(["0%", "50%", "100%"], fontsize=9)
 
     ax.set_xticks(x)
     ax.set_xticklabels(
@@ -411,19 +473,22 @@ def grafico_performance_tat(
     ax.set_title(
         f"{titulo} {texto_anios}",
         loc="left",
-        fontsize=14,
-        fontweight="bold"
+        fontsize=16,
+        fontweight="bold",
+        pad=12
     )
 
-    ax.set_xlabel(texto_anios, fontsize=8)
+    ax.set_xlabel("")
+    ax.set_ylabel("")
 
-    # Estética similar a la imagen
     ax.grid(
         axis="y",
         linestyle=":",
         linewidth=1,
-        alpha=0.6
+        alpha=0.55
     )
+
+    ax.set_axisbelow(True)
 
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -438,13 +503,85 @@ def grafico_performance_tat(
         bbox_to_anchor=(0.5, -0.18),
         ncol=2,
         frameon=False,
-        fontsize=9
+        fontsize=10
     )
 
-    fig.tight_layout()
+    fig.subplots_adjust(
+        left=0.04,
+        right=0.99,
+        top=0.86,
+        bottom=0.25
+    )
 
-    st.pyplot(fig)
+    st.pyplot(fig, use_container_width=True)
 
+
+# =========================================================
+# Gráfico 2: versión inicial con st.bar_chart
+# =========================================================
+
+def crear_tabla_grafico_bar_chart(
+    resumen: pd.DataFrame,
+    modo_y: str,
+    mostrar_sin_info: bool
+) -> pd.DataFrame:
+    if resumen.empty:
+        return pd.DataFrame()
+
+    data = resumen.copy()
+
+    if not mostrar_sin_info:
+        data = data[
+            data["performance_tat_estado"].isin(["Cumple", "No cumple"])
+        ].copy()
+
+    if data.empty:
+        return pd.DataFrame()
+
+    if modo_y == "Recuento":
+        valores = data.pivot_table(
+            index="periodo_mes",
+            columns="performance_tat_estado",
+            values="cantidad",
+            aggfunc="sum",
+            fill_value=0
+        )
+    else:
+        valores = data.pivot_table(
+            index="periodo_mes",
+            columns="performance_tat_estado",
+            values="porcentaje",
+            aggfunc="sum",
+            fill_value=0
+        )
+
+    orden = (
+        data[["periodo_mes", "anio", "mes_num", "mes_nombre"]]
+        .drop_duplicates()
+        .sort_values(["anio", "mes_num"])
+    )
+
+    valores = valores.reindex(orden["periodo_mes"])
+
+    valores.index = (
+        orden["mes_nombre"].astype(str)
+        + " "
+        + orden["anio"].astype("Int64").astype(str)
+    ).values
+
+    columnas_ordenadas = [
+        col for col in ["Cumple", "No cumple", "Sin información"]
+        if col in valores.columns
+    ]
+
+    valores = valores[columnas_ordenadas]
+
+    return valores
+
+
+# =========================================================
+# Exportación
+# =========================================================
 
 def convertir_a_csv(df: pd.DataFrame) -> bytes:
     return df.to_csv(
@@ -506,12 +643,35 @@ with st.sidebar:
         index=0
     )
 
+    tipo_grafico = st.radio(
+        "Tipo de gráfico",
+        options=[
+            "Dashboard 100%",
+            "Bar chart simple"
+        ],
+        index=0
+    )
+
+    modo_y = st.radio(
+        "Eje Y",
+        options=[
+            "Porcentaje",
+            "Recuento"
+        ],
+        index=0
+    )
+
     meta_cumplimiento = st.number_input(
         "Meta cumplimiento (%)",
         min_value=0.0,
         max_value=100.0,
         value=65.0,
         step=1.0
+    )
+
+    mostrar_sin_info = st.checkbox(
+        "Mostrar Sin información",
+        value=False
     )
 
 
@@ -606,6 +766,12 @@ if uploaded_file is not None:
                 options=opciones_columna(df_filtrado, "ariba_proveedor_erp")
             )
 
+            performance_sel = st.multiselect(
+                "Performance TAT",
+                options=["Cumple", "No cumple", "Sin información"],
+                default=["Cumple", "No cumple"]
+            )
+
         df_filtrado = aplicar_filtro_multiselect(
             df_filtrado,
             "Centro",
@@ -666,6 +832,11 @@ if uploaded_file is not None:
             proveedor_sel
         )
 
+        if performance_sel:
+            df_filtrado = df_filtrado[
+                df_filtrado["performance_tat_estado"].isin(performance_sel)
+            ].copy()
+
         resumen = agrupar_performance_mensual(df_filtrado)
         tabla_resumen = crear_tabla_resumen_mensual(resumen)
 
@@ -687,11 +858,33 @@ if uploaded_file is not None:
 
         st.divider()
 
-        grafico_performance_tat(
-            tabla=tabla_resumen,
-            meta_cumplimiento=meta_cumplimiento,
-            titulo="Performance TAT"
-        )
+        if tipo_grafico == "Dashboard 100%":
+            if modo_y != "Porcentaje":
+                st.info(
+                    "El gráfico Dashboard 100% usa porcentajes para mantener barras apiladas al 100%."
+                )
+
+            grafico_performance_tat_dashboard(
+                tabla=tabla_resumen,
+                meta_cumplimiento=meta_cumplimiento,
+                titulo="Performance TAT"
+            )
+
+        elif tipo_grafico == "Bar chart simple":
+            tabla_grafico = crear_tabla_grafico_bar_chart(
+                resumen=resumen,
+                modo_y=modo_y,
+                mostrar_sin_info=mostrar_sin_info
+            )
+
+            if tabla_grafico.empty:
+                st.warning("No hay datos para graficar con los filtros seleccionados.")
+            else:
+                st.subheader("Performance TAT por mes de recepción")
+                st.bar_chart(
+                    tabla_grafico,
+                    use_container_width=True
+                )
 
         st.subheader("Resumen mensual")
 
