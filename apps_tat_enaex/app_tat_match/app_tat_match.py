@@ -118,6 +118,15 @@ def limpiar_nombres_columnas(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def validar_columnas(df: pd.DataFrame, columnas: list, nombre_df: str):
+    faltantes = [col for col in columnas if col not in df.columns]
+
+    if faltantes:
+        raise ValueError(
+            f"Faltan columnas en {nombre_df}: {faltantes}"
+        )
+
+
 def normalizar_entero_str(serie: pd.Series) -> pd.Series:
     return (
         pd.to_numeric(serie, errors="coerce")
@@ -128,6 +137,15 @@ def normalizar_entero_str(serie: pd.Series) -> pd.Series:
 
 def normalizar_numero(serie: pd.Series) -> pd.Series:
     return pd.to_numeric(serie, errors="coerce")
+
+
+def normalizar_material(serie: pd.Series) -> pd.Series:
+    return (
+        serie
+        .astype("string")
+        .str.strip()
+        .str.replace(r"\.0$", "", regex=True)
+    )
 
 
 def normalizar_texto(valor):
@@ -149,24 +167,6 @@ def normalizar_texto(valor):
         texto = texto.replace(origen, destino)
 
     return " ".join(texto.split())
-
-
-def normalizar_material(serie: pd.Series) -> pd.Series:
-    return (
-        serie
-        .astype("string")
-        .str.strip()
-        .str.replace(r"\.0$", "", regex=True)
-    )
-
-
-def validar_columnas(df: pd.DataFrame, columnas: list, nombre_df: str):
-    faltantes = [col for col in columnas if col not in df.columns]
-
-    if faltantes:
-        raise ValueError(
-            f"Faltan columnas en {nombre_df}: {faltantes}"
-        )
 
 
 # =========================================================
@@ -260,7 +260,10 @@ def match_me5a_nme80fn(
         "fecha_entrada_mercancia_recepcion"
     ]
 
-    columnas_nme = [col for col in columnas_nme if col in nme.columns]
+    columnas_nme = [
+        col for col in columnas_nme
+        if col in nme.columns
+    ]
 
     candidatos = me5a.merge(
         nme[columnas_nme],
@@ -345,7 +348,10 @@ def match_me5a_nme80fn(
         "fecha_entrada_mercancia_recepcion"
     ]
 
-    columnas_resultado = [col for col in columnas_resultado if col in mejor.columns]
+    columnas_resultado = [
+        col for col in columnas_resultado
+        if col in mejor.columns
+    ]
 
     resultado = mejor[columnas_resultado].copy()
 
@@ -398,8 +404,10 @@ def match_me5a_ariba(
     validar_columnas(
         ariba,
         [
-            "ID de pedido ERP",
-            "Número de línea de la solicitud de compra"
+            "ID de solicitud de compra del ERP",
+            "Número de línea de la solicitud de compra",
+            "Descripción",
+            "Fecha de la solicitud de compra"
         ],
         "ARIBA"
     )
@@ -410,49 +418,52 @@ def match_me5a_ariba(
     me5a["_id_me5a"] = range(len(me5a))
     ariba["_id_ariba"] = range(len(ariba))
 
-    # Columnas opcionales ARIBA
-    col_desc = "Descripción" if "Descripción" in ariba.columns else None
-    col_id_pedido = "ID de pedido" if "ID de pedido" in ariba.columns else None
-    col_fecha = (
-        "Fecha de la solicitud de compra"
-        if "Fecha de la solicitud de compra" in ariba.columns
-        else None
+    # Normalizaciones ME5A
+    me5a["_solicitud_norm"] = normalizar_entero_str(
+        me5a["Solicitud de pedido"]
     )
 
-    # Normalizaciones ME5A
-    me5a["_solicitud_norm"] = normalizar_entero_str(me5a["Solicitud de pedido"])
-    me5a["_pos_solicitud_num"] = normalizar_numero(me5a["Pos.solicitud pedido"])
+    me5a["_pos_solicitud_num"] = normalizar_numero(
+        me5a["Pos.solicitud pedido"]
+    )
+
+    # Regla ARIBA:
+    # Número de línea ARIBA = Pos.solicitud pedido / 10
     me5a["_linea_esperada_ariba"] = me5a["_pos_solicitud_num"] / 10
+
     me5a["_texto_me5a_norm"] = me5a["Texto breve"].apply(normalizar_texto)
-    me5a["_pedido_norm"] = normalizar_entero_str(me5a["Pedido"])
+
+    me5a["_pedido_norm"] = normalizar_entero_str(
+        me5a["Pedido"]
+    )
+
     me5a["_fecha_solicitud_norm"] = pd.to_datetime(
         me5a["Fecha de solicitud"],
         errors="coerce"
     )
 
     # Normalizaciones ARIBA
-    ariba["_id_erp_norm"] = normalizar_entero_str(ariba["ID de pedido ERP"])
+    ariba["_id_erp_norm"] = normalizar_entero_str(
+        ariba["ID de solicitud de compra del ERP"]
+    )
+
     ariba["_linea_ariba_num"] = normalizar_numero(
         ariba["Número de línea de la solicitud de compra"]
     )
 
-    if col_desc:
-        ariba["_descripcion_norm"] = ariba[col_desc].apply(normalizar_texto)
-    else:
-        ariba["_descripcion_norm"] = ""
+    ariba["_descripcion_norm"] = ariba["Descripción"].apply(normalizar_texto)
 
-    if col_id_pedido:
-        ariba["_id_pedido_norm"] = normalizar_entero_str(ariba[col_id_pedido])
+    if "ID de pedido" in ariba.columns:
+        ariba["_id_pedido_norm"] = normalizar_entero_str(
+            ariba["ID de pedido"]
+        )
     else:
         ariba["_id_pedido_norm"] = pd.NA
 
-    if col_fecha:
-        ariba["_fecha_ariba_norm"] = pd.to_datetime(
-            ariba[col_fecha],
-            errors="coerce"
-        )
-    else:
-        ariba["_fecha_ariba_norm"] = pd.NaT
+    ariba["_fecha_ariba_norm"] = pd.to_datetime(
+        ariba["Fecha de la solicitud de compra"],
+        errors="coerce"
+    )
 
     columnas_ariba = [
         "_id_ariba",
@@ -461,27 +472,29 @@ def match_me5a_ariba(
         "_descripcion_norm",
         "_id_pedido_norm",
         "_fecha_ariba_norm",
-        "ID de pedido ERP",
-        "Número de línea de la solicitud de compra"
-    ]
-
-    columnas_opcionales = [
-        "Descripción",
-        "ID de pedido",
-        "Fecha de la solicitud de compra",
         "Tipo de Compra",
+        "ID de solicitud de compra",
+        "ID de solicitud de compra del ERP",
+        "Número de línea de la solicitud de compra",
+        "Descripción",
+        "Fecha de la solicitud de compra",
+        "Fecha de aprobación",
+        "ID de pedido",
+        "Proveedor - Proveedor de ERP",
+        "Centro de costes - ID de centro de costes",
+        "Centro de costes - Centro de costes",
+        "ID de cuenta",
+        "Cuenta",
         "ID de unidad de negocio",
-        "Categoria Tipo de Compra",
-        "Solicitante",
-        "Centro",
-        "Material",
-        "Cantidad",
-        "Precio"
+        "sum(Coste de variación de precio)",
+        "Sample",
+        "Categoria Tipo de Compra"
     ]
 
-    for col in columnas_opcionales:
-        if col in ariba.columns and col not in columnas_ariba:
-            columnas_ariba.append(col)
+    columnas_ariba = [
+        col for col in columnas_ariba
+        if col in ariba.columns
+    ]
 
     candidatos = me5a.merge(
         ariba[columnas_ariba],
@@ -501,21 +514,18 @@ def match_me5a_ariba(
         equal_nan=False
     )
 
-    candidatos["_similitud_ariba_descripcion"] = candidatos.apply(
-        lambda row: (
-            0.0
-            if pd.isna(row.get("_descripcion_norm"))
-            else (
-                1.0
-                if row.get("_texto_me5a_norm") == row.get("_descripcion_norm")
-                else 0.0
-            )
-        ),
-        axis=1
-    )
-
     candidatos["_match_ariba_pedido"] = (
         candidatos["_pedido_norm"].eq(candidatos["_id_pedido_norm"])
+    )
+
+    candidatos["_similitud_ariba_descripcion"] = candidatos.apply(
+        lambda row: (
+            1.0
+            if row.get("_texto_me5a_norm", "") == row.get("_descripcion_norm", "")
+            and row.get("_texto_me5a_norm", "") != ""
+            else 0.0
+        ),
+        axis=1
     )
 
     candidatos["_dias_ariba_fecha"] = (
@@ -532,8 +542,8 @@ def match_me5a_ariba(
         np.where(candidatos["_match_ariba_solicitud"], 60, 0)
         + np.where(candidatos["_match_ariba_linea"], 40, 0)
         + np.where(candidatos["_match_ariba_pedido"], 10, 0)
-        + candidatos["_score_ariba_fecha"]
         + np.where(candidatos["_similitud_ariba_descripcion"].eq(1), 20, 0)
+        + candidatos["_score_ariba_fecha"]
     )
 
     idx_mejor = (
@@ -551,47 +561,59 @@ def match_me5a_ariba(
         "_match_ariba_solicitud",
         "_match_ariba_linea",
         "_match_ariba_pedido",
+        "_similitud_ariba_descripcion",
         "_dias_ariba_fecha",
-        "ID de pedido ERP",
+        "Tipo de Compra",
+        "ID de solicitud de compra",
+        "ID de solicitud de compra del ERP",
         "Número de línea de la solicitud de compra",
         "Descripción",
-        "ID de pedido",
         "Fecha de la solicitud de compra",
-        "Tipo de Compra",
+        "Fecha de aprobación",
+        "ID de pedido",
+        "Proveedor - Proveedor de ERP",
+        "Centro de costes - ID de centro de costes",
+        "Centro de costes - Centro de costes",
+        "ID de cuenta",
+        "Cuenta",
         "ID de unidad de negocio",
-        "Categoria Tipo de Compra",
-        "Solicitante",
-        "Centro",
-        "Material",
-        "Cantidad",
-        "Precio"
+        "sum(Coste de variación de precio)",
+        "Sample",
+        "Categoria Tipo de Compra"
     ]
 
-    columnas_resultado = [col for col in columnas_resultado if col in mejor.columns]
+    columnas_resultado = [
+        col for col in columnas_resultado
+        if col in mejor.columns
+    ]
 
     resultado = mejor[columnas_resultado].copy()
 
     resultado = resultado.rename(columns={
-        "ID de pedido ERP": "ariba_id_pedido_erp",
+        "Tipo de Compra": "ariba_tipo_compra",
+        "ID de solicitud de compra": "ariba_id_solicitud_compra",
+        "ID de solicitud de compra del ERP": "ariba_id_solicitud_compra_erp",
         "Número de línea de la solicitud de compra": "ariba_numero_linea_solicitud",
         "Descripción": "ariba_descripcion",
-        "ID de pedido": "ariba_id_pedido",
         "Fecha de la solicitud de compra": "ariba_fecha_solicitud_compra",
-        "Tipo de Compra": "ariba_tipo_compra",
+        "Fecha de aprobación": "ariba_fecha_aprobacion",
+        "ID de pedido": "ariba_id_pedido",
+        "Proveedor - Proveedor de ERP": "ariba_proveedor_erp",
+        "Centro de costes - ID de centro de costes": "ariba_id_centro_costes",
+        "Centro de costes - Centro de costes": "ariba_centro_costes",
+        "ID de cuenta": "ariba_id_cuenta",
+        "Cuenta": "ariba_cuenta",
         "ID de unidad de negocio": "ariba_id_unidad_negocio",
-        "Categoria Tipo de Compra": "ariba_categoria_tipo_compra",
-        "Solicitante": "ariba_solicitante",
-        "Centro": "ariba_centro",
-        "Material": "ariba_material",
-        "Cantidad": "ariba_cantidad",
-        "Precio": "ariba_precio"
+        "sum(Coste de variación de precio)": "ariba_coste_variacion_precio",
+        "Sample": "ariba_sample",
+        "Categoria Tipo de Compra": "ariba_categoria_tipo_compra"
     })
 
     return resultado
 
 
 # =========================================================
-# Match general entre los 3
+# Construcción de match final
 # =========================================================
 
 @st.cache_data(show_spinner="Construyendo resultado final...")
@@ -618,11 +640,11 @@ def construir_match_final(
         how="left"
     )
 
-    resultado["match_ariba_encontrado"] = resultado["score_ariba"].fillna(0).gt(0)
-    resultado["match_nme80fn_encontrado"] = resultado["score_nme80fn"].fillna(0).gt(0)
-
     resultado["score_ariba"] = resultado["score_ariba"].fillna(0)
     resultado["score_nme80fn"] = resultado["score_nme80fn"].fillna(0)
+
+    resultado["match_ariba_encontrado"] = resultado["score_ariba"].gt(0)
+    resultado["match_nme80fn_encontrado"] = resultado["score_nme80fn"].gt(0)
 
     resultado["score_total_integrado"] = (
         resultado["score_ariba"]
@@ -805,6 +827,21 @@ if archivo_me5a and archivo_ariba and archivo_nme:
             separador_csv
         )
 
+        with st.expander("Ver columnas detectadas"):
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                st.markdown("#### ME5A")
+                st.write(df_me5a.columns.tolist())
+
+            with col2:
+                st.markdown("#### ARIBA")
+                st.write(df_ariba.columns.tolist())
+
+            with col3:
+                st.markdown("#### NME80FN")
+                st.write(df_nme.columns.tolist())
+
         resultado_final = construir_match_final(
             df_me5a=df_me5a,
             df_ariba=df_ariba,
@@ -853,19 +890,19 @@ if archivo_me5a and archivo_ariba and archivo_nme:
 
             st.subheader("Vista previa ME5A")
             st.dataframe(
-                df_me5a.head(50),
+                df_me5a.head(30),
                 use_container_width=True
             )
 
             st.subheader("Vista previa ARIBA")
             st.dataframe(
-                df_ariba.head(50),
+                df_ariba.head(30),
                 use_container_width=True
             )
 
             st.subheader("Vista previa NME80FN")
             st.dataframe(
-                df_nme.head(50),
+                df_nme.head(30),
                 use_container_width=True
             )
 
@@ -893,11 +930,13 @@ if archivo_me5a and archivo_ariba and archivo_nme:
                 "Fecha de pedido",
                 "Fecha de entrega",
 
-                "ariba_id_pedido_erp",
+                "ariba_id_solicitud_compra_erp",
                 "ariba_numero_linea_solicitud",
                 "ariba_descripcion",
                 "ariba_id_pedido",
                 "ariba_fecha_solicitud_compra",
+                "ariba_categoria_tipo_compra",
+                "ariba_id_unidad_negocio",
 
                 "nme_documento_compras",
                 "nme_posicion",
@@ -971,24 +1010,21 @@ if archivo_me5a and archivo_ariba and archivo_nme:
             formato_descarga = st.radio(
                 "Formato de descarga",
                 options=[
-                    "Excel",
+                    "Parquet",
                     "CSV",
-                    "Parquet"
+                    "Excel"
                 ],
                 horizontal=True
             )
 
-            if formato_descarga == "Excel":
-                excel_bytes = convertir_a_excel_cache(
-                    resultado_final,
-                    resumen
-                )
+            if formato_descarga == "Parquet":
+                parquet_bytes = convertir_a_parquet_cache(resultado_final)
 
                 st.download_button(
-                    label="Descargar Excel",
-                    data=excel_bytes,
-                    file_name="match_integrado_me5a_ariba_nme80fn.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    label="Descargar Parquet",
+                    data=parquet_bytes,
+                    file_name="match_integrado_me5a_ariba_nme80fn.parquet",
+                    mime="application/octet-stream"
                 )
 
             elif formato_descarga == "CSV":
@@ -1001,15 +1037,27 @@ if archivo_me5a and archivo_ariba and archivo_nme:
                     mime="text/csv"
                 )
 
-            elif formato_descarga == "Parquet":
-                parquet_bytes = convertir_a_parquet_cache(resultado_final)
+            elif formato_descarga == "Excel":
+                limite_excel = 250_000
 
-                st.download_button(
-                    label="Descargar Parquet",
-                    data=parquet_bytes,
-                    file_name="match_integrado_me5a_ariba_nme80fn.parquet",
-                    mime="application/octet-stream"
-                )
+                if len(resultado_final) > limite_excel:
+                    st.warning(
+                        f"El resultado tiene {len(resultado_final):,} filas. "
+                        f"Para evitar problemas de memoria, descarga en Parquet o CSV. "
+                        f"Excel está limitado a {limite_excel:,} filas."
+                    )
+                else:
+                    excel_bytes = convertir_a_excel_cache(
+                        resultado_final,
+                        resumen
+                    )
+
+                    st.download_button(
+                        label="Descargar Excel",
+                        data=excel_bytes,
+                        file_name="match_integrado_me5a_ariba_nme80fn.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
 
     except Exception as e:
         st.error("Ocurrió un error al procesar los archivos.")
