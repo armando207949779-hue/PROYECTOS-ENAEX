@@ -147,8 +147,8 @@ def tabla_diagnostico_columnas(df: pd.DataFrame) -> pd.DataFrame:
             "No nulos": 0,
             "Nulos": 0,
             "% Nulos": 0,
-            "Valores únicos": 0,
-            "% Completitud": 0
+            "% Completitud": 0,
+            "Valores únicos": 0
         })
 
     diagnostico = pd.DataFrame({
@@ -211,7 +211,7 @@ def diagnostico_fechas(df: pd.DataFrame) -> pd.DataFrame:
             "Columna": col,
             "Fecha mínima": df[col].min(),
             "Fecha máxima": df[col].max(),
-            "Nulos": df[col].isna().sum(),
+            "Nulos": int(df[col].isna().sum()),
             "% Nulos": round(df[col].isna().mean() * 100, 2)
         })
 
@@ -231,24 +231,26 @@ def resumen_numerico(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # =========================================================
-# Gráficos Plotly: barras horizontales porcentuales
+# Gráficos Plotly
 # =========================================================
 
-def grafico_barras_horizontales_porcentual(
+def grafico_horizontal_porcentaje(
     data: pd.DataFrame,
-    y: str,
-    x: str,
+    columna_categoria: str,
+    columna_valor: str,
     titulo: str,
     eje_x: str
 ):
-    data = data.sort_values(x, ascending=False)
+    data = data.copy()
+    data = data.sort_values(columna_valor, ascending=False)
 
     fig = px.bar(
         data,
-        y=y,
-        x=x,
+        x=columna_valor,
+        y=columna_categoria,
         orientation="h",
-        text=x
+        text=columna_valor,
+        title=titulo
     )
 
     fig.update_traces(
@@ -258,45 +260,42 @@ def grafico_barras_horizontales_porcentual(
     )
 
     fig.update_layout(
-        title=titulo,
         xaxis_title=eje_x,
         yaxis_title="",
-        height=max(500, len(data) * 32),
-        margin=dict(l=220, r=80, t=80, b=60)
+        height=max(480, len(data) * 34),
+        margin=dict(l=230, r=90, t=80, b=60)
     )
 
-    fig.update_xaxes(range=[0, max(100, data[x].max() * 1.15)])
+    fig.update_xaxes(range=[0, max(100, float(data[columna_valor].max()) * 1.15)])
     fig.update_yaxes(autorange="reversed")
 
     return fig
 
 
-def grafico_nulos_por_columna(diag_cols: pd.DataFrame, top_n: int | None = None):
+def grafico_nulos_por_columna(diag_cols: pd.DataFrame, top_n=None):
     data = diag_cols.copy()
 
     if top_n is not None:
         data = data.sort_values("% Nulos", ascending=False).head(top_n)
 
-    return grafico_barras_horizontales_porcentual(
+    return grafico_horizontal_porcentaje(
         data=data,
-        y="Columna",
-        x="% Nulos",
+        columna_categoria="Columna",
+        columna_valor="% Nulos",
         titulo="Porcentaje de nulos por columna",
         eje_x="% Nulos"
     )
 
 
-def grafico_completitud_por_columna(diag_cols: pd.DataFrame, top_n: int | None = None):
+def grafico_completitud_por_columna(diag_cols: pd.DataFrame, top_n=10):
     data = diag_cols.copy()
+    data = data.sort_values("% Completitud", ascending=False).head(top_n)
 
-    if top_n is not None:
-        data = data.sort_values("% Completitud", ascending=False).head(top_n)
-
-    return grafico_barras_horizontales_porcentual(
+    return grafico_horizontal_porcentaje(
         data=data,
-        y="Columna",
-        x="% Completitud",
-        titulo="Porcentaje de completitud por columna",
+        columna_categoria="Columna",
+        columna_valor="% Completitud",
+        titulo=f"Top {top_n} columnas con mayor completitud",
         eje_x="% Completitud"
     )
 
@@ -307,21 +306,21 @@ def grafico_nulos_vs_no_nulos(df: pd.DataFrame):
     total_no_nulos = int(total_celdas - total_nulos)
 
     if total_celdas == 0:
-        pct_nulos = 0
         pct_no_nulos = 0
+        pct_nulos = 0
     else:
-        pct_nulos = round(total_nulos / total_celdas * 100, 2)
         pct_no_nulos = round(total_no_nulos / total_celdas * 100, 2)
+        pct_nulos = round(total_nulos / total_celdas * 100, 2)
 
     data = pd.DataFrame({
         "Estado": ["No nulos", "Nulos"],
         "%": [pct_no_nulos, pct_nulos]
     })
 
-    return grafico_barras_horizontales_porcentual(
+    return grafico_horizontal_porcentaje(
         data=data,
-        y="Estado",
-        x="%",
+        columna_categoria="Estado",
+        columna_valor="%",
         titulo="Porcentaje total de celdas nulas vs no nulas",
         eje_x="%"
     )
@@ -340,20 +339,23 @@ def grafico_tipos_dato(df: pd.DataFrame):
 
     fig = px.bar(
         data,
-        y="Tipo de dato",
         x="Cantidad de columnas",
+        y="Tipo de dato",
         orientation="h",
-        text="Cantidad de columnas"
+        text="Cantidad de columnas",
+        title="Distribución de tipos de datos"
     )
 
-    fig.update_traces(textposition="outside", cliponaxis=False)
+    fig.update_traces(
+        textposition="outside",
+        cliponaxis=False
+    )
 
     fig.update_layout(
-        title="Distribución de tipos de datos",
         xaxis_title="Cantidad de columnas",
         yaxis_title="",
         height=420,
-        margin=dict(l=180, r=80, t=80, b=60)
+        margin=dict(l=180, r=90, t=80, b=60)
     )
 
     fig.update_yaxes(autorange="reversed")
@@ -361,7 +363,7 @@ def grafico_tipos_dato(df: pd.DataFrame):
     return fig
 
 
-def grafico_valores_unicos_porcentual(diag_cols: pd.DataFrame, top_n: int = 10):
+def grafico_valores_unicos_relativo(diag_cols: pd.DataFrame, top_n=10):
     data = diag_cols.copy()
 
     max_unicos = data["Valores únicos"].max()
@@ -375,10 +377,10 @@ def grafico_valores_unicos_porcentual(diag_cols: pd.DataFrame, top_n: int = 10):
 
     data = data.sort_values("% Valores únicos relativo", ascending=False).head(top_n)
 
-    return grafico_barras_horizontales_porcentual(
+    return grafico_horizontal_porcentaje(
         data=data,
-        y="Columna",
-        x="% Valores únicos relativo",
+        columna_categoria="Columna",
+        columna_valor="% Valores únicos relativo",
         titulo=f"Top {top_n} columnas con más valores únicos relativo al máximo",
         eje_x="% relativo"
     )
@@ -401,7 +403,7 @@ def grafico_histograma_numerico(df: pd.DataFrame, columna: str):
         xaxis_title=columna,
         yaxis_title="Frecuencia",
         height=520,
-        margin=dict(l=40, r=40, t=80, b=100)
+        margin=dict(l=60, r=60, t=80, b=90)
     )
 
     return fig
@@ -434,7 +436,7 @@ def grafico_serie_fecha(df: pd.DataFrame, columna_fecha: str):
         xaxis_title="Fecha",
         yaxis_title="Cantidad de registros",
         height=520,
-        margin=dict(l=40, r=40, t=80, b=100)
+        margin=dict(l=60, r=60, t=80, b=90)
     )
 
     return fig
@@ -509,6 +511,10 @@ if uploaded_file is not None:
             "Diagnóstico data limpia"
         ])
 
+        # =====================================================
+        # Pestaña 1
+        # =====================================================
+
         with tab_limpieza:
             st.success("Archivo cargado correctamente.")
 
@@ -526,6 +532,7 @@ if uploaded_file is not None:
             diag_cols = tabla_diagnostico_columnas(df_limpio)
 
             st.subheader("Porcentaje de nulos por columna")
+
             st.plotly_chart(
                 grafico_nulos_por_columna(diag_cols),
                 use_container_width=True
@@ -556,6 +563,10 @@ if uploaded_file is not None:
                     file_name="ME5A_LIMPIO.csv",
                     mime="text/csv"
                 )
+
+        # =====================================================
+        # Pestaña 2
+        # =====================================================
 
         with tab_diagnostico:
             st.subheader("Diagnóstico general")
@@ -595,12 +606,14 @@ if uploaded_file is not None:
                 )
 
             st.subheader("Top 10 columnas con mayor porcentaje de nulos")
+
             st.plotly_chart(
                 grafico_nulos_por_columna(diag_cols, top_n=10),
                 use_container_width=True
             )
 
             st.subheader("Top 10 columnas con mayor completitud")
+
             st.plotly_chart(
                 grafico_completitud_por_columna(diag_cols, top_n=10),
                 use_container_width=True
@@ -618,8 +631,9 @@ if uploaded_file is not None:
                 )
 
             st.subheader("Top 10 columnas con más valores únicos relativo")
+
             st.plotly_chart(
-                grafico_valores_unicos_porcentual(diag_cols, top_n=10),
+                grafico_valores_unicos_relativo(diag_cols, top_n=10),
                 use_container_width=True
             )
 
