@@ -10,7 +10,7 @@ from pandas.api.types import is_datetime64_any_dtype
 # =========================================================
 
 st.set_page_config(
-    page_title="Limpieza archivo Pivot Area Pie",
+    page_title="Transacción 2 Ariba",
     page_icon="📊",
     layout="wide"
 )
@@ -20,13 +20,13 @@ st.set_page_config(
 # Logo
 # =========================================================
 
-LOGO_PATH = "logo.png"
+# Usa aquí la misma ruta de la imagen que tenías en tu otro código
+LOGO_PATH = r"C:\Users\Usuario\Downloads\logo.png"
 
 
-def mostrar_logo():
+def mostrar_logo_y_titulo():
     """
-    Muestra el logo si existe en la carpeta del proyecto.
-    Puedes cambiar LOGO_PATH por la ruta real del logo.
+    Muestra el logo y el título principal.
     """
     if os.path.exists(LOGO_PATH):
         with st.sidebar:
@@ -38,9 +38,10 @@ def mostrar_logo():
             st.image(LOGO_PATH, width=120)
 
         with col_titulo:
-            st.title("Limpieza y filtro archivo Pivot Area Pie")
+            st.title("Transacción 2 Ariba")
     else:
-        st.title("Limpieza y filtro archivo Pivot Area Pie")
+        st.title("Transacción 2 Ariba")
+        st.sidebar.warning("No se encontró el logo en la ruta indicada.")
 
 
 # =========================================================
@@ -425,7 +426,7 @@ def convertir_a_csv(df: pd.DataFrame) -> bytes:
 # Interfaz Streamlit
 # =========================================================
 
-mostrar_logo()
+mostrar_logo_y_titulo()
 
 st.write(
     "Sube el archivo Excel. La app leerá la hoja **Data** desde **B14**, "
