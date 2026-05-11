@@ -251,7 +251,9 @@ def preparar_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
     df["periodo_label"] = np.where(
         df["anio"].notna() & df["mes_nombre"].notna(),
-        df["mes_nombre"].astype(str) + " " + df["anio"].astype("Int64").astype(str),
+        df["mes_nombre"].astype(str)
+        + " "
+        + df["anio"].astype("Int64").astype(str),
         pd.NA
     )
 
@@ -295,6 +297,9 @@ def aplicar_filtro_multiselect(
 def crear_resumen_mensual(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
+    # Importante:
+    # Los registros sin fecha no pueden ubicarse en un mes,
+    # por eso no entran al gráfico mensual.
     df = df[
         df["fecha_recepcion_final"].notna()
     ].copy()
@@ -916,6 +921,27 @@ if uploaded_file is not None:
                 help="Por defecto se muestran todos los años juntos. Puedes filtrar uno o varios años."
             )
 
+            fechas_validas = df["fecha_recepcion_final"].dropna()
+
+            fecha_min = fechas_validas.min().date() if not fechas_validas.empty else None
+            fecha_max = fechas_validas.max().date() if not fechas_validas.empty else None
+
+            rango_fechas = None
+
+            if fecha_min and fecha_max:
+                rango_fechas = st.date_input(
+                    "Rango fecha recepción",
+                    value=(fecha_min, fecha_max),
+                    min_value=fecha_min,
+                    max_value=fecha_max,
+                    help="Filtra los registros usando la columna fecha_recepcion_final."
+                )
+            else:
+                st.info(
+                    "No hay fechas válidas en fecha_recepcion_final. "
+                    "El gráfico mensual no podrá generarse."
+                )
+
         if anios_sel:
             df_filtrado = df[
                 df["anio"].isin(anios_sel)
@@ -923,6 +949,21 @@ if uploaded_file is not None:
         else:
             df_filtrado = df.copy()
             anios_sel = anios_disponibles
+
+        # =========================
+        # Filtro por rango de fecha
+        # =========================
+        if isinstance(rango_fechas, tuple) and len(rango_fechas) == 2:
+            fecha_inicio, fecha_fin = rango_fechas
+
+            if fecha_inicio and fecha_fin:
+                df_filtrado = df_filtrado[
+                    df_filtrado["fecha_recepcion_final"].notna()
+                    & df_filtrado["fecha_recepcion_final"].dt.date.between(
+                        fecha_inicio,
+                        fecha_fin
+                    )
+                ].copy()
 
         with st.sidebar:
             centros_disponibles = opciones_columna(df_filtrado, "Centro")
@@ -937,6 +978,20 @@ if uploaded_file is not None:
             "Centro",
             centros_sel
         )
+
+        # =========================
+        # Aviso por registros sin fecha
+        # =========================
+        registros_sin_fecha_original = df["fecha_recepcion_final"].isna().sum()
+        registros_sin_fecha_filtrado = df_filtrado["fecha_recepcion_final"].isna().sum()
+
+        if registros_sin_fecha_original > 0:
+            st.warning(
+                f"Hay {registros_sin_fecha_original:,} registros sin fecha_recepcion_final "
+                "en el archivo original. Estos registros no se muestran en el gráfico mensual "
+                "porque no pueden asignarse a un mes. Si aplicas filtro por fecha, también "
+                "quedan fuera del análisis filtrado."
+            )
 
         tabla_resumen = crear_resumen_mensual(df_filtrado)
 
@@ -965,16 +1020,20 @@ if uploaded_file is not None:
         st.divider()
 
         # =========================
-        # NUEVO BLOQUE DE DONUTS
+        # BARPLOT MENSUAL TAT ARRIBA
         # =========================
 
-        bloque_donuts_cumplimiento(df_filtrado)
+        st.subheader("Performance TAT mensual")
 
-        st.divider()
-
-        # =========================
-        # BARPLOT MENSUAL TAT
-        # =========================
+        st.info(
+            "Lógica del gráfico: se agrupan los registros por mes usando "
+            "fecha_recepcion_final y se calcula el cumplimiento según performance_tat. "
+            "Cumple, No cumple y Sin información se muestran por mes. "
+            "En modo Porcentaje, cada mes se expresa sobre el total mensual; "
+            "en modo Recuento, se muestran cantidades absolutas. "
+            "Los registros sin fecha_recepcion_final no se muestran en este gráfico "
+            "porque no pueden asignarse a un mes."
+        )
 
         if tabla_resumen.empty:
             st.warning("No hay datos para graficar con los filtros seleccionados.")
@@ -988,8 +1047,18 @@ if uploaded_file is not None:
             grafico_barplot_interactivo_altair(
                 df_plot=df_plot,
                 modo_y=modo_y_barplot,
-                titulo="Barplot interactivo Performance TAT - todos los años seleccionados"
+                titulo="Performance TAT mensual - todos los años seleccionados"
             )
+
+        st.divider()
+
+        # =========================
+        # CUMPLIMIENTO POR ETAPA ABAJO
+        # =========================
+
+        bloque_donuts_cumplimiento(df_filtrado)
+
+        st.divider()
 
         st.subheader("Resumen mensual ordenado cronológicamente")
 
