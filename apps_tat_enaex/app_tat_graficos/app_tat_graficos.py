@@ -327,11 +327,8 @@ def preparar_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
 def opciones_columna(df: pd.DataFrame, columna: str):
     """
-    Devuelve opciones únicas para una columna.
-
-    - Elimina valores nulos.
-    - Ordena valores numéricos como números.
-    - Ordena valores texto alfabéticamente.
+    Devuelve opciones únicas para una columna categórica.
+    Ordena numéricos como números y textos alfabéticamente.
     """
     if columna not in df.columns:
         return []
@@ -344,7 +341,10 @@ def opciones_columna(df: pd.DataFrame, columna: str):
     serie_str = serie.astype(str).str.strip()
 
     try:
-        serie_num = pd.to_numeric(serie_str, errors="coerce")
+        serie_num = pd.to_numeric(
+            serie_str.str.replace(",", ".", regex=False),
+            errors="coerce"
+        )
 
         if serie_num.notna().all():
             return (
@@ -365,29 +365,416 @@ def opciones_columna(df: pd.DataFrame, columna: str):
     )
 
 
-def aplicar_filtro_multiselect(
+def detectar_tipo_columna(df: pd.DataFrame, columna: str) -> str:
+    """
+    Detecta el tipo de filtro más adecuado para una columna.
+    Retorna:
+    - fecha
+    - numero
+    - categoria
+    - texto
+    """
+    if columna not in df.columns:
+        return "texto"
+
+    serie = df[columna].dropna()
+
+    if serie.empty:
+        return "texto"
+
+    if pd.api.types.is_datetime64_any_dtype(serie):
+        return "fecha"
+
+    if pd.api.types.is_bool_dtype(serie):
+        return "categoria"
+
+    serie_num = pd.to_numeric(
+        serie.astype(str).str.replace(",", ".", regex=False),
+        errors="coerce"
+    )
+
+    pct_numerico = serie_num.notna().mean()
+
+    if pct_numerico >= 0.9:
+        return "numero"
+
+    valores_unicos = serie.astype(str).nunique()
+
+    if valores_unicos <= 50:
+        return "categoria"
+
+    return "texto"
+
+
+def aplicar_filtro_flexible(
     df: pd.DataFrame,
     columna: str,
-    seleccionados: list
+    config: dict
 ) -> pd.DataFrame:
     """
-    Aplica filtro multiselect sobre una columna.
-    Si no hay selección, no filtra.
+    Aplica filtros flexibles según configuración generada en sidebar.
     """
     if columna not in df.columns:
         return df
 
-    if not seleccionados:
+    if not config:
         return df
 
-    seleccionados_str = [
-        str(valor).strip()
-        for valor in seleccionados
-    ]
+    df_out = df.copy()
 
-    return df[
-        df[columna].astype(str).str.strip().isin(seleccionados_str)
-    ].copy()
+    tipo = config.get("tipo")
+    modo = config.get("modo")
+    incluir_vacios = config.get("incluir_vacios", True)
+
+    if not incluir_vacios:
+        df_out = df_out[df_out[columna].notna()].copy()
+
+    # =========================
+    # Filtro categórico
+    # =========================
+
+    if tipo == "categoria":
+        seleccionados = config.get("seleccionados", [])
+
+        if seleccionados:
+            seleccionados_str = [
+                str(x).strip()
+                for x in seleccionados
+            ]
+
+            df_out = df_out[
+                df_out[columna]
+                .astype(str)
+                .str.strip()
+                .isin(seleccionados_str)
+            ].copy()
+
+        return df_out
+
+    # =========================
+    # Filtro de texto
+    # =========================
+
+    if tipo == "texto":
+        texto = str(config.get("texto", "")).strip()
+        sensible_mayusculas = config.get("sensible_mayusculas", False)
+
+        if not texto:
+            return df_out
+
+        serie_texto = df_out[columna].fillna("").astype(str)
+
+        if not sensible_mayusculas:
+            serie_texto = serie_texto.str.lower()
+            texto_busqueda = texto.lower()
+        else:
+            texto_busqueda = texto
+
+        if modo == "Contiene":
+            mask = serie_texto.str.contains(
+                texto_busqueda,
+                na=False,
+                regex=False
+            )
+
+        elif modo == "No contiene":
+            mask = ~serie_texto.str.contains(
+                texto_busqueda,
+                na=False,
+                regex=False
+            )
+
+        elif modo == "Igual a":
+            mask = serie_texto == texto_busqueda
+
+        elif modo == "Distinto de":
+            mask = serie_texto != texto_busqueda
+
+        elif modo == "Empieza con":
+            mask = serie_texto.str.startswith(
+                texto_busqueda,
+                na=False
+            )
+
+        elif modo == "Termina con":
+            mask = serie_texto.str.endswith(
+                texto_busqueda,
+                na=False
+            )
+
+        else:
+            mask = pd.Series(True, index=df_out.index)
+
+        return df_out[mask].copy()
+
+    # =========================
+    # Filtro numérico
+    # =========================
+
+    if tipo == "numero":
+        serie_num = pd.to_numeric(
+            df_out[columna]
+            .astype(str)
+            .str.replace(",", ".", regex=False),
+            errors="coerce"
+        )
+
+        valor = config.get("valor")
+        valor_min = config.get("valor_min")
+        valor_max = config.get("valor_max")
+
+        if modo == "Entre":
+            mask = serie_num.between(valor_min, valor_max)
+
+        elif modo == "Mayor o igual que":
+            mask = serie_num >= valor
+
+        elif modo == "Menor o igual que":
+            mask = serie_num <= valor
+
+        elif modo == "Mayor que":
+            mask = serie_num > valor
+
+        elif modo == "Menor que":
+            mask = serie_num < valor
+
+        elif modo == "Igual a":
+            mask = serie_num == valor
+
+        elif modo == "Distinto de":
+            mask = serie_num != valor
+
+        else:
+            mask = pd.Series(True, index=df_out.index)
+
+        return df_out[mask.fillna(False)].copy()
+
+    # =========================
+    # Filtro de fecha
+    # =========================
+
+    if tipo == "fecha":
+        serie_fecha = pd.to_datetime(
+            df_out[columna],
+            errors="coerce"
+        )
+
+        fecha_inicio = config.get("fecha_inicio")
+        fecha_fin = config.get("fecha_fin")
+
+        if fecha_inicio and fecha_fin:
+            mask = (
+                serie_fecha.notna()
+                & serie_fecha.dt.date.between(
+                    fecha_inicio,
+                    fecha_fin
+                )
+            )
+
+            return df_out[mask].copy()
+
+        return df_out
+
+    return df_out
+
+
+def crear_filtro_sidebar_columna(
+    df: pd.DataFrame,
+    columna: str,
+    prefijo_key: str = "filtro_flexible"
+) -> dict:
+    """
+    Crea controles Streamlit para una columna y devuelve configuración de filtro.
+    """
+    tipo_detectado = detectar_tipo_columna(df, columna)
+
+    with st.expander(f"Filtro: {columna}", expanded=True):
+        tipo = st.selectbox(
+            "Tipo de filtro",
+            options=[
+                "Automático",
+                "Texto",
+                "Categoría",
+                "Número",
+                "Fecha"
+            ],
+            index=0,
+            key=f"{prefijo_key}_{columna}_tipo_selector"
+        )
+
+        if tipo == "Automático":
+            tipo = tipo_detectado
+        else:
+            tipo = {
+                "Texto": "texto",
+                "Categoría": "categoria",
+                "Número": "numero",
+                "Fecha": "fecha"
+            }[tipo]
+
+        incluir_vacios = st.checkbox(
+            "Incluir valores vacíos",
+            value=True,
+            key=f"{prefijo_key}_{columna}_incluir_vacios"
+        )
+
+        config = {
+            "tipo": tipo,
+            "incluir_vacios": incluir_vacios
+        }
+
+        st.caption(f"Tipo aplicado: {tipo}")
+
+        # =========================
+        # Controles categoría
+        # =========================
+
+        if tipo == "categoria":
+            opciones = opciones_columna(df, columna)
+
+            seleccionados = st.multiselect(
+                "Valores",
+                options=opciones,
+                key=f"{prefijo_key}_{columna}_categoria_valores"
+            )
+
+            config["seleccionados"] = seleccionados
+
+            return config
+
+        # =========================
+        # Controles texto
+        # =========================
+
+        if tipo == "texto":
+            modo = st.selectbox(
+                "Condición",
+                options=[
+                    "Contiene",
+                    "No contiene",
+                    "Igual a",
+                    "Distinto de",
+                    "Empieza con",
+                    "Termina con"
+                ],
+                key=f"{prefijo_key}_{columna}_texto_modo"
+            )
+
+            texto = st.text_input(
+                "Texto a buscar",
+                key=f"{prefijo_key}_{columna}_texto_valor"
+            )
+
+            sensible_mayusculas = st.checkbox(
+                "Distinguir mayúsculas/minúsculas",
+                value=False,
+                key=f"{prefijo_key}_{columna}_texto_case"
+            )
+
+            config["modo"] = modo
+            config["texto"] = texto
+            config["sensible_mayusculas"] = sensible_mayusculas
+
+            return config
+
+        # =========================
+        # Controles número
+        # =========================
+
+        if tipo == "numero":
+            serie_num = pd.to_numeric(
+                df[columna]
+                .dropna()
+                .astype(str)
+                .str.replace(",", ".", regex=False),
+                errors="coerce"
+            ).dropna()
+
+            if serie_num.empty:
+                st.info("No hay valores numéricos válidos en esta columna.")
+                return config
+
+            minimo = float(serie_num.min())
+            maximo = float(serie_num.max())
+
+            modo = st.selectbox(
+                "Condición",
+                options=[
+                    "Entre",
+                    "Mayor o igual que",
+                    "Menor o igual que",
+                    "Mayor que",
+                    "Menor que",
+                    "Igual a",
+                    "Distinto de"
+                ],
+                key=f"{prefijo_key}_{columna}_numero_modo"
+            )
+
+            config["modo"] = modo
+
+            if modo == "Entre":
+                valor_min, valor_max = st.slider(
+                    "Rango",
+                    min_value=minimo,
+                    max_value=maximo,
+                    value=(minimo, maximo),
+                    key=f"{prefijo_key}_{columna}_numero_rango"
+                )
+
+                config["valor_min"] = valor_min
+                config["valor_max"] = valor_max
+
+            else:
+                valor = st.number_input(
+                    "Valor",
+                    value=minimo,
+                    key=f"{prefijo_key}_{columna}_numero_valor"
+                )
+
+                config["valor"] = valor
+
+            return config
+
+        # =========================
+        # Controles fecha
+        # =========================
+
+        if tipo == "fecha":
+            serie_fecha = pd.to_datetime(
+                df[columna],
+                errors="coerce"
+            ).dropna()
+
+            if serie_fecha.empty:
+                st.info("No hay fechas válidas en esta columna.")
+                return config
+
+            fecha_min = serie_fecha.min().date()
+            fecha_max = serie_fecha.max().date()
+
+            fecha_inicio = st.date_input(
+                "Desde",
+                value=fecha_min,
+                min_value=fecha_min,
+                max_value=fecha_max,
+                key=f"{prefijo_key}_{columna}_fecha_inicio"
+            )
+
+            fecha_fin = st.date_input(
+                "Hasta",
+                value=fecha_max,
+                min_value=fecha_min,
+                max_value=fecha_max,
+                key=f"{prefijo_key}_{columna}_fecha_fin"
+            )
+
+            config["fecha_inicio"] = fecha_inicio
+            config["fecha_fin"] = fecha_fin
+
+            return config
+
+    return {}
 
 
 # =========================================================
@@ -1124,20 +1511,17 @@ if uploaded_file is not None:
             ].copy()
 
         # =========================
-        # Filtros dinámicos por columnas
+        # Filtros flexibles por columnas
         # =========================
 
         with st.sidebar:
             st.divider()
-            st.subheader("Filtros por columnas")
+            st.subheader("Filtros flexibles por columnas")
 
             columnas_excluir_filtros = [
-                "fecha_recepcion_final",
                 "periodo_fecha",
                 "periodo_mes",
                 "periodo_label",
-                "anio",
-                "mes_num",
                 "mes_nombre"
             ]
 
@@ -1156,32 +1540,25 @@ if uploaded_file is not None:
                 options=columnas_disponibles_filtro,
                 default=columnas_default,
                 help=(
-                    "Puedes seleccionar una o varias columnas. "
-                    "Se creará un filtro para cada columna seleccionada."
+                    "Puedes seleccionar columnas de texto, numéricas, fechas o categorías. "
+                    "Cada columna tendrá opciones de filtro según su tipo."
                 )
             )
 
             filtros_columnas = {}
 
             for columna in columnas_filtro_sel:
-                valores_disponibles = opciones_columna(
+                filtros_columnas[columna] = crear_filtro_sidebar_columna(
                     df=df_filtrado,
-                    columna=columna
+                    columna=columna,
+                    prefijo_key="filtro_flexible"
                 )
 
-                seleccionados = st.multiselect(
-                    f"Filtrar {columna}",
-                    options=valores_disponibles,
-                    key=f"filtro_columna_{columna}"
-                )
-
-                filtros_columnas[columna] = seleccionados
-
-        for columna, seleccionados in filtros_columnas.items():
-            df_filtrado = aplicar_filtro_multiselect(
+        for columna, config in filtros_columnas.items():
+            df_filtrado = aplicar_filtro_flexible(
                 df=df_filtrado,
                 columna=columna,
-                seleccionados=seleccionados
+                config=config
             )
 
         # =========================
