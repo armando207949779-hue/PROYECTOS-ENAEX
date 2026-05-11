@@ -9,16 +9,17 @@ import streamlit as st
 # =========================
 
 BASE_DIR = Path(__file__).resolve().parent
+PROJECT_DIR = BASE_DIR.parent
 
-LOGO_PATH = BASE_DIR / "assets" / "logo.svg"
+LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
 
-APP_TAT_CONSOLIDADO = BASE_DIR / "app_tat_consolidado" / "app_tat_consolidado.py"
-APP_TAT_CONSOLIDADO_FINAL = BASE_DIR / "app_tat_consolidado_final" / "app_tat_consolidado_final.py"
-APP_TAT_GRAFICOS = BASE_DIR / "app_tat_graficos" / "app_tat_graficos.py"
-APP_TAT_LIMPIEZA_ARIBA = BASE_DIR / "app_tat_limpieza_ariba" / "app_tat_limpieza_ariba.py"
-APP_TAT_LIMPIEZA_ME5A = BASE_DIR / "app_tat_limpieza_me5a" / "app_tat_limpieza_me5a.py"
-APP_TAT_LIMPIEZA_ME80FN = BASE_DIR / "app_tat_limpieza_me80fn" / "app_tat_limpieza_me80fn.py"
-APP_TAT_MATCH = BASE_DIR / "app_tat_match" / "app_tat_match.py"
+APP_TAT_CONSOLIDADO = PROJECT_DIR / "app_tat_consolidado" / "app_tat_consolidado.py"
+APP_TAT_CONSOLIDADO_FINAL = PROJECT_DIR / "app_tat_consolidado_final" / "app_tat_consolidado_final.py"
+APP_TAT_GRAFICOS = PROJECT_DIR / "app_tat_graficos" / "app_tat_graficos.py"
+APP_TAT_LIMPIEZA_ARIBA = PROJECT_DIR / "app_tat_limpieza_ariba" / "app_tat_limpieza_ariba.py"
+APP_TAT_LIMPIEZA_ME5A = PROJECT_DIR / "app_tat_limpieza_me5a" / "app_tat_limpieza_me5a.py"
+APP_TAT_LIMPIEZA_ME80FN = PROJECT_DIR / "app_tat_limpieza_me80fn" / "app_tat_limpieza_me80fn.py"
+APP_TAT_MATCH = PROJECT_DIR / "app_tat_match" / "app_tat_match.py"
 
 
 # =========================
