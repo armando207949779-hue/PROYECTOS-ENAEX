@@ -128,6 +128,30 @@ def normalizar_performance(valor):
     return "Sin información"
 
 
+def crear_performance_desde_dias(df: pd.DataFrame, col_dias: str, col_performance: str):
+    """
+    Crea una columna performance cuando no existe.
+    Regla:
+    - dias_incumplimiento <= 0  => Cumple
+    - dias_incumplimiento > 0   => No cumple
+    """
+    if col_performance in df.columns:
+        return df
+
+    if col_dias not in df.columns:
+        return df
+
+    dias = pd.to_numeric(df[col_dias], errors="coerce")
+
+    df[col_performance] = np.where(
+        dias.isna(),
+        pd.NA,
+        dias.fillna(0).le(0)
+    )
+
+    return df
+
+
 def preparar_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df.columns = df.columns.astype(str).str.strip()
@@ -150,10 +174,49 @@ def preparar_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         errors="coerce"
     )
 
+    # Performance TAT general
     df["performance_tat_estado"] = df["performance_tat"].apply(
         normalizar_performance
     )
 
+    # Crear columnas de performance por etapa si no vienen en el archivo
+    df = crear_performance_desde_dias(
+        df,
+        col_dias="dias_incumplimiento_lib_solped",
+        col_performance="performance_lib_solped"
+    )
+
+    df = crear_performance_desde_dias(
+        df,
+        col_dias="dias_incumplimiento_comprador_1",
+        col_performance="performance_comprador_1"
+    )
+
+    df = crear_performance_desde_dias(
+        df,
+        col_dias="dias_incumplimiento_logistica",
+        col_performance="performance_logistica"
+    )
+
+    df = crear_performance_desde_dias(
+        df,
+        col_dias="dias_incumplimiento_proveedor",
+        col_performance="performance_proveedor"
+    )
+
+    # Normalizar estados por etapa
+    columnas_performance = [
+        "performance_lib_solped",
+        "performance_comprador_1",
+        "performance_proveedor",
+        "performance_logistica"
+    ]
+
+    for col in columnas_performance:
+        if col in df.columns:
+            df[f"{col}_estado"] = df[col].apply(normalizar_performance)
+
+    # Variables de fecha
     df["anio"] = df["fecha_recepcion_final"].dt.year
     df["mes_num"] = df["fecha_recepcion_final"].dt.month
 
@@ -224,6 +287,10 @@ def aplicar_filtro_multiselect(
         df[columna].astype(str).isin(seleccionados)
     ].copy()
 
+
+# =========================================================
+# Resumen mensual TAT
+# =========================================================
 
 def crear_resumen_mensual(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
@@ -377,6 +444,209 @@ def completar_meses_anios(tabla: pd.DataFrame, anios: list[int]) -> pd.DataFrame
     salida = salida.sort_values("periodo_fecha").reset_index(drop=True)
 
     return salida
+
+
+# =========================================================
+# Donuts de cumplimiento por etapa
+# =========================================================
+
+def crear_resumen_cumplimiento_etapa(
+    df: pd.DataFrame,
+    col_performance_estado: str
+):
+    if col_performance_estado not in df.columns:
+        return None
+
+    estado = df[col_performance_estado]
+
+    total = len(estado)
+    cumple = estado.eq("Cumple").sum()
+    no_cumple = estado.eq("No cumple").sum()
+    sin_info = estado.eq("Sin información").sum()
+
+    pct_cumple = cumple / total * 100 if total > 0 else 0
+    pct_no_cumple = no_cumple / total * 100 if total > 0 else 0
+    pct_sin_info = sin_info / total * 100 if total > 0 else 0
+
+    return {
+        "total": total,
+        "cumple": cumple,
+        "no_cumple": no_cumple,
+        "sin_info": sin_info,
+        "pct_cumple": pct_cumple,
+        "pct_no_cumple": pct_no_cumple,
+        "pct_sin_info": pct_sin_info
+    }
+
+
+def crear_donut_altair(data: pd.DataFrame):
+    colores = {
+        "Cumple": "#5B5B5B",
+        "No cumple": "#D94555",
+        "Sin información": "#BDBDBD"
+    }
+
+    chart = (
+        alt.Chart(data)
+        .mark_arc(
+            innerRadius=42,
+            outerRadius=72
+        )
+        .encode(
+            theta=alt.Theta("valor:Q"),
+            color=alt.Color(
+                "estado:N",
+                scale=alt.Scale(
+                    domain=["Cumple", "No cumple", "Sin información"],
+                    range=[
+                        colores["Cumple"],
+                        colores["No cumple"],
+                        colores["Sin información"]
+                    ]
+                ),
+                legend=alt.Legend(
+                    title="",
+                    orient="bottom"
+                )
+            ),
+            tooltip=[
+                alt.Tooltip("estado:N", title="Estado"),
+                alt.Tooltip("valor:Q", title="Cantidad", format=",.0f"),
+                alt.Tooltip("porcentaje:Q", title="Porcentaje", format=".1f")
+            ]
+        )
+        .properties(
+            height=210
+        )
+        .configure_view(
+            strokeWidth=0
+        )
+    )
+
+    return chart
+
+
+def tarjeta_donut_cumplimiento(
+    df: pd.DataFrame,
+    titulo: str,
+    col_performance_estado: str,
+    col_dias_incumplimiento: str,
+    regla: str
+):
+    resumen = crear_resumen_cumplimiento_etapa(
+        df=df,
+        col_performance_estado=col_performance_estado
+    )
+
+    if resumen is None:
+        st.warning(f"No existe la columna {col_performance_estado}")
+        return
+
+    data = pd.DataFrame({
+        "estado": ["Cumple", "No cumple"],
+        "valor": [
+            resumen["cumple"],
+            resumen["no_cumple"]
+        ],
+        "porcentaje": [
+            resumen["pct_cumple"],
+            resumen["pct_no_cumple"]
+        ]
+    })
+
+    # Evitar gráficos vacíos si no hay datos
+    if data["valor"].sum() == 0:
+        data = pd.DataFrame({
+            "estado": ["Sin información"],
+            "valor": [1],
+            "porcentaje": [100]
+        })
+
+    promedio_dias = 0
+
+    if col_dias_incumplimiento in df.columns:
+        promedio_dias = (
+            pd.to_numeric(df[col_dias_incumplimiento], errors="coerce")
+            .fillna(0)
+            .mean()
+        )
+
+    st.markdown(
+        f"""
+        <div style="text-align:center; font-size:12px; color:#222; min-height:34px;">
+            • {regla}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    st.markdown(
+        f"""
+        <h4 style="text-align:center; margin-bottom:0px; margin-top:0px;">
+            Cumplimiento {titulo}
+        </h4>
+        """,
+        unsafe_allow_html=True
+    )
+
+    chart = crear_donut_altair(data)
+    st.altair_chart(chart, use_container_width=True)
+
+    st.markdown(
+        f"""
+        <div style="text-align:center; margin-top:-6px;">
+            <div style="font-size:34px; font-weight:700; color:#222;">
+                {promedio_dias:.0f}
+            </div>
+            <div style="font-size:12px; color:#666;">
+                Promedio de Dx {titulo}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+def bloque_donuts_cumplimiento(df: pd.DataFrame):
+    st.subheader("Cumplimiento por etapa")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        tarjeta_donut_cumplimiento(
+            df=df,
+            titulo="Lib Solped",
+            col_performance_estado="performance_lib_solped_estado",
+            col_dias_incumplimiento="dias_incumplimiento_lib_solped",
+            regla="Nacional e Internacional < 2"
+        )
+
+    with col2:
+        tarjeta_donut_cumplimiento(
+            df=df,
+            titulo="Comprador",
+            col_performance_estado="performance_comprador_1_estado",
+            col_dias_incumplimiento="dias_incumplimiento_comprador_1",
+            regla="Nacional e Internacional < 11"
+        )
+
+    with col3:
+        tarjeta_donut_cumplimiento(
+            df=df,
+            titulo="Prov",
+            col_performance_estado="performance_proveedor_estado",
+            col_dias_incumplimiento="dias_incumplimiento_proveedor",
+            regla="Nacional < 20<br>Internacional < 60"
+        )
+
+    with col4:
+        tarjeta_donut_cumplimiento(
+            df=df,
+            titulo="Logística",
+            col_performance_estado="performance_logistica_estado",
+            col_dias_incumplimiento="dias_incumplimiento_logistica",
+            regla="Nacional e Internacional < 10"
+        )
 
 
 # =========================================================
@@ -693,6 +963,18 @@ if uploaded_file is not None:
         col5.metric("% No cumple", f"{pct_no_cumple}%")
 
         st.divider()
+
+        # =========================
+        # NUEVO BLOQUE DE DONUTS
+        # =========================
+
+        bloque_donuts_cumplimiento(df_filtrado)
+
+        st.divider()
+
+        # =========================
+        # BARPLOT MENSUAL TAT
+        # =========================
 
         if tabla_resumen.empty:
             st.warning("No hay datos para graficar con los filtros seleccionados.")
