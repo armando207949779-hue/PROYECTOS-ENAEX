@@ -115,10 +115,7 @@ def leer_archivo_cache(
 
 def normalizar_performance(valor):
     """
-    Normaliza valores booleanos o texto a:
-    - Cumple
-    - No cumple
-    - Sin información
+    Normaliza performance_tat u otras columnas booleanas a texto.
     """
     if pd.isna(valor):
         return "Sin información"
@@ -136,35 +133,31 @@ def normalizar_performance(valor):
 
 def performance_dx_lib_solped(valor):
     """
-    Regla:
-    - Si dx_lib_solped está vacío: No aplica
-    - Si dx_lib_solped <= 2: Cumple
-    - Si dx_lib_solped > 2: No cumple
+    Regla visual del dashboard:
+    - Nacional e Internacional < 2
     """
     valor = pd.to_numeric(valor, errors="coerce")
 
     if pd.isna(valor):
-        return "No aplica"
+        return "Sin información"
 
-    if valor <= 2:
+    if valor < 2:
         return "Cumple"
 
     return "No cumple"
 
 
-def performance_lib_abas(valor):
+def performance_dx_comprador(valor):
     """
-    Regla:
-    - Si dx_lib_pedido está vacío: Sin datos
-    - Si dx_lib_pedido <= 2: Cumple
-    - Si dx_lib_pedido > 2: No cumple
+    Regla visual del dashboard:
+    - Nacional e Internacional < 11
     """
     valor = pd.to_numeric(valor, errors="coerce")
 
     if pd.isna(valor):
-        return "Sin datos"
+        return "Sin información"
 
-    if valor <= 2:
+    if valor < 11:
         return "Cumple"
 
     return "No cumple"
@@ -172,17 +165,15 @@ def performance_lib_abas(valor):
 
 def performance_dx_logistica(valor):
     """
-    Regla:
-    - Si dx_logistica está vacío o dx_logistica < 0: No aplica
-    - Si dx_logistica <= 11: Cumple
-    - Si dx_logistica > 11: No cumple
+    Regla visual del dashboard:
+    - Nacional e Internacional < 10
     """
     valor = pd.to_numeric(valor, errors="coerce")
 
     if pd.isna(valor) or valor < 0:
-        return "No aplica"
+        return "Sin información"
 
-    if valor <= 11:
+    if valor < 10:
         return "Cumple"
 
     return "No cumple"
@@ -190,26 +181,24 @@ def performance_dx_logistica(valor):
 
 def performance_proveedor_dax(dx_proveedor, tipo_oc):
     """
-    Regla:
-    - Si dx_proveedor está vacío: Sin datos
-    - Si tipo_oc es 35 o 45 y dx_proveedor <= 20: Cumple
-    - Si tipo_oc es 47 y dx_proveedor <= 60: Cumple
-    - En caso contrario: No cumple
+    Regla visual del dashboard:
+    - OC 35 / 45: Nacional < 20
+    - OC 47: Internacional < 60
     """
     dx_proveedor = pd.to_numeric(dx_proveedor, errors="coerce")
 
     if pd.isna(dx_proveedor):
-        return "Sin datos"
+        return "Sin información"
 
     if pd.isna(tipo_oc):
         return "No cumple"
 
     tipo_oc = str(tipo_oc).strip().replace(".0", "")
 
-    if tipo_oc in ["35", "45"] and dx_proveedor <= 20:
+    if tipo_oc in ["35", "45"] and dx_proveedor < 20:
         return "Cumple"
 
-    if tipo_oc == "47" and dx_proveedor <= 60:
+    if tipo_oc == "47" and dx_proveedor < 60:
         return "Cumple"
 
     return "No cumple"
@@ -246,7 +235,7 @@ def preparar_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     # =========================
-    # Performance por etapa según reglas DAX
+    # Performance por etapa para donuts
     # =========================
 
     if "dx_lib_solped" in df.columns:
@@ -258,26 +247,12 @@ def preparar_dataframe(df: pd.DataFrame) -> pd.DataFrame:
             normalizar_performance
         )
 
-    if "dx_lib_pedido" in df.columns:
-        df["performance_lib_pedido_estado"] = df["dx_lib_pedido"].apply(
-            performance_lib_abas
-        )
-
-        # Compatibilidad con versiones anteriores del dashboard
-        df["performance_comprador_1_estado"] = df["dx_lib_pedido"].apply(
-            performance_lib_abas
+    if "dx_comprador_1" in df.columns:
+        df["performance_comprador_1_estado"] = df["dx_comprador_1"].apply(
+            performance_dx_comprador
         )
     elif "performance_comprador_1" in df.columns:
         df["performance_comprador_1_estado"] = df["performance_comprador_1"].apply(
-            normalizar_performance
-        )
-
-    if "dx_logistica" in df.columns:
-        df["performance_logistica_estado"] = df["dx_logistica"].apply(
-            performance_dx_logistica
-        )
-    elif "performance_logistica" in df.columns:
-        df["performance_logistica_estado"] = df["performance_logistica"].apply(
             normalizar_performance
         )
 
@@ -291,6 +266,15 @@ def preparar_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         )
     elif "performance_proveedor" in df.columns:
         df["performance_proveedor_estado"] = df["performance_proveedor"].apply(
+            normalizar_performance
+        )
+
+    if "dx_logistica" in df.columns:
+        df["performance_logistica_estado"] = df["dx_logistica"].apply(
+            performance_dx_logistica
+        )
+    elif "performance_logistica" in df.columns:
+        df["performance_logistica_estado"] = df["performance_logistica"].apply(
             normalizar_performance
         )
 
@@ -561,9 +545,7 @@ def crear_resumen_cumplimiento_etapa(
     orden = {
         "Cumple": 1,
         "No cumple": 2,
-        "No aplica": 3,
-        "Sin datos": 4,
-        "Sin información": 5
+        "Sin información": 3
     }
 
     data["orden"] = data["estado"].map(orden).fillna(99)
@@ -582,16 +564,12 @@ def crear_donut_altair(data: pd.DataFrame):
     colores = {
         "Cumple": "#5B5B5B",
         "No cumple": "#D94555",
-        "No aplica": "#9E9E9E",
-        "Sin datos": "#BDBDBD",
-        "Sin información": "#D6D6D6"
+        "Sin información": "#BDBDBD"
     }
 
     estados = [
         "Cumple",
         "No cumple",
-        "No aplica",
-        "Sin datos",
         "Sin información"
     ]
 
@@ -636,7 +614,8 @@ def tarjeta_donut_cumplimiento(
     titulo: str,
     col_performance_estado: str,
     col_dias_incumplimiento: str,
-    regla: str
+    regla: str,
+    texto_promedio: str
 ):
     data = crear_resumen_cumplimiento_etapa(
         df=df,
@@ -646,6 +625,10 @@ def tarjeta_donut_cumplimiento(
     if data is None:
         st.warning(f"No existe la columna {col_performance_estado}")
         return
+
+    data = data[
+        data["estado"].isin(["Cumple", "No cumple"])
+    ].copy()
 
     if data.empty or data["valor"].sum() == 0:
         data = pd.DataFrame({
@@ -693,7 +676,7 @@ def tarjeta_donut_cumplimiento(
                 {promedio_dias:.0f}
             </div>
             <div style="font-size:12px; color:#666;">
-                Promedio de Dx {titulo}
+                {texto_promedio}
             </div>
         </div>
         """,
@@ -702,6 +685,16 @@ def tarjeta_donut_cumplimiento(
 
 
 def bloque_donuts_cumplimiento(df: pd.DataFrame):
+    st.markdown(
+        """
+        <div style="font-size:12px; font-weight:700; margin-bottom:10px;">
+            Nacional &lt;40 días<br>
+            Internacional &lt;70 días
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
@@ -710,16 +703,18 @@ def bloque_donuts_cumplimiento(df: pd.DataFrame):
             titulo="Lib Solped",
             col_performance_estado="performance_lib_solped_estado",
             col_dias_incumplimiento="dx_lib_solped",
-            regla="Dx Lib Solped <= 2"
+            regla="Nacional e Internacional &lt; 2",
+            texto_promedio="Promedio de Dx Lib solped"
         )
 
     with col2:
         tarjeta_donut_cumplimiento(
             df=df,
-            titulo="Lib Abas",
-            col_performance_estado="performance_lib_pedido_estado",
-            col_dias_incumplimiento="dx_lib_pedido",
-            regla="Dx Lib Pedido <= 2"
+            titulo="Comprador",
+            col_performance_estado="performance_comprador_1_estado",
+            col_dias_incumplimiento="dx_comprador_1",
+            regla="Nacional e Internacional &lt; 11",
+            texto_promedio="Promedio de Dx Comprador 1"
         )
 
     with col3:
@@ -728,7 +723,8 @@ def bloque_donuts_cumplimiento(df: pd.DataFrame):
             titulo="Prov",
             col_performance_estado="performance_proveedor_estado",
             col_dias_incumplimiento="dx_proveedor",
-            regla="OC 35/45 <= 20 días<br>OC 47 <= 60 días"
+            regla="Nacional &lt; 20<br>Internacional &lt;60",
+            texto_promedio="Promedio de Dx Proveedor"
         )
 
     with col4:
@@ -737,7 +733,8 @@ def bloque_donuts_cumplimiento(df: pd.DataFrame):
             titulo="Logística",
             col_performance_estado="performance_logistica_estado",
             col_dias_incumplimiento="dx_logistica",
-            regla="Dx Logística <= 11"
+            regla="Nacional e Internacional &lt; 10",
+            texto_promedio="Promedio de Dx Logística"
         )
 
 
@@ -1216,38 +1213,33 @@ if uploaded_file is not None:
                 **Etapas evaluadas:**
 
                 - Lib Solped
-                - Lib Abas
+                - Comprador
                 - Proveedor
                 - Logística
 
                 **Lógica aplicada:**
 
                 1. Lib Solped:
-                   - Si `dx_lib_solped` está vacío: `No aplica`.
-                   - Si `dx_lib_solped <= 2`: `Cumple`.
-                   - Si `dx_lib_solped > 2`: `No cumple`.
+                   - Si `dx_lib_solped < 2`: `Cumple`.
+                   - En caso contrario: `No cumple`.
 
-                2. Lib Abas:
-                   - Si `dx_lib_pedido` está vacío: `Sin datos`.
-                   - Si `dx_lib_pedido <= 2`: `Cumple`.
-                   - Si `dx_lib_pedido > 2`: `No cumple`.
+                2. Comprador:
+                   - Si `dx_comprador_1 < 11`: `Cumple`.
+                   - En caso contrario: `No cumple`.
 
                 3. Proveedor:
-                   - Si `dx_proveedor` está vacío: `Sin datos`.
-                   - Si `tipo_oc` es 35 o 45 y `dx_proveedor <= 20`: `Cumple`.
-                   - Si `tipo_oc` es 47 y `dx_proveedor <= 60`: `Cumple`.
+                   - Si `tipo_oc` es 35 o 45 y `dx_proveedor < 20`: `Cumple`.
+                   - Si `tipo_oc` es 47 y `dx_proveedor < 60`: `Cumple`.
                    - En caso contrario: `No cumple`.
 
                 4. Logística:
-                   - Si `dx_logistica` está vacío o es menor que 0: `No aplica`.
-                   - Si `dx_logistica <= 11`: `Cumple`.
-                   - Si `dx_logistica > 11`: `No cumple`.
+                   - Si `dx_logistica < 10`: `Cumple`.
+                   - En caso contrario: `No cumple`.
 
                 **Interpretación:**
 
                 - Un mayor porcentaje de `Cumple` indica que la etapa está dentro del plazo esperado.
                 - Un mayor porcentaje de `No cumple` indica retrasos o desviaciones.
-                - `No aplica` y `Sin datos` aparecen cuando no existe información válida para evaluar la etapa.
                 """
             )
 
