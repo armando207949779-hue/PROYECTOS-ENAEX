@@ -326,13 +326,39 @@ def preparar_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def opciones_columna(df: pd.DataFrame, columna: str):
+    """
+    Devuelve opciones únicas para una columna.
+
+    - Elimina valores nulos.
+    - Ordena valores numéricos como números.
+    - Ordena valores texto alfabéticamente.
+    """
     if columna not in df.columns:
         return []
 
+    serie = df[columna].dropna()
+
+    if serie.empty:
+        return []
+
+    serie_str = serie.astype(str).str.strip()
+
+    try:
+        serie_num = pd.to_numeric(serie_str, errors="coerce")
+
+        if serie_num.notna().all():
+            return (
+                serie_num
+                .sort_values()
+                .astype(str)
+                .unique()
+                .tolist()
+            )
+    except Exception:
+        pass
+
     return (
-        df[columna]
-        .dropna()
-        .astype(str)
+        serie_str
         .sort_values()
         .unique()
         .tolist()
@@ -344,14 +370,23 @@ def aplicar_filtro_multiselect(
     columna: str,
     seleccionados: list
 ) -> pd.DataFrame:
+    """
+    Aplica filtro multiselect sobre una columna.
+    Si no hay selección, no filtra.
+    """
     if columna not in df.columns:
         return df
 
     if not seleccionados:
         return df
 
+    seleccionados_str = [
+        str(valor).strip()
+        for valor in seleccionados
+    ]
+
     return df[
-        df[columna].astype(str).isin(seleccionados)
+        df[columna].astype(str).str.strip().isin(seleccionados_str)
     ].copy()
 
 
@@ -1088,19 +1123,66 @@ if uploaded_file is not None:
                 )
             ].copy()
 
-        with st.sidebar:
-            centros_disponibles = opciones_columna(df_filtrado, "Centro")
+        # =========================
+        # Filtros dinámicos por columnas
+        # =========================
 
-            centros_sel = st.multiselect(
-                "Centro",
-                options=centros_disponibles
+        with st.sidebar:
+            st.divider()
+            st.subheader("Filtros por columnas")
+
+            columnas_excluir_filtros = [
+                "fecha_recepcion_final",
+                "periodo_fecha",
+                "periodo_mes",
+                "periodo_label",
+                "anio",
+                "mes_num",
+                "mes_nombre"
+            ]
+
+            columnas_disponibles_filtro = [
+                col for col in df_filtrado.columns
+                if col not in columnas_excluir_filtros
+            ]
+
+            columnas_default = []
+
+            if "Centro" in columnas_disponibles_filtro:
+                columnas_default.append("Centro")
+
+            columnas_filtro_sel = st.multiselect(
+                "Selecciona columnas para filtrar",
+                options=columnas_disponibles_filtro,
+                default=columnas_default,
+                help=(
+                    "Puedes seleccionar una o varias columnas. "
+                    "Se creará un filtro para cada columna seleccionada."
+                )
             )
 
-        df_filtrado = aplicar_filtro_multiselect(
-            df_filtrado,
-            "Centro",
-            centros_sel
-        )
+            filtros_columnas = {}
+
+            for columna in columnas_filtro_sel:
+                valores_disponibles = opciones_columna(
+                    df=df_filtrado,
+                    columna=columna
+                )
+
+                seleccionados = st.multiselect(
+                    f"Filtrar {columna}",
+                    options=valores_disponibles,
+                    key=f"filtro_columna_{columna}"
+                )
+
+                filtros_columnas[columna] = seleccionados
+
+        for columna, seleccionados in filtros_columnas.items():
+            df_filtrado = aplicar_filtro_multiselect(
+                df=df_filtrado,
+                columna=columna,
+                seleccionados=seleccionados
+            )
 
         # =========================
         # Aviso por registros sin fecha
