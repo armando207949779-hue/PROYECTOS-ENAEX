@@ -297,9 +297,7 @@ def aplicar_filtro_multiselect(
 def crear_resumen_mensual(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
-    # Importante:
-    # Los registros sin fecha no pueden ubicarse en un mes,
-    # por eso no entran al gráfico mensual.
+    # Los registros sin fecha no pueden ubicarse en un mes.
     df = df[
         df["fecha_recepcion_final"].notna()
     ].copy()
@@ -613,8 +611,6 @@ def tarjeta_donut_cumplimiento(
 
 
 def bloque_donuts_cumplimiento(df: pd.DataFrame):
-    st.subheader("Cumplimiento por etapa")
-
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
@@ -885,6 +881,11 @@ with st.sidebar:
         value=False
     )
 
+    mostrar_vista_previa = st.checkbox(
+        "Mostrar vista previa del dataframe cargado",
+        value=False
+    )
+
 
 uploaded_file = st.file_uploader(
     "Selecciona archivo performance TAT",
@@ -901,6 +902,23 @@ if uploaded_file is not None:
         )
 
         df = preparar_dataframe(df_original)
+
+        # =========================
+        # Vista previa opcional
+        # =========================
+
+        if mostrar_vista_previa:
+            with st.expander("Vista previa del dataframe cargado", expanded=True):
+                st.caption(
+                    f"Archivo cargado: {uploaded_file.name} | "
+                    f"Filas: {len(df_original):,} | "
+                    f"Columnas: {len(df_original.columns):,}"
+                )
+
+                st.dataframe(
+                    df_original.head(200),
+                    use_container_width=True
+                )
 
         with st.sidebar:
             st.divider()
@@ -926,21 +944,34 @@ if uploaded_file is not None:
             fecha_min = fechas_validas.min().date() if not fechas_validas.empty else None
             fecha_max = fechas_validas.max().date() if not fechas_validas.empty else None
 
-            rango_fechas = None
+            fecha_inicio = None
+            fecha_fin = None
 
             if fecha_min and fecha_max:
-                rango_fechas = st.date_input(
-                    "Rango fecha recepción",
-                    value=(fecha_min, fecha_max),
+                fecha_inicio = st.date_input(
+                    "Fecha inicio recepción",
+                    value=fecha_min,
                     min_value=fecha_min,
                     max_value=fecha_max,
-                    help="Filtra los registros usando la columna fecha_recepcion_final."
+                    help="Fecha inicial para filtrar fecha_recepcion_final."
+                )
+
+                fecha_fin = st.date_input(
+                    "Fecha fin recepción",
+                    value=fecha_max,
+                    min_value=fecha_min,
+                    max_value=fecha_max,
+                    help="Fecha final para filtrar fecha_recepcion_final."
                 )
             else:
                 st.info(
                     "No hay fechas válidas en fecha_recepcion_final. "
                     "El gráfico mensual no podrá generarse."
                 )
+
+        # =========================
+        # Filtro por año
+        # =========================
 
         if anios_sel:
             df_filtrado = df[
@@ -951,19 +982,23 @@ if uploaded_file is not None:
             anios_sel = anios_disponibles
 
         # =========================
-        # Filtro por rango de fecha
+        # Filtro por fecha inicio / fin
         # =========================
-        if isinstance(rango_fechas, tuple) and len(rango_fechas) == 2:
-            fecha_inicio, fecha_fin = rango_fechas
 
-            if fecha_inicio and fecha_fin:
-                df_filtrado = df_filtrado[
-                    df_filtrado["fecha_recepcion_final"].notna()
-                    & df_filtrado["fecha_recepcion_final"].dt.date.between(
-                        fecha_inicio,
-                        fecha_fin
-                    )
-                ].copy()
+        if fecha_inicio and fecha_fin:
+            if fecha_inicio > fecha_fin:
+                st.error(
+                    "La fecha de inicio no puede ser mayor que la fecha de fin."
+                )
+                st.stop()
+
+            df_filtrado = df_filtrado[
+                df_filtrado["fecha_recepcion_final"].notna()
+                & df_filtrado["fecha_recepcion_final"].dt.date.between(
+                    fecha_inicio,
+                    fecha_fin
+                )
+            ].copy()
 
         with st.sidebar:
             centros_disponibles = opciones_columna(df_filtrado, "Centro")
@@ -982,8 +1017,8 @@ if uploaded_file is not None:
         # =========================
         # Aviso por registros sin fecha
         # =========================
+
         registros_sin_fecha_original = df["fecha_recepcion_final"].isna().sum()
-        registros_sin_fecha_filtrado = df_filtrado["fecha_recepcion_final"].isna().sum()
 
         if registros_sin_fecha_original > 0:
             st.warning(
@@ -993,6 +1028,10 @@ if uploaded_file is not None:
                 "quedan fuera del análisis filtrado."
             )
 
+        # =========================
+        # Resumen mensual
+        # =========================
+
         tabla_resumen = crear_resumen_mensual(df_filtrado)
 
         if mostrar_meses_sin_datos and not tabla_resumen.empty:
@@ -1000,6 +1039,10 @@ if uploaded_file is not None:
                 tabla=tabla_resumen,
                 anios=anios_sel
             )
+
+        # =========================
+        # KPIs
+        # =========================
 
         total = len(df_filtrado)
         cumple = df_filtrado["performance_tat_estado"].eq("Cumple").sum()
@@ -1020,20 +1063,36 @@ if uploaded_file is not None:
         st.divider()
 
         # =========================
-        # BARPLOT MENSUAL TAT ARRIBA
+        # BARPLOT MENSUAL TAT
         # =========================
 
         st.subheader("Performance TAT mensual")
 
-        st.info(
-            "Lógica del gráfico: se agrupan los registros por mes usando "
-            "fecha_recepcion_final y se calcula el cumplimiento según performance_tat. "
-            "Cumple, No cumple y Sin información se muestran por mes. "
-            "En modo Porcentaje, cada mes se expresa sobre el total mensual; "
-            "en modo Recuento, se muestran cantidades absolutas. "
-            "Los registros sin fecha_recepcion_final no se muestran en este gráfico "
-            "porque no pueden asignarse a un mes."
-        )
+        with st.expander("Ver lógica del gráfico Performance TAT mensual", expanded=False):
+            st.markdown(
+                """
+                Este gráfico muestra el comportamiento mensual del cumplimiento TAT.
+
+                **Lógica aplicada:**
+
+                1. Se usa la columna `fecha_recepcion_final` como fecha base.
+                2. Cada registro se asigna a un mes y año.
+                3. La columna `performance_tat` se normaliza en tres estados:
+                   - `Cumple`
+                   - `No cumple`
+                   - `Sin información`
+                4. Para cada mes se calcula cuántos registros hay por estado.
+                5. Si la métrica seleccionada es **Porcentaje**, cada barra mensual representa el total del mes.
+                6. Si la métrica seleccionada es **Recuento**, la barra muestra cantidades absolutas.
+                7. Los registros sin `fecha_recepcion_final` no aparecen en este gráfico porque no pueden asignarse a un mes.
+
+                **Interpretación:**
+
+                - Una mayor proporción de `Cumple` indica mejor desempeño TAT mensual.
+                - Una mayor proporción de `No cumple` indica desviación respecto al plazo esperado.
+                - `Sin información` aparece solo si se activa la opción correspondiente en el filtro lateral.
+                """
+            )
 
         if tabla_resumen.empty:
             st.warning("No hay datos para graficar con los filtros seleccionados.")
@@ -1053,12 +1112,56 @@ if uploaded_file is not None:
         st.divider()
 
         # =========================
-        # CUMPLIMIENTO POR ETAPA ABAJO
+        # CUMPLIMIENTO POR ETAPA
         # =========================
+
+        st.subheader("Cumplimiento por etapa")
+
+        with st.expander("Ver lógica del gráfico Cumplimiento por etapa", expanded=False):
+            st.markdown(
+                """
+                Este bloque muestra el cumplimiento individual de cada etapa del proceso.
+
+                **Etapas evaluadas:**
+
+                - Lib Solped
+                - Comprador
+                - Proveedor
+                - Logística
+
+                **Lógica aplicada:**
+
+                1. Para cada etapa se usa su columna de performance correspondiente.
+                2. Si la columna de performance no existe, se crea usando los días de incumplimiento.
+                3. La regla general aplicada es:
+                   - Si `dias_incumplimiento <= 0`, el registro se clasifica como `Cumple`.
+                   - Si `dias_incumplimiento > 0`, el registro se clasifica como `No cumple`.
+                   - Si no hay información suficiente, se clasifica como `Sin información`.
+                4. Cada gráfico tipo donut muestra la distribución entre `Cumple` y `No cumple`.
+                5. Debajo de cada donut se muestra el promedio de días de incumplimiento de la etapa.
+
+                **Reglas mostradas en cada etapa:**
+
+                - Lib Solped: Nacional e Internacional menor a 2 días.
+                - Comprador: Nacional e Internacional menor a 11 días.
+                - Proveedor: Nacional menor a 20 días e Internacional menor a 60 días.
+                - Logística: Nacional e Internacional menor a 10 días.
+
+                **Interpretación:**
+
+                - Un mayor porcentaje de `Cumple` indica que la etapa está dentro del plazo esperado.
+                - Un mayor porcentaje de `No cumple` indica retrasos o desviaciones en esa etapa.
+                - El promedio de días ayuda a dimensionar la magnitud del atraso.
+                """
+            )
 
         bloque_donuts_cumplimiento(df_filtrado)
 
         st.divider()
+
+        # =========================
+        # TABLA RESUMEN
+        # =========================
 
         st.subheader("Resumen mensual ordenado cronológicamente")
 
@@ -1093,11 +1196,23 @@ if uploaded_file is not None:
 
         st.divider()
 
+        # =========================
+        # DATOS FILTRADOS
+        # =========================
+
         with st.expander("Ver datos filtrados"):
+            st.caption(
+                f"Mostrando primeras 500 filas de un total filtrado de {len(df_filtrado):,} registros."
+            )
+
             st.dataframe(
                 df_filtrado.head(500),
                 use_container_width=True
             )
+
+        # =========================
+        # DESCARGA
+        # =========================
 
         st.subheader("Descarga")
 
