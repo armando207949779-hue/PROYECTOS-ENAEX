@@ -5,7 +5,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import streamlit as st
-import matplotlib.pyplot as plt
 import altair as alt
 
 
@@ -47,8 +46,8 @@ if LOGO_PATH.exists():
             margin-top: 10px;
             margin-bottom: 15px;
         ">
-            <img 
-                src="data:image/svg+xml;base64,{logo_base64}" 
+            <img
+                src="data:image/svg+xml;base64,{logo_base64}"
                 style="width: 230px; display: block;"
             >
         </div>
@@ -302,7 +301,7 @@ def crear_resumen_mensual(df: pd.DataFrame) -> pd.DataFrame:
     return tabla
 
 
-def completar_meses_anio(tabla: pd.DataFrame, anio: int) -> pd.DataFrame:
+def completar_meses_anios(tabla: pd.DataFrame, anios: list[int]) -> pd.DataFrame:
     meses = {
         1: "enero",
         2: "febrero",
@@ -318,32 +317,38 @@ def completar_meses_anio(tabla: pd.DataFrame, anio: int) -> pd.DataFrame:
         12: "diciembre"
     }
 
-    base = pd.DataFrame({
-        "anio": anio,
-        "mes_num": list(range(1, 13)),
-        "mes_nombre": [meses[i] for i in range(1, 13)]
-    })
+    bases = []
 
-    base["periodo_fecha"] = pd.to_datetime(
-        [f"{anio}-{mes:02d}-01" for mes in range(1, 13)]
-    )
+    for anio in sorted(anios):
+        base_anio = pd.DataFrame({
+            "anio": anio,
+            "mes_num": list(range(1, 13)),
+            "mes_nombre": [meses[i] for i in range(1, 13)]
+        })
 
-    base["periodo_mes"] = [
-        f"{anio}-{mes:02d}" for mes in range(1, 13)
-    ]
+        base_anio["periodo_fecha"] = pd.to_datetime(
+            [f"{anio}-{mes:02d}-01" for mes in range(1, 13)]
+        )
 
-    base["periodo_label"] = (
-        base["mes_nombre"].astype(str)
-        + " "
-        + base["anio"].astype(str)
-    )
+        base_anio["periodo_mes"] = [
+            f"{anio}-{mes:02d}" for mes in range(1, 13)
+        ]
 
-    tabla_anio = tabla[
-        tabla["anio"].eq(anio)
-    ].copy()
+        base_anio["periodo_label"] = (
+            base_anio["mes_nombre"].astype(str)
+            + " "
+            + base_anio["anio"].astype(str)
+        )
+
+        bases.append(base_anio)
+
+    if not bases:
+        return tabla
+
+    base = pd.concat(bases, ignore_index=True)
 
     salida = base.merge(
-        tabla_anio,
+        tabla,
         on=[
             "anio",
             "mes_num",
@@ -372,187 +377,6 @@ def completar_meses_anio(tabla: pd.DataFrame, anio: int) -> pd.DataFrame:
     salida = salida.sort_values("periodo_fecha").reset_index(drop=True)
 
     return salida
-
-
-# =========================================================
-# Gráfico Performance 100% con matplotlib
-# =========================================================
-
-def grafico_performance_original(
-    tabla: pd.DataFrame,
-    meta_cumplimiento: float = 65.0,
-    titulo: str = "Performance TAT"
-):
-    if tabla.empty:
-        st.warning("No hay datos para graficar con los filtros seleccionados.")
-        return
-
-    tabla = tabla.copy()
-    tabla = tabla.sort_values("periodo_fecha").reset_index(drop=True)
-
-    x = np.arange(len(tabla))
-
-    pct_cumple = tabla["% Cumple"].fillna(0)
-    pct_no_cumple = tabla["% No cumple"].fillna(0)
-
-    etiquetas_mes = tabla["mes_nombre"].astype(str).tolist()
-
-    anios = tabla["anio"].dropna().astype(int).unique().tolist()
-    titulo_anios = " / ".join(str(a) for a in anios)
-
-    ancho = max(10, len(tabla) * 0.7)
-
-    fig, ax = plt.subplots(figsize=(ancho, 4.4))
-
-    color_cumple = "#5B5B5B"
-    color_no_cumple = "#D94555"
-    color_meta = "#006B3F"
-
-    ax.bar(
-        x,
-        pct_cumple,
-        color=color_cumple,
-        label="Cumple",
-        width=0.72
-    )
-
-    ax.bar(
-        x,
-        pct_no_cumple,
-        bottom=pct_cumple,
-        color=color_no_cumple,
-        label="No cumple",
-        width=0.72
-    )
-
-    for i, (cumple, no_cumple, total) in enumerate(
-        zip(pct_cumple, pct_no_cumple, tabla["Total"].fillna(0))
-    ):
-        if total == 0:
-            continue
-
-        if cumple >= 8:
-            ax.text(
-                i,
-                cumple / 2,
-                f"{cumple:.2f}%",
-                ha="center",
-                va="center",
-                fontsize=8,
-                color="white",
-                fontweight="bold"
-            )
-
-        if no_cumple >= 8:
-            ax.text(
-                i,
-                cumple + no_cumple / 2,
-                f"{no_cumple:.2f}%",
-                ha="center",
-                va="center",
-                fontsize=8,
-                color="white",
-                fontweight="bold"
-            )
-
-    ax.axhline(
-        meta_cumplimiento,
-        color=color_meta,
-        linestyle=(0, (2, 2)),
-        linewidth=2
-    )
-
-    ax.text(
-        -0.45,
-        meta_cumplimiento + 1,
-        f"{meta_cumplimiento:.0f}%",
-        color=color_meta,
-        fontsize=9,
-        fontweight="bold"
-    )
-
-    cambios_anio = tabla["anio"].ne(tabla["anio"].shift()).to_numpy()
-
-    for i, cambio in enumerate(cambios_anio):
-        if i > 0 and cambio:
-            ax.axvline(
-                i - 0.5,
-                color="#BDBDBD",
-                linestyle=":",
-                linewidth=1
-            )
-
-    for anio in anios:
-        posiciones = tabla.index[tabla["anio"].eq(anio)].tolist()
-
-        if posiciones:
-            centro = np.mean(posiciones)
-
-            ax.text(
-                centro,
-                -11,
-                str(anio),
-                ha="center",
-                va="top",
-                fontsize=8,
-                color="#444444"
-            )
-
-    ax.set_ylim(0, 100)
-    ax.set_yticks([0, 50, 100])
-    ax.set_yticklabels(["0%", "50%", "100%"])
-
-    ax.set_xticks(x)
-
-    rotacion = 0 if len(tabla) <= 14 else 45
-
-    ax.set_xticklabels(
-        etiquetas_mes,
-        rotation=rotacion,
-        ha="right" if rotacion else "center",
-        fontsize=8
-    )
-
-    ax.set_title(
-        f"{titulo} {titulo_anios}",
-        loc="left",
-        fontsize=13,
-        fontweight="bold"
-    )
-
-    ax.grid(
-        axis="y",
-        linestyle=":",
-        linewidth=1,
-        alpha=0.6
-    )
-
-    ax.set_axisbelow(True)
-
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.spines["left"].set_visible(False)
-    ax.spines["bottom"].set_visible(False)
-
-    ax.tick_params(axis="y", length=0)
-    ax.tick_params(axis="x", length=0)
-
-    ax.legend(
-        loc="upper center",
-        bbox_to_anchor=(0.5, -0.20),
-        ncol=2,
-        frameon=False,
-        fontsize=9
-    )
-
-    fig.subplots_adjust(
-        left=0.04,
-        right=0.99,
-        top=0.86,
-        bottom=0.30
-    )
-
-    st.pyplot(fig, use_container_width=True)
 
 
 # =========================================================
@@ -678,7 +502,7 @@ def grafico_barplot_interactivo_altair(
             tooltip=[
                 alt.Tooltip("periodo_label:N", title="Periodo"),
                 alt.Tooltip("estado:N", title="Estado"),
-                alt.Tooltip("valor:Q", title=titulo_y, format=",.2f"),
+                alt.Tooltip("valor:Q", title=titulo_y, format=".2f"),
                 alt.Tooltip("porcentaje:Q", title="Porcentaje", format=".2f"),
                 alt.Tooltip("total:Q", title="Total mes", format=",.0f")
             ]
@@ -756,15 +580,6 @@ st.divider()
 with st.sidebar:
     st.header("Filtros")
 
-    pagina = st.radio(
-        "Vista",
-        options=[
-            "Performance 100%",
-            "Barplot interactivo"
-        ],
-        index=0
-    )
-
     separador_csv = st.selectbox(
         "Separador CSV",
         options=[
@@ -774,14 +589,6 @@ with st.sidebar:
             "Tabulación"
         ],
         index=0
-    )
-
-    meta_cumplimiento = st.number_input(
-        "Meta cumplimiento (%)",
-        min_value=0.0,
-        max_value=100.0,
-        value=65.0,
-        step=1.0
     )
 
     modo_y_barplot = st.radio(
@@ -796,16 +603,6 @@ with st.sidebar:
     mostrar_sin_info = st.checkbox(
         "Mostrar Sin información",
         value=False
-    )
-
-    modo_visualizacion = st.radio(
-        "Visualización",
-        options=[
-            "Un gráfico por año",
-            "Año específico",
-            "Todos los años juntos"
-        ],
-        index=0
     )
 
     mostrar_meses_sin_datos = st.checkbox(
@@ -842,28 +639,22 @@ if uploaded_file is not None:
                 .tolist()
             )
 
-            if modo_visualizacion == "Año específico":
-                anio_especifico = st.selectbox(
-                    "Año a visualizar",
-                    options=anios_disponibles,
-                    index=len(anios_disponibles) - 1 if anios_disponibles else 0
-                )
-                anios_sel = [anio_especifico]
+            anios_sel = st.multiselect(
+                "Años recepción",
+                options=anios_disponibles,
+                default=anios_disponibles,
+                help="Por defecto se muestran todos los años juntos. Puedes filtrar uno o varios años."
+            )
 
-            else:
-                anios_sel = st.multiselect(
-                    "Años recepción",
-                    options=anios_disponibles,
-                    default=anios_disponibles
-                )
+        if anios_sel:
+            df_filtrado = df[
+                df["anio"].isin(anios_sel)
+            ].copy()
+        else:
+            df_filtrado = df.copy()
+            anios_sel = anios_disponibles
 
-            if anios_sel:
-                df_filtrado = df[
-                    df["anio"].isin(anios_sel)
-                ].copy()
-            else:
-                df_filtrado = df.copy()
-
+        with st.sidebar:
             centros_disponibles = opciones_columna(df_filtrado, "Centro")
 
             centros_sel = st.multiselect(
@@ -878,6 +669,12 @@ if uploaded_file is not None:
         )
 
         tabla_resumen = crear_resumen_mensual(df_filtrado)
+
+        if mostrar_meses_sin_datos and not tabla_resumen.empty:
+            tabla_resumen = completar_meses_anios(
+                tabla=tabla_resumen,
+                anios=anios_sel
+            )
 
         total = len(df_filtrado)
         cumple = df_filtrado["performance_tat_estado"].eq("Cumple").sum()
@@ -899,84 +696,18 @@ if uploaded_file is not None:
 
         if tabla_resumen.empty:
             st.warning("No hay datos para graficar con los filtros seleccionados.")
+        else:
+            df_plot = crear_data_barplot_interactivo(
+                tabla=tabla_resumen,
+                modo_y=modo_y_barplot,
+                mostrar_sin_info=mostrar_sin_info
+            )
 
-        elif modo_visualizacion == "Un gráfico por año":
-            for anio in sorted(tabla_resumen["anio"].dropna().astype(int).unique()):
-                tabla_anio = tabla_resumen[
-                    tabla_resumen["anio"].eq(anio)
-                ].copy()
-
-                if mostrar_meses_sin_datos:
-                    tabla_anio = completar_meses_anio(tabla_resumen, anio)
-
-                if pagina == "Performance 100%":
-                    grafico_performance_original(
-                        tabla=tabla_anio,
-                        meta_cumplimiento=meta_cumplimiento,
-                        titulo="Performance TAT"
-                    )
-
-                elif pagina == "Barplot interactivo":
-                    df_plot = crear_data_barplot_interactivo(
-                        tabla=tabla_anio,
-                        modo_y=modo_y_barplot,
-                        mostrar_sin_info=mostrar_sin_info
-                    )
-
-                    grafico_barplot_interactivo_altair(
-                        df_plot=df_plot,
-                        modo_y=modo_y_barplot,
-                        titulo=f"Barplot interactivo {anio}"
-                    )
-
-        elif modo_visualizacion == "Año específico":
-            tabla_anio = tabla_resumen[
-                tabla_resumen["anio"].eq(anios_sel[0])
-            ].copy()
-
-            if mostrar_meses_sin_datos:
-                tabla_anio = completar_meses_anio(tabla_resumen, anios_sel[0])
-
-            if pagina == "Performance 100%":
-                grafico_performance_original(
-                    tabla=tabla_anio,
-                    meta_cumplimiento=meta_cumplimiento,
-                    titulo="Performance TAT"
-                )
-
-            elif pagina == "Barplot interactivo":
-                df_plot = crear_data_barplot_interactivo(
-                    tabla=tabla_anio,
-                    modo_y=modo_y_barplot,
-                    mostrar_sin_info=mostrar_sin_info
-                )
-
-                grafico_barplot_interactivo_altair(
-                    df_plot=df_plot,
-                    modo_y=modo_y_barplot,
-                    titulo=f"Barplot interactivo {anios_sel[0]}"
-                )
-
-        elif modo_visualizacion == "Todos los años juntos":
-            if pagina == "Performance 100%":
-                grafico_performance_original(
-                    tabla=tabla_resumen,
-                    meta_cumplimiento=meta_cumplimiento,
-                    titulo="Performance TAT"
-                )
-
-            elif pagina == "Barplot interactivo":
-                df_plot = crear_data_barplot_interactivo(
-                    tabla=tabla_resumen,
-                    modo_y=modo_y_barplot,
-                    mostrar_sin_info=mostrar_sin_info
-                )
-
-                grafico_barplot_interactivo_altair(
-                    df_plot=df_plot,
-                    modo_y=modo_y_barplot,
-                    titulo="Barplot interactivo todos los años"
-                )
+            grafico_barplot_interactivo_altair(
+                df_plot=df_plot,
+                modo_y=modo_y_barplot,
+                titulo="Barplot interactivo Performance TAT - todos los años seleccionados"
+            )
 
         st.subheader("Resumen mensual ordenado cronológicamente")
 
