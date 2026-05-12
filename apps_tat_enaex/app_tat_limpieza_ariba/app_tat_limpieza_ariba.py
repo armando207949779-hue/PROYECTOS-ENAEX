@@ -1,4 +1,5 @@
-# App Streamlit: Limpieza minimalista ARIBA con entrada, salida, descarga Parquet y análisis opcional
+# App Streamlit: Limpieza minimalista ARIBA con vista previa input/output,
+# descarga Parquet/Excel/CSV y análisis opcional
 
 import io
 import base64
@@ -382,8 +383,8 @@ def generar_nombre_salida(extension: str) -> str:
 
 
 def convertir_a_excel(
-    df_limpio: pd.DataFrame,
-    df_filtrado: pd.DataFrame,
+    df_input_limpio: pd.DataFrame,
+    df_output_final: pd.DataFrame,
     diagnostico_columnas: pd.DataFrame | None = None,
     resumen_fechas: pd.DataFrame | None = None,
     resumen_num: pd.DataFrame | None = None
@@ -392,21 +393,21 @@ def convertir_a_excel(
     output = io.BytesIO()
 
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df_limpio.to_excel(
+        df_input_limpio.to_excel(
             writer,
             index=False,
-            sheet_name="Data_Limpia"
+            sheet_name="Input_Limpio"
         )
 
-        df_filtrado.to_excel(
+        df_output_final.to_excel(
             writer,
             index=False,
-            sheet_name="Final_Limpio_CEN1"
+            sheet_name="Output_ARIBA"
         )
 
-        if "Categoria Tipo de Compra" in df_filtrado.columns:
+        if "Categoria Tipo de Compra" in df_output_final.columns:
             conteo_categoria = (
-                df_filtrado["Categoria Tipo de Compra"]
+                df_output_final["Categoria Tipo de Compra"]
                 .value_counts(dropna=False)
                 .reset_index()
             )
@@ -467,15 +468,15 @@ def convertir_a_parquet(df: pd.DataFrame) -> bytes:
 
 @st.cache_data(show_spinner="Preparando Excel...")
 def convertir_a_excel_cache(
-    df_limpio: pd.DataFrame,
-    df_filtrado: pd.DataFrame,
+    df_input_limpio: pd.DataFrame,
+    df_output_final: pd.DataFrame,
     diagnostico_columnas: pd.DataFrame,
     resumen_fechas: pd.DataFrame,
     resumen_num: pd.DataFrame
 ) -> bytes:
     return convertir_a_excel(
-        df_limpio=df_limpio,
-        df_filtrado=df_filtrado,
+        df_input_limpio=df_input_limpio,
+        df_output_final=df_output_final,
         diagnostico_columnas=diagnostico_columnas,
         resumen_fechas=resumen_fechas,
         resumen_num=resumen_num
@@ -653,13 +654,13 @@ def chart_serie_fecha(df: pd.DataFrame, columna_fecha: str):
     st.altair_chart(chart, use_container_width=True)
 
 
-def chart_conteo_categoria(df_filtrado: pd.DataFrame):
-    if "Categoria Tipo de Compra" not in df_filtrado.columns:
+def chart_conteo_categoria(df_output_final: pd.DataFrame):
+    if "Categoria Tipo de Compra" not in df_output_final.columns:
         st.info("No existe la columna Categoria Tipo de Compra.")
         return
 
     conteo_categoria = (
-        df_filtrado["Categoria Tipo de Compra"]
+        df_output_final["Categoria Tipo de Compra"]
         .value_counts(dropna=False)
         .reset_index()
     )
@@ -738,18 +739,7 @@ st.divider()
 # =========================================================
 
 with st.sidebar:
-    st.header("Menú")
-
-    modulo = st.radio(
-        "Selecciona una vista",
-        options=[
-            "Entrada",
-            "Salida"
-        ],
-        index=0
-    )
-
-    st.divider()
+    st.header("Configuración")
 
     mostrar_analisis = st.checkbox(
         "Mostrar análisis",
@@ -775,9 +765,8 @@ with st.sidebar:
 # =========================================================
 
 uploaded_file = st.file_uploader(
-    "Cargar archivo",
-    type=["parquet", "xlsx", "csv"],
-    label_visibility="collapsed"
+    "Cargar archivo ARIBA",
+    type=["parquet", "xlsx", "csv"]
 )
 
 
@@ -794,25 +783,25 @@ try:
     bytes_archivo = uploaded_file.getvalue()
 
     with st.spinner("Procesando archivo..."):
-        df_original = leer_archivo_cache(
+        df_input = leer_archivo_cache(
             bytes_archivo=bytes_archivo,
             nombre_archivo=uploaded_file.name,
             separador_csv=separador_csv
         )
 
-        df_limpio = limpiar_cache(df_original)
-        df_final_limpio = filtrar_cache(df_limpio)
+        df_input_limpio = limpiar_cache(df_input)
+        df_output = filtrar_cache(df_input_limpio)
 
         diagnostico_columnas, resumen_general, resumen_fechas, resumen_num = diagnostico_cache(
-            df_limpio
+            df_input_limpio
         )
 
-        parquet_bytes = convertir_a_parquet_cache(df_final_limpio)
-        csv_bytes = convertir_a_csv_cache(df_final_limpio)
+        parquet_bytes = convertir_a_parquet_cache(df_output)
+        csv_bytes = convertir_a_csv_cache(df_output)
 
         excel_bytes = convertir_a_excel_cache(
-            df_limpio=df_limpio,
-            df_filtrado=df_final_limpio,
+            df_input_limpio=df_input_limpio,
+            df_output_final=df_output,
             diagnostico_columnas=diagnostico_columnas,
             resumen_fechas=resumen_fechas,
             resumen_num=resumen_num
@@ -835,17 +824,24 @@ except Exception as e:
 # =========================================================
 
 nulos_tipo_compra = (
-    df_limpio["Tipo de Compra"].isna().sum()
-    if "Tipo de Compra" in df_limpio.columns
+    df_input_limpio["Tipo de Compra"].isna().sum()
+    if "Tipo de Compra" in df_input_limpio.columns
     else 0
 )
 
+filas_filtradas = len(df_input_limpio) - len(df_output)
+
 col1, col2, col3, col4 = st.columns(4)
 
-col1.metric("Filas originales", f"{len(df_original):,}")
-col2.metric("Filas limpias", f"{len(df_limpio):,}")
-col3.metric("Filas CEN1", f"{len(df_final_limpio):,}")
-col4.metric("Nulos Tipo Compra", f"{nulos_tipo_compra:,}")
+col1.metric("Filas input", f"{len(df_input):,}")
+col2.metric("Filas limpias", f"{len(df_input_limpio):,}")
+col3.metric("Filas output", f"{len(df_output):,}")
+col4.metric("Filas filtradas", f"{filas_filtradas:,}")
+
+st.caption(
+    f"Nulos en Tipo de Compra: {nulos_tipo_compra:,}. "
+    "El output corresponde a registros con Tipo de Compra válido y unidad de negocio CEN1."
+)
 
 st.divider()
 
@@ -893,59 +889,43 @@ st.divider()
 
 
 # =========================================================
-# Vista Entrada
+# Vista previa Input / Output
 # =========================================================
 
-if modulo == "Entrada":
+st.markdown("### Vista previa de datos")
 
-    st.subheader("Entrada")
+tab_input, tab_output = st.tabs([
+    "Input cargado",
+    "Output final"
+])
 
-    tab1, tab2, tab3 = st.tabs([
-        "Original",
-        "Limpio",
-        "Final CEN1"
-    ])
-
-    with tab1:
-        st.dataframe(
-            df_original.head(100),
-            use_container_width=True
-        )
-
-    with tab2:
-        st.dataframe(
-            df_limpio.head(100),
-            use_container_width=True
-        )
-
-    with tab3:
-        st.dataframe(
-            df_final_limpio.head(100),
-            use_container_width=True
-        )
-
-
-# =========================================================
-# Vista Salida
-# =========================================================
-
-elif modulo == "Salida":
-
-    st.subheader("Salida")
-
-    st.info(
-        "Los archivos de descarga están disponibles en la sección superior. "
-        "La salida principal corresponde a la base filtrada por CEN1 y Tipo de Compra válido."
+with tab_input:
+    st.markdown("#### Input cargado")
+    st.caption(
+        "Vista previa del archivo después de la lectura inicial. "
+        "En Excel ARIBA se lee la hoja Data desde el encabezado configurado y se omite la primera columna útil según la estructura original."
     )
 
     st.dataframe(
-        df_final_limpio.head(100),
+        df_input.head(100),
         use_container_width=True
     )
 
-    if "Categoria Tipo de Compra" in df_final_limpio.columns:
+with tab_output:
+    st.markdown("#### Output final")
+    st.caption(
+        "Vista previa del dataframe final que se descarga: limpio, filtrado por CEN1, "
+        "con Tipo de Compra válido y con Categoria Tipo de Compra."
+    )
+
+    st.dataframe(
+        df_output.head(100),
+        use_container_width=True
+    )
+
+    if "Categoria Tipo de Compra" in df_output.columns:
         st.markdown("### Resumen por categoría")
-        chart_conteo_categoria(df_final_limpio)
+        chart_conteo_categoria(df_output)
 
 
 # =========================================================
@@ -1002,7 +982,7 @@ if mostrar_analisis:
 
     with tab_b:
         st.markdown("#### Distribución de tipos de dato")
-        chart_tipos_dato(df_limpio)
+        chart_tipos_dato(df_input_limpio)
 
     with tab_c:
         st.markdown("#### Columnas con más valores únicos")
@@ -1012,7 +992,7 @@ if mostrar_analisis:
         )
 
     with tab_d:
-        cols_fecha_detectadas = columnas_fecha(df_limpio)
+        cols_fecha_detectadas = columnas_fecha(df_input_limpio)
 
         if len(cols_fecha_detectadas) == 0:
             st.info("No se detectaron columnas de fecha.")
@@ -1023,7 +1003,7 @@ if mostrar_analisis:
             )
 
             chart_serie_fecha(
-                df_limpio,
+                df_input_limpio,
                 col_fecha
             )
 
@@ -1035,4 +1015,4 @@ if mostrar_analisis:
 
     with tab_e:
         st.markdown("#### Conteo por Categoria Tipo de Compra")
-        chart_conteo_categoria(df_final_limpio)
+        chart_conteo_categoria(df_output)
