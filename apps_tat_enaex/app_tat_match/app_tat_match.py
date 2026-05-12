@@ -156,6 +156,8 @@ def limpiar_booleanos(df: pd.DataFrame, columnas: list) -> pd.DataFrame:
 
 # =========================================================
 # Match ME5A vs NME80FN
+# Criterio AND estricto:
+# Pedido + Posición + Material + Centro
 # =========================================================
 
 @st.cache_data(show_spinner=False)
@@ -258,11 +260,19 @@ def match_me5a_nme80fn(
         .eq(candidatos["_centro_norm_nme"].fillna(""))
     )
 
+    candidatos["_match_nme_estricto"] = (
+        candidatos["_match_nme_pedido_documento"]
+        & candidatos["_match_nme_posicion"]
+        & candidatos["_match_nme_material"]
+        & candidatos["_match_nme_centro"]
+    )
+
     cols_bool_nme = [
         "_match_nme_pedido_documento",
         "_match_nme_posicion",
         "_match_nme_material",
-        "_match_nme_centro"
+        "_match_nme_centro",
+        "_match_nme_estricto"
     ]
 
     candidatos = limpiar_booleanos(candidatos, cols_bool_nme)
@@ -274,9 +284,18 @@ def match_me5a_nme80fn(
         + np.where(candidatos["_match_nme_centro"], 10, 0)
     )
 
+    candidatos["_prioridad_match_nme"] = np.where(
+        candidatos["_match_nme_estricto"],
+        1,
+        0
+    )
+
     idx_mejor = (
         candidatos
-        .sort_values("score_nme80fn", ascending=False)
+        .sort_values(
+            by=["_prioridad_match_nme", "score_nme80fn"],
+            ascending=[False, False]
+        )
         .groupby("_id_me5a", dropna=False)["score_nme80fn"]
         .idxmax()
     )
@@ -290,6 +309,7 @@ def match_me5a_nme80fn(
         "_match_nme_posicion",
         "_match_nme_material",
         "_match_nme_centro",
+        "_match_nme_estricto",
         "Documento compras",
         "Posición",
         "Centro_nme",
@@ -336,6 +356,8 @@ def match_me5a_nme80fn(
 
 # =========================================================
 # Match ME5A vs ARIBA
+# Criterio AND estricto:
+# Solicitud + Línea + Pedido
 # =========================================================
 
 @st.cache_data(show_spinner=False)
@@ -448,10 +470,17 @@ def match_me5a_ariba(
         .eq(candidatos["_id_pedido_norm"].fillna(""))
     )
 
+    candidatos["_match_ariba_estricto"] = (
+        candidatos["_match_ariba_solicitud"]
+        & candidatos["_match_ariba_linea"]
+        & candidatos["_match_ariba_pedido"]
+    )
+
     cols_bool_ariba = [
         "_match_ariba_solicitud",
         "_match_ariba_linea",
-        "_match_ariba_pedido"
+        "_match_ariba_pedido",
+        "_match_ariba_estricto"
     ]
 
     candidatos = limpiar_booleanos(candidatos, cols_bool_ariba)
@@ -462,9 +491,18 @@ def match_me5a_ariba(
         + np.where(candidatos["_match_ariba_pedido"], 10, 0)
     )
 
+    candidatos["_prioridad_match_ariba"] = np.where(
+        candidatos["_match_ariba_estricto"],
+        1,
+        0
+    )
+
     idx_mejor = (
         candidatos
-        .sort_values("score_ariba", ascending=False)
+        .sort_values(
+            by=["_prioridad_match_ariba", "score_ariba"],
+            ascending=[False, False]
+        )
         .groupby("_id_me5a", dropna=False)["score_ariba"]
         .idxmax()
     )
@@ -477,6 +515,7 @@ def match_me5a_ariba(
         "_match_ariba_solicitud",
         "_match_ariba_linea",
         "_match_ariba_pedido",
+        "_match_ariba_estricto",
         "Tipo de Compra",
         "ID de solicitud de compra",
         "ID de solicitud de compra del ERP",
@@ -554,8 +593,23 @@ def construir_match_final(
     resultado["score_ariba"] = resultado["score_ariba"].fillna(0)
     resultado["score_nme80fn"] = resultado["score_nme80fn"].fillna(0)
 
-    resultado["match_ariba_encontrado"] = resultado["score_ariba"].gt(0)
-    resultado["match_nme80fn_encontrado"] = resultado["score_nme80fn"].gt(0)
+    columnas_bool = [
+        "_match_ariba_solicitud",
+        "_match_ariba_linea",
+        "_match_ariba_pedido",
+        "_match_ariba_estricto",
+        "_match_nme_pedido_documento",
+        "_match_nme_posicion",
+        "_match_nme_material",
+        "_match_nme_centro",
+        "_match_nme_estricto"
+    ]
+
+    resultado = limpiar_booleanos(resultado, columnas_bool)
+
+    resultado["match_ariba_encontrado"] = resultado["_match_ariba_estricto"]
+
+    resultado["match_nme80fn_encontrado"] = resultado["_match_nme_estricto"]
 
     resultado["score_total_integrado"] = (
         resultado["score_ariba"]
@@ -590,6 +644,17 @@ COLUMNAS_EXPORTACION = {
     "score_nme80fn": "Puntaje del match - NME80FN",
     "match_ariba_encontrado": "Match encontrado - ARIBA",
     "match_nme80fn_encontrado": "Match encontrado - NME80FN",
+
+    "_match_ariba_solicitud": "Coincide solicitud - ARIBA",
+    "_match_ariba_linea": "Coincide línea - ARIBA",
+    "_match_ariba_pedido": "Coincide pedido - ARIBA",
+    "_match_ariba_estricto": "Match estricto - ARIBA",
+
+    "_match_nme_pedido_documento": "Coincide pedido/documento - NME80FN",
+    "_match_nme_posicion": "Coincide posición - NME80FN",
+    "_match_nme_material": "Coincide material - NME80FN",
+    "_match_nme_centro": "Coincide centro - NME80FN",
+    "_match_nme_estricto": "Match estricto - NME80FN",
 
     "Solicitud de pedido": "Solicitud de pedido - ME5A",
     "Pos.solicitud pedido": "Posición solicitud de pedido - ME5A",
@@ -758,7 +823,7 @@ def mostrar_resumen_cambios_match(resumen_cambios: dict):
             - Se cargaron **{resumen_cambios['total_ariba']:,} registros** de ARIBA.
             - Se cargaron **{resumen_cambios['total_nme']:,} registros** de NME80FN.
 
-            **Resultado del match**
+            **Resultado del match con AND estricto**
 
             - **{resumen_cambios['match_ariba']:,} registros de {resumen_cambios['total_me5a']:,}** se encontraron en **ARIBA**.
             - **{resumen_cambios['match_nme']:,} registros de {resumen_cambios['total_me5a']:,}** se encontraron en **NME80FN**.
@@ -767,36 +832,42 @@ def mostrar_resumen_cambios_match(resumen_cambios: dict):
             - **{resumen_cambios['match_solo_nme']:,} registros de {resumen_cambios['total_me5a']:,}** se encontraron **solo en NME80FN**.
             - **{resumen_cambios['sin_match']:,} registros de {resumen_cambios['total_me5a']:,}** no tuvieron match.
 
-            **Columnas usadas para conectar ME5A con ARIBA**
+            **Condición ARIBA**
 
-            - **Solicitud de pedido - ME5A** con **ID de solicitud de compra del ERP - ARIBA**.
-            - **Pos.solicitud pedido - ME5A / 10** con **Número de línea de la solicitud de compra - ARIBA**.
-            - **Pedido - ME5A** con **ID de pedido - ARIBA**.
+            Para que un registro tenga match en ARIBA, deben cumplirse las 3 condiciones:
+
+            - **Solicitud de pedido - ME5A** = **ID de solicitud de compra del ERP - ARIBA**.
+            - **Pos.solicitud pedido - ME5A / 10** = **Número de línea de la solicitud de compra - ARIBA**.
+            - **Pedido - ME5A** = **ID de pedido - ARIBA**.
 
             **Score ARIBA**
 
-            - **+60 puntos** si coincide **Solicitud de pedido - ME5A** con **ID de solicitud de compra del ERP - ARIBA**.
-            - **+40 puntos** si coincide **Pos.solicitud pedido - ME5A / 10** con **Número de línea de la solicitud de compra - ARIBA**.
-            - **+10 puntos** si coincide **Pedido - ME5A** con **ID de pedido - ARIBA**.
+            - **+60 puntos** si coincide solicitud.
+            - **+40 puntos** si coincide línea.
+            - **+10 puntos** si coincide pedido.
+            - El score sirve como referencia, pero el match ARIBA solo es válido si se cumplen las 3 condiciones.
 
-            **Columnas usadas para conectar ME5A con NME80FN**
+            **Condición NME80FN**
 
-            - **Pedido - ME5A** con **Documento compras - NME80FN**.
-            - **Posición de pedido - ME5A** con **Posición - NME80FN**.
-            - **Material - ME5A** con **Material - NME80FN**.
-            - **Centro - ME5A** con **Centro - NME80FN**.
+            Para que un registro tenga match en NME80FN, deben cumplirse las 4 condiciones:
+
+            - **Pedido - ME5A** = **Documento compras - NME80FN**.
+            - **Posición de pedido - ME5A** = **Posición - NME80FN**.
+            - **Material - ME5A** = **Material - NME80FN**.
+            - **Centro - ME5A** = **Centro - NME80FN**.
 
             **Score NME80FN**
 
-            - **+60 puntos** si coincide **Pedido - ME5A** con **Documento compras - NME80FN**.
-            - **+25 puntos** si coincide **Posición de pedido - ME5A** con **Posición - NME80FN**.
-            - **+20 puntos** si coincide **Material - ME5A** con **Material - NME80FN**.
-            - **+10 puntos** si coincide **Centro - ME5A** con **Centro - NME80FN**.
+            - **+60 puntos** si coincide pedido/documento.
+            - **+25 puntos** si coincide posición.
+            - **+20 puntos** si coincide material.
+            - **+10 puntos** si coincide centro.
+            - El score sirve como referencia, pero el match NME80FN solo es válido si se cumplen las 4 condiciones.
 
             **Score total integrado**
 
             - El **Puntaje total del match** corresponde a: **Score ARIBA + Score NME80FN**.
-            - Si ambos scores son 0, el registro queda como **Sin match**.
+            - El estado del match se define usando los campos **Match estricto - ARIBA** y **Match estricto - NME80FN**.
 
             **Salida generada**
 
