@@ -1,5 +1,5 @@
 # App Streamlit: Limpieza minimalista ARIBA con vista previa input/output,
-# descarga Parquet/Excel/CSV y análisis opcional
+# descarga Parquet principal, CSV/Excel opcionales y análisis opcional
 
 import io
 import base64
@@ -76,7 +76,7 @@ def obtener_separador(separador_csv: str):
 # Lectura de archivo
 # =========================================================
 
-@st.cache_data(show_spinner="Leyendo archivo...")
+@st.cache_data(show_spinner=False)
 def leer_archivo_cache(
     bytes_archivo: bytes,
     nombre_archivo: str,
@@ -246,12 +246,12 @@ def aplicar_filtros_y_categoria(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-@st.cache_data(show_spinner="Limpiando archivo...")
+@st.cache_data(show_spinner=False)
 def limpiar_cache(df: pd.DataFrame) -> pd.DataFrame:
     return limpiar_fechas_y_numeros(df)
 
 
-@st.cache_data(show_spinner="Aplicando filtros...")
+@st.cache_data(show_spinner=False)
 def filtrar_cache(df: pd.DataFrame) -> pd.DataFrame:
     return aplicar_filtros_y_categoria(df)
 
@@ -364,7 +364,7 @@ def resumen_numerico(df: pd.DataFrame) -> pd.DataFrame:
     return resumen
 
 
-@st.cache_data(show_spinner="Generando diagnóstico...")
+@st.cache_data(show_spinner=False)
 def diagnostico_cache(df: pd.DataFrame):
     diagnostico_columnas = tabla_diagnostico_columnas(df)
     resumen_general = diagnostico_general(df)
@@ -372,6 +372,101 @@ def diagnostico_cache(df: pd.DataFrame):
     resumen_num = resumen_numerico(df)
 
     return diagnostico_columnas, resumen_general, resumen_fechas, resumen_num
+
+
+# =========================================================
+# Mensaje de cambios realizados
+# =========================================================
+
+def generar_resumen_cambios(
+    df_input: pd.DataFrame,
+    df_input_limpio: pd.DataFrame,
+    df_output: pd.DataFrame
+) -> dict:
+
+    columnas_originales = set(df_input.columns.astype(str))
+    columnas_limpias = set(df_input_limpio.columns.astype(str))
+    columnas_output = set(df_output.columns.astype(str))
+
+    columnas_eliminadas = sorted(list(columnas_originales - columnas_limpias))
+    columnas_agregadas = sorted(list(columnas_output - columnas_limpias))
+
+    nulos_tipo_compra = (
+        int(df_input_limpio["Tipo de Compra"].isna().sum())
+        if "Tipo de Compra" in df_input_limpio.columns
+        else 0
+    )
+
+    filas_sin_tipo_compra = (
+        int(df_input_limpio["Tipo de Compra"].isna().sum())
+        if "Tipo de Compra" in df_input_limpio.columns
+        else 0
+    )
+
+    if "ID de unidad de negocio" in df_input_limpio.columns:
+        filas_no_cen1 = int(
+            df_input_limpio[
+                df_input_limpio["Tipo de Compra"].notna()
+                if "Tipo de Compra" in df_input_limpio.columns
+                else df_input_limpio.index == df_input_limpio.index
+            ]["ID de unidad de negocio"]
+            .astype("string")
+            .str.strip()
+            .ne("CEN1")
+            .sum()
+        )
+    else:
+        filas_no_cen1 = 0
+
+    filas_filtradas = int(len(df_input_limpio) - len(df_output))
+
+    return {
+        "filas_input": int(len(df_input)),
+        "columnas_input": int(len(df_input.columns)),
+        "filas_limpias": int(len(df_input_limpio)),
+        "columnas_limpias": int(len(df_input_limpio.columns)),
+        "filas_output": int(len(df_output)),
+        "columnas_output": int(len(df_output.columns)),
+        "filas_filtradas": filas_filtradas,
+        "nulos_tipo_compra": nulos_tipo_compra,
+        "filas_sin_tipo_compra": filas_sin_tipo_compra,
+        "filas_no_cen1": filas_no_cen1,
+        "columnas_eliminadas": columnas_eliminadas,
+        "columnas_agregadas": columnas_agregadas
+    }
+
+
+def mostrar_resumen_cambios(resumen: dict):
+    columnas_eliminadas = resumen["columnas_eliminadas"]
+    columnas_agregadas = resumen["columnas_agregadas"]
+
+    texto_columnas_eliminadas = (
+        ", ".join(columnas_eliminadas)
+        if columnas_eliminadas
+        else "No se eliminaron columnas por nombre; solo se quitaron columnas completamente vacías si existían."
+    )
+
+    texto_columnas_agregadas = (
+        ", ".join(columnas_agregadas)
+        if columnas_agregadas
+        else "No se agregaron columnas nuevas."
+    )
+
+    st.info(
+        f"""
+        **Cambios realizados al archivo cargado**
+
+        - Se leyeron **{resumen['filas_input']:,} filas** y **{resumen['columnas_input']:,} columnas**.
+        - Después de limpiar nombres de columnas, textos, fechas, números y columnas vacías, quedaron **{resumen['filas_limpias']:,} filas** y **{resumen['columnas_limpias']:,} columnas**.
+        - Se filtraron **{resumen['filas_filtradas']:,} filas**.
+        - Se quitaron registros sin **Tipo de Compra** válido: **{resumen['filas_sin_tipo_compra']:,}**.
+        - Se conservaron solo registros con **ID de unidad de negocio = CEN1**.
+        - Se creó la columna **Categoria Tipo de Compra**.
+        - El output final tiene **{resumen['filas_output']:,} filas** y **{resumen['columnas_output']:,} columnas**.
+        - Columnas eliminadas: **{texto_columnas_eliminadas}**
+        - Columnas agregadas: **{texto_columnas_agregadas}**
+        """
+    )
 
 
 # =========================================================
@@ -466,7 +561,7 @@ def convertir_a_parquet(df: pd.DataFrame) -> bytes:
     return output.getvalue()
 
 
-@st.cache_data(show_spinner="Preparando Excel...")
+@st.cache_data(show_spinner=False)
 def convertir_a_excel_cache(
     df_input_limpio: pd.DataFrame,
     df_output_final: pd.DataFrame,
@@ -483,12 +578,12 @@ def convertir_a_excel_cache(
     )
 
 
-@st.cache_data(show_spinner="Preparando CSV...")
+@st.cache_data(show_spinner=False)
 def convertir_a_csv_cache(df: pd.DataFrame) -> bytes:
     return convertir_a_csv(df)
 
 
-@st.cache_data(show_spinner="Preparando Parquet...")
+@st.cache_data(show_spinner=False)
 def convertir_a_parquet_cache(df: pd.DataFrame) -> bytes:
     return convertir_a_parquet(df)
 
@@ -796,20 +891,18 @@ try:
             df_input_limpio
         )
 
+        # Solo se genera Parquet por defecto.
         parquet_bytes = convertir_a_parquet_cache(df_output)
-        csv_bytes = convertir_a_csv_cache(df_output)
-
-        excel_bytes = convertir_a_excel_cache(
-            df_input_limpio=df_input_limpio,
-            df_output_final=df_output,
-            diagnostico_columnas=diagnostico_columnas,
-            resumen_fechas=resumen_fechas,
-            resumen_num=resumen_num
-        )
 
         nombre_parquet = generar_nombre_salida("parquet")
         nombre_excel = generar_nombre_salida("xlsx")
         nombre_csv = generar_nombre_salida("csv")
+
+        resumen_cambios = generar_resumen_cambios(
+            df_input=df_input,
+            df_input_limpio=df_input_limpio,
+            df_output=df_output
+        )
 
     st.success("Archivo procesado correctamente.")
 
@@ -817,6 +910,13 @@ except Exception as e:
     st.error("No fue posible procesar el archivo.")
     st.exception(e)
     st.stop()
+
+
+# =========================================================
+# Mensaje de cambios realizados
+# =========================================================
+
+mostrar_resumen_cambios(resumen_cambios)
 
 
 # =========================================================
@@ -847,43 +947,68 @@ st.divider()
 
 
 # =========================================================
-# Descarga rápida siempre visible
+# Descarga principal y descargas opcionales
 # =========================================================
 
-st.markdown("### Descarga rápida")
+st.markdown("### Descarga")
 
-col_d1, col_d2, col_d3 = st.columns(3)
-
-with col_d1:
-    st.download_button(
-        label="Descargar Parquet",
-        data=parquet_bytes,
-        file_name=nombre_parquet,
-        mime="application/octet-stream",
-        use_container_width=True
-    )
-
-with col_d2:
-    st.download_button(
-        label="Descargar Excel",
-        data=excel_bytes,
-        file_name=nombre_excel,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True
-    )
-
-with col_d3:
-    st.download_button(
-        label="Descargar CSV",
-        data=csv_bytes,
-        file_name=nombre_csv,
-        mime="text/csv",
-        use_container_width=True
-    )
+st.download_button(
+    label="Descargar Parquet",
+    data=parquet_bytes,
+    file_name=nombre_parquet,
+    mime="application/octet-stream",
+    use_container_width=True
+)
 
 st.caption(
-    "Parquet se deja como formato principal recomendado para conservar tipos de datos y trabajar con Python."
+    "Parquet es el formato principal recomendado para conservar tipos de datos "
+    "y trabajar con Python. CSV y Excel se preparan solo si los solicitas."
 )
+
+with st.expander("Opcional: descargar como CSV o Excel"):
+    col_d1, col_d2 = st.columns(2)
+
+    with col_d1:
+        preparar_csv = st.button(
+            "Preparar CSV",
+            use_container_width=True
+        )
+
+        if preparar_csv:
+            with st.spinner("Preparando CSV..."):
+                csv_bytes = convertir_a_csv_cache(df_output)
+
+            st.download_button(
+                label="Descargar CSV",
+                data=csv_bytes,
+                file_name=nombre_csv,
+                mime="text/csv",
+                use_container_width=True
+            )
+
+    with col_d2:
+        preparar_excel = st.button(
+            "Preparar Excel",
+            use_container_width=True
+        )
+
+        if preparar_excel:
+            with st.spinner("Preparando Excel..."):
+                excel_bytes = convertir_a_excel_cache(
+                    df_input_limpio=df_input_limpio,
+                    df_output_final=df_output,
+                    diagnostico_columnas=diagnostico_columnas,
+                    resumen_fechas=resumen_fechas,
+                    resumen_num=resumen_num
+                )
+
+            st.download_button(
+                label="Descargar Excel",
+                data=excel_bytes,
+                file_name=nombre_excel,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
 
 st.divider()
 
