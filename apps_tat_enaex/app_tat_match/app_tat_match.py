@@ -96,6 +96,7 @@ def leer_archivo_cache(
             )
         except Exception:
             buffer.seek(0)
+
             return pd.read_csv(
                 buffer,
                 sep=sep,
@@ -369,6 +370,7 @@ def match_me5a_nme80fn(
     ]
 
     columnas_resultado = [col for col in columnas_resultado if col in mejor.columns]
+
     resultado = mejor[columnas_resultado].copy()
 
     resultado = resultado.rename(columns={
@@ -380,14 +382,14 @@ def match_me5a_nme80fn(
         "Texto breve_nme": "nme_texto_breve",
         "Cantidad": "nme_cantidad",
         "Unidad medida pedido": "nme_unidad_medida_pedido",
-        "Impte.mon.local": "nme_impte_mon_local",
+        "Impte.mon.local": "nme_importe_moneda_local",
         "Moneda_nme": "nme_moneda",
         "Importe": "nme_importe",
         "Clase de operación": "nme_clase_operacion",
         "Fecha de documento": "nme_fecha_documento",
-        "Fecha contabiliz.": "nme_fecha_contabiliz",
+        "Fecha contabiliz.": "nme_fecha_contabilizacion",
         "fecha_facturacion_proveedor": "nme_fecha_facturacion_proveedor",
-        "fecha_entrada_mercancia_recepcion": "nme_fecha_entrada_mercancia_recepcion"
+        "fecha_entrada_mercancia_recepcion": "nme_fecha_recepcion_mercancia"
     })
 
     return resultado
@@ -599,13 +601,14 @@ def match_me5a_ariba(
     ]
 
     columnas_resultado = [col for col in columnas_resultado if col in mejor.columns]
+
     resultado = mejor[columnas_resultado].copy()
 
     resultado = resultado.rename(columns={
         "Tipo de Compra": "ariba_tipo_compra",
         "ID de solicitud de compra": "ariba_id_solicitud_compra",
-        "ID de solicitud de compra del ERP": "ariba_id_solicitud_compra_erp",
-        "Número de línea de la solicitud de compra": "ariba_numero_linea_solicitud",
+        "ID de solicitud de compra del ERP": "ariba_solicitud_compra_erp",
+        "Número de línea de la solicitud de compra": "ariba_linea_solicitud_compra",
         "Descripción": "ariba_descripcion",
         "Fecha de la solicitud de compra": "ariba_fecha_solicitud_compra",
         "Fecha de aprobación": "ariba_fecha_aprobacion",
@@ -681,6 +684,128 @@ def construir_match_final(
 
 
 # =========================================================
+# Nombres finales para exportación
+# =========================================================
+
+COLUMNAS_EXPORTACION = {
+    "estado_match": "Estado del match",
+    "score_total_integrado": "Puntaje total del match",
+    "score_ariba": "Puntaje del match - ARIBA",
+    "score_nme80fn": "Puntaje del match - NME80FN",
+    "match_ariba_encontrado": "Match encontrado - ARIBA",
+    "match_nme80fn_encontrado": "Match encontrado - NME80FN",
+
+    "Solicitud de pedido": "Solicitud de pedido - ME5A",
+    "Pos.solicitud pedido": "Posición solicitud de pedido - ME5A",
+    "Pedido": "Pedido - ME5A",
+    "Posición de pedido": "Posición de pedido - ME5A",
+    "Material": "Material - ME5A",
+    "Texto breve": "Texto breve - ME5A",
+    "Cantidad solicitada": "Cantidad solicitada - ME5A",
+    "Unidad de medida": "Unidad de medida - ME5A",
+    "Moneda": "Moneda - ME5A",
+    "Centro": "Centro - ME5A",
+    "Fecha de solicitud": "Fecha de solicitud - ME5A",
+    "Fe.liber.Z": "Fecha de liberación - ME5A",
+    "Fecha de pedido": "Fecha de pedido - ME5A",
+    "Fecha de entrega": "Fecha de entrega - ME5A",
+
+    "ariba_tipo_compra": "Tipo de compra - ARIBA",
+    "ariba_id_solicitud_compra": "ID solicitud de compra - ARIBA",
+    "ariba_solicitud_compra_erp": "Solicitud de compra ERP - ARIBA",
+    "ariba_linea_solicitud_compra": "Línea solicitud de compra - ARIBA",
+    "ariba_descripcion": "Descripción - ARIBA",
+    "ariba_fecha_solicitud_compra": "Fecha solicitud de compra - ARIBA",
+    "ariba_fecha_aprobacion": "Fecha de aprobación - ARIBA",
+    "ariba_id_pedido": "ID pedido - ARIBA",
+    "ariba_proveedor_erp": "Proveedor ERP - ARIBA",
+    "ariba_id_centro_costes": "ID centro de costes - ARIBA",
+    "ariba_centro_costes": "Centro de costes - ARIBA",
+    "ariba_id_cuenta": "ID cuenta - ARIBA",
+    "ariba_cuenta": "Cuenta - ARIBA",
+    "ariba_id_unidad_negocio": "Unidad de negocio - ARIBA",
+    "ariba_coste_variacion_precio": "Coste variación precio - ARIBA",
+    "ariba_sample": "Sample - ARIBA",
+    "ariba_categoria_tipo_compra": "Categoría tipo de compra - ARIBA",
+
+    "nme_documento_compras": "Documento de compras - NME80FN",
+    "nme_posicion": "Posición - NME80FN",
+    "nme_centro": "Centro - NME80FN",
+    "nme_fecha_entrada": "Fecha de entrada - NME80FN",
+    "nme_material": "Material - NME80FN",
+    "nme_texto_breve": "Texto breve - NME80FN",
+    "nme_cantidad": "Cantidad - NME80FN",
+    "nme_unidad_medida_pedido": "Unidad medida pedido - NME80FN",
+    "nme_importe_moneda_local": "Importe moneda local - NME80FN",
+    "nme_moneda": "Moneda - NME80FN",
+    "nme_importe": "Importe - NME80FN",
+    "nme_clase_operacion": "Clase de operación - NME80FN",
+    "nme_fecha_documento": "Fecha de documento - NME80FN",
+    "nme_fecha_contabilizacion": "Fecha contabilización - NME80FN",
+    "nme_fecha_facturacion_proveedor": "Fecha facturación proveedor - NME80FN",
+    "nme_fecha_recepcion_mercancia": "Fecha recepción mercancía - NME80FN",
+}
+
+
+def preparar_resultado_exportacion(df: pd.DataFrame) -> pd.DataFrame:
+    df_export = df.copy()
+
+    columnas_renombrar = {
+        col: nuevo_nombre
+        for col, nuevo_nombre in COLUMNAS_EXPORTACION.items()
+        if col in df_export.columns
+    }
+
+    df_export = df_export.rename(columns=columnas_renombrar)
+
+    return df_export
+
+
+def columnas_vista_resultado(df: pd.DataFrame) -> list:
+    columnas_preferidas = [
+        "Estado del match",
+        "Puntaje total del match",
+        "Puntaje del match - ARIBA",
+        "Puntaje del match - NME80FN",
+
+        "Solicitud de pedido - ME5A",
+        "Posición solicitud de pedido - ME5A",
+        "Pedido - ME5A",
+        "Posición de pedido - ME5A",
+        "Material - ME5A",
+        "Texto breve - ME5A",
+        "Cantidad solicitada - ME5A",
+        "Unidad de medida - ME5A",
+        "Moneda - ME5A",
+        "Centro - ME5A",
+        "Fecha de solicitud - ME5A",
+        "Fecha de pedido - ME5A",
+        "Fecha de entrega - ME5A",
+
+        "Solicitud de compra ERP - ARIBA",
+        "Línea solicitud de compra - ARIBA",
+        "Descripción - ARIBA",
+        "ID pedido - ARIBA",
+        "Fecha solicitud de compra - ARIBA",
+        "Fecha de aprobación - ARIBA",
+        "Categoría tipo de compra - ARIBA",
+        "Unidad de negocio - ARIBA",
+
+        "Documento de compras - NME80FN",
+        "Posición - NME80FN",
+        "Material - NME80FN",
+        "Texto breve - NME80FN",
+        "Cantidad - NME80FN",
+        "Unidad medida pedido - NME80FN",
+        "Importe - NME80FN",
+        "Fecha facturación proveedor - NME80FN",
+        "Fecha recepción mercancía - NME80FN",
+    ]
+
+    return [col for col in columnas_preferidas if col in df.columns]
+
+
+# =========================================================
 # Resumen
 # =========================================================
 
@@ -691,57 +816,13 @@ def generar_resumen(resultado_final: pd.DataFrame) -> pd.DataFrame:
         .reset_index()
     )
 
-    resumen.columns = ["Estado match", "Cantidad"]
+    resumen.columns = ["Estado del match", "Cantidad"]
 
     resumen["%"] = (
         resumen["Cantidad"] / len(resultado_final) * 100
     ).round(2)
 
     return resumen
-
-
-def columnas_vista_resultado(df: pd.DataFrame) -> list:
-    columnas_preferidas = [
-        "estado_match",
-        "score_total_integrado",
-        "score_ariba",
-        "score_nme80fn",
-
-        "Solicitud de pedido",
-        "Pos.solicitud pedido",
-        "Pedido",
-        "Posición de pedido",
-        "Material",
-        "Texto breve",
-        "Cantidad solicitada",
-        "Unidad de medida",
-        "Moneda",
-        "Centro",
-        "Fecha de solicitud",
-        "Fecha de pedido",
-        "Fecha de entrega",
-
-        "ariba_id_solicitud_compra_erp",
-        "ariba_numero_linea_solicitud",
-        "ariba_descripcion",
-        "ariba_id_pedido",
-        "ariba_fecha_solicitud_compra",
-        "ariba_fecha_aprobacion",
-        "ariba_categoria_tipo_compra",
-        "ariba_id_unidad_negocio",
-
-        "nme_documento_compras",
-        "nme_posicion",
-        "nme_material",
-        "nme_texto_breve",
-        "nme_cantidad",
-        "nme_unidad_medida_pedido",
-        "nme_importe",
-        "nme_fecha_facturacion_proveedor",
-        "nme_fecha_entrada_mercancia_recepcion"
-    ]
-
-    return [col for col in columnas_preferidas if col in df.columns]
 
 
 # =========================================================
@@ -832,6 +913,11 @@ with st.sidebar:
         step=50
     )
 
+    ver_vista_previa_archivos = st.checkbox(
+        "Ver vista previa de archivos cargados",
+        value=False
+    )
+
     st.caption("El separador solo aplica a archivos CSV.")
 
 
@@ -885,6 +971,41 @@ try:
         separador_csv
     )
 
+    if ver_vista_previa_archivos:
+        st.subheader("Vista previa de archivos cargados")
+
+        tab_me5a, tab_ariba, tab_nme = st.tabs(
+            [
+                "ME5A",
+                "ARIBA",
+                "NME80FN"
+            ]
+        )
+
+        with tab_me5a:
+            st.caption(f"Filas: {len(df_me5a):,} · Columnas: {len(df_me5a.columns):,}")
+            st.dataframe(
+                df_me5a.head(int(limite_vista)),
+                use_container_width=True,
+                hide_index=True
+            )
+
+        with tab_ariba:
+            st.caption(f"Filas: {len(df_ariba):,} · Columnas: {len(df_ariba.columns):,}")
+            st.dataframe(
+                df_ariba.head(int(limite_vista)),
+                use_container_width=True,
+                hide_index=True
+            )
+
+        with tab_nme:
+            st.caption(f"Filas: {len(df_nme):,} · Columnas: {len(df_nme.columns):,}")
+            st.dataframe(
+                df_nme.head(int(limite_vista)),
+                use_container_width=True,
+                hide_index=True
+            )
+
     resultado_final = construir_match_final(
         df_me5a=df_me5a,
         df_ariba=df_ariba,
@@ -892,6 +1013,7 @@ try:
     )
 
     resumen = generar_resumen(resultado_final)
+    resultado_exportacion = preparar_resultado_exportacion(resultado_final)
 
     st.success("Match generado correctamente.")
 
@@ -914,10 +1036,10 @@ try:
 
     st.subheader("Resultado")
 
-    columnas_resultado = columnas_vista_resultado(resultado_final)
+    columnas_resultado = columnas_vista_resultado(resultado_exportacion)
 
     st.dataframe(
-        resultado_final[columnas_resultado].head(int(limite_vista)),
+        resultado_exportacion[columnas_resultado].head(int(limite_vista)),
         use_container_width=True,
         hide_index=True
     )
@@ -938,46 +1060,46 @@ try:
             st.write(df_nme.columns.tolist())
 
         with c4:
-            st.markdown("**Resultado**")
-            st.write(resultado_final.columns.tolist())
+            st.markdown("**Resultado exportado**")
+            st.write(resultado_exportacion.columns.tolist())
 
     st.subheader("Descarga")
 
-    d1, d2, d3 = st.columns(3)
+    st.download_button(
+        label="Descargar resultado en Parquet",
+        data=convertir_a_parquet_cache(resultado_exportacion),
+        file_name="match_integrado_me5a_ariba_nme80fn.parquet",
+        mime="application/octet-stream",
+        use_container_width=True
+    )
 
-    with d1:
-        st.download_button(
-            label="Descargar Parquet",
-            data=convertir_a_parquet_cache(resultado_final),
-            file_name="match_integrado_me5a_ariba_nme80fn.parquet",
-            mime="application/octet-stream",
-            use_container_width=True
-        )
+    with st.expander("Otros formatos de descarga"):
+        col_csv, col_excel = st.columns(2)
 
-    with d2:
-        st.download_button(
-            label="Descargar CSV",
-            data=convertir_a_csv_cache(resultado_final),
-            file_name="match_integrado_me5a_ariba_nme80fn.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
-
-    with d3:
-        limite_excel = 250_000
-
-        if len(resultado_final) > limite_excel:
-            st.caption(
-                f"Excel no disponible para más de {limite_excel:,} filas."
-            )
-        else:
+        with col_csv:
             st.download_button(
-                label="Descargar Excel",
-                data=convertir_a_excel_cache(resultado_final, resumen),
-                file_name="match_integrado_me5a_ariba_nme80fn.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                label="Descargar CSV",
+                data=convertir_a_csv_cache(resultado_exportacion),
+                file_name="match_integrado_me5a_ariba_nme80fn.csv",
+                mime="text/csv",
                 use_container_width=True
             )
+
+        with col_excel:
+            limite_excel = 250_000
+
+            if len(resultado_exportacion) > limite_excel:
+                st.caption(
+                    f"Excel no disponible para más de {limite_excel:,} filas."
+                )
+            else:
+                st.download_button(
+                    label="Descargar Excel",
+                    data=convertir_a_excel_cache(resultado_exportacion, resumen),
+                    file_name="match_integrado_me5a_ariba_nme80fn.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
 
 except Exception as e:
     st.error("No se pudo generar el match.")
