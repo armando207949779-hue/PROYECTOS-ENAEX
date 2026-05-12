@@ -1,4 +1,5 @@
-# App Streamlit: Limpieza minimalista ME5A con entrada, salida, descarga Parquet y análisis opcional
+# App Streamlit: Limpieza minimalista ME5A con entrada, salida,
+# descarga Parquet principal, CSV/Excel opcionales y análisis opcional
 
 import io
 import re
@@ -57,37 +58,47 @@ def mostrar_logo():
 
 
 # =========================================================
+# Funciones base
+# =========================================================
+
+def obtener_separador(separador_csv: str):
+    if separador_csv == "Automático":
+        return None
+    if separador_csv == "Punto y coma (;)":
+        return ";"
+    if separador_csv == "Coma (,)":
+        return ","
+    if separador_csv == "Tabulación":
+        return "\t"
+    return None
+
+
+# =========================================================
 # Lectura de archivo
 # =========================================================
 
-def leer_archivo(uploaded_file, separador_csv: str) -> pd.DataFrame:
-    nombre = uploaded_file.name.lower()
+@st.cache_data(show_spinner=False)
+def leer_archivo_cache(
+    bytes_archivo: bytes,
+    nombre_archivo: str,
+    separador_csv: str
+) -> pd.DataFrame:
+
+    buffer = io.BytesIO(bytes_archivo)
+    nombre = nombre_archivo.lower()
 
     if nombre.endswith(".parquet"):
-        uploaded_file.seek(0)
-        return pd.read_parquet(uploaded_file)
+        return pd.read_parquet(buffer)
 
     if nombre.endswith(".xlsx"):
-        uploaded_file.seek(0)
-        return pd.read_excel(uploaded_file)
+        return pd.read_excel(buffer)
 
     if nombre.endswith(".csv"):
-        uploaded_file.seek(0)
-
-        if separador_csv == "Automático":
-            sep = None
-        elif separador_csv == "Punto y coma (;)":
-            sep = ";"
-        elif separador_csv == "Coma (,)":
-            sep = ","
-        elif separador_csv == "Tabulación":
-            sep = "\t"
-        else:
-            sep = None
+        sep = obtener_separador(separador_csv)
 
         try:
             return pd.read_csv(
-                uploaded_file,
+                buffer,
                 sep=sep,
                 engine="python",
                 encoding="utf-8-sig",
@@ -95,10 +106,10 @@ def leer_archivo(uploaded_file, separador_csv: str) -> pd.DataFrame:
             )
 
         except Exception:
-            uploaded_file.seek(0)
+            buffer.seek(0)
 
             return pd.read_csv(
-                uploaded_file,
+                buffer,
                 sep=sep,
                 engine="python",
                 encoding="latin1",
@@ -120,6 +131,16 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
 
     # Eliminación de columnas completamente vacías
     df = df.dropna(axis=1, how="all")
+
+    # Eliminación de columnas Unnamed completamente vacías
+    columnas_unnamed = [
+        col for col in df.columns
+        if str(col).startswith("Unnamed")
+    ]
+
+    for col in columnas_unnamed:
+        if df[col].isna().all():
+            df = df.drop(columns=[col])
 
     # Limpieza de textos
     cols_texto = df.select_dtypes(include=["object", "string"]).columns
@@ -193,6 +214,11 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
             ).astype("Int64")
 
     return df
+
+
+@st.cache_data(show_spinner=False)
+def limpiar_cache(df: pd.DataFrame) -> pd.DataFrame:
+    return limpiar_fechas_y_numeros(df)
 
 
 # =========================================================
@@ -303,11 +329,115 @@ def resumen_numerico(df: pd.DataFrame) -> pd.DataFrame:
     return resumen
 
 
+@st.cache_data(show_spinner=False)
+def diagnostico_cache(df: pd.DataFrame):
+    diagnostico_columnas = tabla_diagnostico_columnas(df)
+    resumen_general = diagnostico_general(df)
+    resumen_fechas = diagnostico_fechas(df)
+    resumen_num = resumen_numerico(df)
+
+    return diagnostico_columnas, resumen_general, resumen_fechas, resumen_num
+
+
+# =========================================================
+# Mensaje de cambios realizados
+# =========================================================
+
+def generar_resumen_cambios(
+    df_original: pd.DataFrame,
+    df_limpio: pd.DataFrame
+) -> dict:
+
+    columnas_originales = set(df_original.columns.astype(str))
+    columnas_limpias = set(df_limpio.columns.astype(str))
+
+    columnas_eliminadas = sorted(list(columnas_originales - columnas_limpias))
+    columnas_agregadas = sorted(list(columnas_limpias - columnas_originales))
+
+    columnas_convertidas_fecha = columnas_fecha(df_limpio)
+
+    columnas_numericas_detectadas = [
+        col for col in [
+            "Cantidad solicitada",
+            "Precio de valoración",
+            "Pedido",
+            "Solicitud de pedido",
+            "Pos.solicitud pedido",
+            "Posición de pedido"
+        ]
+        if col in df_limpio.columns
+    ]
+
+    total_nulos = int(df_limpio.isna().sum().sum())
+    duplicados = int(df_limpio.duplicated().sum())
+
+    return {
+        "filas_originales": int(len(df_original)),
+        "columnas_originales": int(len(df_original.columns)),
+        "filas_limpias": int(len(df_limpio)),
+        "columnas_limpias": int(len(df_limpio.columns)),
+        "columnas_eliminadas": columnas_eliminadas,
+        "columnas_agregadas": columnas_agregadas,
+        "columnas_fecha": columnas_convertidas_fecha,
+        "columnas_numericas": columnas_numericas_detectadas,
+        "total_nulos": total_nulos,
+        "duplicados": duplicados
+    }
+
+
+def mostrar_resumen_cambios(resumen: dict):
+    columnas_eliminadas = resumen["columnas_eliminadas"]
+    columnas_agregadas = resumen["columnas_agregadas"]
+    columnas_fecha_convertidas = resumen["columnas_fecha"]
+    columnas_numericas = resumen["columnas_numericas"]
+
+    texto_columnas_eliminadas = (
+        ", ".join(columnas_eliminadas)
+        if columnas_eliminadas
+        else "No se eliminaron columnas por nombre; solo se quitaron columnas completamente vacías si existían."
+    )
+
+    texto_columnas_agregadas = (
+        ", ".join(columnas_agregadas)
+        if columnas_agregadas
+        else "No se agregaron columnas nuevas."
+    )
+
+    texto_fechas = (
+        ", ".join(columnas_fecha_convertidas)
+        if columnas_fecha_convertidas
+        else "No se detectaron columnas de fecha convertidas."
+    )
+
+    texto_numericas = (
+        ", ".join(columnas_numericas)
+        if columnas_numericas
+        else "No se detectaron columnas numéricas configuradas."
+    )
+
+    st.info(
+        f"""
+        **Cambios realizados al archivo cargado**
+
+        - Se leyeron **{resumen['filas_originales']:,} filas** y **{resumen['columnas_originales']:,} columnas**.
+        - Después de limpiar nombres de columnas, textos, fechas, números y columnas vacías, quedaron **{resumen['filas_limpias']:,} filas** y **{resumen['columnas_limpias']:,} columnas**.
+        - Se quitaron columnas completamente vacías si existían.
+        - Se limpiaron espacios en textos y valores vacíos.
+        - Se convirtieron fechas detectadas: **{texto_fechas}**.
+        - Se convirtieron columnas numéricas configuradas: **{texto_numericas}**.
+        - Celdas nulas después de la limpieza: **{resumen['total_nulos']:,}**.
+        - Filas duplicadas detectadas: **{resumen['duplicados']:,}**.
+        - Columnas eliminadas: **{texto_columnas_eliminadas}**
+        - Columnas agregadas: **{texto_columnas_agregadas}**
+        """
+    )
+
+
 # =========================================================
 # Exportación
 # =========================================================
 
-def generar_nombre_salida(uploaded_file, extension: str) -> str:
+def generar_nombre_salida(nombre_archivo: str, extension: str) -> str:
     """
     Genera un nombre de archivo estandarizado a partir del archivo original.
 
@@ -316,27 +446,15 @@ def generar_nombre_salida(uploaded_file, extension: str) -> str:
     salida: me5a_reporte_me5a_enero_limpio.parquet
     """
 
-    nombre_base = Path(uploaded_file.name).stem
+    nombre_base = Path(nombre_archivo).stem
 
-    # Normalización básica
     nombre_base = nombre_base.strip().lower()
-
-    # Reemplazar espacios por guion bajo
     nombre_base = re.sub(r"\s+", "_", nombre_base)
-
-    # Reemplazar guiones medios por guion bajo
     nombre_base = nombre_base.replace("-", "_")
-
-    # Eliminar caracteres especiales
     nombre_base = re.sub(r"[^a-zA-Z0-9_]", "", nombre_base)
-
-    # Evitar dobles guiones bajos
     nombre_base = re.sub(r"_+", "_", nombre_base)
-
-    # Quitar guiones bajos al inicio o final
     nombre_base = nombre_base.strip("_")
 
-    # Evitar duplicar prefijo ME5A si el archivo ya lo trae
     if nombre_base.startswith("me5a_"):
         return f"{nombre_base}_limpio.{extension}"
 
@@ -404,11 +522,40 @@ def convertir_a_parquet(df: pd.DataFrame) -> bytes:
     return output.getvalue()
 
 
+@st.cache_data(show_spinner=False)
+def convertir_a_excel_cache(
+    df_limpio: pd.DataFrame,
+    diagnostico_columnas: pd.DataFrame,
+    resumen_fechas: pd.DataFrame,
+    resumen_num: pd.DataFrame
+) -> bytes:
+    return convertir_a_excel(
+        df_limpio=df_limpio,
+        diagnostico_columnas=diagnostico_columnas,
+        resumen_fechas=resumen_fechas,
+        resumen_num=resumen_num
+    )
+
+
+@st.cache_data(show_spinner=False)
+def convertir_a_csv_cache(df: pd.DataFrame) -> bytes:
+    return convertir_a_csv(df)
+
+
+@st.cache_data(show_spinner=False)
+def convertir_a_parquet_cache(df: pd.DataFrame) -> bytes:
+    return convertir_a_parquet(df)
+
+
 # =========================================================
 # Gráficos Altair
 # =========================================================
 
 def chart_nulos_por_columna(diag_cols: pd.DataFrame, top_n: int | None = None):
+    if diag_cols.empty:
+        st.info("No hay columnas para graficar.")
+        return
+
     data = (
         diag_cols[["Columna", "% Nulos"]]
         .copy()
@@ -447,6 +594,10 @@ def chart_nulos_por_columna(diag_cols: pd.DataFrame, top_n: int | None = None):
 
 
 def chart_valores_unicos(diag_cols: pd.DataFrame, top_n: int = 10):
+    if diag_cols.empty:
+        st.info("No hay columnas para graficar.")
+        return
+
     data = (
         diag_cols[["Columna", "Valores únicos"]]
         .copy()
@@ -575,6 +726,11 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+st.info(
+    "La aplicación lee archivos ME5A, limpia textos, fechas y números, "
+    "elimina columnas vacías y genera un archivo Parquet como salida principal."
+)
+
 st.divider()
 
 
@@ -636,42 +792,43 @@ if uploaded_file is None:
 # =========================================================
 
 try:
+    bytes_archivo = uploaded_file.getvalue()
+    nombre_archivo = uploaded_file.name
+
     with st.spinner("Procesando archivo..."):
-        df_original = leer_archivo(
-            uploaded_file,
-            separador_csv
+        df_original = leer_archivo_cache(
+            bytes_archivo=bytes_archivo,
+            nombre_archivo=nombre_archivo,
+            separador_csv=separador_csv
         )
 
-        df_limpio = limpiar_fechas_y_numeros(df_original)
+        df_limpio = limpiar_cache(df_original)
 
-        diagnostico_columnas = tabla_diagnostico_columnas(df_limpio)
-        resumen_general = diagnostico_general(df_limpio)
-        resumen_fechas = diagnostico_fechas(df_limpio)
-        resumen_num = resumen_numerico(df_limpio)
-
-        parquet_bytes = convertir_a_parquet(df_limpio)
-        csv_bytes = convertir_a_csv(df_limpio)
-
-        excel_bytes = convertir_a_excel(
-            df_limpio=df_limpio,
-            diagnostico_columnas=diagnostico_columnas,
-            resumen_fechas=resumen_fechas,
-            resumen_num=resumen_num
+        diagnostico_columnas, resumen_general, resumen_fechas, resumen_num = diagnostico_cache(
+            df_limpio
         )
+
+        # Solo se genera Parquet por defecto.
+        parquet_bytes = convertir_a_parquet_cache(df_limpio)
 
         nombre_parquet = generar_nombre_salida(
-            uploaded_file,
+            nombre_archivo,
             "parquet"
         )
 
         nombre_excel = generar_nombre_salida(
-            uploaded_file,
+            nombre_archivo,
             "xlsx"
         )
 
         nombre_csv = generar_nombre_salida(
-            uploaded_file,
+            nombre_archivo,
             "csv"
+        )
+
+        resumen_cambios = generar_resumen_cambios(
+            df_original=df_original,
+            df_limpio=df_limpio
         )
 
     st.success("Archivo procesado correctamente.")
@@ -680,6 +837,13 @@ except Exception as e:
     st.error("No fue posible procesar el archivo.")
     st.exception(e)
     st.stop()
+
+
+# =========================================================
+# Mensaje de cambios realizados
+# =========================================================
+
+mostrar_resumen_cambios(resumen_cambios)
 
 
 # =========================================================
@@ -697,43 +861,67 @@ st.divider()
 
 
 # =========================================================
-# Descarga rápida siempre visible
+# Descarga principal y descargas opcionales
 # =========================================================
 
-st.markdown("### Descarga rápida")
+st.markdown("### Descarga")
 
-col_d1, col_d2, col_d3 = st.columns(3)
-
-with col_d1:
-    st.download_button(
-        label="Descargar Parquet",
-        data=parquet_bytes,
-        file_name=nombre_parquet,
-        mime="application/octet-stream",
-        use_container_width=True
-    )
-
-with col_d2:
-    st.download_button(
-        label="Descargar Excel",
-        data=excel_bytes,
-        file_name=nombre_excel,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True
-    )
-
-with col_d3:
-    st.download_button(
-        label="Descargar CSV",
-        data=csv_bytes,
-        file_name=nombre_csv,
-        mime="text/csv",
-        use_container_width=True
-    )
+st.download_button(
+    label="Descargar Parquet",
+    data=parquet_bytes,
+    file_name=nombre_parquet,
+    mime="application/octet-stream",
+    use_container_width=True
+)
 
 st.caption(
-    "Parquet se deja como formato principal recomendado para conservar tipos de datos y trabajar con Python."
+    "Parquet es el formato principal recomendado para conservar tipos de datos "
+    "y trabajar con Python. CSV y Excel se preparan solo si los solicitas."
 )
+
+with st.expander("Opcional: descargar como CSV o Excel"):
+    col_d1, col_d2 = st.columns(2)
+
+    with col_d1:
+        preparar_csv = st.button(
+            "Preparar CSV",
+            use_container_width=True
+        )
+
+        if preparar_csv:
+            with st.spinner("Preparando CSV..."):
+                csv_bytes = convertir_a_csv_cache(df_limpio)
+
+            st.download_button(
+                label="Descargar CSV",
+                data=csv_bytes,
+                file_name=nombre_csv,
+                mime="text/csv",
+                use_container_width=True
+            )
+
+    with col_d2:
+        preparar_excel = st.button(
+            "Preparar Excel",
+            use_container_width=True
+        )
+
+        if preparar_excel:
+            with st.spinner("Preparando Excel..."):
+                excel_bytes = convertir_a_excel_cache(
+                    df_limpio=df_limpio,
+                    diagnostico_columnas=diagnostico_columnas,
+                    resumen_fechas=resumen_fechas,
+                    resumen_num=resumen_num
+                )
+
+            st.download_button(
+                label="Descargar Excel",
+                data=excel_bytes,
+                file_name=nombre_excel,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
 
 st.divider()
 
@@ -773,8 +961,8 @@ elif modulo == "Salida":
     st.subheader("Salida")
 
     st.info(
-        "Los archivos de descarga están disponibles en la sección superior. "
-        "Parquet se muestra primero como formato recomendado."
+        "El archivo Parquet está disponible en la sección superior. "
+        "CSV y Excel se preparan únicamente desde la sección opcional."
     )
 
     st.dataframe(
