@@ -377,6 +377,10 @@ def diagnostico_cache(df: pd.DataFrame):
 # Exportación
 # =========================================================
 
+def generar_nombre_salida(extension: str) -> str:
+    return f"ariba_limpio.{extension}"
+
+
 def convertir_a_excel(
     df_limpio: pd.DataFrame,
     df_filtrado: pd.DataFrame,
@@ -814,6 +818,10 @@ try:
             resumen_num=resumen_num
         )
 
+        nombre_parquet = generar_nombre_salida("parquet")
+        nombre_excel = generar_nombre_salida("xlsx")
+        nombre_csv = generar_nombre_salida("csv")
+
     st.success("Archivo procesado correctamente.")
 
 except Exception as e:
@@ -854,7 +862,7 @@ with col_d1:
     st.download_button(
         label="Descargar Parquet",
         data=parquet_bytes,
-        file_name="ariba_final_limpio_cen1.parquet",
+        file_name=nombre_parquet,
         mime="application/octet-stream",
         use_container_width=True
     )
@@ -863,7 +871,7 @@ with col_d2:
     st.download_button(
         label="Descargar Excel",
         data=excel_bytes,
-        file_name="ariba_limpieza_completa.xlsx",
+        file_name=nombre_excel,
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True
     )
@@ -872,7 +880,7 @@ with col_d3:
     st.download_button(
         label="Descargar CSV",
         data=csv_bytes,
-        file_name="ariba_final_limpio_cen1.csv",
+        file_name=nombre_csv,
         mime="text/csv",
         use_container_width=True
     )
