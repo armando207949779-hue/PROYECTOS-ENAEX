@@ -1,3 +1,5 @@
+# App Streamlit: Limpieza y diagnóstico de archivo ME5A con mensajes explicativos y gráficos ordenados
+
 import io
 import base64
 from pathlib import Path
@@ -12,13 +14,7 @@ from pandas.api.types import is_datetime64_any_dtype
 # =========================
 
 BASE_DIR = Path(__file__).resolve().parent
-
-# app.py está dentro de apps_tat_enaex.
-# Subimos un nivel hasta la raíz del repo: proyectos-enaex
 ROOT_DIR = BASE_DIR.parent
-
-# Ruta correcta:
-# proyectos-enaex/assets/logo.svg
 LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
 
 
@@ -34,7 +30,7 @@ st.set_page_config(
 
 
 # =========================
-# Encabezado con logo ENAEX centrado
+# Encabezado con logo ENAEX
 # =========================
 
 if LOGO_PATH.exists():
@@ -60,7 +56,27 @@ if LOGO_PATH.exists():
         unsafe_allow_html=True
     )
 else:
-    st.error(f"Logo no encontrado en ruta correcta: {LOGO_PATH}")
+    st.warning(f"Logo no encontrado en la ruta esperada: {LOGO_PATH}")
+
+
+# =========================================================
+# Funciones auxiliares de mensajes
+# =========================================================
+
+def mostrar_mensaje_proceso(titulo: str, descripcion: str, tipo: str = "info"):
+    """
+    Muestra mensajes explicativos durante el flujo de carga, limpieza,
+    diagnóstico y exportación.
+    """
+
+    if tipo == "success":
+        st.success(f"✅ {titulo}\n\n{descripcion}")
+    elif tipo == "warning":
+        st.warning(f"⚠️ {titulo}\n\n{descripcion}")
+    elif tipo == "error":
+        st.error(f"❌ {titulo}\n\n{descripcion}")
+    else:
+        st.info(f"ℹ️ {titulo}\n\n{descripcion}")
 
 
 # =========================================================
@@ -68,6 +84,15 @@ else:
 # =========================================================
 
 def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Limpia el archivo ME5A:
+    - Estandariza nombres de columnas.
+    - Elimina columnas completamente vacías.
+    - Limpia espacios en textos.
+    - Convierte columnas de fecha.
+    - Convierte columnas numéricas y enteras.
+    """
+
     df = df.copy()
 
     # Limpiar nombres de columnas
@@ -76,7 +101,7 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
     # Eliminar columnas completamente vacías
     df = df.dropna(axis=1, how="all")
 
-    # Limpiar textos
+    # Limpiar columnas de texto
     cols_texto = df.select_dtypes(include=["object", "string"]).columns
 
     for col in cols_texto:
@@ -88,7 +113,7 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
 
         df[col] = df[col].replace("", pd.NA)
 
-    # Convertir fechas
+    # Convertir fechas estándar
     cols_fecha = [
         "Fecha de solicitud",
         "Fecha modificación",
@@ -105,7 +130,7 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
                 dayfirst=True
             )
 
-    # Fecha de entrega suele venir como YYYYMMDD
+    # Convertir fecha de entrega formato YYYYMMDD
     if "Fecha de entrega" in df.columns:
         df["Fecha de entrega"] = pd.to_datetime(
             df["Fecha de entrega"].astype("string"),
@@ -113,7 +138,7 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
             errors="coerce"
         )
 
-    # Convertir numéricos decimales
+    # Convertir columnas numéricas decimales
     cols_numericas = [
         "Cantidad solicitada",
         "Precio de valoración"
@@ -133,7 +158,7 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
             errors="coerce"
         ).astype("Int64")
 
-    # Convertir enteros
+    # Convertir columnas enteras
     cols_enteras = [
         "Solicitud de pedido",
         "Pos.solicitud pedido",
@@ -155,6 +180,11 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
 # =========================================================
 
 def leer_archivo(uploaded_file, separador_csv: str) -> pd.DataFrame:
+    """
+    Lee archivos Parquet, Excel o CSV.
+    Para CSV permite separador automático, punto y coma, coma o tabulación.
+    """
+
     nombre = uploaded_file.name.lower()
 
     if nombre.endswith(".parquet"):
@@ -212,6 +242,10 @@ def convertir_a_excel(
     resumen_fechas: pd.DataFrame,
     resumen_num: pd.DataFrame
 ) -> bytes:
+    """
+    Exporta el resultado limpio y sus diagnósticos a Excel.
+    """
+
     output = io.BytesIO()
 
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -245,6 +279,10 @@ def convertir_a_excel(
 
 
 def convertir_a_csv(df: pd.DataFrame) -> bytes:
+    """
+    Exporta el resultado limpio a CSV con codificación UTF-8.
+    """
+
     return df.to_csv(
         index=False,
         encoding="utf-8-sig"
@@ -252,6 +290,10 @@ def convertir_a_csv(df: pd.DataFrame) -> bytes:
 
 
 def convertir_a_parquet(df: pd.DataFrame) -> bytes:
+    """
+    Exporta el resultado limpio a Parquet.
+    """
+
     output = io.BytesIO()
 
     df.to_parquet(
@@ -268,6 +310,15 @@ def convertir_a_parquet(df: pd.DataFrame) -> bytes:
 # =========================================================
 
 def tabla_diagnostico_columnas(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Genera diagnóstico por columna:
+    - Tipo de dato.
+    - Cantidad de no nulos.
+    - Cantidad de nulos.
+    - Porcentaje de nulos.
+    - Valores únicos.
+    """
+
     total_filas = len(df)
 
     if total_filas == 0:
@@ -298,6 +349,10 @@ def tabla_diagnostico_columnas(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def diagnostico_general(df: pd.DataFrame) -> dict:
+    """
+    Genera métricas globales del archivo limpio.
+    """
+
     total_filas = len(df)
     total_columnas = len(df.columns)
     total_celdas = total_filas * total_columnas
@@ -330,6 +385,10 @@ def diagnostico_general(df: pd.DataFrame) -> dict:
 
 
 def columnas_fecha(df: pd.DataFrame) -> list:
+    """
+    Detecta columnas con tipo fecha.
+    """
+
     return [
         col for col in df.columns
         if is_datetime64_any_dtype(df[col])
@@ -337,6 +396,14 @@ def columnas_fecha(df: pd.DataFrame) -> list:
 
 
 def diagnostico_fechas(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Resume columnas de fecha:
+    - Fecha mínima.
+    - Fecha máxima.
+    - Nulos.
+    - Porcentaje de nulos.
+    """
+
     cols = columnas_fecha(df)
 
     if len(cols) == 0:
@@ -353,10 +420,21 @@ def diagnostico_fechas(df: pd.DataFrame) -> pd.DataFrame:
             "% Nulos": round(df[col].isna().mean() * 100, 2)
         })
 
-    return pd.DataFrame(data)
+    resumen = pd.DataFrame(data)
+
+    resumen = resumen.sort_values(
+        by="% Nulos",
+        ascending=False
+    ).reset_index(drop=True)
+
+    return resumen
 
 
 def resumen_numerico(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Genera resumen estadístico de columnas numéricas.
+    """
+
     cols_num = df.select_dtypes(include=["number"]).columns
 
     if len(cols_num) == 0:
@@ -369,20 +447,30 @@ def resumen_numerico(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # =========================================================
-# Gráficos nativos Streamlit
+# Gráficos Streamlit ordenados de mayor a menor
 # =========================================================
 
 def chart_nulos_por_columna(diag_cols: pd.DataFrame):
+    """
+    Grafica porcentaje de nulos por columna.
+    El gráfico se ordena de mayor a menor.
+    """
+
     data = (
         diag_cols
+        .sort_values("% Nulos", ascending=False)
         .set_index("Columna")["% Nulos"]
-        .sort_values(ascending=False)
     )
 
     st.bar_chart(data)
 
 
 def chart_tipos_dato(df: pd.DataFrame):
+    """
+    Grafica cantidad de columnas por tipo de dato.
+    El gráfico se ordena de mayor a menor.
+    """
+
     tipos = (
         pd.Series(df.dtypes.astype(str), name="Tipo de dato")
         .value_counts()
@@ -393,6 +481,11 @@ def chart_tipos_dato(df: pd.DataFrame):
 
 
 def chart_valores_unicos(diag_cols: pd.DataFrame, top_n: int = 10):
+    """
+    Grafica las columnas con más valores únicos.
+    El gráfico se ordena de mayor a menor.
+    """
+
     data = (
         diag_cols
         .sort_values("Valores únicos", ascending=False)
@@ -404,6 +497,11 @@ def chart_valores_unicos(diag_cols: pd.DataFrame, top_n: int = 10):
 
 
 def chart_histograma_numerico(df: pd.DataFrame, columna: str):
+    """
+    Grafica distribución de una columna numérica.
+    Los intervalos se muestran en orden natural.
+    """
+
     serie = df[columna].dropna()
 
     if serie.empty:
@@ -421,6 +519,11 @@ def chart_histograma_numerico(df: pd.DataFrame, columna: str):
 
 
 def chart_serie_fecha(df: pd.DataFrame, columna_fecha: str):
+    """
+    Grafica cantidad de registros por fecha.
+    La serie se ordena cronológicamente.
+    """
+
     data = (
         df[columna_fecha]
         .dropna()
@@ -452,8 +555,9 @@ st.markdown(
 st.markdown(
     """
     <p style='text-align: center; font-size: 18px;'>
-        Sube un archivo Parquet, Excel o CSV para aplicar limpieza sobre columnas
-        de fechas, números y textos de la transacción <b>ME5A</b>.
+        Esta aplicación permite cargar un archivo de la transacción <b>ME5A</b>,
+        limpiar columnas de texto, fechas y números, diagnosticar la calidad de datos
+        y descargar el resultado procesado.
     </p>
     """,
     unsafe_allow_html=True
@@ -489,7 +593,7 @@ with st.sidebar:
 
     st.caption(
         "Esta opción solo aplica para archivos CSV. "
-        "Para Parquet y Excel no se usa separador."
+        "Para archivos Parquet y Excel no se utiliza separador."
     )
 
 
@@ -501,30 +605,90 @@ uploaded_file = st.file_uploader(
 
 if uploaded_file is not None:
     try:
-        df_original = leer_archivo(
-            uploaded_file,
-            separador_csv
+        mostrar_mensaje_proceso(
+            titulo="Archivo recibido",
+            descripcion=(
+                f"Se cargó el archivo `{uploaded_file.name}`. "
+                "Ahora se realizará la lectura según su formato."
+            ),
+            tipo="info"
         )
 
-        df_limpio = limpiar_fechas_y_numeros(df_original)
+        with st.spinner("Leyendo archivo..."):
+            df_original = leer_archivo(
+                uploaded_file,
+                separador_csv
+            )
 
-        diagnostico_columnas = tabla_diagnostico_columnas(df_limpio)
-        resumen_general = diagnostico_general(df_limpio)
-        resumen_fechas = diagnostico_fechas(df_limpio)
-        resumen_num = resumen_numerico(df_limpio)
+        mostrar_mensaje_proceso(
+            titulo="Lectura completada",
+            descripcion=(
+                f"El archivo fue leído correctamente. "
+                f"Contiene {len(df_original):,} filas y {df_original.shape[1]:,} columnas antes de la limpieza."
+            ),
+            tipo="success"
+        )
+
+        mostrar_mensaje_proceso(
+            titulo="Proceso de limpieza iniciado",
+            descripcion=(
+                "Se limpiarán nombres de columnas, textos vacíos, columnas completamente nulas, "
+                "fechas, números y campos enteros relevantes para ME5A."
+            ),
+            tipo="info"
+        )
+
+        with st.spinner("Limpiando datos..."):
+            df_limpio = limpiar_fechas_y_numeros(df_original)
+
+        columnas_eliminadas = df_original.shape[1] - df_limpio.shape[1]
+
+        mostrar_mensaje_proceso(
+            titulo="Limpieza completada",
+            descripcion=(
+                f"El archivo limpio contiene {len(df_limpio):,} filas y {df_limpio.shape[1]:,} columnas. "
+                f"Se eliminaron {columnas_eliminadas:,} columnas completamente vacías."
+            ),
+            tipo="success"
+        )
+
+        mostrar_mensaje_proceso(
+            titulo="Diagnóstico de calidad de datos",
+            descripcion=(
+                "Se calcularán métricas generales, porcentaje de nulos por columna, "
+                "tipos de datos, valores únicos, fechas y resumen numérico."
+            ),
+            tipo="info"
+        )
+
+        with st.spinner("Generando diagnósticos..."):
+            diagnostico_columnas = tabla_diagnostico_columnas(df_limpio)
+            resumen_general = diagnostico_general(df_limpio)
+            resumen_fechas = diagnostico_fechas(df_limpio)
+            resumen_num = resumen_numerico(df_limpio)
+
+        mostrar_mensaje_proceso(
+            titulo="Diagnóstico completado",
+            descripcion=(
+                f"El archivo limpio tiene {resumen_general['porcentaje_nulos']}% de celdas nulas "
+                f"y {resumen_general['porcentaje_duplicados']}% de filas duplicadas."
+            ),
+            tipo="success"
+        )
 
         # =================================================
         # Vista Limpieza
         # =================================================
 
         if vista_sidebar == "Limpieza":
-            st.success("Archivo cargado correctamente.")
 
             tab_limpieza, = st.tabs([
                 "Limpieza"
             ])
 
             with tab_limpieza:
+                st.subheader("Resumen del proceso de limpieza")
+
                 col1, col2, col3, col4 = st.columns(4)
 
                 col1.metric(
@@ -547,19 +711,34 @@ if uploaded_file is not None:
                     f"{df_limpio.shape[1]:,}"
                 )
 
+                st.info(
+                    "En esta sección se compara la base original con la base limpia. "
+                    "La limpieza no elimina filas, pero sí puede eliminar columnas completamente vacías "
+                    "y corregir formatos de texto, fecha y número."
+                )
+
                 st.subheader("Vista previa original")
+                st.caption(
+                    "Primeras 50 filas del archivo tal como fue cargado, antes de aplicar limpieza."
+                )
                 st.dataframe(
                     df_original.head(50),
                     use_container_width=True
                 )
 
                 st.subheader("Vista previa limpia")
+                st.caption(
+                    "Primeras 50 filas después de limpiar columnas, textos, fechas y números."
+                )
                 st.dataframe(
                     df_limpio.head(50),
                     use_container_width=True
                 )
 
                 st.subheader("Porcentaje de nulos por columna")
+                st.caption(
+                    "El gráfico está ordenado de mayor a menor porcentaje de nulos."
+                )
                 chart_nulos_por_columna(diagnostico_columnas)
 
                 with st.expander("Ver detalle de columnas"):
@@ -572,15 +751,21 @@ if uploaded_file is not None:
 
                 st.subheader("Descargar resultado limpio")
 
-                excel_bytes = convertir_a_excel(
-                    df_limpio=df_limpio,
-                    diagnostico_columnas=diagnostico_columnas,
-                    resumen_fechas=resumen_fechas,
-                    resumen_num=resumen_num
+                st.info(
+                    "El archivo puede descargarse en Excel, CSV o Parquet. "
+                    "El Excel incluye la data limpia y hojas adicionales de diagnóstico."
                 )
 
-                csv_bytes = convertir_a_csv(df_limpio)
-                parquet_bytes = convertir_a_parquet(df_limpio)
+                with st.spinner("Preparando archivos de descarga..."):
+                    excel_bytes = convertir_a_excel(
+                        df_limpio=df_limpio,
+                        diagnostico_columnas=diagnostico_columnas,
+                        resumen_fechas=resumen_fechas,
+                        resumen_num=resumen_num
+                    )
+
+                    csv_bytes = convertir_a_csv(df_limpio)
+                    parquet_bytes = convertir_a_parquet(df_limpio)
 
                 col_a, col_b, col_c = st.columns(3)
 
@@ -609,11 +794,17 @@ if uploaded_file is not None:
                     )
 
         # =================================================
-        # Vista Diagnóstico desde sidebar
+        # Vista Diagnóstico
         # =================================================
 
         elif vista_sidebar == "Diagnóstico":
             st.subheader("Diagnóstico general")
+
+            st.info(
+                "Esta vista resume la calidad general del archivo limpio. "
+                "Permite identificar nulos, duplicados, tipos de datos, columnas críticas "
+                "y comportamiento de variables numéricas o de fecha."
+            )
 
             col1, col2, col3, col4 = st.columns(4)
 
@@ -652,9 +843,15 @@ if uploaded_file is not None:
             st.divider()
 
             st.subheader("Distribución de tipos de datos")
+            st.caption(
+                "Cantidad de columnas por tipo de dato, ordenadas de mayor a menor."
+            )
             chart_tipos_dato(df_limpio)
 
             st.subheader("Top columnas con mayor porcentaje de nulos")
+            st.caption(
+                "Se muestran las columnas con mayor proporción de datos faltantes."
+            )
             chart_nulos_por_columna(
                 diagnostico_columnas.head(10)
             )
@@ -664,12 +861,23 @@ if uploaded_file is not None:
             ]
 
             if columnas_50.empty:
-                st.success("No hay columnas con 50% o más de nulos.")
+                st.success("No hay columnas con 50% o más de datos nulos.")
             else:
-                st.warning("Existen columnas con 50% o más de datos nulos.")
+                st.warning(
+                    "Existen columnas con 50% o más de datos nulos. "
+                    "Se recomienda revisar si estas columnas deben mantenerse, eliminarse o completarse."
+                )
+
+                st.caption(
+                    "Columnas críticas ordenadas de mayor a menor porcentaje de nulos."
+                )
                 chart_nulos_por_columna(columnas_50)
 
             st.subheader("Top columnas con más valores únicos")
+            st.caption(
+                "Este gráfico ayuda a identificar columnas con alta cardinalidad, "
+                "como códigos, documentos, materiales o textos descriptivos."
+            )
             chart_valores_unicos(
                 diagnostico_columnas,
                 top_n=10
@@ -689,6 +897,10 @@ if uploaded_file is not None:
                 col_num = st.selectbox(
                     "Selecciona una columna numérica",
                     options=cols_num
+                )
+
+                st.caption(
+                    f"Distribución de la columna numérica `{col_num}` mediante intervalos."
                 )
 
                 chart_histograma_numerico(
@@ -716,6 +928,10 @@ if uploaded_file is not None:
                     options=cols_fecha_detectadas
                 )
 
+                st.caption(
+                    f"Cantidad de registros por día para la columna `{col_fecha}`."
+                )
+
                 chart_serie_fecha(
                     df_limpio,
                     col_fecha
@@ -728,7 +944,14 @@ if uploaded_file is not None:
                     )
 
     except Exception as e:
-        st.error("Ocurrió un error al procesar el archivo.")
+        mostrar_mensaje_proceso(
+            titulo="Error en el procesamiento",
+            descripcion=(
+                "Ocurrió un problema al leer, limpiar o diagnosticar el archivo. "
+                "Revisa el formato del archivo, el separador CSV o los nombres de columnas."
+            ),
+            tipo="error"
+        )
         st.exception(e)
 
 else:
