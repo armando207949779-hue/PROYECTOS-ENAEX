@@ -1,14 +1,10 @@
-# App Streamlit: Limpieza minimalista ARIBA con vista previa input/output,
-# descarga Parquet principal, CSV/Excel opcionales y análisis opcional
-
 import io
 import base64
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import streamlit as st
-import altair as alt
-from pandas.api.types import is_datetime64_any_dtype
 
 
 # =========================================================
@@ -16,48 +12,48 @@ from pandas.api.types import is_datetime64_any_dtype
 # =========================================================
 
 st.set_page_config(
-    page_title="Limpieza ARIBA",
-    page_icon="📊",
+    page_title="Match Integrado",
+    page_icon="🔗",
     layout="wide"
 )
 
-
-# =========================================================
-# Logo
-# =========================================================
 
 BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
 LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
 
 
-def mostrar_logo():
-    if LOGO_PATH.exists():
-        logo_svg = LOGO_PATH.read_text(encoding="utf-8")
-        logo_base64 = base64.b64encode(logo_svg.encode("utf-8")).decode("utf-8")
+# =========================================================
+# UI común
+# =========================================================
 
-        st.markdown(
-            f"""
-            <div style="
-                width: 100%;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                margin-top: 5px;
-                margin-bottom: 10px;
-            ">
-                <img 
-                    src="data:image/svg+xml;base64,{logo_base64}" 
-                    style="width: 220px; display: block;"
-                >
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+def mostrar_logo(ancho: int = 180):
+    if not LOGO_PATH.exists():
+        return
+
+    logo_svg = LOGO_PATH.read_text(encoding="utf-8")
+    logo_base64 = base64.b64encode(logo_svg.encode("utf-8")).decode("utf-8")
+
+    st.markdown(
+        f"""
+        <div style="
+            width: 100%;
+            text-align: center;
+            margin-top: 0.5rem;
+            margin-bottom: 1rem;
+        ">
+            <img 
+                src="data:image/svg+xml;base64,{logo_base64}" 
+                width="{ancho}"
+            >
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 
 # =========================================================
-# Funciones base
+# Funciones generales
 # =========================================================
 
 def obtener_separador(separador_csv: str):
@@ -72,17 +68,12 @@ def obtener_separador(separador_csv: str):
     return None
 
 
-# =========================================================
-# Lectura de archivo
-# =========================================================
-
 @st.cache_data(show_spinner=False)
 def leer_archivo_cache(
     bytes_archivo: bytes,
     nombre_archivo: str,
     separador_csv: str
 ) -> pd.DataFrame:
-
     buffer = io.BytesIO(bytes_archivo)
     nombre = nombre_archivo.lower()
 
@@ -90,16 +81,7 @@ def leer_archivo_cache(
         return pd.read_parquet(buffer)
 
     if nombre.endswith(".xlsx"):
-        df = pd.read_excel(
-            buffer,
-            sheet_name="Data",
-            header=13
-        )
-
-        # En ARIBA el contenido útil comienza desde columna B.
-        df = df.iloc[:, 1:].copy()
-
-        return df
+        return pd.read_excel(buffer)
 
     if nombre.endswith(".csv"):
         sep = obtener_separador(separador_csv)
@@ -112,7 +94,6 @@ def leer_archivo_cache(
                 encoding="utf-8-sig",
                 on_bad_lines="skip"
             )
-
         except Exception:
             buffer.seek(0)
 
@@ -127,375 +108,813 @@ def leer_archivo_cache(
     raise ValueError("Formato no soportado. Usa .parquet, .xlsx o .csv")
 
 
-# =========================================================
-# Limpieza de datos ARIBA
-# =========================================================
-
-def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
+def limpiar_nombres_columnas(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
-
-    # Limpieza de nombres de columnas
     df.columns = df.columns.astype(str).str.strip()
-
-    # Eliminación de columnas completamente vacías
-    df = df.dropna(axis=1, how="all")
-
-    # Eliminación de columnas Unnamed vacías
-    columnas_unnamed = [
-        col for col in df.columns
-        if str(col).startswith("Unnamed")
-    ]
-
-    for col in columnas_unnamed:
-        if df[col].isna().all():
-            df = df.drop(columns=[col])
-
-    # Conversión de fechas
-    cols_fecha = [
-        "Fecha de la solicitud de compra",
-        "Fecha de aprobación"
-    ]
-
-    for col in cols_fecha:
-        if col in df.columns:
-            df[col] = pd.to_datetime(
-                df[col],
-                errors="coerce",
-                dayfirst=True
-            )
-
-    # Conversión de columnas numéricas
-    cols_numericas = [
-        "Tipo de Compra",
-        "Número de línea de la solicitud de compra",
-        "sum(Coste de variación de precio)"
-    ]
-
-    for col in cols_numericas:
-        if col in df.columns:
-            df[col] = pd.to_numeric(
-                df[col],
-                errors="coerce"
-            )
-
-    # Conversión a enteros nullable
-    if "Tipo de Compra" in df.columns:
-        df["Tipo de Compra"] = df["Tipo de Compra"].astype("Int64")
-
-    if "Número de línea de la solicitud de compra" in df.columns:
-        df["Número de línea de la solicitud de compra"] = (
-            df["Número de línea de la solicitud de compra"]
-            .astype("Int64")
-        )
-
-    # Limpieza de textos
-    cols_texto = df.select_dtypes(include=["object", "string"]).columns
-
-    for col in cols_texto:
-        df[col] = (
-            df[col]
-            .astype("string")
-            .str.strip()
-        )
-
-        df[col] = df[col].replace("", pd.NA)
-
     return df
 
 
-def aplicar_filtros_y_categoria(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-
-    columnas_requeridas = [
-        "Tipo de Compra",
-        "ID de unidad de negocio"
-    ]
-
-    faltantes = [
-        col for col in columnas_requeridas
-        if col not in df.columns
-    ]
+def validar_columnas(df: pd.DataFrame, columnas: list, nombre_df: str):
+    faltantes = [col for col in columnas if col not in df.columns]
 
     if faltantes:
-        raise ValueError(f"Faltan columnas requeridas: {faltantes}")
+        raise ValueError(
+            f"Faltan columnas en {nombre_df}: {faltantes}"
+        )
 
-    # Excluir nulos en Tipo de Compra
-    df = df[df["Tipo de Compra"].notna()].copy()
 
-    # Dejar solo unidad de negocio CEN1
-    df = df[
-        df["ID de unidad de negocio"]
-        .astype("string")
-        .str.strip()
-        .eq("CEN1")
-    ].copy()
-
-    # Crear categoría de compra
-    mapa_tipo_compra = {
-        1: "CATALOGADA",
-        2: "NO CATALOGADA",
-        3: "COMPRA DIRECTA"
-    }
-
-    df["Categoria Tipo de Compra"] = (
-        df["Tipo de Compra"]
-        .map(mapa_tipo_compra)
+def normalizar_entero_str(serie: pd.Series) -> pd.Series:
+    return (
+        pd.to_numeric(serie, errors="coerce")
+        .astype("Int64")
         .astype("string")
     )
+
+
+def normalizar_numero(serie: pd.Series) -> pd.Series:
+    return pd.to_numeric(serie, errors="coerce")
+
+
+def normalizar_material(serie: pd.Series) -> pd.Series:
+    return (
+        serie
+        .astype("string")
+        .str.strip()
+        .str.replace(r"\.0$", "", regex=True)
+    )
+
+
+def normalizar_texto(valor):
+    if pd.isna(valor):
+        return ""
+
+    texto = str(valor).upper().strip()
+
+    reemplazos = {
+        "Á": "A",
+        "É": "E",
+        "Í": "I",
+        "Ó": "O",
+        "Ú": "U",
+        "Ñ": "N",
+    }
+
+    for origen, destino in reemplazos.items():
+        texto = texto.replace(origen, destino)
+
+    return " ".join(texto.split())
+
+
+def limpiar_booleanos(df: pd.DataFrame, columnas: list) -> pd.DataFrame:
+    df = df.copy()
+
+    for col in columnas:
+        if col in df.columns:
+            df[col] = df[col].fillna(False).astype(bool)
 
     return df
 
 
-@st.cache_data(show_spinner=False)
-def limpiar_cache(df: pd.DataFrame) -> pd.DataFrame:
-    return limpiar_fechas_y_numeros(df)
-
-
-@st.cache_data(show_spinner=False)
-def filtrar_cache(df: pd.DataFrame) -> pd.DataFrame:
-    return aplicar_filtros_y_categoria(df)
-
-
 # =========================================================
-# Diagnóstico
+# Match ME5A vs NME80FN
 # =========================================================
 
-def tabla_diagnostico_columnas(df: pd.DataFrame) -> pd.DataFrame:
-    total_filas = len(df)
+@st.cache_data(show_spinner=False)
+def match_me5a_nme80fn(
+    df_me5a: pd.DataFrame,
+    df_nme: pd.DataFrame
+) -> pd.DataFrame:
+    me5a = limpiar_nombres_columnas(df_me5a)
+    nme = limpiar_nombres_columnas(df_nme)
 
-    if total_filas == 0:
-        return pd.DataFrame({
-            "Columna": df.columns,
-            "Tipo de dato": [str(dtype) for dtype in df.dtypes],
-            "No nulos": 0,
-            "Nulos": 0,
-            "% Nulos": 0,
-            "Valores únicos": 0
-        })
-
-    diagnostico = pd.DataFrame({
-        "Columna": df.columns,
-        "Tipo de dato": [str(dtype) for dtype in df.dtypes],
-        "No nulos": df.notna().sum().values,
-        "Nulos": df.isna().sum().values,
-        "% Nulos": (df.isna().sum().values / total_filas * 100).round(2),
-        "Valores únicos": df.nunique(dropna=True).values
-    })
-
-    diagnostico = diagnostico.sort_values(
-        by="% Nulos",
-        ascending=False
-    ).reset_index(drop=True)
-
-    return diagnostico
-
-
-def diagnostico_general(df: pd.DataFrame) -> dict:
-    total_filas = len(df)
-    total_columnas = len(df.columns)
-    total_celdas = total_filas * total_columnas
-
-    total_nulos = int(df.isna().sum().sum())
-
-    porcentaje_nulos = (
-        round((total_nulos / total_celdas) * 100, 2)
-        if total_celdas > 0
-        else 0
+    validar_columnas(
+        me5a,
+        [
+            "Pedido",
+            "Posición de pedido",
+            "Material",
+            "Centro",
+            "Cantidad solicitada",
+            "Unidad de medida",
+            "Moneda"
+        ],
+        "ME5A"
     )
 
-    duplicados = int(df.duplicated().sum())
-
-    porcentaje_duplicados = (
-        round((duplicados / total_filas) * 100, 2)
-        if total_filas > 0
-        else 0
+    validar_columnas(
+        nme,
+        [
+            "Documento compras",
+            "Posición",
+            "Material",
+            "Centro",
+            "Cantidad",
+            "Unidad medida pedido",
+            "Moneda"
+        ],
+        "NME80FN"
     )
 
-    return {
-        "total_filas": total_filas,
-        "total_columnas": total_columnas,
-        "total_nulos": total_nulos,
-        "porcentaje_nulos": porcentaje_nulos,
-        "duplicados": duplicados,
-        "porcentaje_duplicados": porcentaje_duplicados
-    }
+    me5a = me5a.copy()
+    nme = nme.copy()
 
+    me5a["_id_me5a"] = range(len(me5a))
+    nme["_id_nme"] = range(len(nme))
 
-def columnas_fecha(df: pd.DataFrame) -> list:
-    return [
-        col for col in df.columns
-        if is_datetime64_any_dtype(df[col])
+    me5a["_pedido_norm"] = normalizar_entero_str(me5a["Pedido"])
+    me5a["_posicion_pedido_norm"] = normalizar_entero_str(me5a["Posición de pedido"])
+    me5a["_material_norm"] = normalizar_material(me5a["Material"])
+    me5a["_centro_norm"] = me5a["Centro"].astype("string").str.strip()
+    me5a["_cantidad_norm"] = normalizar_numero(me5a["Cantidad solicitada"])
+    me5a["_unidad_norm"] = me5a["Unidad de medida"].astype("string").str.strip()
+    me5a["_moneda_norm"] = me5a["Moneda"].astype("string").str.strip()
+
+    nme["_documento_norm"] = normalizar_entero_str(nme["Documento compras"])
+    nme["_posicion_norm"] = normalizar_entero_str(nme["Posición"])
+    nme["_material_norm"] = normalizar_material(nme["Material"])
+    nme["_centro_norm"] = nme["Centro"].astype("string").str.strip()
+    nme["_cantidad_norm"] = normalizar_numero(nme["Cantidad"])
+    nme["_unidad_norm"] = nme["Unidad medida pedido"].astype("string").str.strip()
+    nme["_moneda_norm"] = nme["Moneda"].astype("string").str.strip()
+
+    columnas_nme = [
+        "_id_nme",
+        "_documento_norm",
+        "_posicion_norm",
+        "_material_norm",
+        "_centro_norm",
+        "_cantidad_norm",
+        "_unidad_norm",
+        "_moneda_norm",
+        "Documento compras",
+        "Posición",
+        "Centro",
+        "Fecha de entrada",
+        "Material",
+        "Texto breve",
+        "Cantidad",
+        "Unidad medida pedido",
+        "Impte.mon.local",
+        "Moneda",
+        "Importe",
+        "Clase de operación",
+        "Fecha de documento",
+        "Fecha contabiliz.",
+        "fecha_facturacion_proveedor",
+        "fecha_entrada_mercancia_recepcion"
     ]
 
+    columnas_nme = [col for col in columnas_nme if col in nme.columns]
 
-def diagnostico_fechas(df: pd.DataFrame) -> pd.DataFrame:
-    cols = columnas_fecha(df)
-
-    if len(cols) == 0:
-        return pd.DataFrame()
-
-    data = []
-
-    for col in cols:
-        data.append({
-            "Columna": col,
-            "Fecha mínima": df[col].min(),
-            "Fecha máxima": df[col].max(),
-            "Nulos": df[col].isna().sum(),
-            "% Nulos": round(df[col].isna().mean() * 100, 2)
-        })
-
-    return (
-        pd.DataFrame(data)
-        .sort_values("% Nulos", ascending=False)
-        .reset_index(drop=True)
+    candidatos = me5a.merge(
+        nme[columnas_nme],
+        left_on="_pedido_norm",
+        right_on="_documento_norm",
+        how="left",
+        suffixes=("_me5a", "_nme")
     )
 
+    candidatos["_match_nme_pedido_documento"] = (
+        candidatos["_pedido_norm"].fillna("")
+        .eq(candidatos["_documento_norm"].fillna(""))
+    )
 
-def resumen_numerico(df: pd.DataFrame) -> pd.DataFrame:
-    cols_num = df.select_dtypes(include=["number"]).columns
+    candidatos["_match_nme_posicion"] = (
+        candidatos["_posicion_pedido_norm"].fillna("")
+        .eq(candidatos["_posicion_norm"].fillna(""))
+    )
 
-    if len(cols_num) == 0:
-        return pd.DataFrame()
+    candidatos["_match_nme_material"] = (
+        candidatos["_material_norm_me5a"].fillna("")
+        .eq(candidatos["_material_norm_nme"].fillna(""))
+    )
 
-    resumen = df[cols_num].describe().T.reset_index()
-    resumen = resumen.rename(columns={"index": "Columna"})
+    candidatos["_match_nme_centro"] = (
+        candidatos["_centro_norm_me5a"].fillna("")
+        .eq(candidatos["_centro_norm_nme"].fillna(""))
+    )
 
-    return resumen
+    candidatos["_match_nme_cantidad"] = (
+        candidatos["_cantidad_norm_me5a"]
+        .eq(candidatos["_cantidad_norm_nme"])
+        .fillna(False)
+    )
 
+    candidatos["_match_nme_unidad"] = (
+        candidatos["_unidad_norm_me5a"].fillna("")
+        .eq(candidatos["_unidad_norm_nme"].fillna(""))
+    )
+
+    candidatos["_match_nme_moneda"] = (
+        candidatos["_moneda_norm_me5a"].fillna("")
+        .eq(candidatos["_moneda_norm_nme"].fillna(""))
+    )
+
+    cols_bool_nme = [
+        "_match_nme_pedido_documento",
+        "_match_nme_posicion",
+        "_match_nme_material",
+        "_match_nme_centro",
+        "_match_nme_cantidad",
+        "_match_nme_unidad",
+        "_match_nme_moneda"
+    ]
+
+    candidatos = limpiar_booleanos(candidatos, cols_bool_nme)
+
+    candidatos["score_nme80fn"] = (
+        np.where(candidatos["_match_nme_pedido_documento"], 60, 0)
+        + np.where(candidatos["_match_nme_posicion"], 25, 0)
+        + np.where(candidatos["_match_nme_material"], 20, 0)
+        + np.where(candidatos["_match_nme_centro"], 10, 0)
+        + np.where(candidatos["_match_nme_cantidad"], 10, 0)
+        + np.where(candidatos["_match_nme_unidad"], 5, 0)
+        + np.where(candidatos["_match_nme_moneda"], 5, 0)
+    )
+
+    idx_mejor = (
+        candidatos
+        .sort_values("score_nme80fn", ascending=False)
+        .groupby("_id_me5a", dropna=False)["score_nme80fn"]
+        .idxmax()
+    )
+
+    mejor = candidatos.loc[idx_mejor].copy()
+
+    columnas_resultado = [
+        "_id_me5a",
+        "score_nme80fn",
+        "_match_nme_pedido_documento",
+        "_match_nme_posicion",
+        "_match_nme_material",
+        "_match_nme_centro",
+        "_match_nme_cantidad",
+        "_match_nme_unidad",
+        "_match_nme_moneda",
+        "Documento compras",
+        "Posición",
+        "Centro_nme",
+        "Fecha de entrada",
+        "Material_nme",
+        "Texto breve_nme",
+        "Cantidad",
+        "Unidad medida pedido",
+        "Impte.mon.local",
+        "Moneda_nme",
+        "Importe",
+        "Clase de operación",
+        "Fecha de documento",
+        "Fecha contabiliz.",
+        "fecha_facturacion_proveedor",
+        "fecha_entrada_mercancia_recepcion"
+    ]
+
+    columnas_resultado = [col for col in columnas_resultado if col in mejor.columns]
+
+    resultado = mejor[columnas_resultado].copy()
+
+    resultado = resultado.rename(columns={
+        "Documento compras": "nme_documento_compras",
+        "Posición": "nme_posicion",
+        "Centro_nme": "nme_centro",
+        "Fecha de entrada": "nme_fecha_entrada",
+        "Material_nme": "nme_material",
+        "Texto breve_nme": "nme_texto_breve",
+        "Cantidad": "nme_cantidad",
+        "Unidad medida pedido": "nme_unidad_medida_pedido",
+        "Impte.mon.local": "nme_importe_moneda_local",
+        "Moneda_nme": "nme_moneda",
+        "Importe": "nme_importe",
+        "Clase de operación": "nme_clase_operacion",
+        "Fecha de documento": "nme_fecha_documento",
+        "Fecha contabiliz.": "nme_fecha_contabilizacion",
+        "fecha_facturacion_proveedor": "nme_fecha_facturacion_proveedor",
+        "fecha_entrada_mercancia_recepcion": "nme_fecha_recepcion_mercancia"
+    })
+
+    return resultado
+
+
+# =========================================================
+# Match ME5A vs ARIBA
+# =========================================================
 
 @st.cache_data(show_spinner=False)
-def diagnostico_cache(df: pd.DataFrame):
-    diagnostico_columnas = tabla_diagnostico_columnas(df)
-    resumen_general = diagnostico_general(df)
-    resumen_fechas = diagnostico_fechas(df)
-    resumen_num = resumen_numerico(df)
+def match_me5a_ariba(
+    df_me5a: pd.DataFrame,
+    df_ariba: pd.DataFrame
+) -> pd.DataFrame:
+    me5a = limpiar_nombres_columnas(df_me5a)
+    ariba = limpiar_nombres_columnas(df_ariba)
 
-    return diagnostico_columnas, resumen_general, resumen_fechas, resumen_num
+    validar_columnas(
+        me5a,
+        [
+            "Solicitud de pedido",
+            "Pos.solicitud pedido",
+            "Texto breve",
+            "Pedido",
+            "Fecha de solicitud"
+        ],
+        "ME5A"
+    )
+
+    validar_columnas(
+        ariba,
+        [
+            "ID de solicitud de compra del ERP",
+            "Número de línea de la solicitud de compra",
+            "Descripción",
+            "Fecha de la solicitud de compra"
+        ],
+        "ARIBA"
+    )
+
+    me5a = me5a.copy()
+    ariba = ariba.copy()
+
+    me5a["_id_me5a"] = range(len(me5a))
+    ariba["_id_ariba"] = range(len(ariba))
+
+    me5a["_solicitud_norm"] = normalizar_entero_str(
+        me5a["Solicitud de pedido"]
+    )
+
+    me5a["_pos_solicitud_num"] = normalizar_numero(
+        me5a["Pos.solicitud pedido"]
+    )
+
+    me5a["_linea_esperada_ariba"] = me5a["_pos_solicitud_num"] / 10
+
+    me5a["_texto_me5a_norm"] = me5a["Texto breve"].apply(normalizar_texto)
+
+    me5a["_pedido_norm"] = normalizar_entero_str(
+        me5a["Pedido"]
+    )
+
+    me5a["_fecha_solicitud_norm"] = pd.to_datetime(
+        me5a["Fecha de solicitud"],
+        errors="coerce"
+    )
+
+    ariba["_id_erp_norm"] = normalizar_entero_str(
+        ariba["ID de solicitud de compra del ERP"]
+    )
+
+    ariba["_linea_ariba_num"] = normalizar_numero(
+        ariba["Número de línea de la solicitud de compra"]
+    )
+
+    ariba["_descripcion_norm"] = ariba["Descripción"].apply(normalizar_texto)
+
+    if "ID de pedido" in ariba.columns:
+        ariba["_id_pedido_norm"] = normalizar_entero_str(
+            ariba["ID de pedido"]
+        )
+    else:
+        ariba["_id_pedido_norm"] = pd.NA
+
+    ariba["_fecha_ariba_norm"] = pd.to_datetime(
+        ariba["Fecha de la solicitud de compra"],
+        errors="coerce"
+    )
+
+    columnas_ariba = [
+        "_id_ariba",
+        "_id_erp_norm",
+        "_linea_ariba_num",
+        "_descripcion_norm",
+        "_id_pedido_norm",
+        "_fecha_ariba_norm",
+        "Tipo de Compra",
+        "ID de solicitud de compra",
+        "ID de solicitud de compra del ERP",
+        "Número de línea de la solicitud de compra",
+        "Descripción",
+        "Fecha de la solicitud de compra",
+        "Fecha de aprobación",
+        "ID de pedido",
+        "Proveedor - Proveedor de ERP",
+        "Centro de costes - ID de centro de costes",
+        "Centro de costes - Centro de costes",
+        "ID de cuenta",
+        "Cuenta",
+        "ID de unidad de negocio",
+        "sum(Coste de variación de precio)",
+        "Sample",
+        "Categoria Tipo de Compra"
+    ]
+
+    columnas_ariba = [col for col in columnas_ariba if col in ariba.columns]
+
+    candidatos = me5a.merge(
+        ariba[columnas_ariba],
+        left_on="_solicitud_norm",
+        right_on="_id_erp_norm",
+        how="left",
+        suffixes=("_me5a", "_ariba")
+    )
+
+    candidatos["_match_ariba_solicitud"] = (
+        candidatos["_solicitud_norm"].fillna("")
+        .eq(candidatos["_id_erp_norm"].fillna(""))
+    )
+
+    candidatos["_match_ariba_linea"] = np.isclose(
+        pd.to_numeric(candidatos["_linea_esperada_ariba"], errors="coerce"),
+        pd.to_numeric(candidatos["_linea_ariba_num"], errors="coerce"),
+        equal_nan=False
+    )
+
+    candidatos["_match_ariba_pedido"] = (
+        candidatos["_pedido_norm"].fillna("")
+        .eq(candidatos["_id_pedido_norm"].fillna(""))
+    )
+
+    candidatos["_similitud_ariba_descripcion"] = (
+        candidatos["_texto_me5a_norm"].fillna("")
+        .eq(candidatos["_descripcion_norm"].fillna(""))
+        & candidatos["_texto_me5a_norm"].fillna("").ne("")
+    )
+
+    candidatos["_dias_ariba_fecha"] = (
+        candidatos["_fecha_ariba_norm"] - candidatos["_fecha_solicitud_norm"]
+    ).dt.days.abs()
+
+    candidatos["_score_ariba_fecha"] = np.where(
+        candidatos["_dias_ariba_fecha"].notna(),
+        np.maximum(0, 10 - candidatos["_dias_ariba_fecha"]),
+        0
+    )
+
+    cols_bool_ariba = [
+        "_match_ariba_solicitud",
+        "_match_ariba_linea",
+        "_match_ariba_pedido",
+        "_similitud_ariba_descripcion"
+    ]
+
+    candidatos = limpiar_booleanos(candidatos, cols_bool_ariba)
+
+    candidatos["score_ariba"] = (
+        np.where(candidatos["_match_ariba_solicitud"], 60, 0)
+        + np.where(candidatos["_match_ariba_linea"], 40, 0)
+        + np.where(candidatos["_match_ariba_pedido"], 10, 0)
+        + np.where(candidatos["_similitud_ariba_descripcion"], 20, 0)
+        + candidatos["_score_ariba_fecha"].fillna(0)
+    )
+
+    idx_mejor = (
+        candidatos
+        .sort_values("score_ariba", ascending=False)
+        .groupby("_id_me5a", dropna=False)["score_ariba"]
+        .idxmax()
+    )
+
+    mejor = candidatos.loc[idx_mejor].copy()
+
+    columnas_resultado = [
+        "_id_me5a",
+        "score_ariba",
+        "_match_ariba_solicitud",
+        "_match_ariba_linea",
+        "_match_ariba_pedido",
+        "_similitud_ariba_descripcion",
+        "_dias_ariba_fecha",
+        "Tipo de Compra",
+        "ID de solicitud de compra",
+        "ID de solicitud de compra del ERP",
+        "Número de línea de la solicitud de compra",
+        "Descripción",
+        "Fecha de la solicitud de compra",
+        "Fecha de aprobación",
+        "ID de pedido",
+        "Proveedor - Proveedor de ERP",
+        "Centro de costes - ID de centro de costes",
+        "Centro de costes - Centro de costes",
+        "ID de cuenta",
+        "Cuenta",
+        "ID de unidad de negocio",
+        "sum(Coste de variación de precio)",
+        "Sample",
+        "Categoria Tipo de Compra"
+    ]
+
+    columnas_resultado = [col for col in columnas_resultado if col in mejor.columns]
+
+    resultado = mejor[columnas_resultado].copy()
+
+    resultado = resultado.rename(columns={
+        "Tipo de Compra": "ariba_tipo_compra",
+        "ID de solicitud de compra": "ariba_id_solicitud_compra",
+        "ID de solicitud de compra del ERP": "ariba_solicitud_compra_erp",
+        "Número de línea de la solicitud de compra": "ariba_linea_solicitud_compra",
+        "Descripción": "ariba_descripcion",
+        "Fecha de la solicitud de compra": "ariba_fecha_solicitud_compra",
+        "Fecha de aprobación": "ariba_fecha_aprobacion",
+        "ID de pedido": "ariba_id_pedido",
+        "Proveedor - Proveedor de ERP": "ariba_proveedor_erp",
+        "Centro de costes - ID de centro de costes": "ariba_id_centro_costes",
+        "Centro de costes - Centro de costes": "ariba_centro_costes",
+        "ID de cuenta": "ariba_id_cuenta",
+        "Cuenta": "ariba_cuenta",
+        "ID de unidad de negocio": "ariba_id_unidad_negocio",
+        "sum(Coste de variación de precio)": "ariba_coste_variacion_precio",
+        "Sample": "ariba_sample",
+        "Categoria Tipo de Compra": "ariba_categoria_tipo_compra"
+    })
+
+    return resultado
+
+
+# =========================================================
+# Construcción de match final
+# =========================================================
+
+@st.cache_data(show_spinner=False)
+def construir_match_final(
+    df_me5a: pd.DataFrame,
+    df_ariba: pd.DataFrame,
+    df_nme: pd.DataFrame
+) -> pd.DataFrame:
+    me5a = limpiar_nombres_columnas(df_me5a).copy()
+    me5a["_id_me5a"] = range(len(me5a))
+
+    match_ariba = match_me5a_ariba(me5a, df_ariba)
+    match_nme = match_me5a_nme80fn(me5a, df_nme)
+
+    resultado = me5a.merge(
+        match_ariba,
+        on="_id_me5a",
+        how="left"
+    )
+
+    resultado = resultado.merge(
+        match_nme,
+        on="_id_me5a",
+        how="left"
+    )
+
+    resultado["score_ariba"] = resultado["score_ariba"].fillna(0)
+    resultado["score_nme80fn"] = resultado["score_nme80fn"].fillna(0)
+
+    resultado["match_ariba_encontrado"] = resultado["score_ariba"].gt(0)
+    resultado["match_nme80fn_encontrado"] = resultado["score_nme80fn"].gt(0)
+
+    resultado["score_total_integrado"] = (
+        resultado["score_ariba"]
+        + resultado["score_nme80fn"]
+    )
+
+    resultado["estado_match"] = np.select(
+        [
+            resultado["match_ariba_encontrado"] & resultado["match_nme80fn_encontrado"],
+            resultado["match_ariba_encontrado"] & ~resultado["match_nme80fn_encontrado"],
+            ~resultado["match_ariba_encontrado"] & resultado["match_nme80fn_encontrado"]
+        ],
+        [
+            "Match en ARIBA y NME80FN",
+            "Match solo en ARIBA",
+            "Match solo en NME80FN"
+        ],
+        default="Sin match"
+    )
+
+    return resultado
+
+
+# =========================================================
+# Nombres finales para exportación
+# =========================================================
+
+COLUMNAS_EXPORTACION = {
+    "estado_match": "Estado del match",
+    "score_total_integrado": "Puntaje total del match",
+    "score_ariba": "Puntaje del match - ARIBA",
+    "score_nme80fn": "Puntaje del match - NME80FN",
+    "match_ariba_encontrado": "Match encontrado - ARIBA",
+    "match_nme80fn_encontrado": "Match encontrado - NME80FN",
+
+    "Solicitud de pedido": "Solicitud de pedido - ME5A",
+    "Pos.solicitud pedido": "Posición solicitud de pedido - ME5A",
+    "Pedido": "Pedido - ME5A",
+    "Posición de pedido": "Posición de pedido - ME5A",
+    "Material": "Material - ME5A",
+    "Texto breve": "Texto breve - ME5A",
+    "Cantidad solicitada": "Cantidad solicitada - ME5A",
+    "Unidad de medida": "Unidad de medida - ME5A",
+    "Moneda": "Moneda - ME5A",
+    "Centro": "Centro - ME5A",
+    "Fecha de solicitud": "Fecha de solicitud - ME5A",
+    "Fe.liber.Z": "Fecha de liberación - ME5A",
+    "Fecha de pedido": "Fecha de pedido - ME5A",
+    "Fecha de entrega": "Fecha de entrega - ME5A",
+
+    "ariba_tipo_compra": "Tipo de compra - ARIBA",
+    "ariba_id_solicitud_compra": "ID solicitud de compra - ARIBA",
+    "ariba_solicitud_compra_erp": "Solicitud de compra ERP - ARIBA",
+    "ariba_linea_solicitud_compra": "Línea solicitud de compra - ARIBA",
+    "ariba_descripcion": "Descripción - ARIBA",
+    "ariba_fecha_solicitud_compra": "Fecha solicitud de compra - ARIBA",
+    "ariba_fecha_aprobacion": "Fecha de aprobación - ARIBA",
+    "ariba_id_pedido": "ID pedido - ARIBA",
+    "ariba_proveedor_erp": "Proveedor ERP - ARIBA",
+    "ariba_id_centro_costes": "ID centro de costes - ARIBA",
+    "ariba_centro_costes": "Centro de costes - ARIBA",
+    "ariba_id_cuenta": "ID cuenta - ARIBA",
+    "ariba_cuenta": "Cuenta - ARIBA",
+    "ariba_id_unidad_negocio": "Unidad de negocio - ARIBA",
+    "ariba_coste_variacion_precio": "Coste variación precio - ARIBA",
+    "ariba_sample": "Sample - ARIBA",
+    "ariba_categoria_tipo_compra": "Categoría tipo de compra - ARIBA",
+
+    "nme_documento_compras": "Documento de compras - NME80FN",
+    "nme_posicion": "Posición - NME80FN",
+    "nme_centro": "Centro - NME80FN",
+    "nme_fecha_entrada": "Fecha de entrada - NME80FN",
+    "nme_material": "Material - NME80FN",
+    "nme_texto_breve": "Texto breve - NME80FN",
+    "nme_cantidad": "Cantidad - NME80FN",
+    "nme_unidad_medida_pedido": "Unidad medida pedido - NME80FN",
+    "nme_importe_moneda_local": "Importe moneda local - NME80FN",
+    "nme_moneda": "Moneda - NME80FN",
+    "nme_importe": "Importe - NME80FN",
+    "nme_clase_operacion": "Clase de operación - NME80FN",
+    "nme_fecha_documento": "Fecha de documento - NME80FN",
+    "nme_fecha_contabilizacion": "Fecha contabilización - NME80FN",
+    "nme_fecha_facturacion_proveedor": "Fecha facturación proveedor - NME80FN",
+    "nme_fecha_recepcion_mercancia": "Fecha recepción mercancía - NME80FN",
+}
+
+
+def preparar_resultado_exportacion(df: pd.DataFrame) -> pd.DataFrame:
+    df_export = df.copy()
+
+    columnas_renombrar = {
+        col: nuevo_nombre
+        for col, nuevo_nombre in COLUMNAS_EXPORTACION.items()
+        if col in df_export.columns
+    }
+
+    df_export = df_export.rename(columns=columnas_renombrar)
+
+    return df_export
+
+
+def columnas_vista_resultado(df: pd.DataFrame) -> list:
+    columnas_preferidas = [
+        "Estado del match",
+        "Puntaje total del match",
+        "Puntaje del match - ARIBA",
+        "Puntaje del match - NME80FN",
+
+        "Solicitud de pedido - ME5A",
+        "Posición solicitud de pedido - ME5A",
+        "Pedido - ME5A",
+        "Posición de pedido - ME5A",
+        "Material - ME5A",
+        "Texto breve - ME5A",
+        "Cantidad solicitada - ME5A",
+        "Unidad de medida - ME5A",
+        "Moneda - ME5A",
+        "Centro - ME5A",
+        "Fecha de solicitud - ME5A",
+        "Fecha de pedido - ME5A",
+        "Fecha de entrega - ME5A",
+
+        "Solicitud de compra ERP - ARIBA",
+        "Línea solicitud de compra - ARIBA",
+        "Descripción - ARIBA",
+        "ID pedido - ARIBA",
+        "Fecha solicitud de compra - ARIBA",
+        "Fecha de aprobación - ARIBA",
+        "Categoría tipo de compra - ARIBA",
+        "Unidad de negocio - ARIBA",
+
+        "Documento de compras - NME80FN",
+        "Posición - NME80FN",
+        "Material - NME80FN",
+        "Texto breve - NME80FN",
+        "Cantidad - NME80FN",
+        "Unidad medida pedido - NME80FN",
+        "Importe - NME80FN",
+        "Fecha facturación proveedor - NME80FN",
+        "Fecha recepción mercancía - NME80FN",
+    ]
+
+    return [col for col in columnas_preferidas if col in df.columns]
+
+
+# =========================================================
+# Resumen
+# =========================================================
+
+def generar_resumen(resultado_final: pd.DataFrame) -> pd.DataFrame:
+    resumen = (
+        resultado_final["estado_match"]
+        .value_counts(dropna=False)
+        .reset_index()
+    )
+
+    resumen.columns = ["Estado del match", "Cantidad"]
+
+    resumen["%"] = (
+        resumen["Cantidad"] / len(resultado_final) * 100
+    ).round(2)
+
+    return resumen
 
 
 # =========================================================
 # Mensaje de cambios realizados
 # =========================================================
 
-def generar_resumen_cambios(
-    df_input: pd.DataFrame,
-    df_input_limpio: pd.DataFrame,
-    df_output: pd.DataFrame
+def generar_resumen_cambios_match(
+    df_me5a: pd.DataFrame,
+    df_ariba: pd.DataFrame,
+    df_nme: pd.DataFrame,
+    resultado_final: pd.DataFrame
 ) -> dict:
 
-    columnas_originales = set(df_input.columns.astype(str))
-    columnas_limpias = set(df_input_limpio.columns.astype(str))
-    columnas_output = set(df_output.columns.astype(str))
+    total_me5a = int(len(df_me5a))
+    total_ariba = int(len(df_ariba))
+    total_nme = int(len(df_nme))
+    total_resultado = int(len(resultado_final))
 
-    columnas_eliminadas = sorted(list(columnas_originales - columnas_limpias))
-    columnas_agregadas = sorted(list(columnas_output - columnas_limpias))
-
-    filas_sin_tipo_compra = (
-        int(df_input_limpio["Tipo de Compra"].isna().sum())
-        if "Tipo de Compra" in df_input_limpio.columns
+    match_ariba = (
+        int(resultado_final["match_ariba_encontrado"].sum())
+        if "match_ariba_encontrado" in resultado_final.columns
         else 0
     )
 
-    if (
-        "Tipo de Compra" in df_input_limpio.columns
-        and "ID de unidad de negocio" in df_input_limpio.columns
-    ):
-        base_con_tipo = df_input_limpio[
-            df_input_limpio["Tipo de Compra"].notna()
-        ].copy()
+    match_nme = (
+        int(resultado_final["match_nme80fn_encontrado"].sum())
+        if "match_nme80fn_encontrado" in resultado_final.columns
+        else 0
+    )
 
-        filas_no_cen1 = int(
-            base_con_tipo["ID de unidad de negocio"]
-            .astype("string")
-            .str.strip()
-            .ne("CEN1")
-            .sum()
-        )
-    else:
-        filas_no_cen1 = 0
+    sin_match = (
+        int(resultado_final["estado_match"].eq("Sin match").sum())
+        if "estado_match" in resultado_final.columns
+        else 0
+    )
 
-    filas_filtradas = int(len(df_input_limpio) - len(df_output))
+    match_ambos = (
+        int(resultado_final["estado_match"].eq("Match en ARIBA y NME80FN").sum())
+        if "estado_match" in resultado_final.columns
+        else 0
+    )
 
-    columnas_fecha_convertidas = columnas_fecha(df_input_limpio)
+    match_solo_ariba = (
+        int(resultado_final["estado_match"].eq("Match solo en ARIBA").sum())
+        if "estado_match" in resultado_final.columns
+        else 0
+    )
 
-    columnas_numericas_detectadas = [
-        col for col in [
-            "Tipo de Compra",
-            "Número de línea de la solicitud de compra",
-            "sum(Coste de variación de precio)"
-        ]
-        if col in df_input_limpio.columns
-    ]
+    match_solo_nme = (
+        int(resultado_final["estado_match"].eq("Match solo en NME80FN").sum())
+        if "estado_match" in resultado_final.columns
+        else 0
+    )
 
-    duplicados_output = int(df_output.duplicated().sum())
+    columnas_resultado = int(len(resultado_final.columns))
+    duplicados_resultado = int(resultado_final.duplicated().sum())
 
     return {
-        "filas_input": int(len(df_input)),
-        "columnas_input": int(len(df_input.columns)),
-        "filas_limpias": int(len(df_input_limpio)),
-        "columnas_limpias": int(len(df_input_limpio.columns)),
-        "filas_output": int(len(df_output)),
-        "columnas_output": int(len(df_output.columns)),
-        "filas_filtradas": filas_filtradas,
-        "filas_sin_tipo_compra": filas_sin_tipo_compra,
-        "filas_no_cen1": filas_no_cen1,
-        "duplicados_output": duplicados_output,
-        "columnas_eliminadas": columnas_eliminadas,
-        "columnas_agregadas": columnas_agregadas,
-        "columnas_fecha": columnas_fecha_convertidas,
-        "columnas_numericas": columnas_numericas_detectadas
+        "total_me5a": total_me5a,
+        "total_ariba": total_ariba,
+        "total_nme": total_nme,
+        "total_resultado": total_resultado,
+        "match_ariba": match_ariba,
+        "match_nme": match_nme,
+        "sin_match": sin_match,
+        "match_ambos": match_ambos,
+        "match_solo_ariba": match_solo_ariba,
+        "match_solo_nme": match_solo_nme,
+        "columnas_resultado": columnas_resultado,
+        "duplicados_resultado": duplicados_resultado
     }
 
 
-def mostrar_resumen_cambios(resumen: dict):
-    columnas_eliminadas = resumen["columnas_eliminadas"]
-    columnas_agregadas = resumen["columnas_agregadas"]
-    columnas_fecha_convertidas = resumen["columnas_fecha"]
-    columnas_numericas = resumen["columnas_numericas"]
-
-    texto_columnas_eliminadas = (
-        ", ".join(columnas_eliminadas)
-        if columnas_eliminadas
-        else "No se eliminaron columnas por nombre; solo se quitaron columnas completamente vacías si existían."
-    )
-
-    texto_columnas_agregadas = (
-        ", ".join(columnas_agregadas)
-        if columnas_agregadas
-        else "No se agregaron columnas nuevas."
-    )
-
-    texto_fechas = (
-        ", ".join(columnas_fecha_convertidas)
-        if columnas_fecha_convertidas
-        else "No se detectaron columnas de fecha convertidas."
-    )
-
-    texto_numericas = (
-        ", ".join(columnas_numericas)
-        if columnas_numericas
-        else "No se detectaron columnas numéricas configuradas."
-    )
-
+def mostrar_resumen_cambios_match(resumen_cambios: dict):
     st.info(
         f"""
         **Cambios realizados al archivo cargado**
 
-        - Se leyeron **{resumen['filas_input']:,} filas** y **{resumen['columnas_input']:,} columnas**.
-        - Después de limpiar nombres de columnas, textos, fechas, números y columnas vacías, quedaron **{resumen['filas_limpias']:,} filas** y **{resumen['columnas_limpias']:,} columnas**.
-        - Se quitaron columnas completamente vacías si existían.
-        - Se limpiaron espacios en textos y valores vacíos.
-        - Se filtraron **{resumen['filas_filtradas']:,} filas**.
-        - Se quitaron registros sin **Tipo de Compra** válido: **{resumen['filas_sin_tipo_compra']:,}**.
-        - Se quitaron registros distintos de **ID de unidad de negocio = CEN1**: **{resumen['filas_no_cen1']:,}**.
-        - Se creó la columna **Categoria Tipo de Compra**.
-        - Se convirtieron fechas detectadas: **{texto_fechas}**.
-        - Se convirtieron columnas numéricas configuradas: **{texto_numericas}**.
-        - La salida final tiene **{resumen['filas_output']:,} filas** y **{resumen['columnas_output']:,} columnas**.
-        - Filas duplicadas detectadas en la salida final: **{resumen['duplicados_output']:,}**.
-        - Columnas eliminadas: **{texto_columnas_eliminadas}**
-        - Columnas agregadas: **{texto_columnas_agregadas}**
+        - Se cargaron **{resumen_cambios['total_me5a']:,} filas** de ME5A.
+        - Se cargaron **{resumen_cambios['total_ariba']:,} filas** de ARIBA.
+        - Se cargaron **{resumen_cambios['total_nme']:,} filas** de NME80FN.
+        - Se normalizaron claves de comparación como pedido, posición, material, centro, cantidad, unidad y moneda.
+        - Se calculó el match entre **ME5A vs ARIBA**.
+        - Se calculó el match entre **ME5A vs NME80FN**.
+        - Se generó una salida integrada con **{resumen_cambios['total_resultado']:,} filas** y **{resumen_cambios['columnas_resultado']:,} columnas**.
+        - Match en ARIBA y NME80FN: **{resumen_cambios['match_ambos']:,}**.
+        - Match solo en ARIBA: **{resumen_cambios['match_solo_ariba']:,}**.
+        - Match solo en NME80FN: **{resumen_cambios['match_solo_nme']:,}**.
+        - Sin match: **{resumen_cambios['sin_match']:,}**.
+        - Filas con match ARIBA: **{resumen_cambios['match_ariba']:,}**.
+        - Filas con match NME80FN: **{resumen_cambios['match_nme']:,}**.
+        - Filas duplicadas detectadas en la salida integrada: **{resumen_cambios['duplicados_resultado']:,}**.
         """
     )
 
@@ -503,75 +922,6 @@ def mostrar_resumen_cambios(resumen: dict):
 # =========================================================
 # Exportación
 # =========================================================
-
-def generar_nombre_salida(extension: str) -> str:
-    return f"ariba_limpio.{extension}"
-
-
-def convertir_a_excel(
-    df_input_limpio: pd.DataFrame,
-    df_output_final: pd.DataFrame,
-    diagnostico_columnas: pd.DataFrame | None = None,
-    resumen_fechas: pd.DataFrame | None = None,
-    resumen_num: pd.DataFrame | None = None
-) -> bytes:
-
-    output = io.BytesIO()
-
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df_input_limpio.to_excel(
-            writer,
-            index=False,
-            sheet_name="Input_Limpio"
-        )
-
-        df_output_final.to_excel(
-            writer,
-            index=False,
-            sheet_name="Output_ARIBA"
-        )
-
-        if "Categoria Tipo de Compra" in df_output_final.columns:
-            conteo_categoria = (
-                df_output_final["Categoria Tipo de Compra"]
-                .value_counts(dropna=False)
-                .reset_index()
-            )
-
-            conteo_categoria.columns = [
-                "Categoria Tipo de Compra",
-                "Cantidad"
-            ]
-
-            conteo_categoria.to_excel(
-                writer,
-                index=False,
-                sheet_name="Conteo_Categoria"
-            )
-
-        if diagnostico_columnas is not None:
-            diagnostico_columnas.to_excel(
-                writer,
-                index=False,
-                sheet_name="Diagnostico_Columnas"
-            )
-
-        if resumen_fechas is not None and not resumen_fechas.empty:
-            resumen_fechas.to_excel(
-                writer,
-                index=False,
-                sheet_name="Resumen_Fechas"
-            )
-
-        if resumen_num is not None and not resumen_num.empty:
-            resumen_num.to_excel(
-                writer,
-                index=False,
-                sheet_name="Resumen_Numerico"
-            )
-
-    return output.getvalue()
-
 
 def convertir_a_csv(df: pd.DataFrame) -> bytes:
     return df.to_csv(
@@ -592,21 +942,23 @@ def convertir_a_parquet(df: pd.DataFrame) -> bytes:
     return output.getvalue()
 
 
-@st.cache_data(show_spinner=False)
-def convertir_a_excel_cache(
-    df_input_limpio: pd.DataFrame,
-    df_output_final: pd.DataFrame,
-    diagnostico_columnas: pd.DataFrame,
-    resumen_fechas: pd.DataFrame,
-    resumen_num: pd.DataFrame
-) -> bytes:
-    return convertir_a_excel(
-        df_input_limpio=df_input_limpio,
-        df_output_final=df_output_final,
-        diagnostico_columnas=diagnostico_columnas,
-        resumen_fechas=resumen_fechas,
-        resumen_num=resumen_num
-    )
+def convertir_a_excel(df: pd.DataFrame, resumen: pd.DataFrame) -> bytes:
+    output = io.BytesIO()
+
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(
+            writer,
+            index=False,
+            sheet_name="Match_Final"
+        )
+
+        resumen.to_excel(
+            writer,
+            index=False,
+            sheet_name="Resumen"
+        )
+
+    return output.getvalue()
 
 
 @st.cache_data(show_spinner=False)
@@ -619,260 +971,22 @@ def convertir_a_parquet_cache(df: pd.DataFrame) -> bytes:
     return convertir_a_parquet(df)
 
 
-# =========================================================
-# Gráficos Altair
-# =========================================================
-
-def chart_nulos_por_columna(diag_cols: pd.DataFrame, top_n: int | None = None):
-    if diag_cols.empty:
-        st.info("No hay columnas para graficar.")
-        return
-
-    data = (
-        diag_cols[["Columna", "% Nulos"]]
-        .copy()
-        .sort_values("% Nulos", ascending=False)
-    )
-
-    if top_n is not None:
-        data = data.head(top_n)
-
-    chart = (
-        alt.Chart(data)
-        .mark_bar()
-        .encode(
-            x=alt.X(
-                "Columna:N",
-                sort=alt.SortField(
-                    field="% Nulos",
-                    order="descending"
-                ),
-                title=None,
-                axis=alt.Axis(labelAngle=-90)
-            ),
-            y=alt.Y(
-                "% Nulos:Q",
-                title="% nulos"
-            ),
-            tooltip=[
-                alt.Tooltip("Columna:N", title="Columna"),
-                alt.Tooltip("% Nulos:Q", title="% nulos", format=".2f")
-            ]
-        )
-        .properties(height=380)
-    )
-
-    st.altair_chart(chart, use_container_width=True)
-
-
-def chart_tipos_dato(df: pd.DataFrame):
-    data = (
-        pd.Series(df.dtypes.astype(str), name="Tipo de dato")
-        .value_counts()
-        .reset_index()
-    )
-
-    data.columns = ["Tipo de dato", "Cantidad"]
-
-    data = data.sort_values(
-        by="Cantidad",
-        ascending=False
-    )
-
-    chart = (
-        alt.Chart(data)
-        .mark_bar()
-        .encode(
-            x=alt.X(
-                "Tipo de dato:N",
-                sort=alt.SortField(
-                    field="Cantidad",
-                    order="descending"
-                ),
-                title=None
-            ),
-            y=alt.Y(
-                "Cantidad:Q",
-                title="Cantidad"
-            ),
-            tooltip=[
-                alt.Tooltip("Tipo de dato:N", title="Tipo de dato"),
-                alt.Tooltip("Cantidad:Q", title="Cantidad")
-            ]
-        )
-        .properties(height=320)
-    )
-
-    st.altair_chart(chart, use_container_width=True)
-
-
-def chart_valores_unicos(diag_cols: pd.DataFrame, top_n: int = 10):
-    if diag_cols.empty:
-        st.info("No hay columnas para graficar.")
-        return
-
-    data = (
-        diag_cols[["Columna", "Valores únicos"]]
-        .copy()
-        .sort_values("Valores únicos", ascending=False)
-        .head(top_n)
-    )
-
-    chart = (
-        alt.Chart(data)
-        .mark_bar()
-        .encode(
-            x=alt.X(
-                "Columna:N",
-                sort=alt.SortField(
-                    field="Valores únicos",
-                    order="descending"
-                ),
-                title=None,
-                axis=alt.Axis(labelAngle=-90)
-            ),
-            y=alt.Y(
-                "Valores únicos:Q",
-                title="Valores únicos"
-            ),
-            tooltip=[
-                alt.Tooltip("Columna:N", title="Columna"),
-                alt.Tooltip("Valores únicos:Q", title="Valores únicos")
-            ]
-        )
-        .properties(height=380)
-    )
-
-    st.altair_chart(chart, use_container_width=True)
-
-
-def chart_serie_fecha(df: pd.DataFrame, columna_fecha: str):
-    data = (
-        df[columna_fecha]
-        .dropna()
-        .dt.date
-        .value_counts()
-        .sort_index()
-        .reset_index()
-    )
-
-    if data.empty:
-        st.info("La columna seleccionada no tiene fechas válidas.")
-        return
-
-    data.columns = ["Fecha", "Cantidad"]
-    data["Fecha"] = pd.to_datetime(data["Fecha"])
-
-    chart = (
-        alt.Chart(data)
-        .mark_line(point=True)
-        .encode(
-            x=alt.X("Fecha:T", title="Fecha"),
-            y=alt.Y("Cantidad:Q", title="Registros"),
-            tooltip=[
-                alt.Tooltip("Fecha:T", title="Fecha"),
-                alt.Tooltip("Cantidad:Q", title="Registros")
-            ]
-        )
-        .properties(height=360)
-    )
-
-    st.altair_chart(chart, use_container_width=True)
-
-
-def chart_conteo_categoria(df_output_final: pd.DataFrame):
-    if "Categoria Tipo de Compra" not in df_output_final.columns:
-        st.info("No existe la columna Categoria Tipo de Compra.")
-        return
-
-    conteo_categoria = (
-        df_output_final["Categoria Tipo de Compra"]
-        .value_counts(dropna=False)
-        .reset_index()
-    )
-
-    conteo_categoria.columns = [
-        "Categoria Tipo de Compra",
-        "Cantidad"
-    ]
-
-    conteo_categoria = conteo_categoria.sort_values(
-        by="Cantidad",
-        ascending=False
-    )
-
-    st.dataframe(
-        conteo_categoria,
-        use_container_width=True
-    )
-
-    chart = (
-        alt.Chart(conteo_categoria)
-        .mark_bar()
-        .encode(
-            x=alt.X(
-                "Categoria Tipo de Compra:N",
-                sort=alt.SortField(
-                    field="Cantidad",
-                    order="descending"
-                ),
-                title=None
-            ),
-            y=alt.Y(
-                "Cantidad:Q",
-                title="Cantidad"
-            ),
-            tooltip=[
-                alt.Tooltip("Categoria Tipo de Compra:N", title="Categoría"),
-                alt.Tooltip("Cantidad:Q", title="Cantidad")
-            ]
-        )
-        .properties(height=320)
-    )
-
-    st.altair_chart(chart, use_container_width=True)
+@st.cache_data(show_spinner=False)
+def convertir_a_excel_cache(df: pd.DataFrame, resumen: pd.DataFrame) -> bytes:
+    return convertir_a_excel(df, resumen)
 
 
 # =========================================================
-# Interfaz principal
+# Interfaz minimalista
 # =========================================================
 
 mostrar_logo()
 
-st.markdown(
-    """
-    <h2 style='text-align:center; margin-bottom:0px;'>
-        Limpieza ARIBA
-    </h2>
-    <p style='text-align:center; color:gray; margin-top:4px;'>
-        Limpieza y filtrado de solicitudes de compra ARIBA
-    </p>
-    """,
-    unsafe_allow_html=True
-)
-
-st.info(
-    "La aplicación lee archivos ARIBA, limpia textos, fechas y números, "
-    "filtra registros con Tipo de Compra válido, conserva solo la unidad de negocio CEN1 "
-    "y crea la columna Categoria Tipo de Compra."
-)
-
-st.divider()
-
-
-# =========================================================
-# Sidebar minimalista
-# =========================================================
+st.title("Match integrado")
+st.caption("ME5A · ARIBA · NME80FN")
 
 with st.sidebar:
     st.header("Configuración")
-
-    mostrar_analisis = st.checkbox(
-        "Mostrar análisis",
-        value=False
-    )
-
-    st.divider()
 
     separador_csv = st.selectbox(
         "Separador CSV",
@@ -885,290 +999,249 @@ with st.sidebar:
         index=0
     )
 
+    limite_vista = st.number_input(
+        "Filas en vista previa",
+        min_value=50,
+        max_value=1000,
+        value=300,
+        step=50
+    )
 
-# =========================================================
-# Carga de archivo
-# =========================================================
+    ver_vista_previa_archivos = st.checkbox(
+        "Ver vista previa de archivos cargados",
+        value=False
+    )
 
-uploaded_file = st.file_uploader(
-    "Cargar archivo ARIBA",
-    type=["parquet", "xlsx", "csv"]
-)
+    st.caption("El separador solo aplica a archivos CSV.")
 
 
-if uploaded_file is None:
-    st.info("Carga un archivo Parquet, Excel o CSV para comenzar.")
+st.subheader("Archivos")
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    archivo_me5a = st.file_uploader(
+        "ME5A limpio",
+        type=["parquet", "xlsx", "csv"],
+        key="me5a"
+    )
+
+with col2:
+    archivo_ariba = st.file_uploader(
+        "ARIBA limpio",
+        type=["parquet", "xlsx", "csv"],
+        key="ariba"
+    )
+
+with col3:
+    archivo_nme = st.file_uploader(
+        "NME80FN limpio",
+        type=["parquet", "xlsx", "csv"],
+        key="nme"
+    )
+
+
+if not archivo_me5a or not archivo_ariba or not archivo_nme:
+    st.info("Carga los tres archivos para generar el match.")
     st.stop()
 
-
-# =========================================================
-# Procesamiento
-# =========================================================
 
 try:
-    bytes_archivo = uploaded_file.getvalue()
-
-    with st.spinner("Procesando archivo..."):
-        df_input = leer_archivo_cache(
-            bytes_archivo=bytes_archivo,
-            nombre_archivo=uploaded_file.name,
-            separador_csv=separador_csv
+    with st.spinner("Leyendo archivos..."):
+        df_me5a = leer_archivo_cache(
+            archivo_me5a.getvalue(),
+            archivo_me5a.name,
+            separador_csv
         )
 
-        df_input_limpio = limpiar_cache(df_input)
-        df_output = filtrar_cache(df_input_limpio)
-
-        diagnostico_columnas, resumen_general, resumen_fechas, resumen_num = diagnostico_cache(
-            df_input_limpio
+        df_ariba = leer_archivo_cache(
+            archivo_ariba.getvalue(),
+            archivo_ariba.name,
+            separador_csv
         )
+
+        df_nme = leer_archivo_cache(
+            archivo_nme.getvalue(),
+            archivo_nme.name,
+            separador_csv
+        )
+
+    if ver_vista_previa_archivos:
+        st.subheader("Vista previa de archivos cargados")
+
+        tab_me5a, tab_ariba, tab_nme = st.tabs(
+            [
+                "ME5A",
+                "ARIBA",
+                "NME80FN"
+            ]
+        )
+
+        with tab_me5a:
+            st.caption(f"Filas: {len(df_me5a):,} · Columnas: {len(df_me5a.columns):,}")
+            st.dataframe(
+                df_me5a.head(int(limite_vista)),
+                use_container_width=True,
+                hide_index=True
+            )
+
+        with tab_ariba:
+            st.caption(f"Filas: {len(df_ariba):,} · Columnas: {len(df_ariba.columns):,}")
+            st.dataframe(
+                df_ariba.head(int(limite_vista)),
+                use_container_width=True,
+                hide_index=True
+            )
+
+        with tab_nme:
+            st.caption(f"Filas: {len(df_nme):,} · Columnas: {len(df_nme.columns):,}")
+            st.dataframe(
+                df_nme.head(int(limite_vista)),
+                use_container_width=True,
+                hide_index=True
+            )
+
+    with st.spinner("Generando match integrado..."):
+        resultado_final = construir_match_final(
+            df_me5a=df_me5a,
+            df_ariba=df_ariba,
+            df_nme=df_nme
+        )
+
+        resumen = generar_resumen(resultado_final)
+        resultado_exportacion = preparar_resultado_exportacion(resultado_final)
 
         # Solo se genera Parquet por defecto.
-        parquet_bytes = convertir_a_parquet_cache(df_output)
+        parquet_bytes = convertir_a_parquet_cache(resultado_exportacion)
 
-        nombre_parquet = generar_nombre_salida("parquet")
-        nombre_excel = generar_nombre_salida("xlsx")
-        nombre_csv = generar_nombre_salida("csv")
-
-        resumen_cambios = generar_resumen_cambios(
-            df_input=df_input,
-            df_input_limpio=df_input_limpio,
-            df_output=df_output
+        resumen_cambios = generar_resumen_cambios_match(
+            df_me5a=df_me5a,
+            df_ariba=df_ariba,
+            df_nme=df_nme,
+            resultado_final=resultado_final
         )
 
-    st.success("Archivo procesado correctamente.")
+    st.success("Match generado correctamente.")
 
-except Exception as e:
-    st.error("No fue posible procesar el archivo.")
-    st.exception(e)
-    st.stop()
+    mostrar_resumen_cambios_match(resumen_cambios)
 
+    st.subheader("Indicadores")
 
-# =========================================================
-# Mensaje de cambios realizados
-# =========================================================
+    m1, m2, m3, m4 = st.columns(4)
 
-mostrar_resumen_cambios(resumen_cambios)
+    m1.metric("ME5A", f"{len(df_me5a):,}")
+    m2.metric("Resultado", f"{len(resultado_final):,}")
+    m3.metric("Match ARIBA", f"{resultado_final['match_ariba_encontrado'].sum():,}")
+    m4.metric("Match NME80FN", f"{resultado_final['match_nme80fn_encontrado'].sum():,}")
 
-
-# =========================================================
-# Métricas superiores
-# =========================================================
-
-nulos_tipo_compra = (
-    df_input_limpio["Tipo de Compra"].isna().sum()
-    if "Tipo de Compra" in df_input_limpio.columns
-    else 0
-)
-
-filas_filtradas = len(df_input_limpio) - len(df_output)
-
-col1, col2, col3, col4 = st.columns(4)
-
-col1.metric("Filas input", f"{len(df_input):,}")
-col2.metric("Filas limpias", f"{len(df_input_limpio):,}")
-col3.metric("Filas output", f"{len(df_output):,}")
-col4.metric("Filas filtradas", f"{filas_filtradas:,}")
-
-st.caption(
-    f"Nulos en Tipo de Compra: {nulos_tipo_compra:,}. "
-    "El output corresponde a registros con Tipo de Compra válido y unidad de negocio CEN1."
-)
-
-st.divider()
-
-
-# =========================================================
-# Descarga principal y descargas opcionales
-# =========================================================
-
-st.markdown("### Descarga")
-
-st.download_button(
-    label="Descargar Parquet",
-    data=parquet_bytes,
-    file_name=nombre_parquet,
-    mime="application/octet-stream",
-    use_container_width=True
-)
-
-st.caption(
-    "Parquet es el formato principal recomendado para conservar tipos de datos "
-    "y trabajar con Python. CSV y Excel se preparan solo si los solicitas."
-)
-
-with st.expander("Opcional: descargar como CSV o Excel"):
-    col_d1, col_d2 = st.columns(2)
-
-    with col_d1:
-        preparar_csv = st.button(
-            "Preparar CSV",
-            use_container_width=True
-        )
-
-        if preparar_csv:
-            with st.spinner("Preparando CSV..."):
-                csv_bytes = convertir_a_csv_cache(df_output)
-
-            st.download_button(
-                label="Descargar CSV",
-                data=csv_bytes,
-                file_name=nombre_csv,
-                mime="text/csv",
-                use_container_width=True
-            )
-
-    with col_d2:
-        preparar_excel = st.button(
-            "Preparar Excel",
-            use_container_width=True
-        )
-
-        if preparar_excel:
-            with st.spinner("Preparando Excel..."):
-                excel_bytes = convertir_a_excel_cache(
-                    df_input_limpio=df_input_limpio,
-                    df_output_final=df_output,
-                    diagnostico_columnas=diagnostico_columnas,
-                    resumen_fechas=resumen_fechas,
-                    resumen_num=resumen_num
-                )
-
-            st.download_button(
-                label="Descargar Excel",
-                data=excel_bytes,
-                file_name=nombre_excel,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
-            )
-
-st.divider()
-
-
-# =========================================================
-# Vista previa Input / Output
-# =========================================================
-
-st.markdown("### Vista previa de datos")
-
-tab_input, tab_output = st.tabs([
-    "Input cargado",
-    "Output final"
-])
-
-with tab_input:
-    st.markdown("#### Input cargado")
-    st.caption(
-        "Vista previa del archivo después de la lectura inicial. "
-        "En Excel ARIBA se lee la hoja Data desde el encabezado configurado y se omite la primera columna útil según la estructura original."
-    )
+    st.subheader("Resumen")
 
     st.dataframe(
-        df_input.head(100),
+        resumen,
+        use_container_width=True,
+        hide_index=True
+    )
+
+    st.subheader("Resultado")
+
+    columnas_resultado = columnas_vista_resultado(resultado_exportacion)
+
+    st.dataframe(
+        resultado_exportacion[columnas_resultado].head(int(limite_vista)),
+        use_container_width=True,
+        hide_index=True
+    )
+
+    with st.expander("Ver columnas disponibles"):
+        c1, c2, c3, c4 = st.columns(4)
+
+        with c1:
+            st.markdown("**ME5A**")
+            st.write(df_me5a.columns.tolist())
+
+        with c2:
+            st.markdown("**ARIBA**")
+            st.write(df_ariba.columns.tolist())
+
+        with c3:
+            st.markdown("**NME80FN**")
+            st.write(df_nme.columns.tolist())
+
+        with c4:
+            st.markdown("**Resultado exportado**")
+            st.write(resultado_exportacion.columns.tolist())
+
+    st.subheader("Descarga")
+
+    st.download_button(
+        label="Descargar resultado en Parquet",
+        data=parquet_bytes,
+        file_name="match_integrado_me5a_ariba_nme80fn.parquet",
+        mime="application/octet-stream",
         use_container_width=True
     )
 
-with tab_output:
-    st.markdown("#### Output final")
     st.caption(
-        "Vista previa del dataframe final que se descarga: limpio, filtrado por CEN1, "
-        "con Tipo de Compra válido y con Categoria Tipo de Compra."
+        "Parquet es el formato principal recomendado para conservar tipos de datos "
+        "y trabajar con Python. CSV y Excel se preparan solo si los solicitas."
     )
 
-    st.dataframe(
-        df_output.head(100),
-        use_container_width=True
-    )
+    with st.expander("Opcional: descargar como CSV o Excel"):
+        col_csv, col_excel = st.columns(2)
 
-    if "Categoria Tipo de Compra" in df_output.columns:
-        st.markdown("### Resumen por categoría")
-        chart_conteo_categoria(df_output)
-
-
-# =========================================================
-# Análisis opcional
-# =========================================================
-
-if mostrar_analisis:
-
-    st.divider()
-    st.subheader("Análisis opcional")
-
-    col1, col2, col3, col4 = st.columns(4)
-
-    col1.metric(
-        "% nulos total",
-        f"{resumen_general['porcentaje_nulos']}%"
-    )
-
-    col2.metric(
-        "Celdas nulas",
-        f"{resumen_general['total_nulos']:,}"
-    )
-
-    col3.metric(
-        "% duplicados",
-        f"{resumen_general['porcentaje_duplicados']}%"
-    )
-
-    col4.metric(
-        "Filas duplicadas",
-        f"{resumen_general['duplicados']:,}"
-    )
-
-    tab_a, tab_b, tab_c, tab_d, tab_e = st.tabs([
-        "Nulos",
-        "Tipos de dato",
-        "Valores únicos",
-        "Fechas",
-        "Categoría"
-    ])
-
-    with tab_a:
-        st.markdown("#### Porcentaje de nulos por columna")
-        chart_nulos_por_columna(
-            diagnostico_columnas,
-            top_n=20
-        )
-
-        with st.expander("Ver tabla de diagnóstico"):
-            st.dataframe(
-                diagnostico_columnas,
+        with col_csv:
+            preparar_csv = st.button(
+                "Preparar CSV",
                 use_container_width=True
             )
 
-    with tab_b:
-        st.markdown("#### Distribución de tipos de dato")
-        chart_tipos_dato(df_input_limpio)
+            if preparar_csv:
+                with st.spinner("Preparando CSV..."):
+                    csv_bytes = convertir_a_csv_cache(resultado_exportacion)
 
-    with tab_c:
-        st.markdown("#### Columnas con más valores únicos")
-        chart_valores_unicos(
-            diagnostico_columnas,
-            top_n=20
-        )
-
-    with tab_d:
-        cols_fecha_detectadas = columnas_fecha(df_input_limpio)
-
-        if len(cols_fecha_detectadas) == 0:
-            st.info("No se detectaron columnas de fecha.")
-        else:
-            col_fecha = st.selectbox(
-                "Columna de fecha",
-                options=cols_fecha_detectadas
-            )
-
-            chart_serie_fecha(
-                df_input_limpio,
-                col_fecha
-            )
-
-            with st.expander("Ver resumen de fechas"):
-                st.dataframe(
-                    resumen_fechas,
+                st.download_button(
+                    label="Descargar CSV",
+                    data=csv_bytes,
+                    file_name="match_integrado_me5a_ariba_nme80fn.csv",
+                    mime="text/csv",
                     use_container_width=True
                 )
 
-    with tab_e:
-        st.markdown("#### Conteo por Categoria Tipo de Compra")
-        chart_conteo_categoria(df_output)
+        with col_excel:
+            limite_excel = 250_000
+
+            if len(resultado_exportacion) > limite_excel:
+                st.button(
+                    "Excel no disponible",
+                    disabled=True,
+                    use_container_width=True
+                )
+
+                st.warning(
+                    f"Excel no está disponible porque la salida tiene más de {limite_excel:,} filas. "
+                    "Usa Parquet o CSV."
+                )
+            else:
+                preparar_excel = st.button(
+                    "Preparar Excel",
+                    use_container_width=True
+                )
+
+                if preparar_excel:
+                    with st.spinner("Preparando Excel..."):
+                        excel_bytes = convertir_a_excel_cache(
+                            resultado_exportacion,
+                            resumen
+                        )
+
+                    st.download_button(
+                        label="Descargar Excel",
+                        data=excel_bytes,
+                        file_name="match_integrado_me5a_ariba_nme80fn.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
+
+except Exception as e:
+    st.error("No se pudo generar el match.")
+    st.exception(e)
