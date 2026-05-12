@@ -144,27 +144,6 @@ def normalizar_material(serie: pd.Series) -> pd.Series:
     )
 
 
-def normalizar_texto(valor):
-    if pd.isna(valor):
-        return ""
-
-    texto = str(valor).upper().strip()
-
-    reemplazos = {
-        "Á": "A",
-        "É": "E",
-        "Í": "I",
-        "Ó": "O",
-        "Ú": "U",
-        "Ñ": "N",
-    }
-
-    for origen, destino in reemplazos.items():
-        texto = texto.replace(origen, destino)
-
-    return " ".join(texto.split())
-
-
 def limpiar_booleanos(df: pd.DataFrame, columnas: list) -> pd.DataFrame:
     df = df.copy()
 
@@ -193,10 +172,7 @@ def match_me5a_nme80fn(
             "Pedido",
             "Posición de pedido",
             "Material",
-            "Centro",
-            "Cantidad solicitada",
-            "Unidad de medida",
-            "Moneda"
+            "Centro"
         ],
         "ME5A"
     )
@@ -207,10 +183,7 @@ def match_me5a_nme80fn(
             "Documento compras",
             "Posición",
             "Material",
-            "Centro",
-            "Cantidad",
-            "Unidad medida pedido",
-            "Moneda"
+            "Centro"
         ],
         "NME80FN"
     )
@@ -225,17 +198,11 @@ def match_me5a_nme80fn(
     me5a["_posicion_pedido_norm"] = normalizar_entero_str(me5a["Posición de pedido"])
     me5a["_material_norm"] = normalizar_material(me5a["Material"])
     me5a["_centro_norm"] = me5a["Centro"].astype("string").str.strip()
-    me5a["_cantidad_norm"] = normalizar_numero(me5a["Cantidad solicitada"])
-    me5a["_unidad_norm"] = me5a["Unidad de medida"].astype("string").str.strip()
-    me5a["_moneda_norm"] = me5a["Moneda"].astype("string").str.strip()
 
     nme["_documento_norm"] = normalizar_entero_str(nme["Documento compras"])
     nme["_posicion_norm"] = normalizar_entero_str(nme["Posición"])
     nme["_material_norm"] = normalizar_material(nme["Material"])
     nme["_centro_norm"] = nme["Centro"].astype("string").str.strip()
-    nme["_cantidad_norm"] = normalizar_numero(nme["Cantidad"])
-    nme["_unidad_norm"] = nme["Unidad medida pedido"].astype("string").str.strip()
-    nme["_moneda_norm"] = nme["Moneda"].astype("string").str.strip()
 
     columnas_nme = [
         "_id_nme",
@@ -243,9 +210,6 @@ def match_me5a_nme80fn(
         "_posicion_norm",
         "_material_norm",
         "_centro_norm",
-        "_cantidad_norm",
-        "_unidad_norm",
-        "_moneda_norm",
         "Documento compras",
         "Posición",
         "Centro",
@@ -294,30 +258,11 @@ def match_me5a_nme80fn(
         .eq(candidatos["_centro_norm_nme"].fillna(""))
     )
 
-    candidatos["_match_nme_cantidad"] = (
-        candidatos["_cantidad_norm_me5a"]
-        .eq(candidatos["_cantidad_norm_nme"])
-        .fillna(False)
-    )
-
-    candidatos["_match_nme_unidad"] = (
-        candidatos["_unidad_norm_me5a"].fillna("")
-        .eq(candidatos["_unidad_norm_nme"].fillna(""))
-    )
-
-    candidatos["_match_nme_moneda"] = (
-        candidatos["_moneda_norm_me5a"].fillna("")
-        .eq(candidatos["_moneda_norm_nme"].fillna(""))
-    )
-
     cols_bool_nme = [
         "_match_nme_pedido_documento",
         "_match_nme_posicion",
         "_match_nme_material",
-        "_match_nme_centro",
-        "_match_nme_cantidad",
-        "_match_nme_unidad",
-        "_match_nme_moneda"
+        "_match_nme_centro"
     ]
 
     candidatos = limpiar_booleanos(candidatos, cols_bool_nme)
@@ -327,9 +272,6 @@ def match_me5a_nme80fn(
         + np.where(candidatos["_match_nme_posicion"], 25, 0)
         + np.where(candidatos["_match_nme_material"], 20, 0)
         + np.where(candidatos["_match_nme_centro"], 10, 0)
-        + np.where(candidatos["_match_nme_cantidad"], 10, 0)
-        + np.where(candidatos["_match_nme_unidad"], 5, 0)
-        + np.where(candidatos["_match_nme_moneda"], 5, 0)
     )
 
     idx_mejor = (
@@ -348,9 +290,6 @@ def match_me5a_nme80fn(
         "_match_nme_posicion",
         "_match_nme_material",
         "_match_nme_centro",
-        "_match_nme_cantidad",
-        "_match_nme_unidad",
-        "_match_nme_moneda",
         "Documento compras",
         "Posición",
         "Centro_nme",
@@ -412,9 +351,7 @@ def match_me5a_ariba(
         [
             "Solicitud de pedido",
             "Pos.solicitud pedido",
-            "Texto breve",
-            "Pedido",
-            "Fecha de solicitud"
+            "Pedido"
         ],
         "ME5A"
     )
@@ -424,8 +361,7 @@ def match_me5a_ariba(
         [
             "ID de solicitud de compra del ERP",
             "Número de línea de la solicitud de compra",
-            "Descripción",
-            "Fecha de la solicitud de compra"
+            "ID de pedido"
         ],
         "ARIBA"
     )
@@ -446,15 +382,8 @@ def match_me5a_ariba(
 
     me5a["_linea_esperada_ariba"] = me5a["_pos_solicitud_num"] / 10
 
-    me5a["_texto_me5a_norm"] = me5a["Texto breve"].apply(normalizar_texto)
-
     me5a["_pedido_norm"] = normalizar_entero_str(
         me5a["Pedido"]
-    )
-
-    me5a["_fecha_solicitud_norm"] = pd.to_datetime(
-        me5a["Fecha de solicitud"],
-        errors="coerce"
     )
 
     ariba["_id_erp_norm"] = normalizar_entero_str(
@@ -465,27 +394,15 @@ def match_me5a_ariba(
         ariba["Número de línea de la solicitud de compra"]
     )
 
-    ariba["_descripcion_norm"] = ariba["Descripción"].apply(normalizar_texto)
-
-    if "ID de pedido" in ariba.columns:
-        ariba["_id_pedido_norm"] = normalizar_entero_str(
-            ariba["ID de pedido"]
-        )
-    else:
-        ariba["_id_pedido_norm"] = pd.NA
-
-    ariba["_fecha_ariba_norm"] = pd.to_datetime(
-        ariba["Fecha de la solicitud de compra"],
-        errors="coerce"
+    ariba["_id_pedido_norm"] = normalizar_entero_str(
+        ariba["ID de pedido"]
     )
 
     columnas_ariba = [
         "_id_ariba",
         "_id_erp_norm",
         "_linea_ariba_num",
-        "_descripcion_norm",
         "_id_pedido_norm",
-        "_fecha_ariba_norm",
         "Tipo de Compra",
         "ID de solicitud de compra",
         "ID de solicitud de compra del ERP",
@@ -531,27 +448,10 @@ def match_me5a_ariba(
         .eq(candidatos["_id_pedido_norm"].fillna(""))
     )
 
-    candidatos["_similitud_ariba_descripcion"] = (
-        candidatos["_texto_me5a_norm"].fillna("")
-        .eq(candidatos["_descripcion_norm"].fillna(""))
-        & candidatos["_texto_me5a_norm"].fillna("").ne("")
-    )
-
-    candidatos["_dias_ariba_fecha"] = (
-        candidatos["_fecha_ariba_norm"] - candidatos["_fecha_solicitud_norm"]
-    ).dt.days.abs()
-
-    candidatos["_score_ariba_fecha"] = np.where(
-        candidatos["_dias_ariba_fecha"].notna(),
-        np.maximum(0, 10 - candidatos["_dias_ariba_fecha"]),
-        0
-    )
-
     cols_bool_ariba = [
         "_match_ariba_solicitud",
         "_match_ariba_linea",
-        "_match_ariba_pedido",
-        "_similitud_ariba_descripcion"
+        "_match_ariba_pedido"
     ]
 
     candidatos = limpiar_booleanos(candidatos, cols_bool_ariba)
@@ -560,8 +460,6 @@ def match_me5a_ariba(
         np.where(candidatos["_match_ariba_solicitud"], 60, 0)
         + np.where(candidatos["_match_ariba_linea"], 40, 0)
         + np.where(candidatos["_match_ariba_pedido"], 10, 0)
-        + np.where(candidatos["_similitud_ariba_descripcion"], 20, 0)
-        + candidatos["_score_ariba_fecha"].fillna(0)
     )
 
     idx_mejor = (
@@ -579,8 +477,6 @@ def match_me5a_ariba(
         "_match_ariba_solicitud",
         "_match_ariba_linea",
         "_match_ariba_pedido",
-        "_similitud_ariba_descripcion",
-        "_dias_ariba_fecha",
         "Tipo de Compra",
         "ID de solicitud de compra",
         "ID de solicitud de compra del ERP",
@@ -920,8 +816,6 @@ def mostrar_resumen_cambios_match(resumen_cambios: dict):
             - **Solicitud de pedido - ME5A** con **ID de solicitud de compra del ERP - ARIBA**.
             - **Pos.solicitud pedido - ME5A / 10** con **Número de línea de la solicitud de compra - ARIBA**.
             - **Pedido - ME5A** con **ID de pedido - ARIBA**.
-            - **Texto breve - ME5A** con **Descripción - ARIBA**, usando texto normalizado.
-            - **Fecha de solicitud - ME5A** con **Fecha de la solicitud de compra - ARIBA**, usando cercanía de fechas.
 
             **Score ARIBA**
 
@@ -930,8 +824,6 @@ def mostrar_resumen_cambios_match(resumen_cambios: dict):
             - **+60 puntos** si coincide **Solicitud de pedido - ME5A** con **ID de solicitud de compra del ERP - ARIBA**.
             - **+40 puntos** si coincide **Pos.solicitud pedido - ME5A / 10** con **Número de línea de la solicitud de compra - ARIBA**.
             - **+10 puntos** si coincide **Pedido - ME5A** con **ID de pedido - ARIBA**.
-            - **+20 puntos** si coincide **Texto breve - ME5A** con **Descripción - ARIBA** después de normalizar texto.
-            - **Hasta +10 puntos** por cercanía entre **Fecha de solicitud - ME5A** y **Fecha de la solicitud de compra - ARIBA**. Si las fechas son iguales suma 10; si hay 1 día de diferencia suma 9; si hay 10 o más días de diferencia suma 0.
 
             **Columnas usadas para conectar ME5A con NME80FN**
 
@@ -939,9 +831,6 @@ def mostrar_resumen_cambios_match(resumen_cambios: dict):
             - **Posición de pedido - ME5A** con **Posición - NME80FN**.
             - **Material - ME5A** con **Material - NME80FN**.
             - **Centro - ME5A** con **Centro - NME80FN**.
-            - **Cantidad solicitada - ME5A** con **Cantidad - NME80FN**.
-            - **Unidad de medida - ME5A** con **Unidad medida pedido - NME80FN**.
-            - **Moneda - ME5A** con **Moneda - NME80FN**.
 
             **Score NME80FN**
 
@@ -951,9 +840,6 @@ def mostrar_resumen_cambios_match(resumen_cambios: dict):
             - **+25 puntos** si coincide **Posición de pedido - ME5A** con **Posición - NME80FN**.
             - **+20 puntos** si coincide **Material - ME5A** con **Material - NME80FN**.
             - **+10 puntos** si coincide **Centro - ME5A** con **Centro - NME80FN**.
-            - **+10 puntos** si coincide **Cantidad solicitada - ME5A** con **Cantidad - NME80FN**.
-            - **+5 puntos** si coincide **Unidad de medida - ME5A** con **Unidad medida pedido - NME80FN**.
-            - **+5 puntos** si coincide **Moneda - ME5A** con **Moneda - NME80FN**.
 
             **Score total integrado**
 
@@ -1030,7 +916,7 @@ def convertir_a_excel_cache(df: pd.DataFrame, resumen: pd.DataFrame) -> bytes:
 
 
 # =========================================================
-# Interfaz minimalista
+# Interfaz
 # =========================================================
 
 mostrar_logo()
