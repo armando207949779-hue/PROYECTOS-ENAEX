@@ -416,6 +416,10 @@ def diagnostico_cache(df: pd.DataFrame):
 # Exportación
 # =========================================================
 
+def generar_nombre_salida(extension: str) -> str:
+    return f"nme80fn_limpio.{extension}"
+
+
 def convertir_a_csv(df: pd.DataFrame) -> bytes:
     return df.to_csv(
         index=False,
@@ -775,6 +779,10 @@ try:
         else:
             excel_bytes = None
 
+        nombre_parquet = generar_nombre_salida("parquet")
+        nombre_csv = generar_nombre_salida("csv")
+        nombre_excel = generar_nombre_salida("xlsx")
+
     st.success("Archivo procesado correctamente.")
 
 except Exception as e:
@@ -811,7 +819,7 @@ with col_d1:
     st.download_button(
         label="Descargar Parquet",
         data=parquet_bytes,
-        file_name="nme80fn_final.parquet",
+        file_name=nombre_parquet,
         mime="application/octet-stream",
         use_container_width=True
     )
@@ -820,7 +828,7 @@ with col_d2:
     st.download_button(
         label="Descargar CSV",
         data=csv_bytes,
-        file_name="nme80fn_final.csv",
+        file_name=nombre_csv,
         mime="text/csv",
         use_container_width=True
     )
@@ -830,7 +838,7 @@ with col_d3:
         st.download_button(
             label="Descargar Excel",
             data=excel_bytes,
-            file_name="nme80fn_final.xlsx",
+            file_name=nombre_excel,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True
         )
