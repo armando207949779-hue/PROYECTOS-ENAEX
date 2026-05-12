@@ -1032,7 +1032,7 @@ with st.sidebar:
 
     ver_vista_previa_archivos = st.checkbox(
         "Ver vista previa de archivos cargados",
-        value=False
+        value=True
     )
 
     st.caption("El separador solo aplica a archivos CSV.")
