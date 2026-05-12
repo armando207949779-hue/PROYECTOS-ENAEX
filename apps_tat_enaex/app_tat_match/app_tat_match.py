@@ -897,49 +897,79 @@ def generar_resumen_cambios_match(
 
 
 def mostrar_resumen_cambios_match(resumen_cambios: dict):
-    st.info(
-        f"""
-        **Cambios realizados y lógica del match**
+    with st.expander("Cambios realizados y lógica del match", expanded=False):
+        st.info(
+            f"""
+            **Archivos cargados**
 
-        **Archivos cargados**
+            - Se cargaron **{resumen_cambios['total_me5a']:,} registros** de ME5A.
+            - Se cargaron **{resumen_cambios['total_ariba']:,} registros** de ARIBA.
+            - Se cargaron **{resumen_cambios['total_nme']:,} registros** de NME80FN.
 
-        - Se cargaron **{resumen_cambios['total_me5a']:,} registros** de ME5A.
-        - Se cargaron **{resumen_cambios['total_ariba']:,} registros** de ARIBA.
-        - Se cargaron **{resumen_cambios['total_nme']:,} registros** de NME80FN.
+            **Resultado del match**
 
-        **Resultado del match**
+            - **{resumen_cambios['match_ariba']:,} registros de {resumen_cambios['total_me5a']:,}** se encontraron en **ARIBA**.
+            - **{resumen_cambios['match_nme']:,} registros de {resumen_cambios['total_me5a']:,}** se encontraron en **NME80FN**.
+            - **{resumen_cambios['match_ambos']:,} registros de {resumen_cambios['total_me5a']:,}** se encontraron en **ARIBA y NME80FN**.
+            - **{resumen_cambios['match_solo_ariba']:,} registros de {resumen_cambios['total_me5a']:,}** se encontraron **solo en ARIBA**.
+            - **{resumen_cambios['match_solo_nme']:,} registros de {resumen_cambios['total_me5a']:,}** se encontraron **solo en NME80FN**.
+            - **{resumen_cambios['sin_match']:,} registros de {resumen_cambios['total_me5a']:,}** no tuvieron match.
 
-        - **{resumen_cambios['match_ariba']:,} registros de {resumen_cambios['total_me5a']:,}** se encontraron en **ARIBA**.
-        - **{resumen_cambios['match_nme']:,} registros de {resumen_cambios['total_me5a']:,}** se encontraron en **NME80FN**.
-        - **{resumen_cambios['match_ambos']:,} registros de {resumen_cambios['total_me5a']:,}** se encontraron en **ARIBA y NME80FN**.
-        - **{resumen_cambios['match_solo_ariba']:,} registros de {resumen_cambios['total_me5a']:,}** se encontraron **solo en ARIBA**.
-        - **{resumen_cambios['match_solo_nme']:,} registros de {resumen_cambios['total_me5a']:,}** se encontraron **solo en NME80FN**.
-        - **{resumen_cambios['sin_match']:,} registros de {resumen_cambios['total_me5a']:,}** no tuvieron match.
+            **Columnas usadas para conectar ME5A con ARIBA**
 
-        **Columnas usadas para conectar ME5A con ARIBA**
+            - **Solicitud de pedido - ME5A** con **ID de solicitud de compra del ERP - ARIBA**.
+            - **Pos.solicitud pedido - ME5A / 10** con **Número de línea de la solicitud de compra - ARIBA**.
+            - **Pedido - ME5A** con **ID de pedido - ARIBA**.
+            - **Texto breve - ME5A** con **Descripción - ARIBA**, usando texto normalizado.
+            - **Fecha de solicitud - ME5A** con **Fecha de la solicitud de compra - ARIBA**, usando cercanía de fechas.
 
-        - **Solicitud de pedido - ME5A** con **ID de solicitud de compra del ERP - ARIBA**.
-        - **Pos.solicitud pedido - ME5A / 10** con **Número de línea de la solicitud de compra - ARIBA**.
-        - **Pedido - ME5A** con **ID de pedido - ARIBA**.
-        - **Texto breve - ME5A** con **Descripción - ARIBA**, usando texto normalizado.
-        - **Fecha de solicitud - ME5A** con **Fecha de la solicitud de compra - ARIBA**, usando cercanía de fechas.
+            **Score ARIBA**
 
-        **Columnas usadas para conectar ME5A con NME80FN**
+            El puntaje de ARIBA se calcula sumando:
 
-        - **Pedido - ME5A** con **Documento compras - NME80FN**.
-        - **Posición de pedido - ME5A** con **Posición - NME80FN**.
-        - **Material - ME5A** con **Material - NME80FN**.
-        - **Centro - ME5A** con **Centro - NME80FN**.
-        - **Cantidad solicitada - ME5A** con **Cantidad - NME80FN**.
-        - **Unidad de medida - ME5A** con **Unidad medida pedido - NME80FN**.
-        - **Moneda - ME5A** con **Moneda - NME80FN**.
+            - **+60 puntos** si coincide **Solicitud de pedido - ME5A** con **ID de solicitud de compra del ERP - ARIBA**.
+            - **+40 puntos** si coincide **Pos.solicitud pedido - ME5A / 10** con **Número de línea de la solicitud de compra - ARIBA**.
+            - **+10 puntos** si coincide **Pedido - ME5A** con **ID de pedido - ARIBA**.
+            - **+20 puntos** si coincide **Texto breve - ME5A** con **Descripción - ARIBA** después de normalizar texto.
+            - **Hasta +10 puntos** por cercanía entre **Fecha de solicitud - ME5A** y **Fecha de la solicitud de compra - ARIBA**. Si las fechas son iguales suma 10; si hay 1 día de diferencia suma 9; si hay 10 o más días de diferencia suma 0.
 
-        **Salida generada**
+            **Columnas usadas para conectar ME5A con NME80FN**
 
-        - Se generó una salida integrada con **{resumen_cambios['total_resultado']:,} registros** y **{resumen_cambios['columnas_resultado']:,} columnas**.
-        - Filas duplicadas detectadas en la salida integrada: **{resumen_cambios['duplicados_resultado']:,}**.
-        """
-    )
+            - **Pedido - ME5A** con **Documento compras - NME80FN**.
+            - **Posición de pedido - ME5A** con **Posición - NME80FN**.
+            - **Material - ME5A** con **Material - NME80FN**.
+            - **Centro - ME5A** con **Centro - NME80FN**.
+            - **Cantidad solicitada - ME5A** con **Cantidad - NME80FN**.
+            - **Unidad de medida - ME5A** con **Unidad medida pedido - NME80FN**.
+            - **Moneda - ME5A** con **Moneda - NME80FN**.
+
+            **Score NME80FN**
+
+            El puntaje de NME80FN se calcula sumando:
+
+            - **+60 puntos** si coincide **Pedido - ME5A** con **Documento compras - NME80FN**.
+            - **+25 puntos** si coincide **Posición de pedido - ME5A** con **Posición - NME80FN**.
+            - **+20 puntos** si coincide **Material - ME5A** con **Material - NME80FN**.
+            - **+10 puntos** si coincide **Centro - ME5A** con **Centro - NME80FN**.
+            - **+10 puntos** si coincide **Cantidad solicitada - ME5A** con **Cantidad - NME80FN**.
+            - **+5 puntos** si coincide **Unidad de medida - ME5A** con **Unidad medida pedido - NME80FN**.
+            - **+5 puntos** si coincide **Moneda - ME5A** con **Moneda - NME80FN**.
+
+            **Score total integrado**
+
+            - El **Puntaje total del match** corresponde a: **Score ARIBA + Score NME80FN**.
+            - El estado del match se define así:
+              - Si score ARIBA > 0 y score NME80FN > 0: **Match en ARIBA y NME80FN**.
+              - Si score ARIBA > 0 y score NME80FN = 0: **Match solo en ARIBA**.
+              - Si score ARIBA = 0 y score NME80FN > 0: **Match solo en NME80FN**.
+              - Si ambos son 0: **Sin match**.
+
+            **Salida generada**
+
+            - Se generó una salida integrada con **{resumen_cambios['total_resultado']:,} registros** y **{resumen_cambios['columnas_resultado']:,} columnas**.
+            - Filas duplicadas detectadas en la salida integrada: **{resumen_cambios['duplicados_resultado']:,}**.
+            """
+        )
 
 
 # =========================================================
