@@ -1,6 +1,7 @@
 # App Streamlit: Limpieza minimalista ME5A con entrada, salida, descarga Parquet y análisis opcional
 
 import io
+import re
 import base64
 from pathlib import Path
 
@@ -305,6 +306,45 @@ def resumen_numerico(df: pd.DataFrame) -> pd.DataFrame:
 # =========================================================
 # Exportación
 # =========================================================
+
+def generar_nombre_salida(uploaded_file, extension: str) -> str:
+    """
+    Genera un nombre de archivo estandarizado a partir del archivo original.
+
+    Ejemplo:
+    archivo original: Reporte ME5A Enero.xlsx
+    salida: me5a_reporte_me5a_enero_limpio.parquet
+    """
+
+    nombre_base = Path(uploaded_file.name).stem
+
+    # Normalización básica
+    nombre_base = nombre_base.strip().lower()
+
+    # Reemplazar espacios por guion bajo
+    nombre_base = re.sub(r"\s+", "_", nombre_base)
+
+    # Reemplazar guiones medios por guion bajo
+    nombre_base = nombre_base.replace("-", "_")
+
+    # Eliminar caracteres especiales
+    nombre_base = re.sub(r"[^a-zA-Z0-9_]", "", nombre_base)
+
+    # Evitar dobles guiones bajos
+    nombre_base = re.sub(r"_+", "_", nombre_base)
+
+    # Quitar guiones bajos al inicio o final
+    nombre_base = nombre_base.strip("_")
+
+    # Evitar duplicar prefijo ME5A si el archivo ya lo trae
+    if nombre_base.startswith("me5a_"):
+        return f"{nombre_base}_limpio.{extension}"
+
+    if nombre_base == "me5a":
+        return f"{nombre_base}_limpio.{extension}"
+
+    return f"me5a_{nombre_base}_limpio.{extension}"
+
 
 def convertir_a_excel(
     df_limpio: pd.DataFrame,
@@ -619,6 +659,21 @@ try:
             resumen_num=resumen_num
         )
 
+        nombre_parquet = generar_nombre_salida(
+            uploaded_file,
+            "parquet"
+        )
+
+        nombre_excel = generar_nombre_salida(
+            uploaded_file,
+            "xlsx"
+        )
+
+        nombre_csv = generar_nombre_salida(
+            uploaded_file,
+            "csv"
+        )
+
     st.success("Archivo procesado correctamente.")
 
 except Exception as e:
@@ -653,7 +708,7 @@ with col_d1:
     st.download_button(
         label="Descargar Parquet",
         data=parquet_bytes,
-        file_name="me5a_limpio.parquet",
+        file_name=nombre_parquet,
         mime="application/octet-stream",
         use_container_width=True
     )
@@ -662,7 +717,7 @@ with col_d2:
     st.download_button(
         label="Descargar Excel",
         data=excel_bytes,
-        file_name="me5a_limpio.xlsx",
+        file_name=nombre_excel,
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True
     )
@@ -671,7 +726,7 @@ with col_d3:
     st.download_button(
         label="Descargar CSV",
         data=csv_bytes,
-        file_name="me5a_limpio.csv",
+        file_name=nombre_csv,
         mime="text/csv",
         use_container_width=True
     )
