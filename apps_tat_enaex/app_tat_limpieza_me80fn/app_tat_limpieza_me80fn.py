@@ -1,4 +1,5 @@
-# App Streamlit: Limpieza minimalista NME80FN con entrada, salida, descarga Parquet y análisis opcional
+# App Streamlit: Limpieza minimalista NME80FN con entrada, salida,
+# descarga Parquet principal, CSV/Excel opcionales y análisis opcional
 
 import io
 import base64
@@ -93,7 +94,7 @@ def validar_columnas_requeridas(df: pd.DataFrame):
 # Lectura de archivo
 # =========================================================
 
-@st.cache_data(show_spinner="Leyendo archivo...")
+@st.cache_data(show_spinner=False)
 def leer_archivo_cache(
     bytes_archivo: bytes,
     nombre_archivo: str,
@@ -142,13 +143,10 @@ def leer_archivo_cache(
 def limpiar_nme80fn(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
-    # Limpieza de nombres de columnas
     df.columns = df.columns.astype(str).str.strip()
 
-    # Eliminación de columnas completamente vacías
     df = df.dropna(axis=1, how="all")
 
-    # Eliminación de columnas Unnamed vacías
     columnas_unnamed = [
         col for col in df.columns
         if str(col).startswith("Unnamed")
@@ -160,7 +158,6 @@ def limpiar_nme80fn(df: pd.DataFrame) -> pd.DataFrame:
 
     validar_columnas_requeridas(df)
 
-    # Conversión de fechas
     columnas_fecha = [
         "Fecha de entrada",
         "Fecha de documento",
@@ -174,13 +171,11 @@ def limpiar_nme80fn(df: pd.DataFrame) -> pd.DataFrame:
                 errors="coerce"
             )
 
-    # Conversión de clase de operación
     df["Clase de operación"] = pd.to_numeric(
         df["Clase de operación"],
         errors="coerce"
     )
 
-    # Conversión de columnas numéricas
     columnas_numericas = [
         "Documento compras",
         "Posición",
@@ -196,7 +191,6 @@ def limpiar_nme80fn(df: pd.DataFrame) -> pd.DataFrame:
                 errors="coerce"
             )
 
-    # Limpieza especial de material
     if "Material" in df.columns:
         df["Material"] = (
             df["Material"]
@@ -205,7 +199,6 @@ def limpiar_nme80fn(df: pd.DataFrame) -> pd.DataFrame:
             .str.replace(r"\.0$", "", regex=True)
         )
 
-    # Limpieza de textos
     cols_texto = df.select_dtypes(include=["object", "string"]).columns
 
     for col in cols_texto:
@@ -228,7 +221,6 @@ def aplicar_logica_fechas_nme80fn(df: pd.DataFrame) -> pd.DataFrame:
     hoy = pd.Timestamp.today().normalize()
     keys = ["Documento compras", "Posición"]
 
-    # Una fila base por Documento compras + Posición
     final_df = (
         df
         .sort_index()
@@ -239,15 +231,12 @@ def aplicar_logica_fechas_nme80fn(df: pd.DataFrame) -> pd.DataFrame:
         .copy()
     )
 
-    # Se trabaja solo con clase de operación 2
     df_clase_2 = df[
         df["Clase de operación"].eq(2)
     ].copy()
 
     if not df_clase_2.empty:
 
-        # Fecha de facturación proveedor:
-        # Fecha de documento más cercana a hoy dentro de clase 2
         df_doc = df_clase_2.dropna(
             subset=["Fecha de documento"]
         ).copy()
@@ -275,8 +264,6 @@ def aplicar_logica_fechas_nme80fn(df: pd.DataFrame) -> pd.DataFrame:
                 columns=keys + ["fecha_facturacion_proveedor"]
             )
 
-        # Fecha de recepción:
-        # Fecha contabiliz. más cercana a hoy dentro de clase 2
         df_cont = df_clase_2.dropna(
             subset=["Fecha contabiliz."]
         ).copy()
@@ -328,12 +315,12 @@ def aplicar_logica_fechas_nme80fn(df: pd.DataFrame) -> pd.DataFrame:
     return final_df
 
 
-@st.cache_data(show_spinner="Limpiando archivo...")
+@st.cache_data(show_spinner=False)
 def limpiar_cache(df: pd.DataFrame) -> pd.DataFrame:
     return limpiar_nme80fn(df)
 
 
-@st.cache_data(show_spinner="Aplicando lógica de fechas...")
+@st.cache_data(show_spinner=False)
 def aplicar_logica_cache(df: pd.DataFrame) -> pd.DataFrame:
     return aplicar_logica_fechas_nme80fn(df)
 
@@ -404,12 +391,135 @@ def columnas_fecha_detectadas(df: pd.DataFrame) -> list:
     ]
 
 
-@st.cache_data(show_spinner="Generando diagnóstico...")
+@st.cache_data(show_spinner=False)
 def diagnostico_cache(df: pd.DataFrame):
     diag_general = diagnostico_general_liviano(df)
     diag_columnas = tabla_diagnostico_columnas_liviana(df)
 
     return diag_general, diag_columnas
+
+
+# =========================================================
+# Mensaje de cambios realizados
+# =========================================================
+
+def generar_resumen_cambios(
+    df_original: pd.DataFrame,
+    df_limpio: pd.DataFrame,
+    df_final: pd.DataFrame
+) -> dict:
+
+    columnas_originales = set(df_original.columns.astype(str))
+    columnas_limpias = set(df_limpio.columns.astype(str))
+    columnas_finales = set(df_final.columns.astype(str))
+
+    columnas_eliminadas = sorted(list(columnas_originales - columnas_limpias))
+    columnas_agregadas = sorted(list(columnas_finales - columnas_limpias))
+
+    columnas_fecha = columnas_fecha_detectadas(df_limpio)
+
+    columnas_numericas_detectadas = [
+        col for col in [
+            "Documento compras",
+            "Posición",
+            "Cantidad",
+            "Impte.mon.local",
+            "Importe",
+            "Clase de operación"
+        ]
+        if col in df_limpio.columns
+    ]
+
+    filas_agrupadas = int(len(df_limpio) - len(df_final))
+
+    registros_clase_2 = (
+        int(df_limpio["Clase de operación"].eq(2).sum())
+        if "Clase de operación" in df_limpio.columns
+        else 0
+    )
+
+    fechas_facturacion_generadas = (
+        int(df_final["fecha_facturacion_proveedor"].notna().sum())
+        if "fecha_facturacion_proveedor" in df_final.columns
+        else 0
+    )
+
+    fechas_recepcion_generadas = (
+        int(df_final["fecha_entrada_mercancia_recepcion"].notna().sum())
+        if "fecha_entrada_mercancia_recepcion" in df_final.columns
+        else 0
+    )
+
+    duplicados_final = int(df_final.duplicated().sum())
+
+    return {
+        "filas_originales": int(len(df_original)),
+        "columnas_originales": int(len(df_original.columns)),
+        "filas_limpias": int(len(df_limpio)),
+        "columnas_limpias": int(len(df_limpio.columns)),
+        "filas_finales": int(len(df_final)),
+        "columnas_finales": int(len(df_final.columns)),
+        "filas_agrupadas": filas_agrupadas,
+        "registros_clase_2": registros_clase_2,
+        "fechas_facturacion_generadas": fechas_facturacion_generadas,
+        "fechas_recepcion_generadas": fechas_recepcion_generadas,
+        "duplicados_final": duplicados_final,
+        "columnas_eliminadas": columnas_eliminadas,
+        "columnas_agregadas": columnas_agregadas,
+        "columnas_fecha": columnas_fecha,
+        "columnas_numericas": columnas_numericas_detectadas
+    }
+
+
+def mostrar_resumen_cambios(resumen: dict):
+    columnas_eliminadas = resumen["columnas_eliminadas"]
+    columnas_agregadas = resumen["columnas_agregadas"]
+    columnas_fecha = resumen["columnas_fecha"]
+    columnas_numericas = resumen["columnas_numericas"]
+
+    texto_columnas_eliminadas = (
+        ", ".join(columnas_eliminadas)
+        if columnas_eliminadas
+        else "No se eliminaron columnas por nombre; solo se quitaron columnas completamente vacías si existían."
+    )
+
+    texto_columnas_agregadas = (
+        ", ".join(columnas_agregadas)
+        if columnas_agregadas
+        else "No se agregaron columnas nuevas."
+    )
+
+    texto_fechas = (
+        ", ".join(columnas_fecha)
+        if columnas_fecha
+        else "No se detectaron columnas de fecha convertidas."
+    )
+
+    texto_numericas = (
+        ", ".join(columnas_numericas)
+        if columnas_numericas
+        else "No se detectaron columnas numéricas configuradas."
+    )
+
+    st.info(
+        f"""
+        **Cambios realizados al archivo cargado**
+
+        - Se leyeron **{resumen['filas_originales']:,} filas** y **{resumen['columnas_originales']:,} columnas**.
+        - Después de limpiar nombres de columnas, textos, fechas, números y columnas vacías, quedaron **{resumen['filas_limpias']:,} filas** y **{resumen['columnas_limpias']:,} columnas**.
+        - Se validaron las columnas clave: **Documento compras**, **Posición**, **Fecha de documento**, **Fecha contabiliz.** y **Clase de operación**.
+        - Se agruparon registros por **Documento compras + Posición**, reduciendo **{resumen['filas_agrupadas']:,} filas**.
+        - La salida final quedó con **{resumen['filas_finales']:,} filas** y **{resumen['columnas_finales']:,} columnas**.
+        - Se usaron **{resumen['registros_clase_2']:,} registros** con **Clase de operación = 2** para calcular fechas finales.
+        - Fechas de facturación proveedor generadas: **{resumen['fechas_facturacion_generadas']:,}**.
+        - Fechas de entrada mercancía/recepción generadas: **{resumen['fechas_recepcion_generadas']:,}**.
+        - Se convirtieron fechas detectadas: **{texto_fechas}**.
+        - Se convirtieron columnas numéricas configuradas: **{texto_numericas}**.
+        - Filas duplicadas detectadas en la salida final: **{resumen['duplicados_final']:,}**.
+        - Columnas eliminadas: **{texto_columnas_eliminadas}**
+        - Columnas agregadas: **{texto_columnas_agregadas}**
+        """
+    )
 
 
 # =========================================================
@@ -452,17 +562,17 @@ def convertir_a_excel_seguro(df: pd.DataFrame) -> bytes:
     return output.getvalue()
 
 
-@st.cache_data(show_spinner="Preparando CSV...")
+@st.cache_data(show_spinner=False)
 def convertir_a_csv_cache(df: pd.DataFrame) -> bytes:
     return convertir_a_csv(df)
 
 
-@st.cache_data(show_spinner="Preparando Parquet...")
+@st.cache_data(show_spinner=False)
 def convertir_a_parquet_cache(df: pd.DataFrame) -> bytes:
     return convertir_a_parquet(df)
 
 
-@st.cache_data(show_spinner="Preparando Excel...")
+@st.cache_data(show_spinner=False)
 def convertir_a_excel_cache(df: pd.DataFrame) -> bytes:
     return convertir_a_excel_seguro(df)
 
@@ -768,20 +878,21 @@ try:
 
         diag_general, diag_columnas = diagnostico_cache(df_final)
 
+        # Solo se genera Parquet por defecto.
         parquet_bytes = convertir_a_parquet_cache(df_final)
-        csv_bytes = convertir_a_csv_cache(df_final)
-
-        limite_excel = 250_000
-        excel_disponible = len(df_final) <= limite_excel
-
-        if excel_disponible:
-            excel_bytes = convertir_a_excel_cache(df_final)
-        else:
-            excel_bytes = None
 
         nombre_parquet = generar_nombre_salida("parquet")
         nombre_csv = generar_nombre_salida("csv")
         nombre_excel = generar_nombre_salida("xlsx")
+
+        limite_excel = 250_000
+        excel_disponible = len(df_final) <= limite_excel
+
+        resumen_cambios = generar_resumen_cambios(
+            df_original=df_original,
+            df_limpio=df_limpio,
+            df_final=df_final
+        )
 
     st.success("Archivo procesado correctamente.")
 
@@ -789,6 +900,13 @@ except Exception as e:
     st.error("No fue posible procesar el archivo.")
     st.exception(e)
     st.stop()
+
+
+# =========================================================
+# Mensaje de cambios realizados
+# =========================================================
+
+mostrar_resumen_cambios(resumen_cambios)
 
 
 # =========================================================
@@ -808,51 +926,75 @@ st.divider()
 
 
 # =========================================================
-# Descarga rápida siempre visible
+# Descarga principal y descargas opcionales
 # =========================================================
 
-st.markdown("### Descarga rápida")
+st.markdown("### Descarga")
 
-col_d1, col_d2, col_d3 = st.columns(3)
-
-with col_d1:
-    st.download_button(
-        label="Descargar Parquet",
-        data=parquet_bytes,
-        file_name=nombre_parquet,
-        mime="application/octet-stream",
-        use_container_width=True
-    )
-
-with col_d2:
-    st.download_button(
-        label="Descargar CSV",
-        data=csv_bytes,
-        file_name=nombre_csv,
-        mime="text/csv",
-        use_container_width=True
-    )
-
-with col_d3:
-    if excel_disponible:
-        st.download_button(
-            label="Descargar Excel",
-            data=excel_bytes,
-            file_name=nombre_excel,
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True
-        )
-    else:
-        st.button(
-            "Excel no disponible",
-            disabled=True,
-            use_container_width=True
-        )
+st.download_button(
+    label="Descargar Parquet",
+    data=parquet_bytes,
+    file_name=nombre_parquet,
+    mime="application/octet-stream",
+    use_container_width=True
+)
 
 st.caption(
-    "Parquet se deja como formato principal recomendado para conservar tipos de datos y trabajar con Python. "
+    "Parquet es el formato principal recomendado para conservar tipos de datos "
+    "y trabajar con Python. CSV y Excel se preparan solo si los solicitas. "
     "Excel se limita a 250.000 filas para evitar problemas de rendimiento."
 )
+
+with st.expander("Opcional: descargar como CSV o Excel"):
+    col_d1, col_d2 = st.columns(2)
+
+    with col_d1:
+        preparar_csv = st.button(
+            "Preparar CSV",
+            use_container_width=True
+        )
+
+        if preparar_csv:
+            with st.spinner("Preparando CSV..."):
+                csv_bytes = convertir_a_csv_cache(df_final)
+
+            st.download_button(
+                label="Descargar CSV",
+                data=csv_bytes,
+                file_name=nombre_csv,
+                mime="text/csv",
+                use_container_width=True
+            )
+
+    with col_d2:
+        if excel_disponible:
+            preparar_excel = st.button(
+                "Preparar Excel",
+                use_container_width=True
+            )
+
+            if preparar_excel:
+                with st.spinner("Preparando Excel..."):
+                    excel_bytes = convertir_a_excel_cache(df_final)
+
+                st.download_button(
+                    label="Descargar Excel",
+                    data=excel_bytes,
+                    file_name=nombre_excel,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+        else:
+            st.button(
+                "Excel no disponible",
+                disabled=True,
+                use_container_width=True
+            )
+
+            st.warning(
+                f"Excel no está disponible porque la salida tiene más de {limite_excel:,} filas. "
+                "Usa Parquet o CSV."
+            )
 
 st.divider()
 
@@ -928,7 +1070,8 @@ elif modulo == "Salida":
     st.subheader("Salida")
 
     st.info(
-        "Los archivos de descarga están disponibles en la sección superior. "
+        "El archivo Parquet está disponible en la sección superior. "
+        "CSV y Excel se preparan únicamente desde la sección opcional. "
         "La salida principal corresponde a una fila por Documento compras y Posición, "
         "con fechas finales de facturación proveedor y recepción."
     )
