@@ -126,13 +126,10 @@ def leer_archivo_cache(
 def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
-    # Limpieza de nombres de columnas
     df.columns = df.columns.astype(str).str.strip()
 
-    # Eliminación de columnas completamente vacías
     df = df.dropna(axis=1, how="all")
 
-    # Eliminación de columnas Unnamed completamente vacías
     columnas_unnamed = [
         col for col in df.columns
         if str(col).startswith("Unnamed")
@@ -142,7 +139,6 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
         if df[col].isna().all():
             df = df.drop(columns=[col])
 
-    # Limpieza de textos
     cols_texto = df.select_dtypes(include=["object", "string"]).columns
 
     for col in cols_texto:
@@ -154,7 +150,6 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
 
         df[col] = df[col].replace("", pd.NA)
 
-    # Conversión de fechas estándar
     cols_fecha = [
         "Fecha de solicitud",
         "Fecha modificación",
@@ -171,7 +166,6 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
                 dayfirst=True
             )
 
-    # Fecha de entrega suele venir como YYYYMMDD
     if "Fecha de entrega" in df.columns:
         df["Fecha de entrega"] = pd.to_datetime(
             df["Fecha de entrega"].astype("string"),
@@ -179,7 +173,6 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
             errors="coerce"
         )
 
-    # Conversión de columnas numéricas
     cols_numericas = [
         "Cantidad solicitada",
         "Precio de valoración"
@@ -192,14 +185,12 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
                 errors="coerce"
             )
 
-    # Conversión de Pedido
     if "Pedido" in df.columns:
         df["Pedido"] = pd.to_numeric(
             df["Pedido"],
             errors="coerce"
         ).astype("Int64")
 
-    # Conversión de columnas enteras
     cols_enteras = [
         "Solicitud de pedido",
         "Pos.solicitud pedido",
@@ -368,7 +359,6 @@ def generar_resumen_cambios(
         if col in df_limpio.columns
     ]
 
-    total_nulos = int(df_limpio.isna().sum().sum())
     duplicados = int(df_limpio.duplicated().sum())
 
     return {
@@ -380,7 +370,6 @@ def generar_resumen_cambios(
         "columnas_agregadas": columnas_agregadas,
         "columnas_fecha": columnas_convertidas_fecha,
         "columnas_numericas": columnas_numericas_detectadas,
-        "total_nulos": total_nulos,
         "duplicados": duplicados
     }
 
@@ -425,7 +414,6 @@ def mostrar_resumen_cambios(resumen: dict):
         - Se limpiaron espacios en textos y valores vacíos.
         - Se convirtieron fechas detectadas: **{texto_fechas}**.
         - Se convirtieron columnas numéricas configuradas: **{texto_numericas}**.
-        - Celdas nulas después de la limpieza: **{resumen['total_nulos']:,}**.
         - Filas duplicadas detectadas: **{resumen['duplicados']:,}**.
         - Columnas eliminadas: **{texto_columnas_eliminadas}**
         - Columnas agregadas: **{texto_columnas_agregadas}**
@@ -438,14 +426,6 @@ def mostrar_resumen_cambios(resumen: dict):
 # =========================================================
 
 def generar_nombre_salida(nombre_archivo: str, extension: str) -> str:
-    """
-    Genera un nombre de archivo estandarizado a partir del archivo original.
-
-    Ejemplo:
-    archivo original: Reporte ME5A Enero.xlsx
-    salida: me5a_reporte_me5a_enero_limpio.parquet
-    """
-
     nombre_base = Path(nombre_archivo).stem
 
     nombre_base = nombre_base.strip().lower()
@@ -808,7 +788,6 @@ try:
             df_limpio
         )
 
-        # Solo se genera Parquet por defecto.
         parquet_bytes = convertir_a_parquet_cache(df_limpio)
 
         nombre_parquet = generar_nombre_salida(
