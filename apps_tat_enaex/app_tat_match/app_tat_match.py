@@ -826,7 +826,7 @@ def generar_resumen(resultado_final: pd.DataFrame) -> pd.DataFrame:
 
 
 # =========================================================
-# Mensaje de cambios realizados
+# Mensaje de cambios y lógica del match
 # =========================================================
 
 def generar_resumen_cambios_match(
@@ -899,21 +899,44 @@ def generar_resumen_cambios_match(
 def mostrar_resumen_cambios_match(resumen_cambios: dict):
     st.info(
         f"""
-        **Cambios realizados al archivo cargado**
+        **Cambios realizados y lógica del match**
 
-        - Se cargaron **{resumen_cambios['total_me5a']:,} filas** de ME5A.
-        - Se cargaron **{resumen_cambios['total_ariba']:,} filas** de ARIBA.
-        - Se cargaron **{resumen_cambios['total_nme']:,} filas** de NME80FN.
-        - Se normalizaron claves de comparación como pedido, posición, material, centro, cantidad, unidad y moneda.
-        - Se calculó el match entre **ME5A vs ARIBA**.
-        - Se calculó el match entre **ME5A vs NME80FN**.
-        - Se generó una salida integrada con **{resumen_cambios['total_resultado']:,} filas** y **{resumen_cambios['columnas_resultado']:,} columnas**.
-        - Match en ARIBA y NME80FN: **{resumen_cambios['match_ambos']:,}**.
-        - Match solo en ARIBA: **{resumen_cambios['match_solo_ariba']:,}**.
-        - Match solo en NME80FN: **{resumen_cambios['match_solo_nme']:,}**.
-        - Sin match: **{resumen_cambios['sin_match']:,}**.
-        - Filas con match ARIBA: **{resumen_cambios['match_ariba']:,}**.
-        - Filas con match NME80FN: **{resumen_cambios['match_nme']:,}**.
+        **Archivos cargados**
+
+        - Se cargaron **{resumen_cambios['total_me5a']:,} registros** de ME5A.
+        - Se cargaron **{resumen_cambios['total_ariba']:,} registros** de ARIBA.
+        - Se cargaron **{resumen_cambios['total_nme']:,} registros** de NME80FN.
+
+        **Resultado del match**
+
+        - **{resumen_cambios['match_ariba']:,} registros de {resumen_cambios['total_me5a']:,}** se encontraron en **ARIBA**.
+        - **{resumen_cambios['match_nme']:,} registros de {resumen_cambios['total_me5a']:,}** se encontraron en **NME80FN**.
+        - **{resumen_cambios['match_ambos']:,} registros de {resumen_cambios['total_me5a']:,}** se encontraron en **ARIBA y NME80FN**.
+        - **{resumen_cambios['match_solo_ariba']:,} registros de {resumen_cambios['total_me5a']:,}** se encontraron **solo en ARIBA**.
+        - **{resumen_cambios['match_solo_nme']:,} registros de {resumen_cambios['total_me5a']:,}** se encontraron **solo en NME80FN**.
+        - **{resumen_cambios['sin_match']:,} registros de {resumen_cambios['total_me5a']:,}** no tuvieron match.
+
+        **Columnas usadas para conectar ME5A con ARIBA**
+
+        - **Solicitud de pedido - ME5A** con **ID de solicitud de compra del ERP - ARIBA**.
+        - **Pos.solicitud pedido - ME5A / 10** con **Número de línea de la solicitud de compra - ARIBA**.
+        - **Pedido - ME5A** con **ID de pedido - ARIBA**.
+        - **Texto breve - ME5A** con **Descripción - ARIBA**, usando texto normalizado.
+        - **Fecha de solicitud - ME5A** con **Fecha de la solicitud de compra - ARIBA**, usando cercanía de fechas.
+
+        **Columnas usadas para conectar ME5A con NME80FN**
+
+        - **Pedido - ME5A** con **Documento compras - NME80FN**.
+        - **Posición de pedido - ME5A** con **Posición - NME80FN**.
+        - **Material - ME5A** con **Material - NME80FN**.
+        - **Centro - ME5A** con **Centro - NME80FN**.
+        - **Cantidad solicitada - ME5A** con **Cantidad - NME80FN**.
+        - **Unidad de medida - ME5A** con **Unidad medida pedido - NME80FN**.
+        - **Moneda - ME5A** con **Moneda - NME80FN**.
+
+        **Salida generada**
+
+        - Se generó una salida integrada con **{resumen_cambios['total_resultado']:,} registros** y **{resumen_cambios['columnas_resultado']:,} columnas**.
         - Filas duplicadas detectadas en la salida integrada: **{resumen_cambios['duplicados_resultado']:,}**.
         """
     )
@@ -1111,7 +1134,6 @@ try:
         resumen = generar_resumen(resultado_final)
         resultado_exportacion = preparar_resultado_exportacion(resultado_final)
 
-        # Solo se genera Parquet por defecto.
         parquet_bytes = convertir_a_parquet_cache(resultado_exportacion)
 
         resumen_cambios = generar_resumen_cambios_match(
@@ -1127,12 +1149,17 @@ try:
 
     st.subheader("Indicadores")
 
+    total_me5a = len(df_me5a)
+    total_resultado = len(resultado_final)
+    total_ariba_match = int(resultado_final["match_ariba_encontrado"].sum())
+    total_nme_match = int(resultado_final["match_nme80fn_encontrado"].sum())
+
     m1, m2, m3, m4 = st.columns(4)
 
-    m1.metric("ME5A", f"{len(df_me5a):,}")
-    m2.metric("Resultado", f"{len(resultado_final):,}")
-    m3.metric("Match ARIBA", f"{resultado_final['match_ariba_encontrado'].sum():,}")
-    m4.metric("Match NME80FN", f"{resultado_final['match_nme80fn_encontrado'].sum():,}")
+    m1.metric("Registros ME5A", f"{total_me5a:,}")
+    m2.metric("Resultado integrado", f"{total_resultado:,}")
+    m3.metric("Encontrados en ARIBA", f"{total_ariba_match:,} de {total_me5a:,}")
+    m4.metric("Encontrados en NME80FN", f"{total_nme_match:,} de {total_me5a:,}")
 
     st.subheader("Resumen")
 
@@ -1142,9 +1169,14 @@ try:
         hide_index=True
     )
 
-    st.subheader("Resultado")
+    st.subheader("Vista previa del match final")
 
     columnas_resultado = columnas_vista_resultado(resultado_exportacion)
+
+    st.caption(
+        f"Mostrando hasta {int(limite_vista):,} registros de "
+        f"{len(resultado_exportacion):,} registros generados en el match final."
+    )
 
     st.dataframe(
         resultado_exportacion[columnas_resultado].head(int(limite_vista)),
