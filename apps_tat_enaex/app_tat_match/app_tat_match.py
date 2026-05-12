@@ -657,50 +657,6 @@ def preparar_resultado_exportacion(df: pd.DataFrame) -> pd.DataFrame:
     return df_export
 
 
-def columnas_vista_resultado(df: pd.DataFrame) -> list:
-    columnas_preferidas = [
-        "Estado del match",
-        "Puntaje total del match",
-        "Puntaje del match - ARIBA",
-        "Puntaje del match - NME80FN",
-
-        "Solicitud de pedido - ME5A",
-        "Posición solicitud de pedido - ME5A",
-        "Pedido - ME5A",
-        "Posición de pedido - ME5A",
-        "Material - ME5A",
-        "Texto breve - ME5A",
-        "Cantidad solicitada - ME5A",
-        "Unidad de medida - ME5A",
-        "Moneda - ME5A",
-        "Centro - ME5A",
-        "Fecha de solicitud - ME5A",
-        "Fecha de pedido - ME5A",
-        "Fecha de entrega - ME5A",
-
-        "Solicitud de compra ERP - ARIBA",
-        "Línea solicitud de compra - ARIBA",
-        "Descripción - ARIBA",
-        "ID pedido - ARIBA",
-        "Fecha solicitud de compra - ARIBA",
-        "Fecha de aprobación - ARIBA",
-        "Categoría tipo de compra - ARIBA",
-        "Unidad de negocio - ARIBA",
-
-        "Documento de compras - NME80FN",
-        "Posición - NME80FN",
-        "Material - NME80FN",
-        "Texto breve - NME80FN",
-        "Cantidad - NME80FN",
-        "Unidad medida pedido - NME80FN",
-        "Importe - NME80FN",
-        "Fecha facturación proveedor - NME80FN",
-        "Fecha recepción mercancía - NME80FN",
-    ]
-
-    return [col for col in columnas_preferidas if col in df.columns]
-
-
 # =========================================================
 # Resumen
 # =========================================================
@@ -819,8 +775,6 @@ def mostrar_resumen_cambios_match(resumen_cambios: dict):
 
             **Score ARIBA**
 
-            El puntaje de ARIBA se calcula sumando:
-
             - **+60 puntos** si coincide **Solicitud de pedido - ME5A** con **ID de solicitud de compra del ERP - ARIBA**.
             - **+40 puntos** si coincide **Pos.solicitud pedido - ME5A / 10** con **Número de línea de la solicitud de compra - ARIBA**.
             - **+10 puntos** si coincide **Pedido - ME5A** con **ID de pedido - ARIBA**.
@@ -834,8 +788,6 @@ def mostrar_resumen_cambios_match(resumen_cambios: dict):
 
             **Score NME80FN**
 
-            El puntaje de NME80FN se calcula sumando:
-
             - **+60 puntos** si coincide **Pedido - ME5A** con **Documento compras - NME80FN**.
             - **+25 puntos** si coincide **Posición de pedido - ME5A** con **Posición - NME80FN**.
             - **+20 puntos** si coincide **Material - ME5A** con **Material - NME80FN**.
@@ -844,11 +796,7 @@ def mostrar_resumen_cambios_match(resumen_cambios: dict):
             **Score total integrado**
 
             - El **Puntaje total del match** corresponde a: **Score ARIBA + Score NME80FN**.
-            - El estado del match se define así:
-              - Si score ARIBA > 0 y score NME80FN > 0: **Match en ARIBA y NME80FN**.
-              - Si score ARIBA > 0 y score NME80FN = 0: **Match solo en ARIBA**.
-              - Si score ARIBA = 0 y score NME80FN > 0: **Match solo en NME80FN**.
-              - Si ambos son 0: **Sin match**.
+            - Si ambos scores son 0, el registro queda como **Sin match**.
 
             **Salida generada**
 
@@ -1087,15 +1035,14 @@ try:
 
     st.subheader("Vista previa del match final")
 
-    columnas_resultado = columnas_vista_resultado(resultado_exportacion)
-
     st.caption(
         f"Mostrando hasta {int(limite_vista):,} registros de "
-        f"{len(resultado_exportacion):,} registros generados en el match final."
+        f"{len(resultado_exportacion):,} registros generados en el match final. "
+        f"Columnas visibles: {len(resultado_exportacion.columns):,}."
     )
 
     st.dataframe(
-        resultado_exportacion[columnas_resultado].head(int(limite_vista)),
+        resultado_exportacion.head(int(limite_vista)),
         use_container_width=True,
         hide_index=True
     )
