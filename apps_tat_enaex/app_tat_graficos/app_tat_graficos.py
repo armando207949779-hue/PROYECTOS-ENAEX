@@ -204,95 +204,224 @@ def performance_proveedor_dax(dx_proveedor, tipo_oc):
     return "No cumple"
 
 
+def convertir_fecha_robusta(serie: pd.Series) -> pd.Series:
+    """
+    Convierte fechas que pueden venir como:
+    - datetime
+    - texto de fecha
+    - timestamp Unix en milisegundos, segundos o nanosegundos
+    """
+    if pd.api.types.is_datetime64_any_dtype(serie):
+        return pd.to_datetime(serie, errors="coerce")
+
+    serie_no_nula = serie.dropna()
+
+    if serie_no_nula.empty:
+        return pd.to_datetime(serie, errors="coerce")
+
+    serie_num = pd.to_numeric(serie_no_nula, errors="coerce")
+
+    if serie_num.notna().mean() >= 0.9:
+        mediana = serie_num.dropna().abs().median()
+
+        if mediana > 1e17:
+            unidad = "ns"
+        elif mediana > 1e14:
+            unidad = "us"
+        elif mediana > 1e11:
+            unidad = "ms"
+        else:
+            unidad = "s"
+
+        return pd.to_datetime(
+            pd.to_numeric(serie, errors="coerce"),
+            unit=unidad,
+            errors="coerce"
+        )
+
+    return pd.to_datetime(serie, errors="coerce")
+
+
 def preparar_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df.columns = df.columns.astype(str).str.strip()
 
-    columnas_requeridas = [
-        "fecha_recepcion_final",
-        "performance_tat"
-    ]
+    # =========================
+    # Mapeo columnas antiguas / nuevas
+    # =========================
 
-    faltantes = [
-        col for col in columnas_requeridas
-        if col not in df.columns
-    ]
+    columnas_alias = {
+        "performance_tat": [
+            "performance_tat",
+            "performance_tat_total"
+        ],
+        "dx_lib_solped": [
+            "dx_lib_solped",
+            "dias_liberacion_solped"
+        ],
+        "dx_comprador_1": [
+            "dx_comprador_1",
+            "dias_comprador"
+        ],
+        "dx_proveedor": [
+            "dx_proveedor",
+            "dias_proveedor"
+        ],
+        "dx_logistica": [
+            "dx_logistica",
+            "dias_logistica"
+        ],
+        "performance_lib_solped": [
+            "performance_lib_solped",
+            "performance_liberacion_solped"
+        ],
+        "performance_comprador_1": [
+            "performance_comprador_1",
+            "performance_comprador"
+        ],
+        "performance_proveedor": [
+            "performance_proveedor"
+        ],
+        "performance_logistica": [
+            "performance_logistica"
+        ]
+    }
+
+    def obtener_columna(nombre_estandar: str):
+        for col in columnas_alias.get(nombre_estandar, [nombre_estandar]):
+            if col in df.columns:
+                return col
+        return None
+
+    col_fecha = "fecha_recepcion_final"
+    col_performance_tat = obtener_columna("performance_tat")
+
+    faltantes = []
+
+    if col_fecha not in df.columns:
+        faltantes.append(col_fecha)
+
+    if col_performance_tat is None:
+        faltantes.append("performance_tat o performance_tat_total")
 
     if faltantes:
         raise ValueError(f"Faltan columnas requeridas: {faltantes}")
 
-    df["fecha_recepcion_final"] = pd.to_datetime(
-        df["fecha_recepcion_final"],
-        errors="coerce"
-    )
+    # =========================
+    # Fecha base
+    # =========================
+
+    df[col_fecha] = convertir_fecha_robusta(df[col_fecha])
 
     # =========================
     # Performance TAT general
     # =========================
 
-    df["performance_tat_estado"] = df["performance_tat"].apply(
+    df["performance_tat_estado"] = df[col_performance_tat].apply(
         normalizar_performance
     )
 
     # =========================
     # Performance por etapa para donuts
+    # Prioridad: columnas performance ya calculadas.
+    # Fallback: columnas de días.
     # =========================
 
-    if "dx_lib_solped" in df.columns:
-        df["performance_lib_solped_estado"] = df["dx_lib_solped"].apply(
+    col_dias_lib_solped = obtener_columna("dx_lib_solped")
+    col_perf_lib_solped = obtener_columna("performance_lib_solped")
+
+    if col_perf_lib_solped is not None:
+        df["performance_lib_solped_estado"] = df[col_perf_lib_solped].apply(
+            normalizar_performance
+        )
+    elif col_dias_lib_solped is not None:
+        df["performance_lib_solped_estado"] = df[col_dias_lib_solped].apply(
             performance_dx_lib_solped
         )
-    elif "performance_lib_solped" in df.columns:
-        df["performance_lib_solped_estado"] = df["performance_lib_solped"].apply(
+
+    col_dias_comprador = obtener_columna("dx_comprador_1")
+    col_perf_comprador = obtener_columna("performance_comprador_1")
+
+    if col_perf_comprador is not None:
+        df["performance_comprador_1_estado"] = df[col_perf_comprador].apply(
             normalizar_performance
         )
-
-    if "dx_comprador_1" in df.columns:
-        df["performance_comprador_1_estado"] = df["dx_comprador_1"].apply(
+    elif col_dias_comprador is not None:
+        df["performance_comprador_1_estado"] = df[col_dias_comprador].apply(
             performance_dx_comprador
         )
-    elif "performance_comprador_1" in df.columns:
-        df["performance_comprador_1_estado"] = df["performance_comprador_1"].apply(
+
+    col_dias_proveedor = obtener_columna("dx_proveedor")
+    col_perf_proveedor = obtener_columna("performance_proveedor")
+
+    if col_perf_proveedor is not None:
+        df["performance_proveedor_estado"] = df[col_perf_proveedor].apply(
             normalizar_performance
         )
-
-    if "dx_proveedor" in df.columns and "tipo_oc" in df.columns:
+    elif col_dias_proveedor is not None and "tipo_oc" in df.columns:
         df["performance_proveedor_estado"] = df.apply(
             lambda row: performance_proveedor_dax(
-                row["dx_proveedor"],
+                row[col_dias_proveedor],
                 row["tipo_oc"]
             ),
             axis=1
         )
-    elif "performance_proveedor" in df.columns:
-        df["performance_proveedor_estado"] = df["performance_proveedor"].apply(
+
+    col_dias_logistica = obtener_columna("dx_logistica")
+    col_perf_logistica = obtener_columna("performance_logistica")
+
+    if col_perf_logistica is not None:
+        df["performance_logistica_estado"] = df[col_perf_logistica].apply(
             normalizar_performance
         )
-
-    if "dx_logistica" in df.columns:
-        df["performance_logistica_estado"] = df["dx_logistica"].apply(
+    elif col_dias_logistica is not None:
+        df["performance_logistica_estado"] = df[col_dias_logistica].apply(
             performance_dx_logistica
         )
-    elif "performance_logistica" in df.columns:
-        df["performance_logistica_estado"] = df["performance_logistica"].apply(
-            normalizar_performance
-        )
+
+    # =========================
+    # Columnas estándar para que el resto del dashboard siga funcionando
+    # =========================
+
+    if col_dias_lib_solped is not None:
+        df["dx_lib_solped"] = df[col_dias_lib_solped]
+
+    if col_dias_comprador is not None:
+        df["dx_comprador_1"] = df[col_dias_comprador]
+
+    if col_dias_proveedor is not None:
+        df["dx_proveedor"] = df[col_dias_proveedor]
+
+    if col_dias_logistica is not None:
+        df["dx_logistica"] = df[col_dias_logistica]
+
+    # Si alguna etapa no existe, se crea como Sin información para evitar errores visuales.
+    columnas_estado_etapas = [
+        "performance_lib_solped_estado",
+        "performance_comprador_1_estado",
+        "performance_proveedor_estado",
+        "performance_logistica_estado"
+    ]
+
+    for col in columnas_estado_etapas:
+        if col not in df.columns:
+            df[col] = "Sin información"
 
     # =========================
     # Variables de fecha
     # =========================
 
-    df["anio"] = df["fecha_recepcion_final"].dt.year
-    df["mes_num"] = df["fecha_recepcion_final"].dt.month
+    df["anio"] = df[col_fecha].dt.year
+    df["mes_num"] = df[col_fecha].dt.month
 
     df["periodo_fecha"] = (
-        df["fecha_recepcion_final"]
+        df[col_fecha]
         .dt.to_period("M")
         .dt.to_timestamp()
     )
 
     df["periodo_mes"] = (
-        df["fecha_recepcion_final"]
+        df[col_fecha]
         .dt.to_period("M")
         .astype("string")
     )
@@ -323,7 +452,6 @@ def preparar_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     return df
-
 
 def opciones_columna(df: pd.DataFrame, columna: str):
     """
@@ -1349,7 +1477,7 @@ st.markdown(
     <p style='text-align: center; font-size: 18px;'>
         Sube el archivo <b>match_integrado_me5a_ariba_nme80fn_performance.parquet</b>.
         El gráfico usa <b>fecha_recepcion_final</b> como eje temporal mensual y
-        <b>performance_tat</b> como estado de cumplimiento.
+        <b>performance_tat_total</b> como estado de cumplimiento.
     </p>
     """,
     unsafe_allow_html=True
@@ -1624,7 +1752,7 @@ if uploaded_file is not None:
 
                 1. Se usa la columna `fecha_recepcion_final` como fecha base.
                 2. Cada registro se asigna a un mes y año.
-                3. La columna `performance_tat` se normaliza en tres estados:
+                3. La columna `performance_tat_total` se normaliza en tres estados:
                    - `Cumple`
                    - `No cumple`
                    - `Sin información`
@@ -1679,20 +1807,20 @@ if uploaded_file is not None:
                 **Lógica aplicada:**
 
                 1. Lib Solped:
-                   - Si `dx_lib_solped < 2`: `Cumple`.
+                   - Si `dias_liberacion_solped < 2`: `Cumple`.
                    - En caso contrario: `No cumple`.
 
                 2. Comprador:
-                   - Si `dx_comprador_1 < 11`: `Cumple`.
+                   - Si `dias_comprador < 11`: `Cumple`.
                    - En caso contrario: `No cumple`.
 
                 3. Proveedor:
-                   - Si `tipo_oc` es 35 o 45 y `dx_proveedor < 20`: `Cumple`.
-                   - Si `tipo_oc` es 47 y `dx_proveedor < 60`: `Cumple`.
+                   - Si `tipo_oc` es 35 o 45 y `dias_proveedor < 20`: `Cumple`.
+                   - Si `tipo_oc` es 47 y `dias_proveedor < 60`: `Cumple`.
                    - En caso contrario: `No cumple`.
 
                 4. Logística:
-                   - Si `dx_logistica < 10`: `Cumple`.
+                   - Si `dias_logistica < 10`: `Cumple`.
                    - En caso contrario: `No cumple`.
 
                 **Interpretación:**
