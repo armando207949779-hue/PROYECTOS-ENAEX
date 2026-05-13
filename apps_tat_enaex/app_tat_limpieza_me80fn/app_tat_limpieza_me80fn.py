@@ -926,80 +926,6 @@ st.divider()
 
 
 # =========================================================
-# Descarga principal y descargas opcionales
-# =========================================================
-
-st.markdown("### Descarga")
-
-st.download_button(
-    label="Descargar Parquet",
-    data=parquet_bytes,
-    file_name=nombre_parquet,
-    mime="application/octet-stream",
-    use_container_width=True
-)
-
-st.caption(
-    "Parquet es el formato principal recomendado para conservar tipos de datos "
-    "y trabajar con Python. CSV y Excel se preparan solo si los solicitas. "
-    "Excel se limita a 250.000 filas para evitar problemas de rendimiento."
-)
-
-with st.expander("Opcional: descargar como CSV o Excel"):
-    col_d1, col_d2 = st.columns(2)
-
-    with col_d1:
-        preparar_csv = st.button(
-            "Preparar CSV",
-            use_container_width=True
-        )
-
-        if preparar_csv:
-            with st.spinner("Preparando CSV..."):
-                csv_bytes = convertir_a_csv_cache(df_final)
-
-            st.download_button(
-                label="Descargar CSV",
-                data=csv_bytes,
-                file_name=nombre_csv,
-                mime="text/csv",
-                use_container_width=True
-            )
-
-    with col_d2:
-        if excel_disponible:
-            preparar_excel = st.button(
-                "Preparar Excel",
-                use_container_width=True
-            )
-
-            if preparar_excel:
-                with st.spinner("Preparando Excel..."):
-                    excel_bytes = convertir_a_excel_cache(df_final)
-
-                st.download_button(
-                    label="Descargar Excel",
-                    data=excel_bytes,
-                    file_name=nombre_excel,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
-                )
-        else:
-            st.button(
-                "Excel no disponible",
-                disabled=True,
-                use_container_width=True
-            )
-
-            st.warning(
-                f"Excel no está disponible porque la salida tiene más de {limite_excel:,} filas. "
-                "Usa Parquet o CSV."
-            )
-
-st.divider()
-
-
-# =========================================================
 # Columnas preferidas para visualización
 # =========================================================
 
@@ -1070,7 +996,7 @@ elif modulo == "Salida":
     st.subheader("Salida")
 
     st.info(
-        "El archivo Parquet está disponible en la sección superior. "
+        "El archivo Parquet estará disponible en la sección final de descarga. "
         "CSV y Excel se preparan únicamente desde la sección opcional. "
         "La salida principal corresponde a una fila por Documento compras y Posición, "
         "con fechas finales de facturación proveedor y recepción."
@@ -1152,3 +1078,77 @@ if mostrar_analisis:
                 st.write(fechas)
             else:
                 st.info("No se encontraron columnas de fecha.")
+
+
+# =========================================================
+# Descarga principal y descargas opcionales
+# =========================================================
+
+st.divider()
+
+st.markdown("### Descarga")
+
+st.download_button(
+    label="Descargar Parquet",
+    data=parquet_bytes,
+    file_name=nombre_parquet,
+    mime="application/octet-stream",
+    use_container_width=True
+)
+
+st.caption(
+    "Parquet es el formato principal recomendado para conservar tipos de datos "
+    "y trabajar con Python. CSV y Excel se preparan solo si los solicitas. "
+    "Excel se limita a 250.000 filas para evitar problemas de rendimiento."
+)
+
+with st.expander("Opcional: descargar como CSV o Excel"):
+    col_d1, col_d2 = st.columns(2)
+
+    with col_d1:
+        preparar_csv = st.button(
+            "Preparar CSV",
+            use_container_width=True
+        )
+
+        if preparar_csv:
+            with st.spinner("Preparando CSV..."):
+                csv_bytes = convertir_a_csv_cache(df_final)
+
+            st.download_button(
+                label="Descargar CSV",
+                data=csv_bytes,
+                file_name=nombre_csv,
+                mime="text/csv",
+                use_container_width=True
+            )
+
+    with col_d2:
+        if excel_disponible:
+            preparar_excel = st.button(
+                "Preparar Excel",
+                use_container_width=True
+            )
+
+            if preparar_excel:
+                with st.spinner("Preparando Excel..."):
+                    excel_bytes = convertir_a_excel_cache(df_final)
+
+                st.download_button(
+                    label="Descargar Excel",
+                    data=excel_bytes,
+                    file_name=nombre_excel,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+        else:
+            st.button(
+                "Excel no disponible",
+                disabled=True,
+                use_container_width=True
+            )
+
+            st.warning(
+                f"Excel no está disponible porque la salida tiene más de {limite_excel:,} filas. "
+                "Usa Parquet o CSV."
+            )
