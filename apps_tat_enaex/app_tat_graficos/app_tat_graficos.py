@@ -1195,6 +1195,18 @@ def tarjeta_donut_cumplimiento(
     texto_promedio: str,
     promedio_solo_dx_positivos: bool = True
 ):
+    """
+    Muestra un donut de Cumple / No cumple y calcula el promedio de días
+    usando exactamente el mismo universo evaluable del donut.
+
+    Universo usado para el donut y el promedio:
+    - Solo registros cuyo estado sea Cumple o No cumple.
+    - Excluye Sin información, Sin datos, En proceso, No aplica, nulos, etc.
+
+    Promedio:
+    - Por defecto usa solo días >= 0 dentro de ese universo evaluable.
+    - También muestra mediana, máximo y cantidad de registros usados.
+    """
     data = crear_resumen_cumplimiento_etapa(
         df=df,
         col_performance_estado=col_performance_estado
@@ -1213,12 +1225,27 @@ def tarjeta_donut_cumplimiento(
         return
 
     promedio_dias = 0
+    mediana_dias = 0
+    max_dias = 0
     pct_negativos = 0
     total_dx_validos = 0
     total_dx_negativos = 0
+    total_usado_promedio = 0
 
-    if col_dias_incumplimiento in df.columns:
-        serie_dx = pd.to_numeric(df[col_dias_incumplimiento], errors="coerce")
+    if (
+        col_dias_incumplimiento in df.columns
+        and col_performance_estado in df.columns
+    ):
+        # Importante: usar solo los mismos estados que aparecen en el donut.
+        df_promedio = df[
+            df[col_performance_estado].isin(ESTADOS_GRAFICOS)
+        ].copy()
+
+        serie_dx = pd.to_numeric(
+            df_promedio[col_dias_incumplimiento],
+            errors="coerce"
+        )
+
         serie_dx_valida = serie_dx.dropna()
         total_dx_validos = int(len(serie_dx_valida))
         total_dx_negativos = int((serie_dx_valida < 0).sum())
@@ -1231,11 +1258,21 @@ def tarjeta_donut_cumplimiento(
         else:
             serie_promedio = serie_dx_valida
 
+        total_usado_promedio = int(len(serie_promedio))
+
         if not serie_promedio.empty:
             promedio_dias = serie_promedio.mean()
+            mediana_dias = serie_promedio.median()
+            max_dias = serie_promedio.max()
 
         if pd.isna(promedio_dias):
             promedio_dias = 0
+
+        if pd.isna(mediana_dias):
+            mediana_dias = 0
+
+        if pd.isna(max_dias):
+            max_dias = 0
 
     st.markdown(
         f"""
@@ -1259,9 +1296,9 @@ def tarjeta_donut_cumplimiento(
     st.altair_chart(chart, use_container_width=True)
 
     etiqueta_promedio = (
-        f"{texto_promedio} (solo días ≥ 0)"
+        f"{texto_promedio} evaluable (solo días ≥ 0)"
         if promedio_solo_dx_positivos
-        else texto_promedio
+        else f"{texto_promedio} evaluable"
     )
 
     st.markdown(
@@ -1273,8 +1310,14 @@ def tarjeta_donut_cumplimiento(
             <div style="font-size:12px; color:#666;">
                 {etiqueta_promedio}
             </div>
+            <div style="font-size:12px; color:#666; margin-top:4px;">
+                Mediana: {mediana_dias:.0f} días · Máximo: {max_dias:.0f} días
+            </div>
+            <div style="font-size:12px; color:#666; margin-top:2px;">
+                Registros usados en promedio: {total_usado_promedio:,}
+            </div>
             <div style="font-size:12px; color:#D94555; margin-top:4px; font-weight:600;">
-                Días negativos: {pct_negativos:.1f}% ({total_dx_negativos:,}/{total_dx_validos:,})
+                Días negativos evaluables: {pct_negativos:.1f}% ({total_dx_negativos:,}/{total_dx_validos:,})
             </div>
         </div>
         """,
