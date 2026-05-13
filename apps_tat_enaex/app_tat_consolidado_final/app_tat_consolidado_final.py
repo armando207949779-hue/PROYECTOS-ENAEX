@@ -7,18 +7,9 @@ import pandas as pd
 import streamlit as st
 
 
-# =========================
-# Ruta del logo ENAEX
-# =========================
-
-BASE_DIR = Path(__file__).resolve().parent
-ROOT_DIR = BASE_DIR.parent
-LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
-
-
-# =========================
-# Configuración Streamlit
-# =========================
+# =========================================================
+# Configuración general
+# =========================================================
 
 st.set_page_config(
     page_title="Performance TAT - Match Integrado",
@@ -26,12 +17,99 @@ st.set_page_config(
     layout="wide"
 )
 
+BASE_DIR = Path(__file__).resolve().parent
+ROOT_DIR = BASE_DIR.parent
+LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
 
-# =========================
-# Encabezado con logo ENAEX centrado
-# =========================
 
-if LOGO_PATH.exists():
+# =========================================================
+# Columnas esperadas
+# =========================================================
+
+COL_FECHA_SOLICITUD_FINAL = "fecha_solicitud_final"
+COL_FECHA_LIBERACION_FINAL = "fecha_liberacion_final"
+COL_FECHA_PEDIDO_FINAL = "fecha_pedido_final"
+COL_FECHA_FACTURACION_FINAL = "fecha_facturacion_final"
+COL_FECHA_RECEPCION_FINAL = "fecha_recepcion_final"
+
+COL_PEDIDO = "Pedido"
+COL_DOCUMENTO_COMPRAS = "nme_documento_compras"
+COL_TIPO_COMPRA_ARIBA = "ariba_tipo_compra"
+COL_CANTIDAD_SOLICITADA = "Cantidad solicitada"
+COL_PRECIO_VALORACION = "Precio de valoración"
+
+COLUMNAS_REQUERIDAS_PERFORMANCE = [
+    COL_FECHA_SOLICITUD_FINAL,
+    COL_FECHA_LIBERACION_FINAL,
+    COL_FECHA_PEDIDO_FINAL,
+    COL_FECHA_FACTURACION_FINAL,
+    COL_FECHA_RECEPCION_FINAL,
+]
+
+COLUMNAS_FECHA_PERFORMANCE = [
+    COL_FECHA_SOLICITUD_FINAL,
+    COL_FECHA_LIBERACION_FINAL,
+    COL_FECHA_PEDIDO_FINAL,
+    COL_FECHA_FACTURACION_FINAL,
+    COL_FECHA_RECEPCION_FINAL,
+    "Fecha de solicitud",
+    "Fe.liber.Z",
+    "Fecha de pedido",
+    "Fecha de entrega",
+    "Fecha de liberación",
+    "ariba_fecha_solicitud_compra",
+    "ariba_fecha_aprobacion",
+    "nme_fecha_entrada",
+    "nme_fecha_documento",
+    "nme_fecha_contabiliz",
+    "nme_fecha_facturacion_proveedor",
+    "nme_fecha_entrada_mercancia_recepcion",
+]
+
+COLUMNAS_NUEVAS_ORDENADAS = [
+    "tipo_oc",
+    "origen_oc",
+    "sistema_oc",
+    "nombre_tipo_compra",
+    "monto_valoracion",
+    "fecha_inicio_proveedor",
+    "dx_lib_solped",
+    "dx_comprador_1",
+    "dx_lib_pedido",
+    "dx_logistica",
+    "dx_proveedor",
+    "dx_tat",
+    "umbral_lib_solped",
+    "umbral_comprador_1",
+    "umbral_lib_pedido",
+    "umbral_logistica",
+    "umbral_tat",
+    "umbral_proveedor",
+    "performance_lib_solped",
+    "performance_comprador_1",
+    "performance_lib_pedido",
+    "performance_logistica",
+    "performance_tat",
+    "performance_proveedor",
+    "dias_incumplimiento_lib_solped",
+    "dias_incumplimiento_comprador_1",
+    "dias_incumplimiento_logistica",
+    "dias_incumplimiento_tat",
+    "dias_incumplimiento_proveedor",
+    "dias_incumplimiento_max",
+    "incumplimiento",
+    "rango_incumplimiento",
+]
+
+
+# =========================================================
+# UI común
+# =========================================================
+
+def mostrar_logo(ancho: int = 180):
+    if not LOGO_PATH.exists():
+        return
+
     logo_svg = LOGO_PATH.read_text(encoding="utf-8")
     logo_base64 = base64.b64encode(logo_svg.encode("utf-8")).decode("utf-8")
 
@@ -39,22 +117,18 @@ if LOGO_PATH.exists():
         f"""
         <div style="
             width: 100%;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            margin-top: 10px;
-            margin-bottom: 20px;
+            text-align: center;
+            margin-top: 0.5rem;
+            margin-bottom: 1rem;
         ">
-            <img 
-                src="data:image/svg+xml;base64,{logo_base64}" 
-                style="width: 260px; display: block;"
+            <img
+                src="data:image/svg+xml;base64,{logo_base64}"
+                width="{ancho}"
             >
         </div>
         """,
         unsafe_allow_html=True
     )
-else:
-    st.error(f"Logo no encontrado en ruta correcta: {LOGO_PATH}")
 
 
 # =========================================================
@@ -64,16 +138,15 @@ else:
 def obtener_separador(separador_csv: str):
     if separador_csv == "Automático":
         return None
-    if separador_csv == "Punto y coma (;)":
+    if separador_csv in ["Punto y coma (;)", "Punto y coma (;):"]:
         return ";"
-    if separador_csv == "Coma (,)":
+    if separador_csv in ["Coma (,)", "Coma (,):", "Coma (, )"]:
         return ","
     if separador_csv == "Tabulación":
         return "\t"
     return None
 
-
-@st.cache_data(show_spinner="Leyendo archivo...")
+@st.cache_data(show_spinner=False)
 def leer_archivo_cache(
     bytes_archivo: bytes,
     nombre_archivo: str,
@@ -112,7 +185,72 @@ def leer_archivo_cache(
     raise ValueError("Formato no soportado. Usa .parquet, .xlsx o .csv")
 
 
-def bool_array(condicion):
+def limpiar_nombres_columnas(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    df.columns = df.columns.astype(str).str.strip()
+    return df
+
+
+def validar_columnas_requeridas(df: pd.DataFrame):
+    faltantes = [
+        col for col in COLUMNAS_REQUERIDAS_PERFORMANCE
+        if col not in df.columns
+    ]
+
+    if faltantes:
+        raise ValueError(
+            "Faltan columnas requeridas para calcular performance: "
+            f"{faltantes}"
+        )
+
+
+def convertir_fecha_columna(serie: pd.Series) -> pd.Series:
+    """
+    Convierte fechas que pueden venir como:
+    - datetime
+    - texto de fecha
+    - timestamp numérico en milisegundos, como 1704067200000
+    - timestamp numérico en segundos
+    """
+    if pd.api.types.is_datetime64_any_dtype(serie):
+        return pd.to_datetime(serie, errors="coerce")
+
+    serie_num = pd.to_numeric(serie, errors="coerce")
+    resultado = pd.Series(pd.NaT, index=serie.index, dtype="datetime64[ns]")
+
+    mask_num = serie_num.notna()
+
+    if mask_num.any():
+        mask_ms = mask_num & serie_num.abs().ge(10**11)
+        mask_s = mask_num & serie_num.abs().lt(10**11)
+
+        if mask_ms.any():
+            resultado.loc[mask_ms] = pd.to_datetime(
+                serie_num.loc[mask_ms],
+                unit="ms",
+                errors="coerce"
+            )
+
+        if mask_s.any():
+            resultado.loc[mask_s] = pd.to_datetime(
+                serie_num.loc[mask_s],
+                unit="s",
+                errors="coerce"
+            )
+
+    mask_no_num = ~mask_num
+
+    if mask_no_num.any():
+        resultado.loc[mask_no_num] = pd.to_datetime(
+            serie.loc[mask_no_num],
+            errors="coerce",
+            dayfirst=True
+        )
+
+    return resultado
+
+
+def bool_array(condicion) -> np.ndarray:
     return pd.Series(condicion).fillna(False).to_numpy(dtype=bool)
 
 
@@ -133,80 +271,45 @@ def extraer_tipo_oc(valor):
     return pd.NA
 
 
-def diferencia_dias(fecha_fin, fecha_inicio):
+def diferencia_dias(fecha_fin: pd.Series, fecha_inicio: pd.Series) -> pd.Series:
     return (fecha_fin - fecha_inicio).dt.days
 
 
-def evaluar_cumplimiento(valor, umbral):
+def evaluar_cumplimiento(valor: pd.Series, umbral: pd.Series) -> pd.Series:
     resultado = valor <= umbral
     resultado = resultado.mask(valor.isna() | umbral.isna(), pd.NA)
     return resultado
 
 
-def dias_incumplimiento(valor, umbral):
+def dias_incumplimiento(valor: pd.Series, umbral: pd.Series) -> pd.Series:
     resultado = valor - umbral
     resultado = resultado.where(resultado > 0, 0)
     resultado = resultado.mask(valor.isna() | umbral.isna(), np.nan)
     return resultado
 
 
-def validar_columnas_requeridas(df: pd.DataFrame):
-    columnas_requeridas = [
-        "fecha_solicitud_final",
-        "fecha_liberacion_final",
-        "fecha_pedido_final",
-        "fecha_facturacion_final",
-        "fecha_recepcion_final"
-    ]
+def formatear_valor(valor) -> str:
+    if pd.isna(valor):
+        return ""
 
-    faltantes = [
-        col for col in columnas_requeridas
-        if col not in df.columns
-    ]
+    if isinstance(valor, pd.Timestamp):
+        return valor.strftime("%Y-%m-%d")
 
-    if faltantes:
-        raise ValueError(f"Faltan columnas requeridas: {faltantes}")
+    return str(valor)
 
 
 # =========================================================
 # Lógica principal de performance
 # =========================================================
 
-@st.cache_data(show_spinner="Aplicando lógica de performance...")
+@st.cache_data(show_spinner=False)
 def aplicar_logica_performance(df_original: pd.DataFrame) -> pd.DataFrame:
-    df = df_original.copy()
-
-    df.columns = df.columns.astype(str).str.strip()
-
+    df = limpiar_nombres_columnas(df_original)
     validar_columnas_requeridas(df)
 
-    # =====================================================
-    # Asegurar fechas
-    # =====================================================
-
-    columnas_fecha = [
-        "fecha_solicitud_final",
-        "fecha_liberacion_final",
-        "fecha_pedido_final",
-        "fecha_facturacion_final",
-        "fecha_recepcion_final",
-        "Fecha de solicitud",
-        "Fe.liber.Z",
-        "Fecha de pedido",
-        "Fecha de entrega",
-        "Fecha de liberación",
-        "ariba_fecha_solicitud_compra",
-        "ariba_fecha_aprobacion",
-        "nme_fecha_entrada",
-        "nme_fecha_documento",
-        "nme_fecha_contabiliz",
-        "nme_fecha_facturacion_proveedor",
-        "nme_fecha_entrada_mercancia_recepcion"
-    ]
-
-    for col in columnas_fecha:
+    for col in COLUMNAS_FECHA_PERFORMANCE:
         if col in df.columns:
-            df[col] = pd.to_datetime(df[col], errors="coerce")
+            df[col] = convertir_fecha_columna(df[col])
 
     # =====================================================
     # Tipo de OC
@@ -215,27 +318,23 @@ def aplicar_logica_performance(df_original: pd.DataFrame) -> pd.DataFrame:
     # 47 = ERP / Internacional
     # =====================================================
 
-    if "Pedido" in df.columns:
-        df["tipo_oc"] = df["Pedido"].apply(extraer_tipo_oc)
-    elif "nme_documento_compras" in df.columns:
-        df["tipo_oc"] = df["nme_documento_compras"].apply(extraer_tipo_oc)
+    if COL_PEDIDO in df.columns:
+        df["tipo_oc"] = df[COL_PEDIDO].apply(extraer_tipo_oc)
+    elif COL_DOCUMENTO_COMPRAS in df.columns:
+        df["tipo_oc"] = df[COL_DOCUMENTO_COMPRAS].apply(extraer_tipo_oc)
     else:
         df["tipo_oc"] = pd.NA
 
     df["tipo_oc"] = df["tipo_oc"].astype("string")
 
-    # =====================================================
-    # Clasificaciones
-    # =====================================================
-
     df["origen_oc"] = np.select(
         [
             bool_array(df["tipo_oc"].isin(["35", "45"])),
-            bool_array(df["tipo_oc"].eq("47"))
+            bool_array(df["tipo_oc"].eq("47")),
         ],
         [
             "Nacional",
-            "Internacional"
+            "Internacional",
         ],
         default="Otro"
     )
@@ -243,17 +342,17 @@ def aplicar_logica_performance(df_original: pd.DataFrame) -> pd.DataFrame:
     df["sistema_oc"] = np.select(
         [
             bool_array(df["tipo_oc"].eq("35")),
-            bool_array(df["tipo_oc"].isin(["45", "47"]))
+            bool_array(df["tipo_oc"].isin(["45", "47"])),
         ],
         [
             "Ariba",
-            "ERP"
+            "ERP",
         ],
         default="Otro"
     )
 
-    if "ariba_tipo_compra" in df.columns:
-        tipo_compra_num = pd.to_numeric(df["ariba_tipo_compra"], errors="coerce")
+    if COL_TIPO_COMPRA_ARIBA in df.columns:
+        tipo_compra_num = pd.to_numeric(df[COL_TIPO_COMPRA_ARIBA], errors="coerce")
     else:
         tipo_compra_num = pd.Series(np.nan, index=df.index)
 
@@ -261,25 +360,20 @@ def aplicar_logica_performance(df_original: pd.DataFrame) -> pd.DataFrame:
         [
             bool_array(tipo_compra_num.eq(1)),
             bool_array(tipo_compra_num.eq(2)),
-            bool_array(tipo_compra_num.eq(3))
+            bool_array(tipo_compra_num.eq(3)),
         ],
         [
             "Catalogada",
             "No catalogada",
-            "Directa"
+            "Directa",
         ],
         default="Otro"
     )
 
-    # =====================================================
-    # Cálculo económico
-    # Monto = Cantidad solicitada * Precio de valoración
-    # =====================================================
-
-    if "Cantidad solicitada" in df.columns and "Precio de valoración" in df.columns:
+    if COL_CANTIDAD_SOLICITADA in df.columns and COL_PRECIO_VALORACION in df.columns:
         df["monto_valoracion"] = (
-            pd.to_numeric(df["Cantidad solicitada"], errors="coerce")
-            * pd.to_numeric(df["Precio de valoración"], errors="coerce")
+            pd.to_numeric(df[COL_CANTIDAD_SOLICITADA], errors="coerce")
+            * pd.to_numeric(df[COL_PRECIO_VALORACION], errors="coerce")
         )
     else:
         df["monto_valoracion"] = np.nan
@@ -297,11 +391,11 @@ def aplicar_logica_performance(df_original: pd.DataFrame) -> pd.DataFrame:
 
     df.loc[mask_oc_35, "fecha_inicio_proveedor"] = df.loc[
         mask_oc_35,
-        "fecha_pedido_final"
+        COL_FECHA_PEDIDO_FINAL
     ]
 
     df.loc[mask_oc_45_47, "fecha_inicio_proveedor"] = (
-        df.loc[mask_oc_45_47, "fecha_pedido_final"]
+        df.loc[mask_oc_45_47, COL_FECHA_PEDIDO_FINAL]
         + pd.Timedelta(days=3)
     )
 
@@ -315,34 +409,34 @@ def aplicar_logica_performance(df_original: pd.DataFrame) -> pd.DataFrame:
     # =====================================================
 
     df["dx_lib_solped"] = diferencia_dias(
-        df["fecha_liberacion_final"],
-        df["fecha_solicitud_final"]
+        df[COL_FECHA_LIBERACION_FINAL],
+        df[COL_FECHA_SOLICITUD_FINAL]
     )
 
     df["dx_comprador_1"] = diferencia_dias(
-        df["fecha_pedido_final"],
-        df["fecha_liberacion_final"]
+        df[COL_FECHA_PEDIDO_FINAL],
+        df[COL_FECHA_LIBERACION_FINAL]
     )
 
     df["dx_lib_pedido"] = np.nan
 
     df["dx_logistica"] = diferencia_dias(
-        df["fecha_recepcion_final"],
-        df["fecha_facturacion_final"]
+        df[COL_FECHA_RECEPCION_FINAL],
+        df[COL_FECHA_FACTURACION_FINAL]
     )
 
     df["dx_proveedor"] = diferencia_dias(
-        df["fecha_recepcion_final"],
+        df[COL_FECHA_RECEPCION_FINAL],
         df["fecha_inicio_proveedor"]
     )
 
     df["dx_tat"] = diferencia_dias(
-        df["fecha_recepcion_final"],
-        df["fecha_solicitud_final"]
+        df[COL_FECHA_RECEPCION_FINAL],
+        df[COL_FECHA_SOLICITUD_FINAL]
     )
 
     # =====================================================
-    # Umbrales de cumplimiento
+    # Umbrales
     # =====================================================
 
     df["umbral_lib_solped"] = 2
@@ -353,11 +447,11 @@ def aplicar_logica_performance(df_original: pd.DataFrame) -> pd.DataFrame:
     df["umbral_tat"] = np.select(
         [
             bool_array(df["tipo_oc"].isin(["35", "45"])),
-            bool_array(df["tipo_oc"].eq("47"))
+            bool_array(df["tipo_oc"].eq("47")),
         ],
         [
             40,
-            70
+            70,
         ],
         default=np.nan
     )
@@ -365,11 +459,11 @@ def aplicar_logica_performance(df_original: pd.DataFrame) -> pd.DataFrame:
     df["umbral_proveedor"] = np.select(
         [
             bool_array(df["tipo_oc"].isin(["35", "45"])),
-            bool_array(df["tipo_oc"].eq("47"))
+            bool_array(df["tipo_oc"].eq("47")),
         ],
         [
             20,
-            60
+            60,
         ],
         default=np.nan
     )
@@ -440,16 +534,12 @@ def aplicar_logica_performance(df_original: pd.DataFrame) -> pd.DataFrame:
         df["umbral_proveedor"]
     )
 
-    # =====================================================
-    # Incumplimiento general
-    # =====================================================
-
     columnas_incumplimiento = [
         "dias_incumplimiento_lib_solped",
         "dias_incumplimiento_comprador_1",
         "dias_incumplimiento_logistica",
         "dias_incumplimiento_tat",
-        "dias_incumplimiento_proveedor"
+        "dias_incumplimiento_proveedor",
     ]
 
     df["dias_incumplimiento_max"] = df[columnas_incumplimiento].max(
@@ -460,24 +550,20 @@ def aplicar_logica_performance(df_original: pd.DataFrame) -> pd.DataFrame:
     df["dias_incumplimiento_max"] = df["dias_incumplimiento_max"].fillna(0)
     df["incumplimiento"] = df["dias_incumplimiento_max"].gt(0)
 
-    # =====================================================
-    # Rango de incumplimiento
-    # =====================================================
-
     df["rango_incumplimiento"] = np.select(
         [
             bool_array(df["dias_incumplimiento_max"].eq(0)),
             bool_array(df["dias_incumplimiento_max"].between(1, 5, inclusive="both")),
             bool_array(df["dias_incumplimiento_max"].between(6, 15, inclusive="both")),
             bool_array(df["dias_incumplimiento_max"].between(16, 30, inclusive="both")),
-            bool_array(df["dias_incumplimiento_max"].gt(30))
+            bool_array(df["dias_incumplimiento_max"].gt(30)),
         ],
         [
             "Sin incumplimiento",
             "0-5 días",
             "6-15 días",
             "16-30 días",
-            "Mayor a un mes"
+            "Mayor a un mes",
         ],
         default="Sin información"
     )
@@ -485,8 +571,24 @@ def aplicar_logica_performance(df_original: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def reordenar_columnas_performance_al_final(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+
+    columnas_finales = [
+        col for col in COLUMNAS_NUEVAS_ORDENADAS
+        if col in df.columns
+    ]
+
+    columnas_base = [
+        col for col in df.columns
+        if col not in columnas_finales
+    ]
+
+    return df[columnas_base + columnas_finales].copy()
+
+
 # =========================================================
-# Diagnósticos
+# Resúmenes y lógica explicativa
 # =========================================================
 
 def resumen_performance(df: pd.DataFrame) -> pd.DataFrame:
@@ -496,75 +598,205 @@ def resumen_performance(df: pd.DataFrame) -> pd.DataFrame:
         "performance_lib_pedido",
         "performance_logistica",
         "performance_tat",
-        "performance_proveedor"
+        "performance_proveedor",
     ]
 
     data = []
 
     for col in metricas:
-        if col in df.columns:
-            serie = df[col]
+        if col not in df.columns:
+            continue
 
-            data.append({
-                "Métrica": col,
-                "Cumple": int(serie.eq(True).sum()),
-                "No cumple": int(serie.eq(False).sum()),
-                "Sin información": int(serie.isna().sum()),
-                "% Cumple": round(serie.eq(True).mean() * 100, 2)
-            })
+        serie = df[col]
+        total_con_info = int(serie.notna().sum())
+        cumple = int(serie.eq(True).sum())
+        no_cumple = int(serie.eq(False).sum())
+        sin_info = int(serie.isna().sum())
+        porcentaje_cumple = round((cumple / total_con_info) * 100, 2) if total_con_info else 0
+
+        data.append({
+            "Métrica": col,
+            "Cumple": cumple,
+            "No cumple": no_cumple,
+            "Sin información": sin_info,
+            "% Cumple": porcentaje_cumple,
+        })
 
     return pd.DataFrame(data)
 
 
 def resumen_columnas_nuevas(df: pd.DataFrame) -> pd.DataFrame:
     columnas = [
-        "tipo_oc",
-        "origen_oc",
-        "sistema_oc",
-        "nombre_tipo_compra",
-        "monto_valoracion",
-        "fecha_inicio_proveedor",
-        "dx_lib_solped",
-        "dx_comprador_1",
-        "dx_lib_pedido",
-        "dx_logistica",
-        "dx_proveedor",
-        "dx_tat",
-        "umbral_lib_solped",
-        "umbral_comprador_1",
-        "umbral_lib_pedido",
-        "umbral_logistica",
-        "umbral_tat",
-        "umbral_proveedor",
-        "performance_lib_solped",
-        "performance_comprador_1",
-        "performance_lib_pedido",
-        "performance_logistica",
-        "performance_tat",
-        "performance_proveedor",
-        "dias_incumplimiento_lib_solped",
-        "dias_incumplimiento_comprador_1",
-        "dias_incumplimiento_logistica",
-        "dias_incumplimiento_tat",
-        "dias_incumplimiento_proveedor",
-        "dias_incumplimiento_max",
-        "incumplimiento",
-        "rango_incumplimiento"
+        col for col in COLUMNAS_NUEVAS_ORDENADAS
+        if col in df.columns
     ]
-
-    columnas = [col for col in columnas if col in df.columns]
 
     return pd.DataFrame({
         "Columna nueva": columnas,
-        "Nulos": [df[col].isna().sum() for col in columnas],
+        "Nulos": [int(df[col].isna().sum()) for col in columnas],
         "% Nulos": [round(df[col].isna().mean() * 100, 2) for col in columnas],
-        "Tipo dato": [str(df[col].dtype) for col in columnas]
+        "Tipo dato": [str(df[col].dtype) for col in columnas],
     })
+
+
+def generar_resumen_cambios_performance(
+    df_original: pd.DataFrame,
+    df_final: pd.DataFrame,
+    columnas_originales: list,
+    columnas_nuevas: list
+) -> dict:
+    total = int(len(df_final))
+
+    conteo_tipo_oc = (
+        df_final["tipo_oc"]
+        .value_counts(dropna=False)
+        .to_dict()
+        if "tipo_oc" in df_final.columns
+        else {}
+    )
+
+    incumplimientos = (
+        int(df_final["incumplimiento"].eq(True).sum())
+        if "incumplimiento" in df_final.columns
+        else 0
+    )
+
+    ejemplo = None
+    if not df_final.empty:
+        candidatos = df_final[df_final.get("incumplimiento", False) == True].copy()
+        if candidatos.empty:
+            candidatos = df_final.copy()
+        ejemplo = candidatos.iloc[0].to_dict()
+
+    return {
+        "total_original": int(len(df_original)),
+        "total_final": total,
+        "columnas_originales": int(len(columnas_originales)),
+        "columnas_finales": int(len(df_final.columns)),
+        "columnas_nuevas": int(len(columnas_nuevas)),
+        "duplicados_final": int(df_final.duplicated().sum()),
+        "conteo_tipo_oc": conteo_tipo_oc,
+        "incumplimientos": incumplimientos,
+        "sin_incumplimiento": int(total - incumplimientos),
+        "ejemplo": ejemplo,
+    }
+
+
+def generar_tabla_ejemplo_performance(ejemplo: dict) -> pd.DataFrame:
+    if not ejemplo:
+        return pd.DataFrame(
+            columns=[
+                "Cálculo",
+                "Fecha / valor inicial",
+                "Fecha / valor final",
+                "Resultado",
+                "Umbral",
+                "Cumple",
+            ]
+        )
+
+    return pd.DataFrame([
+        {
+            "Cálculo": "Liberación vs solicitud",
+            "Fecha / valor inicial": formatear_valor(ejemplo.get(COL_FECHA_SOLICITUD_FINAL)),
+            "Fecha / valor final": formatear_valor(ejemplo.get(COL_FECHA_LIBERACION_FINAL)),
+            "Resultado": formatear_valor(ejemplo.get("dx_lib_solped")),
+            "Umbral": formatear_valor(ejemplo.get("umbral_lib_solped")),
+            "Cumple": formatear_valor(ejemplo.get("performance_lib_solped")),
+        },
+        {
+            "Cálculo": "Comprador 1",
+            "Fecha / valor inicial": formatear_valor(ejemplo.get(COL_FECHA_LIBERACION_FINAL)),
+            "Fecha / valor final": formatear_valor(ejemplo.get(COL_FECHA_PEDIDO_FINAL)),
+            "Resultado": formatear_valor(ejemplo.get("dx_comprador_1")),
+            "Umbral": formatear_valor(ejemplo.get("umbral_comprador_1")),
+            "Cumple": formatear_valor(ejemplo.get("performance_comprador_1")),
+        },
+        {
+            "Cálculo": "Logística",
+            "Fecha / valor inicial": formatear_valor(ejemplo.get(COL_FECHA_FACTURACION_FINAL)),
+            "Fecha / valor final": formatear_valor(ejemplo.get(COL_FECHA_RECEPCION_FINAL)),
+            "Resultado": formatear_valor(ejemplo.get("dx_logistica")),
+            "Umbral": formatear_valor(ejemplo.get("umbral_logistica")),
+            "Cumple": formatear_valor(ejemplo.get("performance_logistica")),
+        },
+        {
+            "Cálculo": "Proveedor",
+            "Fecha / valor inicial": formatear_valor(ejemplo.get("fecha_inicio_proveedor")),
+            "Fecha / valor final": formatear_valor(ejemplo.get(COL_FECHA_RECEPCION_FINAL)),
+            "Resultado": formatear_valor(ejemplo.get("dx_proveedor")),
+            "Umbral": formatear_valor(ejemplo.get("umbral_proveedor")),
+            "Cumple": formatear_valor(ejemplo.get("performance_proveedor")),
+        },
+        {
+            "Cálculo": "TAT total",
+            "Fecha / valor inicial": formatear_valor(ejemplo.get(COL_FECHA_SOLICITUD_FINAL)),
+            "Fecha / valor final": formatear_valor(ejemplo.get(COL_FECHA_RECEPCION_FINAL)),
+            "Resultado": formatear_valor(ejemplo.get("dx_tat")),
+            "Umbral": formatear_valor(ejemplo.get("umbral_tat")),
+            "Cumple": formatear_valor(ejemplo.get("performance_tat")),
+        },
+    ])
+
+
+def mostrar_resumen_cambios_performance(resumen_cambios: dict):
+    with st.expander("Cambios realizados y lógica de performance", expanded=False):
+        conteo_tipo_oc = resumen_cambios.get("conteo_tipo_oc", {})
+        texto_tipo_oc = "\n".join(
+            [f"- **{tipo}**: {cantidad:,} registros" for tipo, cantidad in conteo_tipo_oc.items()]
+        )
+
+        if not texto_tipo_oc:
+            texto_tipo_oc = "- No se pudo generar conteo por tipo de OC."
+
+        st.info(
+            f"""
+            **Archivo cargado**
+
+            - Se cargaron **{resumen_cambios['total_original']:,} registros**.
+            - El resultado final conserva **{resumen_cambios['total_final']:,} registros**.
+            - Se conservaron las columnas originales y se agregaron **{resumen_cambios['columnas_nuevas']:,} columnas nuevas**.
+
+            **Lógica aplicada**
+
+            - Se clasificó la OC según los dos primeros dígitos del pedido.
+            - OC **35** se clasifica como **Ariba / Nacional**.
+            - OC **45** se clasifica como **ERP / Nacional**.
+            - OC **47** se clasifica como **ERP / Internacional**.
+            - Para OC **35**, la fecha inicio proveedor es **fecha_pedido_final**.
+            - Para OC **45 / 47**, la fecha inicio proveedor es **fecha_pedido_final + 3 días**.
+
+            **Incumplimiento**
+
+            - Registros con incumplimiento: **{resumen_cambios['incumplimientos']:,}**.
+            - Registros sin incumplimiento: **{resumen_cambios['sin_incumplimiento']:,}**.
+            - Filas duplicadas detectadas en la salida final: **{resumen_cambios['duplicados_final']:,}**.
+
+            **Distribución por tipo de OC**
+
+            {texto_tipo_oc}
+            """
+        )
+
+        st.markdown("**Ejemplo de cálculo de performance**")
+        tabla_ejemplo = generar_tabla_ejemplo_performance(resumen_cambios.get("ejemplo"))
+
+        if tabla_ejemplo.empty:
+            st.warning("No se encontró un registro para mostrar como ejemplo.")
+        else:
+            st.table(tabla_ejemplo)
 
 
 # =========================================================
 # Exportación
 # =========================================================
+
+def convertir_a_csv(df: pd.DataFrame) -> bytes:
+    return df.to_csv(
+        index=False,
+        encoding="utf-8-sig"
+    ).encode("utf-8-sig")
+
 
 def convertir_a_parquet(df: pd.DataFrame) -> bytes:
     output = io.BytesIO()
@@ -576,13 +808,6 @@ def convertir_a_parquet(df: pd.DataFrame) -> bytes:
     )
 
     return output.getvalue()
-
-
-def convertir_a_csv(df: pd.DataFrame) -> bytes:
-    return df.to_csv(
-        index=False,
-        encoding="utf-8-sig"
-    ).encode("utf-8-sig")
 
 
 def convertir_a_excel(
@@ -614,17 +839,17 @@ def convertir_a_excel(
     return output.getvalue()
 
 
-@st.cache_data(show_spinner="Preparando Parquet...")
-def convertir_a_parquet_cache(df: pd.DataFrame) -> bytes:
-    return convertir_a_parquet(df)
-
-
-@st.cache_data(show_spinner="Preparando CSV...")
+@st.cache_data(show_spinner=False)
 def convertir_a_csv_cache(df: pd.DataFrame) -> bytes:
     return convertir_a_csv(df)
 
 
-@st.cache_data(show_spinner="Preparando Excel...")
+@st.cache_data(show_spinner=False)
+def convertir_a_parquet_cache(df: pd.DataFrame) -> bytes:
+    return convertir_a_parquet(df)
+
+
+@st.cache_data(show_spinner=False)
 def convertir_a_excel_cache(
     df: pd.DataFrame,
     resumen_perf: pd.DataFrame,
@@ -637,43 +862,13 @@ def convertir_a_excel_cache(
 # Interfaz
 # =========================================================
 
-st.markdown(
-    """
-    <h1 style='text-align: center;'>
-        Performance TAT - Match Integrado
-    </h1>
-    """,
-    unsafe_allow_html=True
-)
+mostrar_logo()
 
-st.markdown(
-    """
-    <p style='text-align: center; font-size: 18px;'>
-        Sube el archivo <b>match_integrado_me5a_ariba_nme80fn_fechas_finales.parquet</b>.
-        La app conserva todas las columnas originales y agrega clasificación,
-        cálculos de días, performance, umbrales e incumplimientos.
-    </p>
-    """,
-    unsafe_allow_html=True
-)
-
-st.divider()
-
+st.title("Performance TAT - Match Integrado")
+st.caption("ME5A · ARIBA · NME80FN · Fechas finales")
 
 with st.sidebar:
     st.header("Configuración")
-
-    pagina = st.radio(
-        "Menú",
-        options=[
-            "Procesamiento",
-            "Resumen",
-            "Descarga"
-        ],
-        index=0
-    )
-
-    st.divider()
 
     separador_csv = st.selectbox(
         "Separador CSV",
@@ -681,307 +876,334 @@ with st.sidebar:
             "Automático",
             "Punto y coma (;)",
             "Coma (,)",
-            "Tabulación"
+            "Tabulación",
         ],
         index=0
     )
 
-    st.caption(
-        "El separador solo aplica si subes archivos CSV."
+    limite_vista = st.number_input(
+        "Filas en vista previa",
+        min_value=50,
+        max_value=1000,
+        value=300,
+        step=50
     )
 
+    ordenar_performance_final = st.checkbox(
+        "Mover columnas de performance al final",
+        value=True
+    )
+
+    st.caption("El separador solo aplica a archivos CSV.")
+
+
+st.subheader("Archivo")
 
 uploaded_file = st.file_uploader(
     "Selecciona archivo con fechas finales",
     type=["parquet", "xlsx", "csv"]
 )
 
+if uploaded_file is None:
+    st.info("Carga el archivo con fechas finales para calcular performance TAT.")
+    st.stop()
 
-if uploaded_file is not None:
-    try:
+try:
+    with st.spinner("Leyendo archivo..."):
         df_original = leer_archivo_cache(
             bytes_archivo=uploaded_file.getvalue(),
             nombre_archivo=uploaded_file.name,
             separador_csv=separador_csv
         )
 
-        columnas_originales = list(df_original.columns)
+    columnas_originales = list(df_original.columns)
 
+    with st.spinner("Aplicando lógica de performance..."):
         df_final = aplicar_logica_performance(df_original)
 
-        columnas_agregadas = [
+        columnas_nuevas = [
             col for col in df_final.columns
             if col not in columnas_originales
         ]
 
+        if ordenar_performance_final:
+            df_final = reordenar_columnas_performance_al_final(df_final)
+
         resumen_perf = resumen_performance(df_final)
         resumen_cols = resumen_columnas_nuevas(df_final)
+        parquet_bytes = convertir_a_parquet_cache(df_final)
 
-        if pagina == "Procesamiento":
-            st.success("Lógica de performance aplicada correctamente.")
+        resumen_cambios = generar_resumen_cambios_performance(
+            df_original=df_original,
+            df_final=df_final,
+            columnas_originales=columnas_originales,
+            columnas_nuevas=columnas_nuevas
+        )
 
-            col1, col2, col3, col4 = st.columns(4)
+    st.success("Performance TAT calculada correctamente.")
 
-            col1.metric(
-                "Filas originales",
-                f"{len(df_original):,}"
-            )
+    mostrar_resumen_cambios_performance(resumen_cambios)
 
-            col2.metric(
-                "Filas finales",
-                f"{len(df_final):,}"
-            )
+    st.subheader("Indicadores")
 
-            col3.metric(
-                "Columnas originales",
-                f"{len(columnas_originales):,}"
-            )
+    col1, col2, col3, col4 = st.columns(4)
 
-            col4.metric(
-                "Columnas nuevas",
-                f"{len(columnas_agregadas):,}"
-            )
+    col1.metric(
+        "Filas originales",
+        f"{len(df_original):,}"
+    )
 
-            st.subheader("Vista previa original")
-            st.dataframe(
-                df_original.head(30),
-                use_container_width=True
-            )
+    col2.metric(
+        "Filas finales",
+        f"{len(df_final):,}"
+    )
 
-            st.subheader("Vista previa con performance")
+    col3.metric(
+        "Columnas originales",
+        f"{len(columnas_originales):,}"
+    )
 
-            columnas_preferidas = [
+    col4.metric(
+        "Columnas nuevas",
+        f"{len(columnas_nuevas):,}"
+    )
+
+    st.subheader("Resumen de performance")
+
+    st.dataframe(
+        resumen_perf,
+        use_container_width=True,
+        hide_index=True
+    )
+
+    if not resumen_perf.empty:
+        st.bar_chart(
+            resumen_perf.set_index("Métrica")["% Cumple"]
+        )
+
+    st.subheader("Rango de incumplimiento")
+
+    if "rango_incumplimiento" in df_final.columns:
+        conteo_rango = (
+            df_final["rango_incumplimiento"]
+            .value_counts(dropna=False)
+            .reset_index()
+        )
+
+        conteo_rango.columns = [
+            "Rango incumplimiento",
+            "Cantidad"
+        ]
+
+        st.dataframe(
+            conteo_rango,
+            use_container_width=True,
+            hide_index=True
+        )
+
+        st.bar_chart(
+            conteo_rango.set_index("Rango incumplimiento")["Cantidad"]
+        )
+
+    with st.expander("Vista previa original", expanded=False):
+        st.caption(
+            f"Mostrando hasta {int(limite_vista):,} registros de "
+            f"{len(df_original):,} registros originales. "
+            f"Columnas visibles: {len(df_original.columns):,}."
+        )
+
+        st.dataframe(
+            df_original.head(int(limite_vista)),
+            use_container_width=True,
+            hide_index=True
+        )
+
+    st.subheader("Vista previa final")
+
+    columnas_preferidas = [
+        "Solicitud de pedido",
+        "Solicitud de pedido - ME5A",
+        COL_PEDIDO,
+        COL_DOCUMENTO_COMPRAS,
+        "tipo_oc",
+        "origen_oc",
+        "sistema_oc",
+        "nombre_tipo_compra",
+        COL_CANTIDAD_SOLICITADA,
+        COL_PRECIO_VALORACION,
+        "monto_valoracion",
+        COL_FECHA_SOLICITUD_FINAL,
+        COL_FECHA_LIBERACION_FINAL,
+        COL_FECHA_PEDIDO_FINAL,
+        COL_FECHA_FACTURACION_FINAL,
+        COL_FECHA_RECEPCION_FINAL,
+        "fecha_inicio_proveedor",
+        "dx_lib_solped",
+        "dx_comprador_1",
+        "dx_lib_pedido",
+        "dx_logistica",
+        "dx_proveedor",
+        "dx_tat",
+        "umbral_tat",
+        "umbral_proveedor",
+        "performance_lib_solped",
+        "performance_comprador_1",
+        "performance_lib_pedido",
+        "performance_logistica",
+        "performance_tat",
+        "performance_proveedor",
+        "dias_incumplimiento_max",
+        "incumplimiento",
+        "rango_incumplimiento",
+    ]
+
+    columnas_preferidas = [
+        col for col in columnas_preferidas
+        if col in df_final.columns
+    ]
+
+    if columnas_preferidas:
+        st.caption(
+            f"Mostrando hasta {int(limite_vista):,} registros de "
+            f"{len(df_final):,} registros generados. "
+            f"Columnas visibles preferidas: {len(columnas_preferidas):,}."
+        )
+
+        st.dataframe(
+            df_final[columnas_preferidas].head(int(limite_vista)),
+            use_container_width=True,
+            hide_index=True
+        )
+    else:
+        st.dataframe(
+            df_final.head(int(limite_vista)),
+            use_container_width=True,
+            hide_index=True
+        )
+
+    with st.expander("Ver columnas nuevas agregadas", expanded=False):
+        st.dataframe(
+            resumen_cols,
+            use_container_width=True,
+            hide_index=True
+        )
+
+    with st.expander("Top filas con mayor incumplimiento", expanded=False):
+        if "dias_incumplimiento_max" in df_final.columns:
+            columnas_top = [
                 "Solicitud de pedido",
-                "Pedido",
+                "Solicitud de pedido - ME5A",
+                COL_PEDIDO,
+                COL_DOCUMENTO_COMPRAS,
                 "tipo_oc",
                 "origen_oc",
                 "sistema_oc",
-                "nombre_tipo_compra",
-                "Cantidad solicitada",
-                "Precio de valoración",
-                "monto_valoracion",
-                "fecha_solicitud_final",
-                "fecha_liberacion_final",
-                "fecha_pedido_final",
-                "fecha_facturacion_final",
-                "fecha_recepcion_final",
-                "fecha_inicio_proveedor",
-                "dx_lib_solped",
-                "dx_comprador_1",
-                "dx_lib_pedido",
-                "dx_logistica",
-                "dx_proveedor",
                 "dx_tat",
-                "umbral_tat",
-                "umbral_proveedor",
-                "performance_lib_solped",
-                "performance_comprador_1",
-                "performance_lib_pedido",
-                "performance_logistica",
-                "performance_tat",
-                "performance_proveedor",
+                "dx_proveedor",
+                "dx_logistica",
                 "dias_incumplimiento_max",
-                "incumplimiento",
-                "rango_incumplimiento"
+                "rango_incumplimiento",
+                COL_FECHA_SOLICITUD_FINAL,
+                COL_FECHA_RECEPCION_FINAL,
             ]
 
-            columnas_preferidas = [
-                col for col in columnas_preferidas
+            columnas_top = [
+                col for col in columnas_top
                 if col in df_final.columns
             ]
 
             st.dataframe(
-                df_final[columnas_preferidas].head(200),
+                df_final
+                .sort_values("dias_incumplimiento_max", ascending=False)
+                [columnas_top]
+                .head(int(limite_vista)),
+                use_container_width=True,
+                hide_index=True
+            )
+
+    with st.expander("Ver columnas disponibles", expanded=False):
+        c1, c2 = st.columns(2)
+
+        with c1:
+            st.markdown("**Columnas originales**")
+            st.write(columnas_originales)
+
+        with c2:
+            st.markdown("**Columnas finales**")
+            st.write(df_final.columns.tolist())
+
+    st.subheader("Descarga")
+
+    st.download_button(
+        label="Descargar resultado en Parquet",
+        data=parquet_bytes,
+        file_name="match_integrado_me5a_ariba_nme80fn_performance.parquet",
+        mime="application/octet-stream",
+        use_container_width=True
+    )
+
+    st.caption(
+        "Parquet es el formato principal recomendado para conservar tipos de datos. "
+        "CSV y Excel se preparan solo si los solicitas."
+    )
+
+    with st.expander("Opcional: descargar como CSV o Excel", expanded=False):
+        col_csv, col_excel = st.columns(2)
+
+        with col_csv:
+            preparar_csv = st.button(
+                "Preparar CSV",
                 use_container_width=True
             )
 
-            st.subheader("Columnas nuevas agregadas")
-            st.dataframe(
-                resumen_cols,
-                use_container_width=True
-            )
-
-        elif pagina == "Resumen":
-            st.subheader("Resumen de performance")
-
-            st.dataframe(
-                resumen_perf,
-                use_container_width=True
-            )
-
-            if not resumen_perf.empty:
-                st.bar_chart(
-                    resumen_perf.set_index("Métrica")["% Cumple"]
-                )
-
-            st.divider()
-
-            st.subheader("Rango de incumplimiento")
-
-            if "rango_incumplimiento" in df_final.columns:
-                conteo_rango = (
-                    df_final["rango_incumplimiento"]
-                    .value_counts(dropna=False)
-                    .reset_index()
-                )
-
-                conteo_rango.columns = [
-                    "Rango incumplimiento",
-                    "Cantidad"
-                ]
-
-                st.dataframe(
-                    conteo_rango,
-                    use_container_width=True
-                )
-
-                st.bar_chart(
-                    conteo_rango.set_index("Rango incumplimiento")["Cantidad"]
-                )
-
-            st.divider()
-
-            st.subheader("Distribución por tipo de OC")
-
-            if "tipo_oc" in df_final.columns:
-                conteo_tipo_oc = (
-                    df_final["tipo_oc"]
-                    .value_counts(dropna=False)
-                    .reset_index()
-                )
-
-                conteo_tipo_oc.columns = [
-                    "Tipo OC",
-                    "Cantidad"
-                ]
-
-                st.dataframe(
-                    conteo_tipo_oc,
-                    use_container_width=True
-                )
-
-                st.bar_chart(
-                    conteo_tipo_oc.set_index("Tipo OC")["Cantidad"]
-                )
-
-            st.divider()
-
-            st.subheader("Incumplimientos")
-
-            if "incumplimiento" in df_final.columns:
-                conteo_inc = (
-                    df_final["incumplimiento"]
-                    .value_counts(dropna=False)
-                    .reset_index()
-                )
-
-                conteo_inc.columns = [
-                    "Incumplimiento",
-                    "Cantidad"
-                ]
-
-                st.dataframe(
-                    conteo_inc,
-                    use_container_width=True
-                )
-
-            st.divider()
-
-            st.subheader("Top filas con mayor incumplimiento")
-
-            if "dias_incumplimiento_max" in df_final.columns:
-                columnas_top = [
-                    "Solicitud de pedido",
-                    "Pedido",
-                    "tipo_oc",
-                    "origen_oc",
-                    "sistema_oc",
-                    "dx_tat",
-                    "dx_proveedor",
-                    "dx_logistica",
-                    "dias_incumplimiento_max",
-                    "rango_incumplimiento",
-                    "fecha_solicitud_final",
-                    "fecha_recepcion_final"
-                ]
-
-                columnas_top = [
-                    col for col in columnas_top
-                    if col in df_final.columns
-                ]
-
-                st.dataframe(
-                    df_final
-                    .sort_values("dias_incumplimiento_max", ascending=False)
-                    [columnas_top]
-                    .head(200),
-                    use_container_width=True
-                )
-
-        elif pagina == "Descarga":
-            st.subheader("Descargar resultado con performance")
-
-            st.info(
-                "El resultado conserva todas las columnas originales y agrega "
-                "las columnas nuevas de clasificación, días, performance e incumplimiento."
-            )
-
-            formato_descarga = st.radio(
-                "Formato de descarga",
-                options=[
-                    "Parquet",
-                    "CSV",
-                    "Excel"
-                ],
-                horizontal=True
-            )
-
-            if formato_descarga == "Parquet":
-                parquet_bytes = convertir_a_parquet_cache(df_final)
-
-                st.download_button(
-                    label="Descargar Parquet",
-                    data=parquet_bytes,
-                    file_name="match_integrado_me5a_ariba_nme80fn_performance.parquet",
-                    mime="application/octet-stream"
-                )
-
-            elif formato_descarga == "CSV":
-                csv_bytes = convertir_a_csv_cache(df_final)
+            if preparar_csv:
+                with st.spinner("Preparando CSV..."):
+                    csv_bytes = convertir_a_csv_cache(df_final)
 
                 st.download_button(
                     label="Descargar CSV",
                     data=csv_bytes,
                     file_name="match_integrado_me5a_ariba_nme80fn_performance.csv",
-                    mime="text/csv"
+                    mime="text/csv",
+                    use_container_width=True
                 )
 
-            elif formato_descarga == "Excel":
-                limite_excel = 250_000
+        with col_excel:
+            limite_excel = 250_000
 
-                if len(df_final) > limite_excel:
-                    st.warning(
-                        f"El resultado tiene {len(df_final):,} filas. "
-                        f"Para evitar problemas de memoria, descarga en Parquet o CSV. "
-                        f"Excel está limitado a {limite_excel:,} filas."
-                    )
-                else:
-                    excel_bytes = convertir_a_excel_cache(
-                        df_final,
-                        resumen_perf,
-                        resumen_cols
-                    )
+            if len(df_final) > limite_excel:
+                st.button(
+                    "Excel no disponible",
+                    disabled=True,
+                    use_container_width=True
+                )
+
+                st.warning(
+                    f"Excel no está disponible porque la salida tiene más de {limite_excel:,} filas. "
+                    "Usa Parquet o CSV."
+                )
+            else:
+                preparar_excel = st.button(
+                    "Preparar Excel",
+                    use_container_width=True
+                )
+
+                if preparar_excel:
+                    with st.spinner("Preparando Excel..."):
+                        excel_bytes = convertir_a_excel_cache(
+                            df_final,
+                            resumen_perf,
+                            resumen_cols
+                        )
 
                     st.download_button(
                         label="Descargar Excel",
                         data=excel_bytes,
                         file_name="match_integrado_me5a_ariba_nme80fn_performance.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
                     )
 
-    except Exception as e:
-        st.error("Ocurrió un error al procesar el archivo.")
-        st.exception(e)
-
-else:
-    st.warning("Carga el archivo con fechas finales para comenzar.")
+except Exception as e:
+    st.error("No se pudo calcular la performance TAT.")
+    st.exception(e)
