@@ -157,6 +157,52 @@ st.markdown(
         .block-container {padding-top: 1.25rem; padding-bottom: 2rem; max-width: 1500px;}
         h1 {font-size: 1.9rem !important; margin-bottom: 0.1rem !important;}
         h3 {font-size: 1.05rem !important; margin-top: 1rem !important;}
+        .app-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 2rem;
+            margin: 0.25rem 0 1.1rem 0;
+        }
+        .app-header-title {
+            flex: 1 1 auto;
+            min-width: 0;
+            padding-top: 0.35rem;
+        }
+        .app-header-title h1 {
+            margin-top: 0 !important;
+        }
+        .app-header-logo {
+            flex: 0 0 auto;
+            min-width: 190px;
+            text-align: right;
+            padding-top: 0.15rem;
+        }
+        .app-header-logo img {
+            max-width: 180px;
+            height: auto;
+        }
+        .upload-card {
+            border: 1px solid #e5e7eb;
+            border-radius: 16px;
+            padding: 14px 16px 16px 16px;
+            background: #ffffff;
+            margin: 0.3rem 0 1.1rem 0;
+        }
+        @media (max-width: 760px) {
+            .app-header {
+                display: block;
+                margin-bottom: 0.9rem;
+            }
+            .app-header-logo {
+                text-align: left;
+                min-width: 0;
+                padding-top: 0.25rem;
+            }
+            .app-header-logo img {
+                max-width: 145px;
+            }
+        }
         div[data-testid="stMetric"] {
             background: #ffffff;
             border: 1px solid #eef2f7;
@@ -377,6 +423,27 @@ def opciones_columna(df: pd.DataFrame, col: str, max_opciones: int = 700) -> lis
     return valores[:max_opciones]
 
 
+
+
+@st.cache_data(show_spinner=False)
+def construir_opciones_filtros(df: pd.DataFrame) -> dict[str, list[str]]:
+    """Calcula una sola vez las opciones de filtros categóricos.
+
+    Antes se recalculaban varios dropna/sort/unique en cada rerun,
+    lo que se nota en archivos grandes.
+    """
+    columnas = [
+        COL_CENTRO,
+        COL_TIPO_OC,
+        COL_ORIGEN,
+        COL_SISTEMA,
+        COL_GRUPO_COMPRAS,
+        COL_ESTADO_MATCH,
+        COL_PERF_TAT,
+        COL_RANGO_INC,
+    ]
+    return {col: opciones_columna(df, col) for col in columnas}
+
 def filtrar_por_ids(df: pd.DataFrame, columna: str, texto: str) -> pd.Series:
     if columna not in df.columns or not str(texto).strip():
         return pd.Series(True, index=df.index)
@@ -502,6 +569,7 @@ def etapa_color(row: pd.Series, etapa: dict) -> str:
     return "gray"
 
 
+@st.cache_data(show_spinner=False)
 def dataframe_a_excel(df: pd.DataFrame) -> bytes:
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -509,10 +577,16 @@ def dataframe_a_excel(df: pd.DataFrame) -> bytes:
     return output.getvalue()
 
 
+@st.cache_data(show_spinner=False)
 def dataframe_a_parquet(df: pd.DataFrame) -> bytes:
     output = io.BytesIO()
     df.to_parquet(output, index=False, engine="pyarrow")
     return output.getvalue()
+
+
+@st.cache_data(show_spinner=False)
+def dataframe_a_csv(df: pd.DataFrame) -> bytes:
+    return df.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
 
 
 def construir_label_registro(row: pd.Series) -> str:
@@ -678,68 +752,73 @@ def html_estado_pedido(row: pd.Series) -> str:
 # =========================================================
 # UI común
 # =========================================================
-def mostrar_logo(ancho: int = 180):
-    """Muestra el logo desde assets/logo.svg si existe."""
+@st.cache_data(show_spinner=False)
+def obtener_logo_base64() -> str:
+    """Lee el logo una sola vez por sesión/cache para evitar trabajo en cada rerun."""
     if not LOGO_PATH.exists():
-        return
+        return ""
 
     logo_svg = LOGO_PATH.read_text(encoding="utf-8")
-    logo_base64 = base64.b64encode(logo_svg.encode("utf-8")).decode("utf-8")
+    return base64.b64encode(logo_svg.encode("utf-8")).decode("utf-8")
 
-    st.markdown(
-        f"""
-        <div style="
-            width: 100%;
-            text-align: center;
-            margin-top: 0.5rem;
-            margin-bottom: 1rem;
-        ">
-            <img src="data:image/svg+xml;base64,{logo_base64}" width="{ancho}">
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+
+def html_logo(ancho: int = 180) -> str:
+    logo_base64 = obtener_logo_base64()
+    if not logo_base64:
+        return ""
+
+    return f'<img src="data:image/svg+xml;base64,{logo_base64}" width="{ancho}" alt="Logo">'
 
 
 # =========================================================
 # Header minimalista + carga superior
 # =========================================================
-mostrar_logo()
+st.markdown(
+    f"""
+    <div class="app-header">
+        <div class="app-header-title">
+            <h1>Buscador SolPed / OC</h1>
+            <p style="color:#6b7280; margin:0; font-size:0.95rem;">
+                Carga un archivo ya procesado. La app solo filtra, visualiza y descarga resultados; no recalcula performance.
+            </p>
+        </div>
+        <div class="app-header-logo">{html_logo(180)}</div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
-st.title("Buscador SolPed / OC")
-st.caption("Carga un archivo ya procesado. La app solo filtra, visualiza y descarga resultados; no recalcula performance.")
+st.markdown("### Archivo")
 
-st.subheader("Archivo")
+st.markdown('<div class="upload-card">', unsafe_allow_html=True)
+uploaded_file = st.file_uploader(
+    "Subir parquet, CSV o Excel",
+    type=["parquet", "csv", "xlsx", "xls"],
+    help="Formatos soportados: .parquet, .csv, .xlsx y .xls",
+)
 
-card_archivo = st.container(border=True)
-with card_archivo:
-    uploaded_file = st.file_uploader(
-        "Subir parquet, CSV o Excel",
-        type=["parquet", "csv", "xlsx", "xls"],
-        help="Formatos soportados: .parquet, .csv, .xlsx y .xls",
+cfg1, cfg2, cfg3 = st.columns([1.1, 0.9, 1.1])
+with cfg1:
+    separador_csv = st.selectbox(
+        "Separador CSV",
+        ["Automático", "Punto y coma (;)", "Coma (,)", "Tabulación"],
+        index=0,
+        help="Solo aplica para archivos CSV.",
     )
-
-    cfg1, cfg2, cfg3 = st.columns([1.1, 0.9, 1.1])
-    with cfg1:
-        separador_csv = st.selectbox(
-            "Separador CSV",
-            ["Automático", "Punto y coma (;)", "Coma (,)", "Tabulación"],
-            index=0,
-            help="Solo aplica para archivos CSV.",
-        )
-    with cfg2:
-        limite_vista = st.number_input(
-            "Filas en tabla",
-            min_value=25,
-            max_value=5000,
-            value=300,
-            step=25,
-        )
-    with cfg3:
-        mostrar_todas_columnas = st.checkbox(
-            "Mostrar todas las columnas en tabla",
-            value=False,
-        )
+with cfg2:
+    limite_vista = st.number_input(
+        "Filas en tabla",
+        min_value=25,
+        max_value=5000,
+        value=300,
+        step=25,
+    )
+with cfg3:
+    mostrar_todas_columnas = st.checkbox(
+        "Mostrar todas las columnas en tabla",
+        value=False,
+    )
+st.markdown('</div>', unsafe_allow_html=True)
 
 if uploaded_file is None:
     st.info("Sube un archivo `.parquet`, `.csv`, `.xlsx` o `.xls` para comenzar.")
@@ -749,6 +828,7 @@ try:
     df = leer_archivo(uploaded_file.getvalue(), uploaded_file.name, separador_csv)
     df = limpiar_columnas(df)
     df = convertir_fechas_visuales(df)
+    opciones_filtros = construir_opciones_filtros(df)
 except Exception as e:
     st.error("No se pudo leer el archivo.")
     st.exception(e)
@@ -785,18 +865,18 @@ with st.expander("Filtros avanzados", expanded=False):
     with a2:
         txt_solicitante = st.text_input("Solicitante", placeholder="Ej: c.silva")
         txt_autor = st.text_input("Autor", placeholder="Ej: CL17330735")
-        centro_sel = st.multiselect("Centro", opciones_columna(df, COL_CENTRO))
+        centro_sel = st.multiselect("Centro", opciones_filtros.get(COL_CENTRO, []))
 
     with a3:
-        tipo_oc_sel = st.multiselect("Tipo OC", opciones_columna(df, COL_TIPO_OC))
-        origen_sel = st.multiselect("Origen", opciones_columna(df, COL_ORIGEN))
-        sistema_sel = st.multiselect("Sistema", opciones_columna(df, COL_SISTEMA))
+        tipo_oc_sel = st.multiselect("Tipo OC", opciones_filtros.get(COL_TIPO_OC, []))
+        origen_sel = st.multiselect("Origen", opciones_filtros.get(COL_ORIGEN, []))
+        sistema_sel = st.multiselect("Sistema", opciones_filtros.get(COL_SISTEMA, []))
 
     with a4:
-        grupo_sel = st.multiselect("Grupo de compras", opciones_columna(df, COL_GRUPO_COMPRAS))
-        estado_match_sel = st.multiselect("Estado del match", opciones_columna(df, COL_ESTADO_MATCH))
-        perf_tat_sel = st.multiselect("Performance TAT", opciones_columna(df, COL_PERF_TAT))
-        rango_inc_sel = st.multiselect("Rango incumplimiento TAT", opciones_columna(df, COL_RANGO_INC))
+        grupo_sel = st.multiselect("Grupo de compras", opciones_filtros.get(COL_GRUPO_COMPRAS, []))
+        estado_match_sel = st.multiselect("Estado del match", opciones_filtros.get(COL_ESTADO_MATCH, []))
+        perf_tat_sel = st.multiselect("Performance TAT", opciones_filtros.get(COL_PERF_TAT, []))
+        rango_inc_sel = st.multiselect("Rango incumplimiento TAT", opciones_filtros.get(COL_RANGO_INC, []))
 
     st.markdown("#### Rango de días / monto")
     r1, r2, r3, r4 = st.columns(4)
@@ -1084,7 +1164,7 @@ with st.expander("Registro completo transpuesto", expanded=False):
 # =========================================================
 st.markdown("### Descarga")
 
-csv_bytes = df_filtrado.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
+csv_bytes = dataframe_a_csv(df_filtrado)
 
 x1, x2, x3 = st.columns(3)
 with x1:
