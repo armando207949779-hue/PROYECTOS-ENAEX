@@ -747,13 +747,13 @@ def html_linea_pedido(row: pd.Series) -> str:
             icono = ""
 
         partes.append(
-            f"""
+            dedent(f"""
             <div class="pedido-step">
                 <div class="pedido-dot {dot_class}">{icono}</div>
                 <div class="pedido-label">{escape(label)}</div>
                 <div class="pedido-date">{escape(fecha_etapa_texto(row, col_fecha))}</div>
             </div>
-            """
+            """).strip()
         )
 
         if i < len(etapas) - 1:
@@ -768,7 +768,7 @@ def html_linea_pedido(row: pd.Series) -> str:
     dias_tat = texto_dias_y_meses(row.get(COL_DIAS_TAT, np.nan))
     estado_tat = formato_valor(row.get(COL_PERF_TAT, np.nan))
 
-    return f"""
+    return dedent(f"""
     <div class="pedido-line-card">
         <div class="pedido-line-title">Línea de pedido</div>
         <div class="pedido-line">{''.join(partes)}</div>
@@ -776,7 +776,7 @@ def html_linea_pedido(row: pd.Series) -> str:
             TAT total: <strong>{escape(dias_tat)}</strong> · Estado: <strong>{escape(estado_tat)}</strong>
         </div>
     </div>
-    """
+    """).strip()
 
 
 def clase_performance(valor: Any) -> str:
@@ -1362,58 +1362,59 @@ else:
     dias_inc_txt = texto_dias_y_meses(dias_inc)
     detalle_tat = detalle_estado_tat(perf_tat, umbral_tat, dias_inc, rango_inc)
 
-    st.markdown(
-        dedent(f"""
-        <div class="tat-summary">
-            <div class="tat-card tat-card-primary">
-                <div class="tat-label">TAT total</div>
-                <div class="tat-main">{escape(tat_total_txt)}</div>
-                <div class="tat-sub">Duración desde la solicitud hasta la recepción.</div>
-                <div class="tat-muted">Umbral aplicado: {escape(texto_dias_simple(umbral_tat))}</div>
+    tat_html = dedent(f"""
+    <div class="tat-summary">
+        <div class="tat-card tat-card-primary">
+            <div class="tat-label">TAT total</div>
+            <div class="tat-main">{escape(tat_total_txt)}</div>
+            <div class="tat-sub">Duración desde la solicitud hasta la recepción.</div>
+            <div class="tat-muted">Umbral aplicado: {escape(texto_dias_simple(umbral_tat))}</div>
+        </div>
+        <div class="tat-card">
+            <div class="tat-label">Estado TAT</div>
+            <div class="tat-main-small">{pill(perf_tat, perf_color)}</div>
+            <div class="tat-sub">{escape(detalle_tat)}</div>
+        </div>
+        <div class="tat-card">
+            <div class="tat-label">Incumplimiento TAT</div>
+            <div class="tat-main-small">{escape(dias_inc_txt)}</div>
+            <div class="tat-sub">Rango: {escape(formato_valor(rango_inc))}</div>
+            <div class="tat-muted">Solo cuenta exceso sobre el umbral TAT.</div>
+        </div>
+    </div>
+    """).strip()
+
+    order_head_html = dedent(f"""
+    <div class="order-head">
+        <div class="order-title">Datos principales del pedido</div>
+        <div class="head-grid">
+            <div>
+                <div class="head-label">SolPed</div>
+                <div class="head-value">{html_texto(row.get(COL_SOLPED, np.nan))}</div>
             </div>
-            <div class="tat-card">
-                <div class="tat-label">Estado TAT</div>
-                <div class="tat-main-small">{pill(perf_tat, perf_color)}</div>
-                <div class="tat-sub">{escape(detalle_tat)}</div>
+            <div>
+                <div class="head-label">Orden de compra / Pedido</div>
+                <div class="head-value">{html_texto(row.get(COL_OC_ME5A, row.get(COL_OC_NME, np.nan)))}</div>
             </div>
-            <div class="tat-card">
-                <div class="tat-label">Incumplimiento TAT</div>
-                <div class="tat-main-small">{escape(dias_inc_txt)}</div>
-                <div class="tat-sub">Rango: {escape(formato_valor(rango_inc))}</div>
-                <div class="tat-muted">Solo cuenta exceso sobre el umbral TAT.</div>
+            <div>
+                <div class="head-label">Posición SolPed</div>
+                <div class="head-value">{html_texto(row.get(COL_POS_SOLPED, np.nan))}</div>
+            </div>
+            <div>
+                <div class="head-label">Material</div>
+                <div class="head-value">{html_texto(row.get(COL_MATERIAL, np.nan))}</div>
+            </div>
+            <div>
+                <div class="head-label">Centro</div>
+                <div class="head-value">{html_texto(row.get(COL_CENTRO, np.nan))}</div>
             </div>
         </div>
+    </div>
+    """).strip()
 
-        {html_linea_pedido(row)}
-
-        <div class="order-head">
-            <div class="order-title">Datos principales del pedido</div>
-            <div class="head-grid">
-                <div>
-                    <div class="head-label">SolPed</div>
-                    <div class="head-value">{html_texto(row.get(COL_SOLPED, np.nan))}</div>
-                </div>
-                <div>
-                    <div class="head-label">Orden de compra / Pedido</div>
-                    <div class="head-value">{html_texto(row.get(COL_OC_ME5A, row.get(COL_OC_NME, np.nan)))}</div>
-                </div>
-                <div>
-                    <div class="head-label">Posición SolPed</div>
-                    <div class="head-value">{html_texto(row.get(COL_POS_SOLPED, np.nan))}</div>
-                </div>
-                <div>
-                    <div class="head-label">Material</div>
-                    <div class="head-value">{html_texto(row.get(COL_MATERIAL, np.nan))}</div>
-                </div>
-                <div>
-                    <div class="head-label">Centro</div>
-                    <div class="head-value">{html_texto(row.get(COL_CENTRO, np.nan))}</div>
-                </div>
-            </div>
-        </div>
-        """).strip(),
-        unsafe_allow_html=True,
-    )
+    st.markdown(tat_html, unsafe_allow_html=True)
+    st.markdown(dedent(html_linea_pedido(row)).strip(), unsafe_allow_html=True)
+    st.markdown(order_head_html, unsafe_allow_html=True)
 
     components.html(html_estado_pedido(row), height=230, scrolling=False)
 
