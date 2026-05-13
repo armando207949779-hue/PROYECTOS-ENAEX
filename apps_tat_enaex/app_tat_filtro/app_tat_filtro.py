@@ -1,5 +1,7 @@
 import io
+import base64
 from html import escape
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -16,6 +18,11 @@ st.set_page_config(
     page_icon="🔎",
     layout="wide",
 )
+
+# --- RUTAS DEL LOGO ---
+BASE_DIR = Path(__file__).resolve().parent
+ROOT_DIR = BASE_DIR.parent
+LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
 
 
 # =========================================================
@@ -290,6 +297,27 @@ st.markdown(
 # =========================================================
 # Lectura y utilidades
 # =========================================================
+
+# --- FUNCIÓN PARA MOSTRAR LOGO ---
+def mostrar_logo(ancho: int = 180):
+    if not LOGO_PATH.exists():
+        return
+    logo_svg = LOGO_PATH.read_text(encoding="utf-8")
+    logo_base64 = base64.b64encode(logo_svg.encode("utf-8")).decode("utf-8")
+    st.markdown(
+        f"""
+        <div style="
+            width: 100%;
+            text-align: center;
+            margin-top: 0.5rem;
+            margin-bottom: 1rem;
+        ">
+            <img src="data:image/svg+xml;base64,{logo_base64}" width="{ancho}">
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
 def obtener_separador(opcion: str):
     """Devuelve el separador elegido para leer archivos CSV."""
     mapa = {
@@ -668,11 +696,11 @@ def html_estado_pedido(row: pd.Series) -> str:
     """
 
 
-
-
 # =========================================================
 # Header minimalista
 # =========================================================
+mostrar_logo()
+
 st.title("Buscador SolPed / OC")
 st.caption("Carga un archivo ya procesado. La app solo filtra, visualiza y descarga resultados; no recalcula performance.")
 
