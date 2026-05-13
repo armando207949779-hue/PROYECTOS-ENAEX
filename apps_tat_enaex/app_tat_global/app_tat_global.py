@@ -15,6 +15,8 @@ LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
 
 APP_TAT_CONSOLIDADO = PROJECT_DIR / "app_tat_consolidado" / "app_tat_consolidado.py"
 APP_TAT_CONSOLIDADO_FINAL = PROJECT_DIR / "app_tat_consolidado_final" / "app_tat_consolidado_final.py"
+APP_TAT_ESTADO_PEDIDO = PROJECT_DIR / "app_tat_estado_pedido" / "app_tat_estado_pedido.py"
+APP_TAT_FILTRO = PROJECT_DIR / "app_tat_filtro" / "app_tat_filtro.py"
 APP_TAT_GRAFICOS = PROJECT_DIR / "app_tat_graficos" / "app_tat_graficos.py"
 APP_TAT_LIMPIEZA_ARIBA = PROJECT_DIR / "app_tat_limpieza_ariba" / "app_tat_limpieza_ariba.py"
 APP_TAT_LIMPIEZA_ME5A = PROJECT_DIR / "app_tat_limpieza_me5a" / "app_tat_limpieza_me5a.py"
@@ -82,8 +84,8 @@ def pagina_inicio():
         """
         <p style='text-align: center; font-size: 18px;'>
             Selecciona una aplicación desde el menú lateral para limpiar archivos,
-            consolidar información, realizar cruces, generar gráficos y preparar
-            reportes relacionados con el análisis TAT.
+            consolidar información, realizar cruces, filtrar datos, generar gráficos
+            y preparar reportes relacionados con el análisis TAT.
         </p>
         """,
         unsafe_allow_html=True
@@ -154,11 +156,23 @@ def pagina_inicio():
     with col7:
         st.info(
             """
+            **Filtro TAT**
+
+            Filtrado y depuración de información TAT según criterios definidos.
+            """
+        )
+
+    with col8:
+        st.info(
+            """
             **Gráficos TAT**
 
             Visualización y análisis gráfico de resultados TAT.
             """
         )
+
+    with col9:
+        st.empty()
 
 
 # =========================
@@ -172,6 +186,7 @@ apps_requeridas = {
     "Match TAT": APP_TAT_MATCH,
     "Consolidado TAT": APP_TAT_CONSOLIDADO,
     "Consolidado Final": APP_TAT_CONSOLIDADO_FINAL,
+    "Filtro TAT": APP_TAT_FILTRO,
     "Gráficos TAT": APP_TAT_GRAFICOS,
 }
 
@@ -237,6 +252,13 @@ pagina = st.navigation(
                 APP_TAT_CONSOLIDADO_FINAL,
                 title="Consolidado Final",
                 icon="✅"
+            ),
+        ],
+        "Filtro": [
+            st.Page(
+                APP_TAT_FILTRO,
+                title="Filtro TAT",
+                icon="🔎"
             ),
         ],
         "Visualización": [
