@@ -50,6 +50,7 @@ COL_RANGO_INC = "rango_incumplimiento_tat"
 COL_INC_TAT = "incumplimiento_tat"
 COL_DIAS_TAT = "dias_tat_total"
 COL_DIAS_INC = "dias_incumplimiento_tat"
+COL_UMBRAL_TAT = "umbral_tat_total"
 COL_MONTO = "monto"
 COL_FECHAS_INCONSISTENTES = "tiene_fechas_inconsistentes"
 
@@ -143,6 +144,7 @@ COLUMNAS_TABLA_PRINCIPAL = [
     COL_SISTEMA,
     COL_PERF_TAT,
     COL_DIAS_TAT,
+    COL_UMBRAL_TAT,
     COL_DIAS_INC,
     COL_RANGO_INC,
     COL_MONTO,
@@ -220,6 +222,57 @@ st.markdown(
             border-radius: 16px;
             padding: 14px 16px;
             margin: 0.5rem 0 0.7rem 0;
+        }
+        .tat-summary {
+            display: grid;
+            grid-template-columns: 1.15fr 1fr 1fr;
+            gap: 12px;
+            margin: 0.75rem 0 0.75rem 0;
+        }
+        .tat-card {
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 18px;
+            padding: 16px 18px;
+            box-shadow: 0 1px 5px rgba(15, 23, 42, 0.04);
+            min-height: 128px;
+        }
+        .tat-card-primary {
+            background: #eff6ff;
+            border-color: #bfdbfe;
+        }
+        .tat-label {
+            color: #64748b;
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            font-weight: 800;
+            margin-bottom: 6px;
+        }
+        .tat-main {
+            color: #0f172a;
+            font-size: 2rem;
+            line-height: 1.05;
+            font-weight: 900;
+            margin-bottom: 6px;
+        }
+        .tat-main-small {
+            color: #0f172a;
+            font-size: 1.35rem;
+            line-height: 1.1;
+            font-weight: 900;
+            margin-bottom: 8px;
+        }
+        .tat-sub {
+            color: #334155;
+            font-size: 0.92rem;
+            line-height: 1.35;
+        }
+        .tat-muted {
+            color: #64748b;
+            font-size: 0.82rem;
+            line-height: 1.35;
+            margin-top: 5px;
         }
         .head-grid {
             display: grid;
@@ -318,6 +371,8 @@ st.markdown(
             .stage-card::after {content: "↓"; right: 50%; top: auto; bottom: -14px; transform: translateX(50%);}
             .stage-card:last-child::after {content: "";}
             .head-grid {grid-template-columns: 1fr;}
+            .tat-summary {grid-template-columns: 1fr;}
+            .tat-main {font-size: 1.65rem;}
         }
     </style>
     """,
@@ -499,6 +554,70 @@ def formato_numero(valor: Any, decimales: int = 0) -> str:
     return texto.replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+def valor_numerico(valor: Any) -> float:
+    """Convierte un valor a número; devuelve NaN si no se puede convertir."""
+    try:
+        return float(pd.to_numeric(pd.Series([valor]), errors="coerce").iloc[0])
+    except Exception:
+        return np.nan
+
+
+def texto_dias_y_meses(dias: Any) -> str:
+    """Muestra duración TAT en días y, cuando aplica, en meses aproximados."""
+    dias_num = valor_numerico(dias)
+
+    if pd.isna(dias_num):
+        return "Sin dato"
+
+    dias_int = int(round(dias_num))
+    texto_dias = f"{dias_int:,}".replace(",", ".")
+
+    if dias_int < 0:
+        return f"{texto_dias} días · revisar fechas"
+
+    if dias_int >= 30:
+        meses = dias_num / 30.44
+        texto_meses = f"{meses:,.1f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        return f"{texto_dias} días · {texto_meses} meses aprox."
+
+    return f"{texto_dias} días · menos de 1 mes"
+
+
+def texto_dias_simple(dias: Any) -> str:
+    """Muestra solo días en formato claro."""
+    dias_num = valor_numerico(dias)
+
+    if pd.isna(dias_num):
+        return "Sin dato"
+
+    dias_int = int(round(dias_num))
+    return f"{dias_int:,} días".replace(",", ".")
+
+
+def detalle_estado_tat(performance: Any, umbral_tat: Any, dias_inc: Any, rango_inc: Any) -> str:
+    """Construye una explicación breve del estado TAT para el usuario."""
+    estado = str(performance).strip().lower()
+    umbral_txt = texto_dias_simple(umbral_tat)
+    inc_txt = texto_dias_y_meses(dias_inc)
+
+    if estado == "cumple":
+        return f"Dentro del plazo objetivo. Umbral aplicado: {umbral_txt}."
+
+    if estado == "no cumple":
+        return f"Supera el plazo objetivo. Exceso: {inc_txt}. Rango: {formato_valor(rango_inc)}."
+
+    if estado == "en proceso":
+        return "En proceso: aún falta la fecha de recepción final para cerrar el TAT."
+
+    if "no aplica" in estado:
+        return "No aplica al análisis: revisa fechas inconsistentes o valores no evaluables."
+
+    if estado == "sin datos":
+        return "Sin datos suficientes para evaluar el TAT total."
+
+    return "Estado pendiente de interpretación según los datos cargados."
+
+
 def clase_performance(valor: Any) -> str:
     texto = str(valor).strip().lower()
     if texto == "cumple":
@@ -582,7 +701,7 @@ def construir_label_registro(row: pd.Series) -> str:
     perf = row.get(COL_PERF_TAT, "-")
     dias = row.get(COL_DIAS_TAT, "-")
     texto = str(row.get(COL_TEXTO, ""))[:55]
-    return f"SolPed {formato_valor(solped)} | OC {formato_valor(oc)} | Pos {formato_valor(pos)} | TAT {formato_valor(dias)} días | {perf} | {texto}"
+    return f"SolPed {formato_valor(solped)} | OC {formato_valor(oc)} | Pos {formato_valor(pos)} | TAT {texto_dias_y_meses(dias)} | {perf} | {texto}"
 
 
 def aplicar_estilo_tabla(df_tabla: pd.DataFrame):
@@ -629,9 +748,13 @@ def html_estado_pedido(row: pd.Series) -> str:
         perf_col = etapa.get("performance")
 
         if dias_col:
-            dias = html_texto(row.get(dias_col, np.nan))
+            dias_valor = row.get(dias_col, np.nan)
             umbral = html_texto(row.get(umbral_col, np.nan)) if umbral_col else "-"
-            dias_txt = f"{dias} días · umbral {umbral}"
+            if dias_col == COL_DIAS_TAT:
+                dias_txt = escape(texto_dias_y_meses(dias_valor)) + f" · umbral {umbral} días"
+            else:
+                dias = html_texto(dias_valor)
+                dias_txt = f"{dias} días · umbral {umbral}"
         else:
             dias_txt = "Punto de inicio"
 
@@ -1073,9 +1196,33 @@ else:
     rango_inc = row.get(COL_RANGO_INC, np.nan)
     dias_tat = row.get(COL_DIAS_TAT, np.nan)
     dias_inc = row.get(COL_DIAS_INC, np.nan)
+    umbral_tat = row.get(COL_UMBRAL_TAT, np.nan)
+    tat_total_txt = texto_dias_y_meses(dias_tat)
+    dias_inc_txt = texto_dias_y_meses(dias_inc)
+    detalle_tat = detalle_estado_tat(perf_tat, umbral_tat, dias_inc, rango_inc)
 
     st.markdown(
         f"""
+        <div class="tat-summary">
+            <div class="tat-card tat-card-primary">
+                <div class="tat-label">TAT total</div>
+                <div class="tat-main">{escape(tat_total_txt)}</div>
+                <div class="tat-sub">Duración desde la solicitud hasta la recepción.</div>
+                <div class="tat-muted">Umbral aplicado: {escape(texto_dias_simple(umbral_tat))}</div>
+            </div>
+            <div class="tat-card">
+                <div class="tat-label">Estado TAT</div>
+                <div class="tat-main-small">{pill(perf_tat, perf_color)}</div>
+                <div class="tat-sub">{escape(detalle_tat)}</div>
+            </div>
+            <div class="tat-card">
+                <div class="tat-label">Incumplimiento TAT</div>
+                <div class="tat-main-small">{escape(dias_inc_txt)}</div>
+                <div class="tat-sub">Rango: {escape(formato_valor(rango_inc))}</div>
+                <div class="tat-muted">Solo cuenta exceso sobre el umbral TAT.</div>
+            </div>
+        </div>
+
         <div class="order-head">
             <div class="head-grid">
                 <div>
@@ -1091,19 +1238,13 @@ else:
                     <div class="head-value">{formato_valor(row.get(COL_POS_SOLPED, np.nan))}</div>
                 </div>
                 <div>
-                    <div class="head-label">TAT total</div>
-                    <div class="head-value">{formato_valor(dias_tat)} días</div>
+                    <div class="head-label">Material</div>
+                    <div class="head-value">{formato_valor(row.get(COL_MATERIAL, np.nan))}</div>
                 </div>
                 <div>
-                    <div class="head-label">Estado TAT</div>
-                    <div class="head-value">{pill(perf_tat, perf_color)}</div>
+                    <div class="head-label">Centro</div>
+                    <div class="head-value">{formato_valor(row.get(COL_CENTRO, np.nan))}</div>
                 </div>
-            </div>
-            <div style="margin-top:10px;">
-                <span class="tiny-muted">Incumplimiento:</span> {formato_valor(dias_inc)} días ·
-                <span class="tiny-muted">Rango:</span> {formato_valor(rango_inc)} ·
-                <span class="tiny-muted">Material:</span> {formato_valor(row.get(COL_MATERIAL, np.nan))} ·
-                <span class="tiny-muted">Centro:</span> {formato_valor(row.get(COL_CENTRO, np.nan))}
             </div>
         </div>
         """,
