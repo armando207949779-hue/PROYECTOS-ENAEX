@@ -154,6 +154,12 @@ def limpiar_booleanos(df: pd.DataFrame, columnas: list) -> pd.DataFrame:
     return df
 
 
+def formatear_valor(valor):
+    if pd.isna(valor):
+        return ""
+    return str(valor)
+
+
 # =========================================================
 # Match ME5A vs NME80FN
 # Criterio AND estricto:
@@ -277,26 +283,28 @@ def match_me5a_nme80fn(
 
     candidatos = limpiar_booleanos(candidatos, cols_bool_nme)
 
-    candidatos["score_nme80fn"] = (
-        np.where(candidatos["_match_nme_pedido_documento"], 60, 0)
-        + np.where(candidatos["_match_nme_posicion"], 25, 0)
-        + np.where(candidatos["_match_nme_material"], 20, 0)
-        + np.where(candidatos["_match_nme_centro"], 10, 0)
-    )
-
+    # Campo auxiliar interno para elegir el mejor candidato.
+    # No se muestra ni se exporta.
     candidatos["_prioridad_match_nme"] = np.where(
         candidatos["_match_nme_estricto"],
         1,
         0
     )
 
+    candidatos["_coincidencias_nme"] = (
+        candidatos["_match_nme_pedido_documento"].astype(int)
+        + candidatos["_match_nme_posicion"].astype(int)
+        + candidatos["_match_nme_material"].astype(int)
+        + candidatos["_match_nme_centro"].astype(int)
+    )
+
     idx_mejor = (
         candidatos
         .sort_values(
-            by=["_prioridad_match_nme", "score_nme80fn"],
+            by=["_prioridad_match_nme", "_coincidencias_nme"],
             ascending=[False, False]
         )
-        .groupby("_id_me5a", dropna=False)["score_nme80fn"]
+        .groupby("_id_me5a", dropna=False)["_coincidencias_nme"]
         .idxmax()
     )
 
@@ -304,7 +312,6 @@ def match_me5a_nme80fn(
 
     columnas_resultado = [
         "_id_me5a",
-        "score_nme80fn",
         "_match_nme_pedido_documento",
         "_match_nme_posicion",
         "_match_nme_material",
@@ -485,25 +492,27 @@ def match_me5a_ariba(
 
     candidatos = limpiar_booleanos(candidatos, cols_bool_ariba)
 
-    candidatos["score_ariba"] = (
-        np.where(candidatos["_match_ariba_solicitud"], 60, 0)
-        + np.where(candidatos["_match_ariba_linea"], 40, 0)
-        + np.where(candidatos["_match_ariba_pedido"], 10, 0)
-    )
-
+    # Campo auxiliar interno para elegir el mejor candidato.
+    # No se muestra ni se exporta.
     candidatos["_prioridad_match_ariba"] = np.where(
         candidatos["_match_ariba_estricto"],
         1,
         0
     )
 
+    candidatos["_coincidencias_ariba"] = (
+        candidatos["_match_ariba_solicitud"].astype(int)
+        + candidatos["_match_ariba_linea"].astype(int)
+        + candidatos["_match_ariba_pedido"].astype(int)
+    )
+
     idx_mejor = (
         candidatos
         .sort_values(
-            by=["_prioridad_match_ariba", "score_ariba"],
+            by=["_prioridad_match_ariba", "_coincidencias_ariba"],
             ascending=[False, False]
         )
-        .groupby("_id_me5a", dropna=False)["score_ariba"]
+        .groupby("_id_me5a", dropna=False)["_coincidencias_ariba"]
         .idxmax()
     )
 
@@ -511,7 +520,6 @@ def match_me5a_ariba(
 
     columnas_resultado = [
         "_id_me5a",
-        "score_ariba",
         "_match_ariba_solicitud",
         "_match_ariba_linea",
         "_match_ariba_pedido",
@@ -590,9 +598,6 @@ def construir_match_final(
         how="left"
     )
 
-    resultado["score_ariba"] = resultado["score_ariba"].fillna(0)
-    resultado["score_nme80fn"] = resultado["score_nme80fn"].fillna(0)
-
     columnas_bool = [
         "_match_ariba_solicitud",
         "_match_ariba_linea",
@@ -608,13 +613,7 @@ def construir_match_final(
     resultado = limpiar_booleanos(resultado, columnas_bool)
 
     resultado["match_ariba_encontrado"] = resultado["_match_ariba_estricto"]
-
     resultado["match_nme80fn_encontrado"] = resultado["_match_nme_estricto"]
-
-    resultado["score_total_integrado"] = (
-        resultado["score_ariba"]
-        + resultado["score_nme80fn"]
-    )
 
     resultado["estado_match"] = np.select(
         [
@@ -623,11 +622,11 @@ def construir_match_final(
             ~resultado["match_ariba_encontrado"] & resultado["match_nme80fn_encontrado"]
         ],
         [
-            "Match en ARIBA y NME80FN",
-            "Match solo en ARIBA",
-            "Match solo en NME80FN"
+            "Encontrado en ARIBA y NME80FN",
+            "Encontrado solo en ARIBA",
+            "Encontrado solo en NME80FN"
         ],
-        default="Sin match"
+        default="No encontrado en ARIBA ni NME80FN"
     )
 
     return resultado
@@ -639,9 +638,6 @@ def construir_match_final(
 
 COLUMNAS_EXPORTACION = {
     "estado_match": "Estado del match",
-    "score_total_integrado": "Puntaje total del match",
-    "score_ariba": "Puntaje del match - ARIBA",
-    "score_nme80fn": "Puntaje del match - NME80FN",
     "match_ariba_encontrado": "Match encontrado - ARIBA",
     "match_nme80fn_encontrado": "Match encontrado - NME80FN",
 
@@ -711,6 +707,17 @@ COLUMNAS_EXPORTACION = {
 def preparar_resultado_exportacion(df: pd.DataFrame) -> pd.DataFrame:
     df_export = df.copy()
 
+    columnas_no_exportar = [
+        "score_ariba",
+        "score_nme80fn",
+        "score_total_integrado"
+    ]
+
+    df_export = df_export.drop(
+        columns=[col for col in columnas_no_exportar if col in df_export.columns],
+        errors="ignore"
+    )
+
     columnas_renombrar = {
         col: nuevo_nombre
         for col, nuevo_nombre in COLUMNAS_EXPORTACION.items()
@@ -727,17 +734,57 @@ def preparar_resultado_exportacion(df: pd.DataFrame) -> pd.DataFrame:
 # =========================================================
 
 def generar_resumen(resultado_final: pd.DataFrame) -> pd.DataFrame:
-    resumen = (
-        resultado_final["estado_match"]
-        .value_counts(dropna=False)
-        .reset_index()
+    total = int(len(resultado_final))
+
+    if total == 0:
+        return pd.DataFrame(
+            columns=["Mensaje", "Cantidad", "%"]
+        )
+
+    cantidad_ariba = int(resultado_final["match_ariba_encontrado"].sum())
+    cantidad_nme = int(resultado_final["match_nme80fn_encontrado"].sum())
+    cantidad_ambos = int(
+        resultado_final["estado_match"].eq("Encontrado en ARIBA y NME80FN").sum()
+    )
+    cantidad_solo_ariba = int(
+        resultado_final["estado_match"].eq("Encontrado solo en ARIBA").sum()
+    )
+    cantidad_solo_nme = int(
+        resultado_final["estado_match"].eq("Encontrado solo en NME80FN").sum()
+    )
+    cantidad_no_encontrado = int(
+        resultado_final["estado_match"].eq("No encontrado en ARIBA ni NME80FN").sum()
     )
 
-    resumen.columns = ["Estado del match", "Cantidad"]
+    registros = [
+        {
+            "Mensaje": f"{cantidad_ariba:,} registros de {total:,} en ME5A fueron encontrados en ARIBA",
+            "Cantidad": cantidad_ariba
+        },
+        {
+            "Mensaje": f"{cantidad_nme:,} registros de {total:,} en ME5A fueron encontrados en NME80FN",
+            "Cantidad": cantidad_nme
+        },
+        {
+            "Mensaje": f"{cantidad_ambos:,} registros de {total:,} en ME5A fueron encontrados en ARIBA y NME80FN",
+            "Cantidad": cantidad_ambos
+        },
+        {
+            "Mensaje": f"{cantidad_solo_ariba:,} registros de {total:,} en ME5A fueron encontrados solo en ARIBA",
+            "Cantidad": cantidad_solo_ariba
+        },
+        {
+            "Mensaje": f"{cantidad_solo_nme:,} registros de {total:,} en ME5A fueron encontrados solo en NME80FN",
+            "Cantidad": cantidad_solo_nme
+        },
+        {
+            "Mensaje": f"{cantidad_no_encontrado:,} registros de {total:,} en ME5A no fueron encontrados en ARIBA ni NME80FN",
+            "Cantidad": cantidad_no_encontrado
+        }
+    ]
 
-    resumen["%"] = (
-        resumen["Cantidad"] / len(resultado_final) * 100
-    ).round(2)
+    resumen = pd.DataFrame(registros)
+    resumen["%"] = (resumen["Cantidad"] / total * 100).round(2)
 
     return resumen
 
@@ -770,32 +817,42 @@ def generar_resumen_cambios_match(
         else 0
     )
 
-    sin_match = (
-        int(resultado_final["estado_match"].eq("Sin match").sum())
+    no_encontrado = (
+        int(resultado_final["estado_match"].eq("No encontrado en ARIBA ni NME80FN").sum())
         if "estado_match" in resultado_final.columns
         else 0
     )
 
     match_ambos = (
-        int(resultado_final["estado_match"].eq("Match en ARIBA y NME80FN").sum())
+        int(resultado_final["estado_match"].eq("Encontrado en ARIBA y NME80FN").sum())
         if "estado_match" in resultado_final.columns
         else 0
     )
 
     match_solo_ariba = (
-        int(resultado_final["estado_match"].eq("Match solo en ARIBA").sum())
+        int(resultado_final["estado_match"].eq("Encontrado solo en ARIBA").sum())
         if "estado_match" in resultado_final.columns
         else 0
     )
 
     match_solo_nme = (
-        int(resultado_final["estado_match"].eq("Match solo en NME80FN").sum())
+        int(resultado_final["estado_match"].eq("Encontrado solo en NME80FN").sum())
         if "estado_match" in resultado_final.columns
         else 0
     )
 
     columnas_resultado = int(len(resultado_final.columns))
     duplicados_resultado = int(resultado_final.duplicated().sum())
+
+    ejemplo_match_ambos = None
+
+    if "estado_match" in resultado_final.columns:
+        ejemplo_df = resultado_final[
+            resultado_final["estado_match"].eq("Encontrado en ARIBA y NME80FN")
+        ]
+
+        if not ejemplo_df.empty:
+            ejemplo_match_ambos = ejemplo_df.iloc[0].to_dict()
 
     return {
         "total_me5a": total_me5a,
@@ -804,16 +861,61 @@ def generar_resumen_cambios_match(
         "total_resultado": total_resultado,
         "match_ariba": match_ariba,
         "match_nme": match_nme,
-        "sin_match": sin_match,
+        "no_encontrado": no_encontrado,
         "match_ambos": match_ambos,
         "match_solo_ariba": match_solo_ariba,
         "match_solo_nme": match_solo_nme,
         "columnas_resultado": columnas_resultado,
-        "duplicados_resultado": duplicados_resultado
+        "duplicados_resultado": duplicados_resultado,
+        "ejemplo_match_ambos": ejemplo_match_ambos
     }
 
 
+def generar_texto_ejemplo_match(ejemplo: dict) -> str:
+    if not ejemplo:
+        return """
+            **Ejemplo de lógica del match**
+
+            No se encontró ningún caso con match simultáneo en ARIBA y NME80FN para mostrar como ejemplo.
+        """
+
+    pos_solicitud = formatear_valor(ejemplo.get("Pos.solicitud pedido", ""))
+
+    return f"""
+            **Ejemplo de lógica del match**
+
+            Se tomó un registro de ME5A que fue encontrado tanto en ARIBA como en NME80FN.
+
+            **Validación ARIBA**
+
+            - Solicitud de pedido ME5A: **{formatear_valor(ejemplo.get('Solicitud de pedido', ''))}**.
+            - Solicitud ERP ARIBA: **{formatear_valor(ejemplo.get('ariba_solicitud_compra_erp', ''))}**.
+            - Posición solicitud ME5A / 10: **{pos_solicitud} / 10**.
+            - Línea ARIBA: **{formatear_valor(ejemplo.get('ariba_linea_solicitud_compra', ''))}**.
+            - Pedido ME5A: **{formatear_valor(ejemplo.get('Pedido', ''))}**.
+            - Pedido ARIBA: **{formatear_valor(ejemplo.get('ariba_id_pedido', ''))}**.
+
+            Resultado: el registro cumple las condiciones de solicitud, línea y pedido, por eso fue encontrado en ARIBA.
+
+            **Validación NME80FN**
+
+            - Pedido ME5A: **{formatear_valor(ejemplo.get('Pedido', ''))}**.
+            - Documento compras NME80FN: **{formatear_valor(ejemplo.get('nme_documento_compras', ''))}**.
+            - Posición pedido ME5A: **{formatear_valor(ejemplo.get('Posición de pedido', ''))}**.
+            - Posición NME80FN: **{formatear_valor(ejemplo.get('nme_posicion', ''))}**.
+            - Material ME5A: **{formatear_valor(ejemplo.get('Material', ''))}**.
+            - Material NME80FN: **{formatear_valor(ejemplo.get('nme_material', ''))}**.
+            - Centro ME5A: **{formatear_valor(ejemplo.get('Centro', ''))}**.
+            - Centro NME80FN: **{formatear_valor(ejemplo.get('nme_centro', ''))}**.
+
+            Resultado: el registro cumple las condiciones de pedido, posición, material y centro, por eso fue encontrado en NME80FN.
+    """
+
+
 def mostrar_resumen_cambios_match(resumen_cambios: dict):
+    ejemplo = resumen_cambios.get("ejemplo_match_ambos")
+    texto_ejemplo = generar_texto_ejemplo_match(ejemplo)
+
     with st.expander("Cambios realizados y lógica del match", expanded=False):
         st.info(
             f"""
@@ -825,12 +927,12 @@ def mostrar_resumen_cambios_match(resumen_cambios: dict):
 
             **Resultado del match con AND estricto**
 
-            - **{resumen_cambios['match_ariba']:,} registros de {resumen_cambios['total_me5a']:,}** se encontraron en **ARIBA**.
-            - **{resumen_cambios['match_nme']:,} registros de {resumen_cambios['total_me5a']:,}** se encontraron en **NME80FN**.
-            - **{resumen_cambios['match_ambos']:,} registros de {resumen_cambios['total_me5a']:,}** se encontraron en **ARIBA y NME80FN**.
-            - **{resumen_cambios['match_solo_ariba']:,} registros de {resumen_cambios['total_me5a']:,}** se encontraron **solo en ARIBA**.
-            - **{resumen_cambios['match_solo_nme']:,} registros de {resumen_cambios['total_me5a']:,}** se encontraron **solo en NME80FN**.
-            - **{resumen_cambios['sin_match']:,} registros de {resumen_cambios['total_me5a']:,}** no tuvieron match.
+            - **{resumen_cambios['match_ariba']:,} registros de {resumen_cambios['total_me5a']:,} en ME5A fueron encontrados en ARIBA**.
+            - **{resumen_cambios['match_nme']:,} registros de {resumen_cambios['total_me5a']:,} en ME5A fueron encontrados en NME80FN**.
+            - **{resumen_cambios['match_ambos']:,} registros de {resumen_cambios['total_me5a']:,} en ME5A fueron encontrados en ARIBA y NME80FN**.
+            - **{resumen_cambios['match_solo_ariba']:,} registros de {resumen_cambios['total_me5a']:,} en ME5A fueron encontrados solo en ARIBA**.
+            - **{resumen_cambios['match_solo_nme']:,} registros de {resumen_cambios['total_me5a']:,} en ME5A fueron encontrados solo en NME80FN**.
+            - **{resumen_cambios['no_encontrado']:,} registros de {resumen_cambios['total_me5a']:,} en ME5A no fueron encontrados en ARIBA ni NME80FN**.
 
             **Condición ARIBA**
 
@@ -839,13 +941,6 @@ def mostrar_resumen_cambios_match(resumen_cambios: dict):
             - **Solicitud de pedido - ME5A** = **ID de solicitud de compra del ERP - ARIBA**.
             - **Pos.solicitud pedido - ME5A / 10** = **Número de línea de la solicitud de compra - ARIBA**.
             - **Pedido - ME5A** = **ID de pedido - ARIBA**.
-
-            **Score ARIBA**
-
-            - **+60 puntos** si coincide solicitud.
-            - **+40 puntos** si coincide línea.
-            - **+10 puntos** si coincide pedido.
-            - El score sirve como referencia, pero el match ARIBA solo es válido si se cumplen las 3 condiciones.
 
             **Condición NME80FN**
 
@@ -856,18 +951,7 @@ def mostrar_resumen_cambios_match(resumen_cambios: dict):
             - **Material - ME5A** = **Material - NME80FN**.
             - **Centro - ME5A** = **Centro - NME80FN**.
 
-            **Score NME80FN**
-
-            - **+60 puntos** si coincide pedido/documento.
-            - **+25 puntos** si coincide posición.
-            - **+20 puntos** si coincide material.
-            - **+10 puntos** si coincide centro.
-            - El score sirve como referencia, pero el match NME80FN solo es válido si se cumplen las 4 condiciones.
-
-            **Score total integrado**
-
-            - El **Puntaje total del match** corresponde a: **Score ARIBA + Score NME80FN**.
-            - El estado del match se define usando los campos **Match estricto - ARIBA** y **Match estricto - NME80FN**.
+            {texto_ejemplo}
 
             **Salida generada**
 
