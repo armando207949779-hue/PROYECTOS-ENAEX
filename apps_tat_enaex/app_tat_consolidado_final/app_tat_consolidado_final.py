@@ -1120,4 +1120,504 @@ def mostrar_resumen_cambios_performance(
         )
 
         if tabla_ejemplo.empty:
-            st.warning("
+            st.warning("No se encontró un registro para mostrar como ejemplo.")
+        else:
+            st.table(tabla_ejemplo)
+
+
+# =========================================================
+# Exportación
+# =========================================================
+
+def convertir_a_csv(df: pd.DataFrame) -> bytes:
+    return df.to_csv(
+        index=False,
+        encoding="utf-8-sig"
+    ).encode("utf-8-sig")
+
+
+def convertir_a_parquet(df: pd.DataFrame) -> bytes:
+    output = io.BytesIO()
+
+    df.to_parquet(
+        output,
+        index=False,
+        engine="pyarrow"
+    )
+
+    return output.getvalue()
+
+
+def convertir_a_excel(
+    df: pd.DataFrame,
+    resumen_perf: pd.DataFrame,
+    resumen_cols: pd.DataFrame,
+    tabla_formulas: pd.DataFrame
+) -> bytes:
+    output = io.BytesIO()
+
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(
+            writer,
+            index=False,
+            sheet_name="Performance_TAT"
+        )
+
+        resumen_perf.to_excel(
+            writer,
+            index=False,
+            sheet_name="Resumen_Performance"
+        )
+
+        resumen_cols.to_excel(
+            writer,
+            index=False,
+            sheet_name="Columnas_Nuevas"
+        )
+
+        tabla_formulas.to_excel(
+            writer,
+            index=False,
+            sheet_name="Inputs_Formulas"
+        )
+
+    return output.getvalue()
+
+
+@st.cache_data(show_spinner=False)
+def convertir_a_csv_cache(df: pd.DataFrame) -> bytes:
+    return convertir_a_csv(df)
+
+
+@st.cache_data(show_spinner=False)
+def convertir_a_parquet_cache(df: pd.DataFrame) -> bytes:
+    return convertir_a_parquet(df)
+
+
+@st.cache_data(show_spinner=False)
+def convertir_a_excel_cache(
+    df: pd.DataFrame,
+    resumen_perf: pd.DataFrame,
+    resumen_cols: pd.DataFrame,
+    tabla_formulas: pd.DataFrame
+) -> bytes:
+    return convertir_a_excel(
+        df=df,
+        resumen_perf=resumen_perf,
+        resumen_cols=resumen_cols,
+        tabla_formulas=tabla_formulas
+    )
+
+
+# =========================================================
+# Interfaz
+# =========================================================
+
+mostrar_logo()
+
+st.title("Performance TAT - Match Integrado")
+st.caption("ME5A · ARIBA · NME80FN · Fechas finales")
+
+with st.sidebar:
+    st.header("Configuración")
+
+    separador_csv = st.selectbox(
+        "Separador CSV",
+        options=[
+            "Automático",
+            "Punto y coma (;)",
+            "Coma (,)",
+            "Tabulación",
+        ],
+        index=0
+    )
+
+    limite_vista = st.number_input(
+        "Filas en vista previa",
+        min_value=50,
+        max_value=1000,
+        value=300,
+        step=50
+    )
+
+    ordenar_performance_final = st.checkbox(
+        "Mover columnas de performance al final",
+        value=True
+    )
+
+    st.caption("El separador solo aplica a archivos CSV.")
+
+
+st.subheader("Archivo")
+
+uploaded_file = st.file_uploader(
+    "Selecciona archivo con fechas finales",
+    type=["parquet", "xlsx", "csv"]
+)
+
+if uploaded_file is None:
+    st.info("Carga el archivo con fechas finales para calcular performance TAT.")
+    st.stop()
+
+try:
+    with st.spinner("Leyendo archivo..."):
+        df_original = leer_archivo_cache(
+            bytes_archivo=uploaded_file.getvalue(),
+            nombre_archivo=uploaded_file.name,
+            separador_csv=separador_csv
+        )
+
+    columnas_originales = list(df_original.columns)
+
+    with st.spinner("Aplicando lógica de performance..."):
+        df_final = aplicar_logica_performance(df_original)
+
+        columnas_nuevas = [
+            col for col in df_final.columns
+            if col not in columnas_originales
+        ]
+
+        if ordenar_performance_final:
+            df_final = reordenar_columnas_performance_al_final(df_final)
+
+        resumen_perf = resumen_performance(df_final)
+        resumen_cols = resumen_columnas_nuevas(df_final)
+        tabla_formulas = tabla_inputs_formulas()
+        parquet_bytes = convertir_a_parquet_cache(df_final)
+
+        resumen_cambios = generar_resumen_cambios_performance(
+            df_original=df_original,
+            df_final=df_final,
+            columnas_originales=columnas_originales,
+            columnas_nuevas=columnas_nuevas
+        )
+
+    st.success("Performance TAT calculada correctamente.")
+
+    mostrar_resumen_cambios_performance(
+        resumen_cambios=resumen_cambios,
+        resumen_cols=resumen_cols
+    )
+
+    st.subheader("Indicadores generales")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    col1.metric(
+        "Filas originales",
+        f"{len(df_original):,}"
+    )
+
+    col2.metric(
+        "Filas finales",
+        f"{len(df_final):,}"
+    )
+
+    col3.metric(
+        "Columnas originales",
+        f"{len(columnas_originales):,}"
+    )
+
+    col4.metric(
+        "Columnas nuevas",
+        f"{len(columnas_nuevas):,}"
+    )
+
+    st.subheader("Indicadores TAT")
+
+    total_cumple_tat = int(df_final["performance_tat_total"].eq("Cumple").sum())
+    total_no_cumple_tat = int(df_final["performance_tat_total"].eq("No cumple").sum())
+    total_en_proceso_tat = int(df_final["performance_tat_total"].eq("En proceso").sum())
+    total_no_aplica_tat = int(df_final["performance_tat_total"].eq("No aplica al análisis").sum())
+
+    c1, c2, c3, c4 = st.columns(4)
+
+    c1.metric("TAT cumple", f"{total_cumple_tat:,}")
+    c2.metric("TAT no cumple", f"{total_no_cumple_tat:,}")
+    c3.metric("TAT en proceso", f"{total_en_proceso_tat:,}")
+    c4.metric("TAT no aplica al análisis", f"{total_no_aplica_tat:,}")
+
+    st.subheader("Resumen de performance")
+
+    st.dataframe(
+        resumen_perf,
+        use_container_width=True,
+        hide_index=True
+    )
+
+    st.subheader("Rango de incumplimiento TAT")
+
+    if "rango_incumplimiento_tat" in df_final.columns:
+        conteo_rango = (
+            df_final["rango_incumplimiento_tat"]
+            .value_counts(dropna=False)
+            .reset_index()
+        )
+
+        conteo_rango.columns = [
+            "Rango incumplimiento TAT",
+            "Cantidad"
+        ]
+
+        st.dataframe(
+            conteo_rango,
+            use_container_width=True,
+            hide_index=True
+        )
+
+    with st.expander("Vista previa original", expanded=False):
+        st.caption(
+            f"Mostrando hasta {int(limite_vista):,} registros de "
+            f"{len(df_original):,} registros originales. "
+            f"Columnas visibles: {len(df_original.columns):,}."
+        )
+
+        st.dataframe(
+            df_original.head(int(limite_vista)),
+            use_container_width=True,
+            hide_index=True
+        )
+
+    st.subheader("Vista previa final")
+
+    columnas_preferidas = [
+        "Solicitud de pedido - ME5A",
+        COL_PEDIDO,
+        COL_DOCUMENTO_COMPRAS,
+        "tipo_oc",
+        "origen",
+        "sistema",
+        "nombre_tipo_compra",
+        COL_CANTIDAD_SOLICITADA,
+        COL_PRECIO_VALORACION,
+        "monto",
+
+        COL_FECHA_SOLICITUD_FINAL,
+        COL_FECHA_LIBERACION_FINAL,
+        COL_FECHA_PEDIDO_FINAL,
+        COL_FECHA_FACTURACION_FINAL,
+        COL_FECHA_RECEPCION_FINAL,
+
+        "dias_liberacion_solped",
+        "dias_comprador",
+        "dias_liberacion_pedido",
+        "dias_proveedor",
+        "dias_logistica",
+        "dias_tat_total",
+
+        "umbral_liberacion_solped",
+        "umbral_comprador",
+        "umbral_liberacion_pedido",
+        "umbral_proveedor",
+        "umbral_logistica",
+        "umbral_tat_total",
+
+        "performance_liberacion_solped",
+        "performance_comprador",
+        "performance_liberacion_pedido",
+        "performance_proveedor",
+        "performance_logistica",
+        "performance_tat_total",
+
+        "tiene_fechas_inconsistentes",
+        "dias_incumplimiento_tat",
+        "incumplimiento_tat",
+        "rango_incumplimiento_tat",
+    ]
+
+    columnas_preferidas = [
+        col for col in columnas_preferidas
+        if col in df_final.columns
+    ]
+
+    if columnas_preferidas:
+        st.caption(
+            f"Mostrando hasta {int(limite_vista):,} registros de "
+            f"{len(df_final):,} registros generados. "
+            f"Columnas visibles preferidas: {len(columnas_preferidas):,}."
+        )
+
+        st.dataframe(
+            df_final[columnas_preferidas].head(int(limite_vista)),
+            use_container_width=True,
+            hide_index=True
+        )
+    else:
+        st.dataframe(
+            df_final.head(int(limite_vista)),
+            use_container_width=True,
+            hide_index=True
+        )
+
+    with st.expander("Ver inputs y fórmulas aplicadas", expanded=False):
+        st.dataframe(
+            tabla_formulas,
+            use_container_width=True,
+            hide_index=True
+        )
+
+    with st.expander("Ver columnas nuevas agregadas", expanded=False):
+        st.dataframe(
+            resumen_cols,
+            use_container_width=True,
+            hide_index=True
+        )
+
+    with st.expander("Top filas con mayor incumplimiento TAT", expanded=False):
+        if "dias_incumplimiento_tat" in df_final.columns:
+            columnas_top = [
+                "Solicitud de pedido - ME5A",
+                COL_PEDIDO,
+                COL_DOCUMENTO_COMPRAS,
+                "tipo_oc",
+                "origen",
+                "sistema",
+                "dias_tat_total",
+                "umbral_tat_total",
+                "dias_incumplimiento_tat",
+                "rango_incumplimiento_tat",
+                "performance_tat_total",
+                COL_FECHA_SOLICITUD_FINAL,
+                COL_FECHA_RECEPCION_FINAL,
+            ]
+
+            columnas_top = [
+                col for col in columnas_top
+                if col in df_final.columns
+            ]
+
+            st.dataframe(
+                df_final
+                .sort_values("dias_incumplimiento_tat", ascending=False)
+                [columnas_top]
+                .head(int(limite_vista)),
+                use_container_width=True,
+                hide_index=True
+            )
+
+    with st.expander("Filas con fechas inconsistentes", expanded=False):
+        if "tiene_fechas_inconsistentes" in df_final.columns:
+            columnas_inconsistentes = [
+                "Solicitud de pedido - ME5A",
+                COL_PEDIDO,
+                COL_DOCUMENTO_COMPRAS,
+                "tipo_oc",
+                COL_FECHA_SOLICITUD_FINAL,
+                COL_FECHA_LIBERACION_FINAL,
+                COL_FECHA_PEDIDO_FINAL,
+                COL_FECHA_FACTURACION_FINAL,
+                COL_FECHA_RECEPCION_FINAL,
+                "dias_liberacion_solped",
+                "dias_comprador",
+                "dias_proveedor",
+                "dias_logistica",
+                "dias_tat_total",
+                "performance_tat_total",
+            ]
+
+            columnas_inconsistentes = [
+                col for col in columnas_inconsistentes
+                if col in df_final.columns
+            ]
+
+            df_inconsistentes = df_final[
+                df_final["tiene_fechas_inconsistentes"].eq(True)
+            ]
+
+            st.caption(
+                f"Filas con fechas inconsistentes detectadas: {len(df_inconsistentes):,}"
+            )
+
+            st.dataframe(
+                df_inconsistentes[columnas_inconsistentes].head(int(limite_vista)),
+                use_container_width=True,
+                hide_index=True
+            )
+
+    with st.expander("Ver columnas disponibles", expanded=False):
+        c1, c2 = st.columns(2)
+
+        with c1:
+            st.markdown("**Columnas originales**")
+            st.write(columnas_originales)
+
+        with c2:
+            st.markdown("**Columnas finales**")
+            st.write(df_final.columns.tolist())
+
+    st.subheader("Descarga")
+
+    st.download_button(
+        label="Descargar resultado en Parquet",
+        data=parquet_bytes,
+        file_name="match_integrado_me5a_ariba_nme80fn_performance.parquet",
+        mime="application/octet-stream",
+        use_container_width=True
+    )
+
+    st.caption(
+        "Parquet es el formato principal recomendado para conservar tipos de datos. "
+        "CSV y Excel se preparan solo si los solicitas."
+    )
+
+    with st.expander("Opcional: descargar como CSV o Excel", expanded=False):
+        col_csv, col_excel = st.columns(2)
+
+        with col_csv:
+            preparar_csv = st.button(
+                "Preparar CSV",
+                use_container_width=True
+            )
+
+            if preparar_csv:
+                with st.spinner("Preparando CSV..."):
+                    csv_bytes = convertir_a_csv_cache(df_final)
+
+                st.download_button(
+                    label="Descargar CSV",
+                    data=csv_bytes,
+                    file_name="match_integrado_me5a_ariba_nme80fn_performance.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+
+        with col_excel:
+            limite_excel = 250_000
+
+            if len(df_final) > limite_excel:
+                st.button(
+                    "Excel no disponible",
+                    disabled=True,
+                    use_container_width=True
+                )
+
+                st.warning(
+                    f"Excel no está disponible porque la salida tiene más de {limite_excel:,} filas. "
+                    "Usa Parquet o CSV."
+                )
+            else:
+                preparar_excel = st.button(
+                    "Preparar Excel",
+                    use_container_width=True
+                )
+
+                if preparar_excel:
+                    with st.spinner("Preparando Excel..."):
+                        excel_bytes = convertir_a_excel_cache(
+                            df=df_final,
+                            resumen_perf=resumen_perf,
+                            resumen_cols=resumen_cols,
+                            tabla_formulas=tabla_formulas
+                        )
+
+                    st.download_button(
+                        label="Descargar Excel",
+                        data=excel_bytes,
+                        file_name="match_integrado_me5a_ariba_nme80fn_performance.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
+
+except Exception as e:
+    st.error("No se pudo calcular la performance TAT.")
+    st.exception(e)
