@@ -274,6 +274,80 @@ st.markdown(
             line-height: 1.35;
             margin-top: 5px;
         }
+        .pedido-line-card {
+            background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%);
+            border: 1px solid #bbf7d0;
+            border-radius: 20px;
+            padding: 18px 20px 16px 20px;
+            margin: 0.85rem 0 0.85rem 0;
+            box-shadow: 0 1px 5px rgba(15, 23, 42, 0.04);
+        }
+        .pedido-line-title {
+            font-size: 0.9rem;
+            font-weight: 900;
+            color: #14532d;
+            margin-bottom: 16px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .pedido-line {
+            display: flex;
+            align-items: flex-start;
+            width: 100%;
+        }
+        .pedido-step {
+            flex: 0 0 116px;
+            text-align: center;
+            min-width: 0;
+        }
+        .pedido-dot {
+            width: 54px;
+            height: 54px;
+            border-radius: 999px;
+            margin: 0 auto 10px auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 950;
+            font-size: 1.65rem;
+            box-sizing: border-box;
+        }
+        .pedido-dot-complete {background: #22c55e; color: #ffffff; border: 4px solid #22c55e;}
+        .pedido-dot-active {background: #ffffff; color: #15803d; border: 6px solid #22c55e;}
+        .pedido-dot-pending {background: #ffffff; color: #94a3b8; border: 5px solid #cbd5e1;}
+        .pedido-label {
+            font-size: 0.86rem;
+            font-weight: 900;
+            color: #1f2937;
+            line-height: 1.15;
+            text-transform: uppercase;
+        }
+        .pedido-date {
+            color: #64748b;
+            font-size: 0.75rem;
+            line-height: 1.2;
+            margin-top: 4px;
+            overflow-wrap: anywhere;
+        }
+        .pedido-connector {
+            flex: 1 1 auto;
+            height: 7px;
+            min-width: 32px;
+            margin-top: 24px;
+            border-radius: 999px;
+            background: #cbd5e1;
+        }
+        .pedido-connector-complete {background: #22c55e;}
+        .pedido-connector-dashed {
+            background: repeating-linear-gradient(90deg, #22c55e 0 18px, transparent 18px 30px);
+            border: 0;
+        }
+        .pedido-line-note {
+            color: #475569;
+            font-size: 0.82rem;
+            line-height: 1.35;
+            margin-top: 14px;
+        }
         .head-grid {
             display: grid;
             grid-template-columns: repeat(5, minmax(120px, 1fr));
@@ -373,6 +447,10 @@ st.markdown(
             .head-grid {grid-template-columns: 1fr;}
             .tat-summary {grid-template-columns: 1fr;}
             .tat-main {font-size: 1.65rem;}
+            .pedido-line {overflow-x: auto; padding-bottom: 4px;}
+            .pedido-step {flex-basis: 104px;}
+            .pedido-dot {width: 48px; height: 48px; font-size: 1.45rem;}
+            .pedido-connector {min-width: 28px; margin-top: 21px;}
         }
     </style>
     """,
@@ -580,7 +658,7 @@ def texto_dias_y_meses(dias: Any) -> str:
         texto_meses = f"{meses:,.1f}".replace(",", "X").replace(".", ",").replace("X", ".")
         return f"{texto_dias} días · {texto_meses} meses aprox."
 
-    return f"{texto_dias} días · menos de 1 mes"
+    return f"{texto_dias} días"
 
 
 def texto_dias_simple(dias: Any) -> str:
@@ -616,6 +694,81 @@ def detalle_estado_tat(performance: Any, umbral_tat: Any, dias_inc: Any, rango_i
         return "Sin datos suficientes para evaluar el TAT total."
 
     return "Estado pendiente de interpretación según los datos cargados."
+
+
+def fecha_etapa_texto(row: pd.Series, columna: str) -> str:
+    """Devuelve la fecha de una etapa en formato visual."""
+    valor = row.get(columna, np.nan)
+    if pd.isna(valor):
+        return "Pendiente"
+    if isinstance(valor, pd.Timestamp):
+        return valor.strftime("%d-%m-%Y")
+    return formato_valor(valor)
+
+
+def html_linea_pedido(row: pd.Series) -> str:
+    """Construye una línea visual del avance del pedido similar a un tracker."""
+    etapas = [
+        ("Solicitud", "fecha_solicitud_final"),
+        ("Liberación", "fecha_liberacion_final"),
+        ("Pedido", "fecha_pedido_final"),
+        ("Facturación", "fecha_facturacion_final"),
+        ("Recepción", "fecha_recepcion_final"),
+    ]
+
+    completadas = [pd.notna(row.get(col, np.nan)) for _, col in etapas]
+
+    try:
+        indice_activo = completadas.index(False)
+    except ValueError:
+        indice_activo = len(etapas) - 1
+
+    partes = []
+    for i, (label, col_fecha) in enumerate(etapas):
+        esta_completa = completadas[i]
+        es_activa = i == indice_activo and not esta_completa
+
+        if esta_completa:
+            dot_class = "pedido-dot-complete"
+            icono = "✓"
+        elif es_activa:
+            dot_class = "pedido-dot-active"
+            icono = ""
+        else:
+            dot_class = "pedido-dot-pending"
+            icono = ""
+
+        partes.append(
+            f"""
+            <div class="pedido-step">
+                <div class="pedido-dot {dot_class}">{icono}</div>
+                <div class="pedido-label">{escape(label)}</div>
+                <div class="pedido-date">{escape(fecha_etapa_texto(row, col_fecha))}</div>
+            </div>
+            """
+        )
+
+        if i < len(etapas) - 1:
+            if completadas[i] and completadas[i + 1]:
+                connector_class = "pedido-connector-complete"
+            elif completadas[i] and not completadas[i + 1]:
+                connector_class = "pedido-connector-dashed"
+            else:
+                connector_class = ""
+            partes.append(f'<div class="pedido-connector {connector_class}"></div>')
+
+    dias_tat = texto_dias_y_meses(row.get(COL_DIAS_TAT, np.nan))
+    estado_tat = formato_valor(row.get(COL_PERF_TAT, np.nan))
+
+    return f"""
+    <div class="pedido-line-card">
+        <div class="pedido-line-title">Línea de pedido</div>
+        <div class="pedido-line">{''.join(partes)}</div>
+        <div class="pedido-line-note">
+            TAT total: <strong>{escape(dias_tat)}</strong> · Estado: <strong>{escape(estado_tat)}</strong>
+        </div>
+    </div>
+    """
 
 
 def clase_performance(valor: Any) -> str:
@@ -1222,6 +1375,8 @@ else:
                 <div class="tat-muted">Solo cuenta exceso sobre el umbral TAT.</div>
             </div>
         </div>
+
+        {html_linea_pedido(row)}
 
         <div class="order-head">
             <div class="head-grid">
