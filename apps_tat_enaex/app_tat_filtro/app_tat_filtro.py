@@ -3,6 +3,7 @@ import re
 import base64
 from html import escape
 from pathlib import Path
+from textwrap import dedent
 from typing import Any
 
 import numpy as np
@@ -1362,7 +1363,7 @@ else:
     detalle_tat = detalle_estado_tat(perf_tat, umbral_tat, dias_inc, rango_inc)
 
     st.markdown(
-        f"""
+        dedent(f"""
         <div class="tat-summary">
             <div class="tat-card tat-card-primary">
                 <div class="tat-label">TAT total</div>
@@ -1410,7 +1411,7 @@ else:
                 </div>
             </div>
         </div>
-        """,
+        """).strip(),
         unsafe_allow_html=True,
     )
 
