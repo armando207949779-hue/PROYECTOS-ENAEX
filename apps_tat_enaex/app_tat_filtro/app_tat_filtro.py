@@ -282,6 +282,54 @@ st.markdown(
             line-height: 1.35;
             margin-top: 5px;
         }
+        .avance-card {
+            background: #ffffff;
+            border: 1px solid #dbeafe;
+            border-left: 5px solid #2563eb;
+            border-radius: 18px;
+            padding: 16px 18px;
+            margin: 0.75rem 0 0.9rem 0;
+            box-shadow: 0 1px 5px rgba(15, 23, 42, 0.04);
+        }
+        .avance-title {
+            color: #1e3a8a;
+            font-size: 0.9rem;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: 10px;
+        }
+        .avance-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(140px, 1fr));
+            gap: 12px;
+        }
+        .avance-item {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 14px;
+            padding: 11px 12px;
+        }
+        .avance-label {
+            color: #64748b;
+            font-size: 0.72rem;
+            font-weight: 850;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: 4px;
+        }
+        .avance-value {
+            color: #0f172a;
+            font-size: 1rem;
+            font-weight: 900;
+            overflow-wrap: anywhere;
+        }
+        .avance-note {
+            color: #334155;
+            font-size: 0.88rem;
+            line-height: 1.35;
+            margin-top: 10px;
+        }
         .pedido-line-card {
             background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%);
             border: 1px solid #bbf7d0;
@@ -693,7 +741,7 @@ def detalle_estado_tat(performance: Any, umbral_tat: Any, dias_inc: Any, rango_i
         return f"Supera el plazo objetivo. Exceso: {inc_txt}. Rango: {formato_valor(rango_inc)}."
 
     if estado == "en proceso":
-        return "En proceso: aún falta la fecha de recepción final para cerrar el TAT."
+        return "En proceso: el TAT total queda pendiente hasta registrar la recepción final."
 
     if "no aplica" in estado:
         return "No aplica al análisis: revisa fechas inconsistentes o valores no evaluables."
@@ -714,15 +762,148 @@ def fecha_etapa_texto(row: pd.Series, columna: str) -> str:
     return formato_valor(valor)
 
 
+ETAPAS_LINEA_PEDIDO = [
+    ("Solicitud", "fecha_solicitud_final"),
+    ("Liberación", "fecha_liberacion_final"),
+    ("Pedido", "fecha_pedido_final"),
+    ("Facturación", "fecha_facturacion_final"),
+    ("Recepción", "fecha_recepcion_final"),
+]
+
+
+def fecha_valida(row: pd.Series, columna: str):
+    valor = row.get(columna, np.nan)
+    if pd.isna(valor):
+        return pd.NaT
+    return pd.to_datetime(valor, errors="coerce")
+
+
+def obtener_avance_pedido(row: pd.Series) -> dict[str, Any]:
+    """Resume la última etapa registrada, la siguiente pendiente y el TAT parcial."""
+    completadas = []
+    for nombre, columna in ETAPAS_LINEA_PEDIDO:
+        completadas.append((nombre, columna, pd.notna(row.get(columna, np.nan))))
+
+    registradas = [item for item in completadas if item[2]]
+    pendientes = [item for item in completadas if not item[2]]
+
+    ultima_nombre, ultima_columna, _ = registradas[-1] if registradas else ("Sin etapa registrada", "", False)
+    siguiente_nombre, siguiente_columna, _ = pendientes[0] if pendientes else ("Cerrado", "", False)
+
+    fecha_inicio = fecha_valida(row, "fecha_solicitud_final")
+    fecha_ultima = fecha_valida(row, ultima_columna) if ultima_columna else pd.NaT
+
+    dias_parcial = np.nan
+    if pd.notna(fecha_inicio) and pd.notna(fecha_ultima):
+        dias_parcial = (fecha_ultima - fecha_inicio).days
+
+    umbral = valor_numerico(row.get(COL_UMBRAL_TAT, np.nan))
+    dias_restantes = np.nan
+    if pd.notna(dias_parcial) and pd.notna(umbral):
+        dias_restantes = int(round(umbral - dias_parcial))
+
+    return {
+        "ultima_etapa": ultima_nombre,
+        "ultima_fecha": fecha_etapa_texto(row, ultima_columna) if ultima_columna else "-",
+        "siguiente_etapa": siguiente_nombre,
+        "siguiente_columna": siguiente_columna,
+        "dias_parcial": dias_parcial,
+        "dias_restantes": dias_restantes,
+        "esta_cerrado": len(pendientes) == 0,
+    }
+
+
+def nombre_fecha_faltante(columna: str) -> str:
+    mapa = {
+        "fecha_solicitud_final": "fecha de solicitud",
+        "fecha_liberacion_final": "fecha de liberación",
+        "fecha_pedido_final": "fecha de pedido",
+        "fecha_facturacion_final": "fecha de facturación",
+        "fecha_recepcion_final": "fecha de recepción",
+    }
+    return mapa.get(columna, "fecha pendiente")
+
+
+def texto_tat_total_usuario(performance: Any, dias_tat: Any) -> str:
+    estado = str(performance).strip().lower()
+    if estado == "en proceso" and pd.isna(pd.to_numeric(pd.Series([dias_tat]), errors="coerce").iloc[0]):
+        return "En proceso"
+    return texto_dias_y_meses(dias_tat)
+
+
+def texto_dias_restantes(dias_restantes: Any) -> str:
+    valor = valor_numerico(dias_restantes)
+    if pd.isna(valor):
+        return "Sin dato"
+    valor_int = int(round(valor))
+    if valor_int >= 0:
+        return f"{valor_int:,} días disponibles".replace(",", ".")
+    return f"{abs(valor_int):,} días sobre el umbral".replace(",", ".")
+
+
+def diagnostico_avance(row: pd.Series) -> str:
+    avance = obtener_avance_pedido(row)
+    perf = str(row.get(COL_PERF_TAT, "")).strip().lower()
+
+    if avance["esta_cerrado"]:
+        return "El pedido ya tiene recepción registrada. El TAT total está cerrado."
+
+    falta = nombre_fecha_faltante(avance["siguiente_columna"])
+    dias_restantes = valor_numerico(avance["dias_restantes"])
+
+    if perf == "en proceso":
+        if pd.notna(dias_restantes):
+            if dias_restantes < 0:
+                return f"Falta {falta}. El avance parcial ya supera el umbral TAT."
+            if dias_restantes <= 5:
+                return f"Falta {falta}. El pedido está cerca del umbral TAT."
+            return f"Falta {falta}. El pedido sigue dentro del plazo por ahora."
+        return f"Falta {falta}. El TAT final se cerrará cuando exista recepción."
+
+    return f"Última etapa registrada: {avance['ultima_etapa']}. Siguiente etapa: {avance['siguiente_etapa']}."
+
+
+def html_avance_actual(row: pd.Series) -> str:
+    avance = obtener_avance_pedido(row)
+    dias_parcial = texto_dias_y_meses(avance["dias_parcial"])
+    dias_restantes = texto_dias_restantes(avance["dias_restantes"])
+
+    if avance["esta_cerrado"]:
+        tat_total_estado = "Cerrado"
+        siguiente = "Recepción registrada"
+    else:
+        tat_total_estado = "Pendiente hasta recepción"
+        siguiente = avance["siguiente_etapa"]
+
+    return dedent(f"""
+    <div class="avance-card">
+        <div class="avance-title">Avance actual</div>
+        <div class="avance-grid">
+            <div class="avance-item">
+                <div class="avance-label">Última etapa registrada</div>
+                <div class="avance-value">{escape(avance['ultima_etapa'])} · {escape(avance['ultima_fecha'])}</div>
+            </div>
+            <div class="avance-item">
+                <div class="avance-label">Tiempo transcurrido</div>
+                <div class="avance-value">{escape(dias_parcial)}</div>
+            </div>
+            <div class="avance-item">
+                <div class="avance-label">TAT total</div>
+                <div class="avance-value">{escape(tat_total_estado)}</div>
+            </div>
+            <div class="avance-item">
+                <div class="avance-label">Contra umbral TAT</div>
+                <div class="avance-value">{escape(dias_restantes)}</div>
+            </div>
+        </div>
+        <div class="avance-note">{escape(diagnostico_avance(row))}</div>
+    </div>
+    """).strip()
+
+
 def html_linea_pedido(row: pd.Series) -> str:
     """Construye una línea visual del avance del pedido similar a un tracker."""
-    etapas = [
-        ("Solicitud", "fecha_solicitud_final"),
-        ("Liberación", "fecha_liberacion_final"),
-        ("Pedido", "fecha_pedido_final"),
-        ("Facturación", "fecha_facturacion_final"),
-        ("Recepción", "fecha_recepcion_final"),
-    ]
+    etapas = ETAPAS_LINEA_PEDIDO
 
     completadas = [pd.notna(row.get(col, np.nan)) for _, col in etapas]
 
@@ -765,8 +946,8 @@ def html_linea_pedido(row: pd.Series) -> str:
                 connector_class = ""
             partes.append(f'<div class="pedido-connector {connector_class}"></div>')
 
-    dias_tat = texto_dias_y_meses(row.get(COL_DIAS_TAT, np.nan))
     estado_tat = formato_valor(row.get(COL_PERF_TAT, np.nan))
+    dias_tat = texto_tat_total_usuario(row.get(COL_PERF_TAT, np.nan), row.get(COL_DIAS_TAT, np.nan))
 
     return dedent(f"""
     <div class="pedido-line-card">
@@ -911,7 +1092,11 @@ def html_estado_pedido(row: pd.Series) -> str:
         if dias_col:
             dias_valor = row.get(dias_col, np.nan)
             umbral = html_texto(row.get(umbral_col, np.nan)) if umbral_col else "-"
-            if dias_col == COL_DIAS_TAT:
+            fecha_fin_col = etapa.get("fecha")
+            if pd.isna(row.get(fecha_fin_col, np.nan)):
+                falta = nombre_fecha_faltante(fecha_fin_col)
+                dias_txt = f"Pendiente · falta {escape(falta)}"
+            elif dias_col == COL_DIAS_TAT:
                 dias_txt = escape(texto_dias_y_meses(dias_valor)) + f" · umbral {umbral} días"
             else:
                 dias = html_texto(dias_valor)
@@ -1358,8 +1543,8 @@ else:
     dias_tat = row.get(COL_DIAS_TAT, np.nan)
     dias_inc = row.get(COL_DIAS_INC, np.nan)
     umbral_tat = row.get(COL_UMBRAL_TAT, np.nan)
-    tat_total_txt = texto_dias_y_meses(dias_tat)
-    dias_inc_txt = texto_dias_y_meses(dias_inc)
+    tat_total_txt = texto_tat_total_usuario(perf_tat, dias_tat)
+    dias_inc_txt = "Pendiente" if str(perf_tat).strip().lower() == "en proceso" and pd.isna(pd.to_numeric(pd.Series([dias_inc]), errors="coerce").iloc[0]) else texto_dias_y_meses(dias_inc)
     detalle_tat = detalle_estado_tat(perf_tat, umbral_tat, dias_inc, rango_inc)
 
     tat_html = dedent(f"""
@@ -1413,6 +1598,7 @@ else:
     """).strip()
 
     st.markdown(tat_html, unsafe_allow_html=True)
+    st.markdown(html_avance_actual(row), unsafe_allow_html=True)
     st.markdown(dedent(html_linea_pedido(row)).strip(), unsafe_allow_html=True)
     st.markdown(order_head_html, unsafe_allow_html=True)
 
