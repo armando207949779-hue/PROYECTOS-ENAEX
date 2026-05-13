@@ -26,16 +26,19 @@ LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
 # Columnas esperadas
 # =========================================================
 
+# Fechas finales: se mantienen con estos nombres porque el archivo procesado las trae así.
 COL_FECHA_SOLICITUD_FINAL = "fecha_solicitud_final"
 COL_FECHA_LIBERACION_FINAL = "fecha_liberacion_final"
 COL_FECHA_PEDIDO_FINAL = "fecha_pedido_final"
 COL_FECHA_FACTURACION_FINAL = "fecha_facturacion_final"
 COL_FECHA_RECEPCION_FINAL = "fecha_recepcion_final"
 
-COL_PEDIDO = "Pedido"
-COL_DOCUMENTO_COMPRAS = "nme_documento_compras"
-COL_TIPO_COMPRA_ARIBA = "ariba_tipo_compra"
-COL_CANTIDAD_SOLICITADA = "Cantidad solicitada"
+# Columnas de origen reales del dataframe integrado.
+# Nota: "Precio de valoración" no trae sufijo de origen en el dataframe recibido.
+COL_PEDIDO = "Pedido - ME5A"
+COL_DOCUMENTO_COMPRAS = "Documento de compras - NME80FN"
+COL_TIPO_COMPRA_ARIBA = "Tipo de compra - ARIBA"
+COL_CANTIDAD_SOLICITADA = "Cantidad solicitada - ME5A"
 COL_PRECIO_VALORACION = "Precio de valoración"
 
 COLUMNAS_REQUERIDAS_PERFORMANCE = [
@@ -47,16 +50,37 @@ COLUMNAS_REQUERIDAS_PERFORMANCE = [
 ]
 
 COLUMNAS_FECHA_PERFORMANCE = [
+    # Fechas finales usadas por el cálculo de performance.
     COL_FECHA_SOLICITUD_FINAL,
     COL_FECHA_LIBERACION_FINAL,
     COL_FECHA_PEDIDO_FINAL,
     COL_FECHA_FACTURACION_FINAL,
     COL_FECHA_RECEPCION_FINAL,
+
+    # Fechas de origen ME5A.
+    "Fecha de solicitud - ME5A",
+    "Fecha modificación",
+    "Fecha de liberación - ME5A",
+    "Fecha de pedido - ME5A",
+    "Fecha de entrega - ME5A",
+    "Fecha de liberación",
+
+    # Fechas de origen ARIBA.
+    "Fecha solicitud de compra - ARIBA",
+    "Fecha de aprobación - ARIBA",
+
+    # Fechas de origen NME80FN.
+    "Fecha de entrada - NME80FN",
+    "Fecha de documento - NME80FN",
+    "Fecha contabilización - NME80FN",
+    "Fecha facturación proveedor - NME80FN",
+    "Fecha recepción mercancía - NME80FN",
+
+    # Nombres antiguos, por compatibilidad con archivos anteriores.
     "Fecha de solicitud",
     "Fe.liber.Z",
     "Fecha de pedido",
     "Fecha de entrega",
-    "Fecha de liberación",
     "ariba_fecha_solicitud_compra",
     "ariba_fecha_aprobacion",
     "nme_fecha_entrada",
@@ -776,16 +800,18 @@ def mostrar_resumen_cambios_performance(resumen_cambios: dict, resumen_cols: pd.
         st.markdown("### 3. Lógica de clasificación de OC")
 
         st.markdown(
-            """
-            La clasificación se realiza tomando los **dos primeros dígitos** del pedido.
+            f"""
+            La clasificación se realiza tomando los **dos primeros dígitos** del pedido/documento.
+            Primero se intenta usar `{COL_PEDIDO}`. Si esa columna no existe, se usa
+            `{COL_DOCUMENTO_COMPRAS}`.
 
-            | Columna agregada | Fórmula / lógica aplicada |
-            |---|---|
-            | `tipo_oc` | Primeros 2 dígitos de `Pedido`. Si no existe `Pedido`, usa `nme_documento_compras`. |
-            | `origen_oc` | `35` y `45` = `Nacional`; `47` = `Internacional`; otros = `Otro`. |
-            | `sistema_oc` | `35` = `Ariba`; `45` y `47` = `ERP`; otros = `Otro`. |
-            | `nombre_tipo_compra` | `1` = `Catalogada`; `2` = `No catalogada`; `3` = `Directa`; otros = `Otro`. |
-            | `monto_valoracion` | `Cantidad solicitada * Precio de valoración`. |
+            | Columna agregada | Fórmula teórica | Lógica usada en el código |
+            |---|---|---|
+            | `tipo_oc` | Tipo de orden de compra según los 2 primeros dígitos del pedido/documento | `extraer_tipo_oc({COL_PEDIDO})`; si no existe `{COL_PEDIDO}`, usa `extraer_tipo_oc({COL_DOCUMENTO_COMPRAS})` |
+            | `origen_oc` | Clasifica la OC como nacional o internacional | `35` y `45` = `Nacional`; `47` = `Internacional`; otros = `Otro` |
+            | `sistema_oc` | Clasifica el sistema origen de la OC | `35` = `Ariba`; `45` y `47` = `ERP`; otros = `Otro` |
+            | `nombre_tipo_compra` | Traduce el código de tipo de compra ARIBA a nombre de negocio | `{COL_TIPO_COMPRA_ARIBA}`: `1` = `Catalogada`; `2` = `No catalogada`; `3` = `Directa`; otros = `Otro` |
+            | `monto_valoracion` | Valor estimado de la línea | `{COL_CANTIDAD_SOLICITADA} * {COL_PRECIO_VALORACION}` |
             """
         )
 
@@ -793,11 +819,13 @@ def mostrar_resumen_cambios_performance(resumen_cambios: dict, resumen_cols: pd.
 
         st.markdown(
             """
-            | Tipo OC | Fórmula aplicada |
-            |---|---|
-            | `35` | `fecha_inicio_proveedor = fecha_pedido_final` |
-            | `45` / `47` | `fecha_inicio_proveedor = fecha_pedido_final + 3 días` |
-            | Otro / sin dato | `fecha_inicio_proveedor = NaT` |
+            La fecha de inicio del proveedor se calcula según el tipo de OC.
+
+            | Tipo OC | Fórmula teórica | Lógica usada en el código |
+            |---|---|---|
+            | `35` | El proveedor empieza desde la fecha de pedido | `fecha_inicio_proveedor = fecha_pedido_final` |
+            | `45` / `47` | El proveedor empieza 3 días después de la fecha de pedido | `fecha_inicio_proveedor = fecha_pedido_final + 3 días` |
+            | Otro / sin dato | No se puede determinar fecha de inicio proveedor | `fecha_inicio_proveedor = NaT` |
             """
         )
 
@@ -805,14 +833,17 @@ def mostrar_resumen_cambios_performance(resumen_cambios: dict, resumen_cols: pd.
 
         st.markdown(
             """
-            | Columna agregada | Fórmula aplicada |
-            |---|---|
-            | `dx_lib_solped` | `fecha_liberacion_final - fecha_solicitud_final` |
-            | `dx_comprador_1` | `fecha_pedido_final - fecha_liberacion_final` |
-            | `dx_lib_pedido` | Actualmente queda sin cálculo: `NaN` |
-            | `dx_logistica` | `fecha_recepcion_final - fecha_facturacion_final` |
-            | `dx_proveedor` | `fecha_recepcion_final - fecha_inicio_proveedor` |
-            | `dx_tat` | `fecha_recepcion_final - fecha_solicitud_final` |
+            Las columnas `dx_*` calculan días calendario entre dos hitos. La operación usada es
+            `fecha_final - fecha_inicial` y se toma el resultado en días.
+
+            | Columna agregada | Fórmula teórica | Fórmula usada en el código |
+            |---|---|---|
+            | `dx_lib_solped` | Días entre liberación de SolPed y solicitud de SolPed | `fecha_liberacion_final - fecha_solicitud_final` |
+            | `dx_comprador_1` | Días entre creación/emisión del pedido y liberación de SolPed | `fecha_pedido_final - fecha_liberacion_final` |
+            | `dx_lib_pedido` | Días entre liberación del pedido y creación/emisión del pedido | Actualmente queda sin cálculo: `NaN` |
+            | `dx_logistica` | Días entre recepción final y facturación final | `fecha_recepcion_final - fecha_facturacion_final` |
+            | `dx_proveedor` | Días entre recepción final e inicio del proveedor | `fecha_recepcion_final - fecha_inicio_proveedor` |
+            | `dx_tat` | Días totales entre recepción final y solicitud inicial | `fecha_recepcion_final - fecha_solicitud_final` |
             """
         )
 
@@ -820,14 +851,16 @@ def mostrar_resumen_cambios_performance(resumen_cambios: dict, resumen_cols: pd.
 
         st.markdown(
             """
-            | Columna agregada | Valor / lógica aplicada |
-            |---|---|
-            | `umbral_lib_solped` | 2 días |
-            | `umbral_comprador_1` | 10 días |
-            | `umbral_lib_pedido` | 2 días |
-            | `umbral_logistica` | 11 días |
-            | `umbral_tat` | OC `35` / `45` = 40 días; OC `47` = 70 días |
-            | `umbral_proveedor` | OC `35` / `45` = 20 días; OC `47` = 60 días |
+            Los umbrales son la cantidad máxima de días permitida para considerar que una etapa cumple.
+
+            | Columna agregada | Fórmula teórica | Valor / lógica usada en el código |
+            |---|---|---|
+            | `umbral_lib_solped` | Máximo permitido para liberar SolPed | `2` días |
+            | `umbral_comprador_1` | Máximo permitido entre liberación de SolPed y pedido | `10` días |
+            | `umbral_lib_pedido` | Máximo permitido para liberar pedido | `2` días |
+            | `umbral_logistica` | Máximo permitido entre facturación y recepción | `11` días |
+            | `umbral_tat` | Máximo permitido para el ciclo total TAT | OC `35` / `45` = `40` días; OC `47` = `70` días |
+            | `umbral_proveedor` | Máximo permitido para el tramo proveedor | OC `35` / `45` = `20` días; OC `47` = `60` días |
             """
         )
 
@@ -835,20 +868,21 @@ def mostrar_resumen_cambios_performance(resumen_cambios: dict, resumen_cols: pd.
 
         st.markdown(
             """
-            Cada columna de performance evalúa si el tiempo calculado está dentro del umbral:
+            Cada columna de performance evalúa si los días calculados están dentro del umbral.
+            Si falta el valor de días o el umbral, el resultado queda sin información.
 
             ```text
             performance = días_calculados <= umbral
             ```
 
-            | Columna agregada | Comparación usada |
-            |---|---|
-            | `performance_lib_solped` | `dx_lib_solped <= umbral_lib_solped` |
-            | `performance_comprador_1` | `dx_comprador_1 <= umbral_comprador_1` |
-            | `performance_lib_pedido` | `dx_lib_pedido <= umbral_lib_pedido` |
-            | `performance_logistica` | `dx_logistica <= umbral_logistica` |
-            | `performance_tat` | `dx_tat <= umbral_tat` |
-            | `performance_proveedor` | `dx_proveedor <= umbral_proveedor` |
+            | Columna agregada | Fórmula teórica | Comparación usada en el código |
+            |---|---|---|
+            | `performance_lib_solped` | Cumple si liberación de SolPed está dentro del umbral | `dx_lib_solped <= umbral_lib_solped` |
+            | `performance_comprador_1` | Cumple si comprador 1 está dentro del umbral | `dx_comprador_1 <= umbral_comprador_1` |
+            | `performance_lib_pedido` | Cumple si liberación de pedido está dentro del umbral | `dx_lib_pedido <= umbral_lib_pedido` |
+            | `performance_logistica` | Cumple si logística está dentro del umbral | `dx_logistica <= umbral_logistica` |
+            | `performance_tat` | Cumple si TAT total está dentro del umbral | `dx_tat <= umbral_tat` |
+            | `performance_proveedor` | Cumple si proveedor está dentro del umbral | `dx_proveedor <= umbral_proveedor` |
             """
         )
 
@@ -856,23 +890,22 @@ def mostrar_resumen_cambios_performance(resumen_cambios: dict, resumen_cols: pd.
 
         st.markdown(
             """
-            Para cada etapa se calcula el exceso de días contra el umbral:
+            Para cada etapa se calcula el exceso de días contra el umbral. Si el resultado es menor
+            o igual a 0, se considera 0 porque no hay incumplimiento.
 
             ```text
-            días_incumplimiento = días_calculados - umbral
+            días_incumplimiento = max(días_calculados - umbral, 0)
             ```
 
-            Si el resultado es menor o igual a 0, se considera 0.
-
-            | Columna agregada | Fórmula aplicada |
-            |---|---|
-            | `dias_incumplimiento_lib_solped` | `max(dx_lib_solped - umbral_lib_solped, 0)` |
-            | `dias_incumplimiento_comprador_1` | `max(dx_comprador_1 - umbral_comprador_1, 0)` |
-            | `dias_incumplimiento_logistica` | `max(dx_logistica - umbral_logistica, 0)` |
-            | `dias_incumplimiento_tat` | `max(dx_tat - umbral_tat, 0)` |
-            | `dias_incumplimiento_proveedor` | `max(dx_proveedor - umbral_proveedor, 0)` |
-            | `dias_incumplimiento_max` | Máximo incumplimiento entre todas las etapas anteriores. |
-            | `incumplimiento` | `True` si `dias_incumplimiento_max > 0`; si no, `False`. |
+            | Columna agregada | Fórmula teórica | Fórmula usada en el código |
+            |---|---|---|
+            | `dias_incumplimiento_lib_solped` | Exceso de días en liberación de SolPed | `max(dx_lib_solped - umbral_lib_solped, 0)` |
+            | `dias_incumplimiento_comprador_1` | Exceso de días en comprador 1 | `max(dx_comprador_1 - umbral_comprador_1, 0)` |
+            | `dias_incumplimiento_logistica` | Exceso de días en logística | `max(dx_logistica - umbral_logistica, 0)` |
+            | `dias_incumplimiento_tat` | Exceso de días en TAT total | `max(dx_tat - umbral_tat, 0)` |
+            | `dias_incumplimiento_proveedor` | Exceso de días en proveedor | `max(dx_proveedor - umbral_proveedor, 0)` |
+            | `dias_incumplimiento_max` | Mayor incumplimiento detectado entre todas las etapas | `max()` entre las columnas de incumplimiento anteriores |
+            | `incumplimiento` | Indica si existe algún incumplimiento | `True` si `dias_incumplimiento_max > 0`; si no, `False` |
             """
         )
 
@@ -880,13 +913,13 @@ def mostrar_resumen_cambios_performance(resumen_cambios: dict, resumen_cols: pd.
 
         st.markdown(
             """
-            | Condición | Rango asignado |
-            |---|---|
-            | `dias_incumplimiento_max = 0` | `Sin incumplimiento` |
-            | `dias_incumplimiento_max` entre 1 y 5 | `0-5 días` |
-            | `dias_incumplimiento_max` entre 6 y 15 | `6-15 días` |
-            | `dias_incumplimiento_max` entre 16 y 30 | `16-30 días` |
-            | `dias_incumplimiento_max > 30` | `Mayor a un mes` |
+            | Condición teórica | Lógica usada en el código | Rango asignado |
+            |---|---|---|
+            | Sin exceso de días | `dias_incumplimiento_max = 0` | `Sin incumplimiento` |
+            | Incumplimiento menor | `dias_incumplimiento_max` entre `1` y `5` | `0-5 días` |
+            | Incumplimiento medio | `dias_incumplimiento_max` entre `6` y `15` | `6-15 días` |
+            | Incumplimiento alto | `dias_incumplimiento_max` entre `16` y `30` | `16-30 días` |
+            | Incumplimiento crítico | `dias_incumplimiento_max > 30` | `Mayor a un mes` |
             """
         )
 
@@ -1140,7 +1173,6 @@ try:
     st.subheader("Vista previa final")
 
     columnas_preferidas = [
-        "Solicitud de pedido",
         "Solicitud de pedido - ME5A",
         COL_PEDIDO,
         COL_DOCUMENTO_COMPRAS,
@@ -1210,7 +1242,6 @@ try:
     with st.expander("Top filas con mayor incumplimiento", expanded=False):
         if "dias_incumplimiento_max" in df_final.columns:
             columnas_top = [
-                "Solicitud de pedido",
                 "Solicitud de pedido - ME5A",
                 COL_PEDIDO,
                 COL_DOCUMENTO_COMPRAS,
