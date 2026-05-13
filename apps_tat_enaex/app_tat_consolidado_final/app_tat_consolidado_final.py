@@ -739,8 +739,8 @@ def generar_tabla_ejemplo_performance(ejemplo: dict) -> pd.DataFrame:
     ])
 
 
-def mostrar_resumen_cambios_performance(resumen_cambios: dict):
-    with st.expander("Cambios realizados y lógica de performance", expanded=False):
+def mostrar_resumen_cambios_performance(resumen_cambios: dict, resumen_cols: pd.DataFrame):
+    with st.expander("Cambios realizados y lógica de performance", expanded=True):
         conteo_tipo_oc = resumen_cambios.get("conteo_tipo_oc", {})
         texto_tipo_oc = "\n".join(
             [f"- **{tipo}**: {cantidad:,} registros" for tipo, cantidad in conteo_tipo_oc.items()]
@@ -749,28 +749,153 @@ def mostrar_resumen_cambios_performance(resumen_cambios: dict):
         if not texto_tipo_oc:
             texto_tipo_oc = "- No se pudo generar conteo por tipo de OC."
 
+        st.markdown("### 1. Resumen del archivo procesado")
+
         st.info(
             f"""
-            **Archivo cargado**
-
             - Se cargaron **{resumen_cambios['total_original']:,} registros**.
             - El resultado final conserva **{resumen_cambios['total_final']:,} registros**.
-            - Se conservaron las columnas originales y se agregaron **{resumen_cambios['columnas_nuevas']:,} columnas nuevas**.
+            - Se conservaron las columnas originales.
+            - Se agregaron **{resumen_cambios['columnas_nuevas']:,} columnas nuevas**.
+            - Filas duplicadas detectadas en la salida final: **{resumen_cambios['duplicados_final']:,}**.
+            """
+        )
 
-            **Lógica aplicada**
+        st.markdown("### 2. Columnas agregadas")
+        st.caption(
+            "Esta tabla muestra todas las columnas nuevas creadas por la lógica de performance, "
+            "junto con su cantidad de nulos, porcentaje de nulos y tipo de dato."
+        )
 
-            - Se clasificó la OC según los dos primeros dígitos del pedido.
-            - OC **35** se clasifica como **Ariba / Nacional**.
-            - OC **45** se clasifica como **ERP / Nacional**.
-            - OC **47** se clasifica como **ERP / Internacional**.
-            - Para OC **35**, la fecha inicio proveedor es **fecha_pedido_final**.
-            - Para OC **45 / 47**, la fecha inicio proveedor es **fecha_pedido_final + 3 días**.
+        st.dataframe(
+            resumen_cols,
+            use_container_width=True,
+            hide_index=True
+        )
 
-            **Incumplimiento**
+        st.markdown("### 3. Lógica de clasificación de OC")
 
+        st.markdown(
+            """
+            La clasificación se realiza tomando los **dos primeros dígitos** del pedido.
+
+            | Columna agregada | Fórmula / lógica aplicada |
+            |---|---|
+            | `tipo_oc` | Primeros 2 dígitos de `Pedido`. Si no existe `Pedido`, usa `nme_documento_compras`. |
+            | `origen_oc` | `35` y `45` = `Nacional`; `47` = `Internacional`; otros = `Otro`. |
+            | `sistema_oc` | `35` = `Ariba`; `45` y `47` = `ERP`; otros = `Otro`. |
+            | `nombre_tipo_compra` | `1` = `Catalogada`; `2` = `No catalogada`; `3` = `Directa`; otros = `Otro`. |
+            | `monto_valoracion` | `Cantidad solicitada * Precio de valoración`. |
+            """
+        )
+
+        st.markdown("### 4. Lógica de fecha inicio proveedor")
+
+        st.markdown(
+            """
+            | Tipo OC | Fórmula aplicada |
+            |---|---|
+            | `35` | `fecha_inicio_proveedor = fecha_pedido_final` |
+            | `45` / `47` | `fecha_inicio_proveedor = fecha_pedido_final + 3 días` |
+            | Otro / sin dato | `fecha_inicio_proveedor = NaT` |
+            """
+        )
+
+        st.markdown("### 5. Fórmulas de días calculados")
+
+        st.markdown(
+            """
+            | Columna agregada | Fórmula aplicada |
+            |---|---|
+            | `dx_lib_solped` | `fecha_liberacion_final - fecha_solicitud_final` |
+            | `dx_comprador_1` | `fecha_pedido_final - fecha_liberacion_final` |
+            | `dx_lib_pedido` | Actualmente queda sin cálculo: `NaN` |
+            | `dx_logistica` | `fecha_recepcion_final - fecha_facturacion_final` |
+            | `dx_proveedor` | `fecha_recepcion_final - fecha_inicio_proveedor` |
+            | `dx_tat` | `fecha_recepcion_final - fecha_solicitud_final` |
+            """
+        )
+
+        st.markdown("### 6. Umbrales usados")
+
+        st.markdown(
+            """
+            | Columna agregada | Valor / lógica aplicada |
+            |---|---|
+            | `umbral_lib_solped` | 2 días |
+            | `umbral_comprador_1` | 10 días |
+            | `umbral_lib_pedido` | 2 días |
+            | `umbral_logistica` | 11 días |
+            | `umbral_tat` | OC `35` / `45` = 40 días; OC `47` = 70 días |
+            | `umbral_proveedor` | OC `35` / `45` = 20 días; OC `47` = 60 días |
+            """
+        )
+
+        st.markdown("### 7. Fórmulas de performance")
+
+        st.markdown(
+            """
+            Cada columna de performance evalúa si el tiempo calculado está dentro del umbral:
+
+            ```text
+            performance = días_calculados <= umbral
+            ```
+
+            | Columna agregada | Comparación usada |
+            |---|---|
+            | `performance_lib_solped` | `dx_lib_solped <= umbral_lib_solped` |
+            | `performance_comprador_1` | `dx_comprador_1 <= umbral_comprador_1` |
+            | `performance_lib_pedido` | `dx_lib_pedido <= umbral_lib_pedido` |
+            | `performance_logistica` | `dx_logistica <= umbral_logistica` |
+            | `performance_tat` | `dx_tat <= umbral_tat` |
+            | `performance_proveedor` | `dx_proveedor <= umbral_proveedor` |
+            """
+        )
+
+        st.markdown("### 8. Fórmulas de incumplimiento")
+
+        st.markdown(
+            """
+            Para cada etapa se calcula el exceso de días contra el umbral:
+
+            ```text
+            días_incumplimiento = días_calculados - umbral
+            ```
+
+            Si el resultado es menor o igual a 0, se considera 0.
+
+            | Columna agregada | Fórmula aplicada |
+            |---|---|
+            | `dias_incumplimiento_lib_solped` | `max(dx_lib_solped - umbral_lib_solped, 0)` |
+            | `dias_incumplimiento_comprador_1` | `max(dx_comprador_1 - umbral_comprador_1, 0)` |
+            | `dias_incumplimiento_logistica` | `max(dx_logistica - umbral_logistica, 0)` |
+            | `dias_incumplimiento_tat` | `max(dx_tat - umbral_tat, 0)` |
+            | `dias_incumplimiento_proveedor` | `max(dx_proveedor - umbral_proveedor, 0)` |
+            | `dias_incumplimiento_max` | Máximo incumplimiento entre todas las etapas anteriores. |
+            | `incumplimiento` | `True` si `dias_incumplimiento_max > 0`; si no, `False`. |
+            """
+        )
+
+        st.markdown("### 9. Rangos de incumplimiento")
+
+        st.markdown(
+            """
+            | Condición | Rango asignado |
+            |---|---|
+            | `dias_incumplimiento_max = 0` | `Sin incumplimiento` |
+            | `dias_incumplimiento_max` entre 1 y 5 | `0-5 días` |
+            | `dias_incumplimiento_max` entre 6 y 15 | `6-15 días` |
+            | `dias_incumplimiento_max` entre 16 y 30 | `16-30 días` |
+            | `dias_incumplimiento_max > 30` | `Mayor a un mes` |
+            """
+        )
+
+        st.markdown("### 10. Resultado general de incumplimiento")
+
+        st.info(
+            f"""
             - Registros con incumplimiento: **{resumen_cambios['incumplimientos']:,}**.
             - Registros sin incumplimiento: **{resumen_cambios['sin_incumplimiento']:,}**.
-            - Filas duplicadas detectadas en la salida final: **{resumen_cambios['duplicados_final']:,}**.
 
             **Distribución por tipo de OC**
 
@@ -778,7 +903,8 @@ def mostrar_resumen_cambios_performance(resumen_cambios: dict):
             """
         )
 
-        st.markdown("**Ejemplo de cálculo de performance**")
+        st.markdown("### 11. Ejemplo de cálculo de performance")
+
         tabla_ejemplo = generar_tabla_ejemplo_performance(resumen_cambios.get("ejemplo"))
 
         if tabla_ejemplo.empty:
@@ -942,7 +1068,7 @@ try:
 
     st.success("Performance TAT calculada correctamente.")
 
-    mostrar_resumen_cambios_performance(resumen_cambios)
+    mostrar_resumen_cambios_performance(resumen_cambios, resumen_cols)
 
     st.subheader("Indicadores")
 
@@ -976,10 +1102,6 @@ try:
         hide_index=True
     )
 
-    if not resumen_perf.empty:
-        st.bar_chart(
-            resumen_perf.set_index("Métrica")["% Cumple"]
-        )
 
     st.subheader("Rango de incumplimiento")
 
@@ -1001,9 +1123,6 @@ try:
             hide_index=True
         )
 
-        st.bar_chart(
-            conteo_rango.set_index("Rango incumplimiento")["Cantidad"]
-        )
 
     with st.expander("Vista previa original", expanded=False):
         st.caption(
