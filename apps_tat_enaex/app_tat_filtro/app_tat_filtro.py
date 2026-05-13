@@ -66,6 +66,7 @@ FECHAS_CANDIDATAS = [
 ]
 
 # Estado secuencial del pedido: una sola visualización unificada.
+# Incluye la tarjeta inicial "1. Solicitud" para que el flujo no comience en liberación.
 ETAPAS_PEDIDO = [
     {
         "titulo": "1. Solicitud",
@@ -288,25 +289,15 @@ st.markdown(
 # Lectura y utilidades
 # =========================================================
 def obtener_separador(opcion: str):
-    if opcion == "Automático":
-        return None
-    if opcion == "Punto y coma (; )" or opcion == "Punto y coma (; )".strip():
-        return ";"
-    if opcion == "Punto y coma (; )":
-        return ";"
-    if opcion == "Punto y coma (; )":
-        return ";"
-    if opcion == "Punto y coma (; )":
-        return ";"
-    if opcion == "Punto y coma (; )":
-        return ";"
-    if opcion == "Punto y coma (;)":
-        return ";"
-    if opcion == "Coma (,)":
-        return ","
-    if opcion == "Tabulación":
-        return "\t"
-    return None
+    """Devuelve el separador elegido para leer archivos CSV."""
+    mapa = {
+        "Automático": None,
+        "Punto y coma (;)": ";",
+        "Coma (, )": ",",
+        "Coma (,)": ",",
+        "Tabulación": "\t",
+    }
+    return mapa.get(opcion, None)
 
 
 @st.cache_data(show_spinner=False)
