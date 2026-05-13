@@ -1,4 +1,5 @@
 import io
+import re
 import base64
 from html import escape
 from pathlib import Path
@@ -160,25 +161,32 @@ st.markdown(
         .logo-container {
             width: 100%;
             text-align: center;
-            margin-top: 0.35rem;
-            margin-bottom: 1rem;
-            line-height: 0;
+            margin-top: 0.25rem;
+            margin-bottom: 1.25rem;
+            padding: 10px 0 8px 0;
+            line-height: normal;
             overflow: visible;
+            min-height: 72px;
+            box-sizing: border-box;
         }
         .logo-container img {
             display: inline-block;
-            max-width: 180px;
-            width: 100%;
+            width: 220px;
+            max-width: min(220px, 60vw);
             height: auto;
             object-fit: contain;
+            vertical-align: middle;
         }
         @media (max-width: 760px) {
             .logo-container {
-                margin-top: 0.2rem;
-                margin-bottom: 0.8rem;
+                margin-top: 0.15rem;
+                margin-bottom: 0.9rem;
+                padding: 8px 0 6px 0;
+                min-height: 62px;
             }
             .logo-container img {
-                max-width: 150px;
+                width: 170px;
+                max-width: 70vw;
             }
         }
         div[data-testid="stMetric"] {
@@ -730,17 +738,44 @@ def html_estado_pedido(row: pd.Series) -> str:
 # =========================================================
 # UI común
 # =========================================================
+def agregar_padding_a_svg(svg_texto: str, padding_ratio: float = 0.18) -> str:
+    """
+    Amplía el viewBox del SVG para evitar que Streamlit/navegador corte el logo.
+
+    Algunos SVG corporativos vienen con un viewBox muy ajustado. Al mostrarlos como
+    data-uri dentro de Streamlit, los bordes superiores/inferiores pueden verse
+    recortados. Esta función no cambia el arte del logo: solo agrega aire alrededor
+    del viewBox.
+    """
+    match = re.search(r'viewBox=["\']\s*([\-\d.]+)\s+([\-\d.]+)\s+([\d.]+)\s+([\d.]+)\s*["\']', svg_texto)
+
+    if not match:
+        return svg_texto
+
+    min_x, min_y, width, height = map(float, match.groups())
+    pad_x = width * padding_ratio
+    pad_y = height * padding_ratio
+
+    nuevo_viewbox = (
+        f'viewBox="{min_x - pad_x:.3f} {min_y - pad_y:.3f} '
+        f'{width + (2 * pad_x):.3f} {height + (2 * pad_y):.3f}"'
+    )
+
+    return svg_texto[:match.start()] + nuevo_viewbox + svg_texto[match.end():]
+
+
 @st.cache_data(show_spinner=False)
 def obtener_logo_base64() -> str:
-    """Lee el logo una sola vez por sesión/cache para evitar trabajo en cada rerun."""
+    """Lee el logo una sola vez y le agrega margen interno para evitar cortes."""
     if not LOGO_PATH.exists():
         return ""
 
     logo_svg = LOGO_PATH.read_text(encoding="utf-8")
+    logo_svg = agregar_padding_a_svg(logo_svg, padding_ratio=0.22)
     return base64.b64encode(logo_svg.encode("utf-8")).decode("utf-8")
 
 
-def mostrar_logo(ancho: int = 180):
+def mostrar_logo(ancho: int = 220):
     logo_base64 = obtener_logo_base64()
     if not logo_base64:
         return
@@ -750,8 +785,8 @@ def mostrar_logo(ancho: int = 180):
         <div class="logo-container">
             <img
                 src="data:image/svg+xml;base64,{logo_base64}"
-                style="max-width: {ancho}px;"
-                alt="Logo"
+                style="width: {ancho}px; max-width: min({ancho}px, 60vw);"
+                alt="Logo Enaex"
             >
         </div>
         """,
