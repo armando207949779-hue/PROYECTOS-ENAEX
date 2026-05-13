@@ -840,72 +840,6 @@ st.divider()
 
 
 # =========================================================
-# Descarga principal y descargas opcionales
-# =========================================================
-
-st.markdown("### Descarga")
-
-st.download_button(
-    label="Descargar Parquet",
-    data=parquet_bytes,
-    file_name=nombre_parquet,
-    mime="application/octet-stream",
-    use_container_width=True
-)
-
-st.caption(
-    "Parquet es el formato principal recomendado para conservar tipos de datos "
-    "y trabajar con Python. CSV y Excel se preparan solo si los solicitas."
-)
-
-with st.expander("Opcional: descargar como CSV o Excel"):
-    col_d1, col_d2 = st.columns(2)
-
-    with col_d1:
-        preparar_csv = st.button(
-            "Preparar CSV",
-            use_container_width=True
-        )
-
-        if preparar_csv:
-            with st.spinner("Preparando CSV..."):
-                csv_bytes = convertir_a_csv_cache(df_limpio)
-
-            st.download_button(
-                label="Descargar CSV",
-                data=csv_bytes,
-                file_name=nombre_csv,
-                mime="text/csv",
-                use_container_width=True
-            )
-
-    with col_d2:
-        preparar_excel = st.button(
-            "Preparar Excel",
-            use_container_width=True
-        )
-
-        if preparar_excel:
-            with st.spinner("Preparando Excel..."):
-                excel_bytes = convertir_a_excel_cache(
-                    df_limpio=df_limpio,
-                    diagnostico_columnas=diagnostico_columnas,
-                    resumen_fechas=resumen_fechas,
-                    resumen_num=resumen_num
-                )
-
-            st.download_button(
-                label="Descargar Excel",
-                data=excel_bytes,
-                file_name=nombre_excel,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
-            )
-
-st.divider()
-
-
-# =========================================================
 # Vista Entrada
 # =========================================================
 
@@ -940,7 +874,7 @@ elif modulo == "Salida":
     st.subheader("Salida")
 
     st.info(
-        "El archivo Parquet está disponible en la sección superior. "
+        "El archivo Parquet estará disponible en la sección final de descarga. "
         "CSV y Excel se preparan únicamente desde la sección opcional."
     )
 
@@ -1033,3 +967,69 @@ if mostrar_analisis:
                     resumen_fechas,
                     use_container_width=True
                 )
+
+
+# =========================================================
+# Descarga principal y descargas opcionales
+# =========================================================
+
+st.divider()
+
+st.markdown("### Descarga")
+
+st.download_button(
+    label="Descargar Parquet",
+    data=parquet_bytes,
+    file_name=nombre_parquet,
+    mime="application/octet-stream",
+    use_container_width=True
+)
+
+st.caption(
+    "Parquet es el formato principal recomendado para conservar tipos de datos "
+    "y trabajar con Python. CSV y Excel se preparan solo si los solicitas."
+)
+
+with st.expander("Opcional: descargar como CSV o Excel"):
+    col_d1, col_d2 = st.columns(2)
+
+    with col_d1:
+        preparar_csv = st.button(
+            "Preparar CSV",
+            use_container_width=True
+        )
+
+        if preparar_csv:
+            with st.spinner("Preparando CSV..."):
+                csv_bytes = convertir_a_csv_cache(df_limpio)
+
+            st.download_button(
+                label="Descargar CSV",
+                data=csv_bytes,
+                file_name=nombre_csv,
+                mime="text/csv",
+                use_container_width=True
+            )
+
+    with col_d2:
+        preparar_excel = st.button(
+            "Preparar Excel",
+            use_container_width=True
+        )
+
+        if preparar_excel:
+            with st.spinner("Preparando Excel..."):
+                excel_bytes = convertir_a_excel_cache(
+                    df_limpio=df_limpio,
+                    diagnostico_columnas=diagnostico_columnas,
+                    resumen_fechas=resumen_fechas,
+                    resumen_num=resumen_num
+                )
+
+            st.download_button(
+                label="Descargar Excel",
+                data=excel_bytes,
+                file_name=nombre_excel,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
