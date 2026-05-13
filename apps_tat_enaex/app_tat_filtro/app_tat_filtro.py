@@ -157,50 +157,28 @@ st.markdown(
         .block-container {padding-top: 1.25rem; padding-bottom: 2rem; max-width: 1500px;}
         h1 {font-size: 1.9rem !important; margin-bottom: 0.1rem !important;}
         h3 {font-size: 1.05rem !important; margin-top: 1rem !important;}
-        .app-header {
-            display: flex;
-            align-items: flex-start;
-            justify-content: space-between;
-            gap: 2rem;
-            margin: 0.25rem 0 1.1rem 0;
+        .logo-container {
+            width: 100%;
+            text-align: center;
+            margin-top: 0.35rem;
+            margin-bottom: 1rem;
+            line-height: 0;
+            overflow: visible;
         }
-        .app-header-title {
-            flex: 1 1 auto;
-            min-width: 0;
-            padding-top: 0.35rem;
-        }
-        .app-header-title h1 {
-            margin-top: 0 !important;
-        }
-        .app-header-logo {
-            flex: 0 0 auto;
-            min-width: 190px;
-            text-align: right;
-            padding-top: 0.15rem;
-        }
-        .app-header-logo img {
+        .logo-container img {
+            display: inline-block;
             max-width: 180px;
+            width: 100%;
             height: auto;
-        }
-        .upload-card {
-            border: 1px solid #e5e7eb;
-            border-radius: 16px;
-            padding: 14px 16px 16px 16px;
-            background: #ffffff;
-            margin: 0.3rem 0 1.1rem 0;
+            object-fit: contain;
         }
         @media (max-width: 760px) {
-            .app-header {
-                display: block;
-                margin-bottom: 0.9rem;
+            .logo-container {
+                margin-top: 0.2rem;
+                margin-bottom: 0.8rem;
             }
-            .app-header-logo {
-                text-align: left;
-                min-width: 0;
-                padding-top: 0.25rem;
-            }
-            .app-header-logo img {
-                max-width: 145px;
+            .logo-container img {
+                max-width: 150px;
             }
         }
         div[data-testid="stMetric"] {
@@ -762,50 +740,49 @@ def obtener_logo_base64() -> str:
     return base64.b64encode(logo_svg.encode("utf-8")).decode("utf-8")
 
 
-def html_logo(ancho: int = 180) -> str:
+def mostrar_logo(ancho: int = 180):
     logo_base64 = obtener_logo_base64()
     if not logo_base64:
-        return ""
+        return
 
-    return f'<img src="data:image/svg+xml;base64,{logo_base64}" width="{ancho}" alt="Logo">'
-
-
-# =========================================================
-# Header minimalista + carga superior
-# =========================================================
-st.markdown(
-    f"""
-    <div class="app-header">
-        <div class="app-header-title">
-            <h1>Buscador SolPed / OC</h1>
-            <p style="color:#6b7280; margin:0; font-size:0.95rem;">
-                Carga un archivo ya procesado. La app solo filtra, visualiza y descarga resultados; no recalcula performance.
-            </p>
+    st.markdown(
+        f"""
+        <div class="logo-container">
+            <img
+                src="data:image/svg+xml;base64,{logo_base64}"
+                style="max-width: {ancho}px;"
+                alt="Logo"
+            >
         </div>
-        <div class="app-header-logo">{html_logo(180)}</div>
-    </div>
-    """,
-    unsafe_allow_html=True,
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# =========================================================
+# Interfaz
+# =========================================================
+mostrar_logo()
+
+st.title("Buscador SolPed / OC")
+st.caption(
+    "Carga un archivo ya procesado. La app solo filtra, visualiza y descarga resultados; no recalcula performance."
 )
 
-st.markdown("### Archivo")
+with st.sidebar:
+    st.header("Configuración")
 
-st.markdown('<div class="upload-card">', unsafe_allow_html=True)
-uploaded_file = st.file_uploader(
-    "Subir parquet, CSV o Excel",
-    type=["parquet", "csv", "xlsx", "xls"],
-    help="Formatos soportados: .parquet, .csv, .xlsx y .xls",
-)
-
-cfg1, cfg2, cfg3 = st.columns([1.1, 0.9, 1.1])
-with cfg1:
     separador_csv = st.selectbox(
         "Separador CSV",
-        ["Automático", "Punto y coma (;)", "Coma (,)", "Tabulación"],
+        options=[
+            "Automático",
+            "Punto y coma (;)",
+            "Coma (,)",
+            "Tabulación",
+        ],
         index=0,
-        help="Solo aplica para archivos CSV.",
     )
-with cfg2:
+
     limite_vista = st.number_input(
         "Filas en tabla",
         min_value=25,
@@ -813,12 +790,20 @@ with cfg2:
         value=300,
         step=25,
     )
-with cfg3:
+
     mostrar_todas_columnas = st.checkbox(
         "Mostrar todas las columnas en tabla",
         value=False,
     )
-st.markdown('</div>', unsafe_allow_html=True)
+
+    st.caption("El separador solo aplica a archivos CSV.")
+
+st.subheader("Archivo")
+
+uploaded_file = st.file_uploader(
+    "Subir parquet, CSV o Excel",
+    type=["parquet", "csv", "xlsx", "xls"],
+)
 
 if uploaded_file is None:
     st.info("Sube un archivo `.parquet`, `.csv`, `.xlsx` o `.xls` para comenzar.")
