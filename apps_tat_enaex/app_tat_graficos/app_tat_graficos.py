@@ -9,7 +9,7 @@ import altair as alt
 
 
 COLORES_ESTADO = {
-    "Cumple": "#2E7D32",
+    "Cumple": "#5B5B5B",
     "No cumple": "#D94555",
     "Sin información": "#BDBDBD"
 }
@@ -260,32 +260,32 @@ def preparar_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
     columnas_alias = {
         "performance_tat": [
-            "performance_tat",
-            "performance_tat_total"
+            "performance_tat_total",
+            "performance_tat"
         ],
         "dx_lib_solped": [
-            "dx_lib_solped",
-            "dias_liberacion_solped"
+            "dias_liberacion_solped",
+            "dx_lib_solped"
         ],
         "dx_comprador_1": [
-            "dx_comprador_1",
-            "dias_comprador"
+            "dias_comprador",
+            "dx_comprador_1"
         ],
         "dx_proveedor": [
-            "dx_proveedor",
-            "dias_proveedor"
+            "dias_proveedor",
+            "dx_proveedor"
         ],
         "dx_logistica": [
-            "dx_logistica",
-            "dias_logistica"
+            "dias_logistica",
+            "dx_logistica"
         ],
         "performance_lib_solped": [
-            "performance_lib_solped",
-            "performance_liberacion_solped"
+            "performance_liberacion_solped",
+            "performance_lib_solped"
         ],
         "performance_comprador_1": [
-            "performance_comprador_1",
-            "performance_comprador"
+            "performance_comprador",
+            "performance_comprador_1"
         ],
         "performance_proveedor": [
             "performance_proveedor"
@@ -328,6 +328,7 @@ def preparar_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df["performance_tat_estado"] = df[col_performance_tat].apply(
         normalizar_performance
     )
+    df["fuente_performance_tat_estado"] = col_performance_tat
 
     # =========================
     # Performance por etapa para donuts
@@ -342,10 +343,12 @@ def preparar_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         df["performance_lib_solped_estado"] = df[col_perf_lib_solped].apply(
             normalizar_performance
         )
+        df["fuente_performance_lib_solped_estado"] = col_perf_lib_solped
     elif col_dias_lib_solped is not None:
         df["performance_lib_solped_estado"] = df[col_dias_lib_solped].apply(
             performance_dx_lib_solped
         )
+        df["fuente_performance_lib_solped_estado"] = col_dias_lib_solped
 
     col_dias_comprador = obtener_columna("dx_comprador_1")
     col_perf_comprador = obtener_columna("performance_comprador_1")
@@ -354,10 +357,12 @@ def preparar_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         df["performance_comprador_1_estado"] = df[col_perf_comprador].apply(
             normalizar_performance
         )
+        df["fuente_performance_comprador_estado"] = col_perf_comprador
     elif col_dias_comprador is not None:
         df["performance_comprador_1_estado"] = df[col_dias_comprador].apply(
             performance_dx_comprador
         )
+        df["fuente_performance_comprador_estado"] = col_dias_comprador
 
     col_dias_proveedor = obtener_columna("dx_proveedor")
     col_perf_proveedor = obtener_columna("performance_proveedor")
@@ -366,6 +371,7 @@ def preparar_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         df["performance_proveedor_estado"] = df[col_perf_proveedor].apply(
             normalizar_performance
         )
+        df["fuente_performance_proveedor_estado"] = col_perf_proveedor
     elif col_dias_proveedor is not None and "tipo_oc" in df.columns:
         df["performance_proveedor_estado"] = df.apply(
             lambda row: performance_proveedor_dax(
@@ -374,6 +380,7 @@ def preparar_dataframe(df: pd.DataFrame) -> pd.DataFrame:
             ),
             axis=1
         )
+        df["fuente_performance_proveedor_estado"] = col_dias_proveedor
 
     col_dias_logistica = obtener_columna("dx_logistica")
     col_perf_logistica = obtener_columna("performance_logistica")
@@ -382,10 +389,12 @@ def preparar_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         df["performance_logistica_estado"] = df[col_perf_logistica].apply(
             normalizar_performance
         )
+        df["fuente_performance_logistica_estado"] = col_perf_logistica
     elif col_dias_logistica is not None:
         df["performance_logistica_estado"] = df[col_dias_logistica].apply(
             performance_dx_logistica
         )
+        df["fuente_performance_logistica_estado"] = col_dias_logistica
 
     # =========================
     # Columnas estándar para que el resto del dashboard siga funcionando
@@ -1239,7 +1248,7 @@ def tarjeta_donut_cumplimiento(
     st.altair_chart(chart, use_container_width=True)
 
     etiqueta_promedio = (
-        f"{texto_promedio} (solo Dx ≥ 0)"
+        f"{texto_promedio} (solo días ≥ 0)"
         if promedio_solo_dx_positivos
         else texto_promedio
     )
@@ -1254,7 +1263,7 @@ def tarjeta_donut_cumplimiento(
                 {etiqueta_promedio}
             </div>
             <div style="font-size:12px; color:#D94555; margin-top:4px; font-weight:600;">
-                Dx negativos: {pct_negativos:.1f}% ({total_dx_negativos:,}/{total_dx_validos:,})
+                Días negativos: {pct_negativos:.1f}% ({total_dx_negativos:,}/{total_dx_validos:,})
             </div>
         </div>
         """,
@@ -1277,11 +1286,11 @@ def bloque_donuts_cumplimiento(df: pd.DataFrame, promedio_solo_dx_positivos: boo
     with col1:
         tarjeta_donut_cumplimiento(
             df=df,
-            titulo="Lib Solped",
+            titulo="Liberación Solped",
             col_performance_estado="performance_lib_solped_estado",
             col_dias_incumplimiento="dx_lib_solped",
             regla="Nacional e Internacional &lt; 2",
-            texto_promedio="Promedio de Dx Lib solped",
+            texto_promedio="Promedio días liberación Solped",
             promedio_solo_dx_positivos=promedio_solo_dx_positivos
         )
 
@@ -1292,7 +1301,7 @@ def bloque_donuts_cumplimiento(df: pd.DataFrame, promedio_solo_dx_positivos: boo
             col_performance_estado="performance_comprador_1_estado",
             col_dias_incumplimiento="dx_comprador_1",
             regla="Nacional e Internacional &lt; 11",
-            texto_promedio="Promedio de Dx Comprador 1",
+            texto_promedio="Promedio días comprador",
             promedio_solo_dx_positivos=promedio_solo_dx_positivos
         )
 
@@ -1303,7 +1312,7 @@ def bloque_donuts_cumplimiento(df: pd.DataFrame, promedio_solo_dx_positivos: boo
             col_performance_estado="performance_proveedor_estado",
             col_dias_incumplimiento="dx_proveedor",
             regla="Nacional &lt; 20<br>Internacional &lt;60",
-            texto_promedio="Promedio de Dx Proveedor",
+            texto_promedio="Promedio días proveedor",
             promedio_solo_dx_positivos=promedio_solo_dx_positivos
         )
 
@@ -1314,7 +1323,7 @@ def bloque_donuts_cumplimiento(df: pd.DataFrame, promedio_solo_dx_positivos: boo
             col_performance_estado="performance_logistica_estado",
             col_dias_incumplimiento="dx_logistica",
             regla="Nacional e Internacional &lt; 10",
-            texto_promedio="Promedio de Dx Logística",
+            texto_promedio="Promedio días logística",
             promedio_solo_dx_positivos=promedio_solo_dx_positivos
         )
 
@@ -1748,11 +1757,12 @@ if uploaded_file is not None:
 
             with filtro_col4:
                 if col_centro is not None and centros_disponibles:
+                    centros_default = ["E002"] if "E002" in centros_disponibles else []
                     centros_sel = st.multiselect(
                         col_centro,
                         options=centros_disponibles,
-                        default=[],
-                        help="Sin selección = todos los centros.",
+                        default=centros_default,
+                        help="Por defecto se marca E002 si existe en el archivo. Sin selección = todos los centros.",
                         key="filtros_default_centro_me5a"
                     )
                 else:
@@ -1793,11 +1803,11 @@ if uploaded_file is not None:
 
             with filtro_col8:
                 promedio_solo_dx_positivos = st.checkbox(
-                    "Promedios de etapa solo con Dx ≥ 0",
+                    "Promedios de etapa solo con días ≥ 0",
                     value=True,
                     help=(
                         "Aplica solo al número promedio mostrado bajo cada donut. "
-                        "El porcentaje de Dx negativos se informa debajo de cada promedio."
+                        "El porcentaje de días negativos se informa debajo de cada promedio."
                     ),
                     key="filtros_default_promedio_dx_positivos"
                 )
@@ -1902,7 +1912,7 @@ if uploaded_file is not None:
 
                 1. Se usa la columna `fecha_recepcion_final` como fecha base.
                 2. Cada registro se asigna a un mes y año.
-                3. La columna `performance_tat_total` se normaliza en tres estados:
+                3. Se usa como fuente principal la columna `performance_tat_total` y se normaliza en tres estados:
                    - `Cumple`
                    - `No cumple`
                    - `Sin información`
@@ -1956,30 +1966,21 @@ if uploaded_file is not None:
                 - Proveedor
                 - Logística
 
-                **Lógica aplicada:**
+                **Fuente de datos usada para los donuts:**
 
-                1. Lib Solped:
-                   - Si `dias_liberacion_solped < 2`: `Cumple`.
-                   - En caso contrario: `No cumple`.
+                - Liberación Solped: `performance_liberacion_solped`.
+                - Comprador: `performance_comprador`.
+                - Proveedor: `performance_proveedor`.
+                - Logística: `performance_logistica`.
 
-                2. Comprador:
-                   - Si `dias_comprador < 11`: `Cumple`.
-                   - En caso contrario: `No cumple`.
-
-                3. Proveedor:
-                   - Si `tipo_oc` es 35 o 45 y `dias_proveedor < 20`: `Cumple`.
-                   - Si `tipo_oc` es 47 y `dias_proveedor < 60`: `Cumple`.
-                   - En caso contrario: `No cumple`.
-
-                4. Logística:
-                   - Si `dias_logistica < 10`: `Cumple`.
-                   - En caso contrario: `No cumple`.
+                Si alguna de esas columnas no existe, el dashboard calcula un respaldo usando las columnas de días correspondientes:
+                `dias_liberacion_solped`, `dias_comprador`, `dias_proveedor` y `dias_logistica`.
 
                 **Promedios de días:**
 
-                - Por defecto, el promedio mostrado bajo cada donut se calcula solo con Dx mayores o iguales a cero.
-                - Debajo de cada promedio se informa qué porcentaje de registros tiene Dx negativo.
-                - Puedes desactivar ese filtro en el bloque de filtros por defecto para calcular el promedio con todos los Dx válidos.
+                - Por defecto, el promedio mostrado bajo cada donut se calcula solo con días mayores o iguales a cero.
+                - Debajo de cada promedio se informa qué porcentaje de registros tiene días negativos.
+                - Puedes desactivar ese filtro en el bloque de filtros por defecto para calcular el promedio con todos los días válidos.
 
                 **Interpretación:**
 
