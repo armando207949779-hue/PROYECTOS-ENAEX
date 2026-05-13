@@ -7,7 +7,7 @@ import streamlit as st
 
 
 # =========================================================
-# Configuracion general
+# Configuración general
 # =========================================================
 st.set_page_config(
     page_title="Buscador SolPed / OC",
@@ -65,31 +65,56 @@ FECHAS_CANDIDATAS = [
     "Fecha recepción mercancía - NME80FN",
 ]
 
-FECHAS_PANEL = [
-    ("Solicitud", "fecha_solicitud_final"),
-    ("Liberación", "fecha_liberacion_final"),
-    ("Pedido", "fecha_pedido_final"),
-    ("Facturación", "fecha_facturacion_final"),
-    ("Recepción", "fecha_recepcion_final"),
-]
-
-DIAS_PANEL = [
-    ("Liberación SolPed", "dias_liberacion_solped", "umbral_liberacion_solped"),
-    ("Comprador", "dias_comprador", "umbral_comprador"),
-    ("Liberación Pedido", "dias_liberacion_pedido", "umbral_liberacion_pedido"),
-    ("Proveedor", "dias_proveedor", "umbral_proveedor"),
-    ("Logística", "dias_logistica", "umbral_logistica"),
-    ("TAT Total", "dias_tat_total", "umbral_tat_total"),
-    ("Incumplimiento TAT", "dias_incumplimiento_tat", None),
-]
-
-PERFORMANCE_PANEL = [
-    ("Liberación SolPed", "performance_liberacion_solped"),
-    ("Comprador", "performance_comprador"),
-    ("Liberación Pedido", "performance_liberacion_pedido"),
-    ("Proveedor", "performance_proveedor"),
-    ("Logística", "performance_logistica"),
-    ("TAT Total", "performance_tat_total"),
+# Estado secuencial del pedido: una sola visualización unificada.
+ETAPAS_PEDIDO = [
+    {
+        "titulo": "1. Solicitud",
+        "fecha": "fecha_solicitud_final",
+        "dias": None,
+        "umbral": None,
+        "performance": None,
+        "nota": "Inicio SolPed",
+    },
+    {
+        "titulo": "2. Liberación SolPed",
+        "fecha": "fecha_liberacion_final",
+        "dias": "dias_liberacion_solped",
+        "umbral": "umbral_liberacion_solped",
+        "performance": "performance_liberacion_solped",
+        "nota": "Solicitud → Liberación",
+    },
+    {
+        "titulo": "3. Comprador",
+        "fecha": "fecha_pedido_final",
+        "dias": "dias_comprador",
+        "umbral": "umbral_comprador",
+        "performance": "performance_comprador",
+        "nota": "Liberación → Pedido",
+    },
+    {
+        "titulo": "4. Proveedor",
+        "fecha": "fecha_facturacion_final",
+        "dias": "dias_proveedor",
+        "umbral": "umbral_proveedor",
+        "performance": "performance_proveedor",
+        "nota": "Pedido → Facturación",
+    },
+    {
+        "titulo": "5. Logística",
+        "fecha": "fecha_recepcion_final",
+        "dias": "dias_logistica",
+        "umbral": "umbral_logistica",
+        "performance": "performance_logistica",
+        "nota": "Facturación → Recepción",
+    },
+    {
+        "titulo": "6. TAT Total",
+        "fecha": "fecha_recepcion_final",
+        "dias": "dias_tat_total",
+        "umbral": "umbral_tat_total",
+        "performance": "performance_tat_total",
+        "nota": "Solicitud → Recepción",
+    },
 ]
 
 COLUMNAS_TABLA_PRINCIPAL = [
@@ -120,73 +145,139 @@ COLUMNAS_TABLA_PRINCIPAL = [
 st.markdown(
     """
     <style>
-        .block-container {padding-top: 1.4rem; padding-bottom: 2rem;}
-        h1 {font-size: 2.0rem !important; margin-bottom: 0.1rem !important;}
-        h2, h3 {letter-spacing: -0.02em;}
+        .block-container {padding-top: 1.25rem; padding-bottom: 2rem; max-width: 1500px;}
+        h1 {font-size: 1.9rem !important; margin-bottom: 0.1rem !important;}
+        h3 {font-size: 1.05rem !important; margin-top: 1rem !important;}
         div[data-testid="stMetric"] {
             background: #ffffff;
             border: 1px solid #eef2f7;
-            border-radius: 16px;
-            padding: 14px 16px;
-            box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04);
+            border-radius: 14px;
+            padding: 12px 14px;
+            box-shadow: 0 1px 4px rgba(15, 23, 42, 0.035);
         }
         .match-box {
-            background: #eef7ff;
-            border: 1px solid #cde7ff;
-            border-radius: 18px;
-            padding: 18px 20px;
-            margin: 0.3rem 0 1.1rem 0;
+            background: #f0f9ff;
+            border: 1px solid #bae6fd;
+            border-radius: 16px;
+            padding: 14px 18px;
+            margin: 0.5rem 0 0.9rem 0;
         }
         .match-number {
-            font-size: 2.2rem;
-            font-weight: 800;
-            color: #075985;
-            line-height: 1.1;
+            font-size: 2rem;
+            font-weight: 850;
+            color: #0369a1;
+            line-height: 1.05;
         }
         .match-label {
             color: #334155;
-            font-size: 0.95rem;
+            font-size: 0.92rem;
             margin-top: 4px;
         }
-        .section-card {
+        .order-head {
             background: #ffffff;
-            border: 1px solid #edf2f7;
-            border-radius: 18px;
-            padding: 16px 16px 12px 16px;
-            margin-bottom: 10px;
-            box-shadow: 0 1px 5px rgba(15, 23, 42, 0.035);
+            border: 1px solid #e5e7eb;
+            border-radius: 16px;
+            padding: 14px 16px;
+            margin: 0.5rem 0 0.7rem 0;
         }
-        .mini-title {
-            font-size: 0.78rem;
+        .head-grid {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(120px, 1fr));
+            gap: 10px;
+        }
+        .head-label {
             color: #64748b;
+            font-size: 0.74rem;
             text-transform: uppercase;
             letter-spacing: 0.04em;
-            margin-bottom: 4px;
+            margin-bottom: 3px;
         }
-        .mini-value {
-            font-size: 1.15rem;
-            font-weight: 750;
+        .head-value {
             color: #0f172a;
-            margin-bottom: 2px;
+            font-weight: 800;
+            font-size: 1rem;
+            overflow-wrap: anywhere;
         }
-        .mini-note {
-            font-size: 0.80rem;
+        .stage-wrap {
+            display: grid;
+            grid-template-columns: repeat(6, minmax(150px, 1fr));
+            gap: 10px;
+            align-items: stretch;
+            margin-top: 0.55rem;
+        }
+        .stage-card {
+            border-radius: 16px;
+            padding: 13px 13px 12px 13px;
+            border: 1px solid #e5e7eb;
+            min-height: 150px;
+            position: relative;
+        }
+        .stage-card::after {
+            content: "→";
+            position: absolute;
+            right: -9px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #94a3b8;
+            font-weight: 900;
+            font-size: 1rem;
+            z-index: 2;
+        }
+        .stage-card:last-child::after {content: "";}
+        .stage-green {background: #f0fdf4; border-color: #bbf7d0;}
+        .stage-red {background: #fef2f2; border-color: #fecaca;}
+        .stage-yellow {background: #fefce8; border-color: #fde68a;}
+        .stage-gray {background: #f8fafc; border-color: #e2e8f0;}
+        .stage-blue {background: #eff6ff; border-color: #bfdbfe;}
+        .stage-title {
+            font-size: 0.82rem;
+            font-weight: 850;
+            color: #0f172a;
+            margin-bottom: 6px;
+        }
+        .stage-date {
+            font-size: 1.05rem;
+            font-weight: 850;
+            color: #111827;
+            margin-bottom: 5px;
+        }
+        .stage-note {
             color: #64748b;
+            font-size: 0.76rem;
+            line-height: 1.25;
+            min-height: 28px;
+            margin-bottom: 9px;
+        }
+        .stage-days {
+            font-size: 0.88rem;
+            color: #334155;
+            margin-bottom: 7px;
         }
         .pill {
             display: inline-block;
             border-radius: 999px;
-            padding: 5px 10px;
-            font-size: 0.78rem;
-            font-weight: 750;
-            margin: 2px 0;
+            padding: 4px 9px;
+            font-size: 0.76rem;
+            font-weight: 800;
             border: 1px solid transparent;
+            white-space: nowrap;
         }
         .pill-green {background: #dcfce7; color: #166534; border-color: #bbf7d0;}
         .pill-red {background: #fee2e2; color: #991b1b; border-color: #fecaca;}
         .pill-yellow {background: #fef9c3; color: #854d0e; border-color: #fde68a;}
         .pill-gray {background: #f1f5f9; color: #475569; border-color: #e2e8f0;}
         .pill-blue {background: #dbeafe; color: #1e40af; border-color: #bfdbfe;}
+        .tiny-muted {color:#64748b; font-size:0.78rem;}
+        @media (max-width: 1200px) {
+            .stage-wrap {grid-template-columns: repeat(3, minmax(150px, 1fr));}
+            .head-grid {grid-template-columns: repeat(3, minmax(120px, 1fr));}
+        }
+        @media (max-width: 760px) {
+            .stage-wrap {grid-template-columns: 1fr;}
+            .stage-card::after {content: "↓"; right: 50%; top: auto; bottom: -14px; transform: translateX(50%);}
+            .stage-card:last-child::after {content: "";}
+            .head-grid {grid-template-columns: 1fr;}
+        }
     </style>
     """,
     unsafe_allow_html=True,
@@ -200,6 +291,12 @@ def obtener_separador(opcion: str):
     if opcion == "Automático":
         return None
     if opcion == "Punto y coma (; )" or opcion == "Punto y coma (; )".strip():
+        return ";"
+    if opcion == "Punto y coma (; )":
+        return ";"
+    if opcion == "Punto y coma (; )":
+        return ";"
+    if opcion == "Punto y coma (; )":
         return ";"
     if opcion == "Punto y coma (; )":
         return ";"
@@ -353,14 +450,14 @@ def formato_numero(valor: Any, decimales: int = 0) -> str:
 def clase_performance(valor: Any) -> str:
     texto = str(valor).strip().lower()
     if texto == "cumple":
-        return "pill-green"
+        return "green"
     if texto == "no cumple":
-        return "pill-red"
+        return "red"
     if texto in ["en proceso", "sin datos"]:
-        return "pill-yellow"
+        return "yellow"
     if "no aplica" in texto:
-        return "pill-gray"
-    return "pill-blue"
+        return "gray"
+    return "blue"
 
 
 def clase_dias(dias: Any, umbral: Any = None) -> str:
@@ -368,20 +465,38 @@ def clase_dias(dias: Any, umbral: Any = None) -> str:
     umbral_num = pd.to_numeric(pd.Series([umbral]), errors="coerce").iloc[0] if umbral is not None else np.nan
 
     if pd.isna(dias_num):
-        return "pill-gray"
+        return "gray"
     if dias_num < 0:
-        return "pill-gray"
+        return "gray"
     if pd.notna(umbral_num):
         if dias_num <= umbral_num:
-            return "pill-green"
-        return "pill-red"
+            return "green"
+        return "red"
     if dias_num == 0:
-        return "pill-green"
-    return "pill-yellow"
+        return "green"
+    return "yellow"
 
 
-def pill(texto: Any, clase: str) -> str:
-    return f'<span class="pill {clase}">{formato_valor(texto)}</span>'
+def pill(texto: Any, color: str) -> str:
+    return f'<span class="pill pill-{color}">{formato_valor(texto)}</span>'
+
+
+def etapa_color(row: pd.Series, etapa: dict) -> str:
+    perf_col = etapa.get("performance")
+    dias_col = etapa.get("dias")
+    umbral_col = etapa.get("umbral")
+
+    if perf_col and perf_col in row.index:
+        return clase_performance(row.get(perf_col))
+
+    if dias_col and dias_col in row.index:
+        return clase_dias(row.get(dias_col), row.get(umbral_col) if umbral_col else None)
+
+    fecha_col = etapa.get("fecha")
+    if fecha_col and fecha_col in row.index and pd.notna(row.get(fecha_col)):
+        return "blue"
+
+    return "gray"
 
 
 def dataframe_a_excel(df: pd.DataFrame) -> bytes:
@@ -403,8 +518,7 @@ def construir_label_registro(row: pd.Series) -> str:
     pos = row.get(COL_POS_SOLPED, "-")
     perf = row.get(COL_PERF_TAT, "-")
     dias = row.get(COL_DIAS_TAT, "-")
-    texto = row.get(COL_TEXTO, "")
-    texto = str(texto)[:55]
+    texto = str(row.get(COL_TEXTO, ""))[:55]
     return f"SolPed {formato_valor(solped)} | OC {formato_valor(oc)} | Pos {formato_valor(pos)} | TAT {formato_valor(dias)} días | {perf} | {texto}"
 
 
@@ -438,6 +552,41 @@ def aplicar_estilo_tabla(df_tabla: pd.DataFrame):
         if col == COL_RANGO_INC:
             styler = styler.map(color_incumplimiento, subset=[col])
     return styler
+
+
+def html_estado_pedido(row: pd.Series) -> str:
+    cards = []
+    for etapa in ETAPAS_PEDIDO:
+        color = etapa_color(row, etapa)
+        fecha = formato_valor(row.get(etapa["fecha"], np.nan)) if etapa.get("fecha") else "-"
+
+        dias_col = etapa.get("dias")
+        umbral_col = etapa.get("umbral")
+        perf_col = etapa.get("performance")
+
+        if dias_col:
+            dias = formato_valor(row.get(dias_col, np.nan))
+            umbral = formato_valor(row.get(umbral_col, np.nan)) if umbral_col else "-"
+            dias_txt = f"{dias} días · umbral {umbral}"
+        else:
+            dias_txt = "Punto de inicio"
+
+        perf_val = row.get(perf_col, "Registrado") if perf_col else "Registrado"
+        perf_color = clase_performance(perf_val) if perf_col else color
+
+        cards.append(
+            f"""
+            <div class="stage-card stage-{color}">
+                <div class="stage-title">{etapa['titulo']}</div>
+                <div class="stage-date">{fecha}</div>
+                <div class="stage-note">{etapa['nota']}</div>
+                <div class="stage-days">{dias_txt}</div>
+                {pill(perf_val, perf_color)}
+            </div>
+            """
+        )
+
+    return f'<div class="stage-wrap">{"".join(cards)}</div>'
 
 
 # =========================================================
@@ -584,7 +733,7 @@ with st.expander("Filtros avanzados", expanded=False):
         col_fecha_filtro = None
         st.info("No se encontraron columnas de fecha convertibles para filtrar.")
 
-# Defaults cuando el expander no inicializa widgets? Streamlit igual los inicializa, pero dejamos seguridad.
+# Seguridad por si algún widget no existe.
 for nombre, default in {
     "txt_pos_oc": "",
     "txt_material": "",
@@ -689,54 +838,8 @@ st.markdown(
 
 
 # =========================================================
-# Métricas generales semáforo
+# Estado del pedido unificado
 # =========================================================
-st.markdown("### Indicadores del filtro")
-
-m1, m2, m3, m4, m5 = st.columns(5)
-
-m1.metric("Registros", f"{len(df_filtrado):,}".replace(",", "."))
-
-if COL_PERF_TAT in df_filtrado.columns:
-    tat_cumple = int(df_filtrado[COL_PERF_TAT].eq("Cumple").sum())
-    tat_no_cumple = int(df_filtrado[COL_PERF_TAT].eq("No cumple").sum())
-    tat_proceso = int(df_filtrado[COL_PERF_TAT].eq("En proceso").sum())
-else:
-    tat_cumple = tat_no_cumple = tat_proceso = 0
-
-m2.metric("TAT cumple", f"{tat_cumple:,}".replace(",", "."))
-m3.metric("TAT no cumple", f"{tat_no_cumple:,}".replace(",", "."))
-m4.metric("En proceso", f"{tat_proceso:,}".replace(",", "."))
-
-if COL_MONTO in df_filtrado.columns:
-    monto_total = pd.to_numeric(df_filtrado[COL_MONTO], errors="coerce").sum()
-    m5.metric("Monto", formato_numero(monto_total, 0))
-else:
-    m5.metric("Monto", "-")
-
-d1, d2, d3, d4 = st.columns(4)
-if COL_DIAS_TAT in df_filtrado.columns:
-    dias_tat = pd.to_numeric(df_filtrado[COL_DIAS_TAT], errors="coerce")
-    d1.metric("TAT promedio", formato_numero(dias_tat.mean(), 1) if dias_tat.notna().any() else "-")
-    d2.metric("TAT máximo", formato_numero(dias_tat.max(), 0) if dias_tat.notna().any() else "-")
-else:
-    d1.metric("TAT promedio", "-")
-    d2.metric("TAT máximo", "-")
-
-if COL_DIAS_INC in df_filtrado.columns:
-    dias_inc = pd.to_numeric(df_filtrado[COL_DIAS_INC], errors="coerce")
-    d3.metric("Incumplimiento prom.", formato_numero(dias_inc.mean(), 1) if dias_inc.notna().any() else "-")
-    d4.metric("Incumplimiento máx.", formato_numero(dias_inc.max(), 0) if dias_inc.notna().any() else "-")
-else:
-    d3.metric("Incumplimiento prom.", "-")
-    d4.metric("Incumplimiento máx.", "-")
-
-
-# =========================================================
-# Registro destacado: fechas, dias, performance
-# =========================================================
-st.markdown("### Lectura clara del registro")
-
 if df_filtrado.empty:
     st.warning("No hay resultados con los filtros aplicados.")
 else:
@@ -745,65 +848,53 @@ else:
         opciones_detalle.append((idx, construir_label_registro(row)))
 
     labels = [item[1] for item in opciones_detalle]
-    label_sel = st.selectbox("Registro a visualizar", labels)
+    label_sel = st.selectbox("Registro", labels)
     idx_sel = opciones_detalle[labels.index(label_sel)][0]
     row = df_filtrado.loc[idx_sel]
 
-    h1, h2, h3, h4 = st.columns(4)
-    h1.metric("SolPed", formato_valor(row.get(COL_SOLPED, np.nan)))
-    h2.metric("OC / Pedido", formato_valor(row.get(COL_OC_ME5A, row.get(COL_OC_NME, np.nan))))
-    h3.metric("Posición SolPed", formato_valor(row.get(COL_POS_SOLPED, np.nan)))
-    h4.metric("Performance TAT", formato_valor(row.get(COL_PERF_TAT, np.nan)))
+    perf_tat = row.get(COL_PERF_TAT, np.nan)
+    perf_color = clase_performance(perf_tat)
+    rango_inc = row.get(COL_RANGO_INC, np.nan)
+    dias_tat = row.get(COL_DIAS_TAT, np.nan)
+    dias_inc = row.get(COL_DIAS_INC, np.nan)
 
-    st.markdown("#### Fechas clave")
-    fecha_cols = st.columns(5)
-    for i, (titulo, col) in enumerate(FECHAS_PANEL):
-        with fecha_cols[i]:
-            st.markdown(
-                f"""
-                <div class="section-card">
-                    <div class="mini-title">{titulo}</div>
-                    <div class="mini-value">{formato_valor(row.get(col, np.nan))}</div>
-                    <div class="mini-note">{col}</div>
+    st.markdown(
+        f"""
+        <div class="order-head">
+            <div class="head-grid">
+                <div>
+                    <div class="head-label">SolPed</div>
+                    <div class="head-value">{formato_valor(row.get(COL_SOLPED, np.nan))}</div>
                 </div>
-                """,
-                unsafe_allow_html=True,
-            )
+                <div>
+                    <div class="head-label">Orden de compra / Pedido</div>
+                    <div class="head-value">{formato_valor(row.get(COL_OC_ME5A, row.get(COL_OC_NME, np.nan)))}</div>
+                </div>
+                <div>
+                    <div class="head-label">Posición SolPed</div>
+                    <div class="head-value">{formato_valor(row.get(COL_POS_SOLPED, np.nan))}</div>
+                </div>
+                <div>
+                    <div class="head-label">TAT total</div>
+                    <div class="head-value">{formato_valor(dias_tat)} días</div>
+                </div>
+                <div>
+                    <div class="head-label">Estado TAT</div>
+                    <div class="head-value">{pill(perf_tat, perf_color)}</div>
+                </div>
+            </div>
+            <div style="margin-top:10px;">
+                <span class="tiny-muted">Incumplimiento:</span> {formato_valor(dias_inc)} días ·
+                <span class="tiny-muted">Rango:</span> {formato_valor(rango_inc)} ·
+                <span class="tiny-muted">Material:</span> {formato_valor(row.get(COL_MATERIAL, np.nan))} ·
+                <span class="tiny-muted">Centro:</span> {formato_valor(row.get(COL_CENTRO, np.nan))}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    st.markdown("#### Días y umbrales")
-    dias_cols = st.columns(4)
-    for i, (titulo, col_dias, col_umbral) in enumerate(DIAS_PANEL):
-        dias = row.get(col_dias, np.nan)
-        umbral = row.get(col_umbral, np.nan) if col_umbral else np.nan
-        clase = clase_dias(dias, umbral if col_umbral else None)
-        nota = f"Umbral: {formato_valor(umbral)} días" if col_umbral else "Exceso sobre umbral TAT"
-        with dias_cols[i % 4]:
-            st.markdown(
-                f"""
-                <div class="section-card">
-                    <div class="mini-title">{titulo}</div>
-                    <div class="mini-value">{pill(str(formato_valor(dias)) + ' días', clase)}</div>
-                    <div class="mini-note">{nota}</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-    st.markdown("#### Performance por etapa")
-    perf_cols = st.columns(3)
-    for i, (titulo, col_perf) in enumerate(PERFORMANCE_PANEL):
-        valor = row.get(col_perf, np.nan)
-        with perf_cols[i % 3]:
-            st.markdown(
-                f"""
-                <div class="section-card">
-                    <div class="mini-title">{titulo}</div>
-                    <div class="mini-value">{pill(valor, clase_performance(valor))}</div>
-                    <div class="mini-note">{col_perf}</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+    st.markdown(html_estado_pedido(row), unsafe_allow_html=True)
 
 
 # =========================================================
@@ -837,12 +928,13 @@ with st.expander("Distribuciones del resultado", expanded=False):
 # =========================================================
 # Tabla de resultado filtrado
 # =========================================================
-with st.expander("Tabla de resultado filtrado", expanded=True):
+with st.expander("Tabla de resultado filtrado", expanded=False):
     columnas_base = [c for c in COLUMNAS_TABLA_PRINCIPAL if c in df_filtrado.columns]
-    columnas_extra = [
-        c for c in [x[1] for x in DIAS_PANEL] + [x[1] for x in PERFORMANCE_PANEL] + [x[1] for x in FECHAS_PANEL]
-        if c in df_filtrado.columns and c not in columnas_base
-    ]
+    columnas_extra = []
+    for etapa in ETAPAS_PEDIDO:
+        for col in [etapa.get("fecha"), etapa.get("dias"), etapa.get("umbral"), etapa.get("performance")]:
+            if col and col in df_filtrado.columns and col not in columnas_base and col not in columnas_extra:
+                columnas_extra.append(col)
 
     columnas_default = df_filtrado.columns.tolist() if mostrar_todas_columnas else columnas_base + columnas_extra
 
@@ -917,7 +1009,7 @@ with x3:
 
 
 # =========================================================
-# Info tecnica
+# Info técnica
 # =========================================================
 with st.expander("Columnas disponibles", expanded=False):
     st.write(df.columns.tolist())
