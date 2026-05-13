@@ -219,9 +219,16 @@ st.markdown(
         .order-head {
             background: #ffffff;
             border: 1px solid #e5e7eb;
-            border-radius: 16px;
-            padding: 14px 16px;
-            margin: 0.5rem 0 0.7rem 0;
+            border-radius: 18px;
+            padding: 16px 18px;
+            margin: 0.75rem 0 0.85rem 0;
+            box-shadow: 0 1px 5px rgba(15, 23, 42, 0.04);
+        }
+        .order-title {
+            color: #0f172a;
+            font-size: 1rem;
+            font-weight: 850;
+            margin-bottom: 12px;
         }
         .tat-summary {
             display: grid;
@@ -1379,26 +1386,27 @@ else:
         {html_linea_pedido(row)}
 
         <div class="order-head">
+            <div class="order-title">Datos principales del pedido</div>
             <div class="head-grid">
                 <div>
                     <div class="head-label">SolPed</div>
-                    <div class="head-value">{formato_valor(row.get(COL_SOLPED, np.nan))}</div>
+                    <div class="head-value">{html_texto(row.get(COL_SOLPED, np.nan))}</div>
                 </div>
                 <div>
                     <div class="head-label">Orden de compra / Pedido</div>
-                    <div class="head-value">{formato_valor(row.get(COL_OC_ME5A, row.get(COL_OC_NME, np.nan)))}</div>
+                    <div class="head-value">{html_texto(row.get(COL_OC_ME5A, row.get(COL_OC_NME, np.nan)))}</div>
                 </div>
                 <div>
                     <div class="head-label">Posición SolPed</div>
-                    <div class="head-value">{formato_valor(row.get(COL_POS_SOLPED, np.nan))}</div>
+                    <div class="head-value">{html_texto(row.get(COL_POS_SOLPED, np.nan))}</div>
                 </div>
                 <div>
                     <div class="head-label">Material</div>
-                    <div class="head-value">{formato_valor(row.get(COL_MATERIAL, np.nan))}</div>
+                    <div class="head-value">{html_texto(row.get(COL_MATERIAL, np.nan))}</div>
                 </div>
                 <div>
                     <div class="head-label">Centro</div>
-                    <div class="head-value">{formato_valor(row.get(COL_CENTRO, np.nan))}</div>
+                    <div class="head-value">{html_texto(row.get(COL_CENTRO, np.nan))}</div>
                 </div>
             </div>
         </div>
