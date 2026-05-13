@@ -19,7 +19,6 @@ st.set_page_config(
     layout="wide",
 )
 
-# --- RUTAS DEL LOGO ---
 BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
 LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
@@ -297,27 +296,6 @@ st.markdown(
 # =========================================================
 # Lectura y utilidades
 # =========================================================
-
-# --- FUNCIÓN PARA MOSTRAR LOGO ---
-def mostrar_logo(ancho: int = 180):
-    if not LOGO_PATH.exists():
-        return
-    logo_svg = LOGO_PATH.read_text(encoding="utf-8")
-    logo_base64 = base64.b64encode(logo_svg.encode("utf-8")).decode("utf-8")
-    st.markdown(
-        f"""
-        <div style="
-            width: 100%;
-            text-align: center;
-            margin-top: 0.5rem;
-            margin-bottom: 1rem;
-        ">
-            <img src="data:image/svg+xml;base64,{logo_base64}" width="{ancho}">
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
 def obtener_separador(opcion: str):
     """Devuelve el separador elegido para leer archivos CSV."""
     mapa = {
@@ -696,43 +674,72 @@ def html_estado_pedido(row: pd.Series) -> str:
     """
 
 
+
 # =========================================================
-# Header minimalista
+# UI común
+# =========================================================
+def mostrar_logo(ancho: int = 180):
+    """Muestra el logo desde assets/logo.svg si existe."""
+    if not LOGO_PATH.exists():
+        return
+
+    logo_svg = LOGO_PATH.read_text(encoding="utf-8")
+    logo_base64 = base64.b64encode(logo_svg.encode("utf-8")).decode("utf-8")
+
+    st.markdown(
+        f"""
+        <div style="
+            width: 100%;
+            text-align: center;
+            margin-top: 0.5rem;
+            margin-bottom: 1rem;
+        ">
+            <img src="data:image/svg+xml;base64,{logo_base64}" width="{ancho}">
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# =========================================================
+# Header minimalista + carga superior
 # =========================================================
 mostrar_logo()
 
 st.title("Buscador SolPed / OC")
 st.caption("Carga un archivo ya procesado. La app solo filtra, visualiza y descarga resultados; no recalcula performance.")
 
+st.subheader("Archivo")
 
-# =========================================================
-# Carga
-# =========================================================
-with st.sidebar:
-    st.header("Archivo")
-
-    separador_csv = st.selectbox(
-        "Separador CSV",
-        ["Automático", "Punto y coma (;)", "Coma (,)", "Tabulación"],
-        index=0,
-    )
-
+card_archivo = st.container(border=True)
+with card_archivo:
     uploaded_file = st.file_uploader(
         "Subir parquet, CSV o Excel",
         type=["parquet", "csv", "xlsx", "xls"],
+        help="Formatos soportados: .parquet, .csv, .xlsx y .xls",
     )
 
-    st.divider()
-
-    limite_vista = st.number_input(
-        "Filas en tabla",
-        min_value=25,
-        max_value=5000,
-        value=300,
-        step=25,
-    )
-
-    mostrar_todas_columnas = st.checkbox("Mostrar todas las columnas en tabla", value=False)
+    cfg1, cfg2, cfg3 = st.columns([1.1, 0.9, 1.1])
+    with cfg1:
+        separador_csv = st.selectbox(
+            "Separador CSV",
+            ["Automático", "Punto y coma (;)", "Coma (,)", "Tabulación"],
+            index=0,
+            help="Solo aplica para archivos CSV.",
+        )
+    with cfg2:
+        limite_vista = st.number_input(
+            "Filas en tabla",
+            min_value=25,
+            max_value=5000,
+            value=300,
+            step=25,
+        )
+    with cfg3:
+        mostrar_todas_columnas = st.checkbox(
+            "Mostrar todas las columnas en tabla",
+            value=False,
+        )
 
 if uploaded_file is None:
     st.info("Sube un archivo `.parquet`, `.csv`, `.xlsx` o `.xls` para comenzar.")
