@@ -339,6 +339,7 @@ def evaluar_performance_basica(
     Reglas:
     - Si no hay días o no hay umbral: texto_sin_dato.
     - Si hay días negativos y negativos_no_aplican=True: No aplica.
+    - Recomendado para etapas: usar negativos_no_aplican=True para evitar que días negativos queden como Cumple.
     - Si días <= umbral: Cumple.
     - Si días > umbral: No cumple.
     """
@@ -707,28 +708,28 @@ def aplicar_logica_performance(df_original: pd.DataFrame) -> pd.DataFrame:
         dias=df["dias_liberacion_solped"],
         umbral=pd.Series(df["umbral_liberacion_solped"], index=df.index),
         texto_sin_dato="No aplica",
-        negativos_no_aplican=False
+        negativos_no_aplican=True
     )
 
     df["performance_comprador"] = evaluar_performance_basica(
         dias=df["dias_comprador"],
         umbral=pd.Series(df["umbral_comprador"], index=df.index),
         texto_sin_dato="No aplica",
-        negativos_no_aplican=False
+        negativos_no_aplican=True
     )
 
     df["performance_liberacion_pedido"] = evaluar_performance_basica(
         dias=pd.Series(df["dias_liberacion_pedido"], index=df.index),
         umbral=pd.Series(df["umbral_liberacion_pedido"], index=df.index),
         texto_sin_dato="Sin datos",
-        negativos_no_aplican=False
+        negativos_no_aplican=True
     )
 
     df["performance_proveedor"] = evaluar_performance_basica(
         dias=df["dias_proveedor"],
         umbral=df["umbral_proveedor"],
         texto_sin_dato="Sin datos",
-        negativos_no_aplican=False
+        negativos_no_aplican=True
     )
 
     df["performance_logistica"] = evaluar_performance_basica(
@@ -1533,6 +1534,114 @@ try:
                 use_container_width=True,
                 hide_index=True
             )
+
+    with st.expander("Auditoría de días altos por etapa", expanded=False):
+        st.caption(
+            "Esta vista ayuda a revisar qué registros están elevando los promedios "
+            "o generando días muy altos en cada etapa."
+        )
+
+        columnas_auditoria = [
+            "Solicitud de pedido - ME5A",
+            COL_PEDIDO,
+            COL_DOCUMENTO_COMPRAS,
+            "tipo_oc",
+            "origen",
+            "sistema",
+            COL_FECHA_SOLICITUD_FINAL,
+            COL_FECHA_LIBERACION_FINAL,
+            COL_FECHA_PEDIDO_FINAL,
+            COL_FECHA_FACTURACION_FINAL,
+            COL_FECHA_RECEPCION_FINAL,
+            "dias_liberacion_solped",
+            "dias_comprador",
+            "dias_liberacion_pedido",
+            "dias_proveedor",
+            "dias_logistica",
+            "dias_tat_total",
+            "umbral_liberacion_solped",
+            "umbral_comprador",
+            "umbral_proveedor",
+            "umbral_logistica",
+            "umbral_tat_total",
+            "performance_liberacion_solped",
+            "performance_comprador",
+            "performance_proveedor",
+            "performance_logistica",
+            "performance_tat_total",
+            "tiene_fechas_inconsistentes",
+        ]
+
+        columnas_auditoria = [
+            col for col in columnas_auditoria
+            if col in df_final.columns
+        ]
+
+        columnas_dias_auditoria = [
+            "dias_liberacion_solped",
+            "dias_comprador",
+            "dias_proveedor",
+            "dias_logistica",
+            "dias_tat_total",
+        ]
+
+        columnas_dias_auditoria = [
+            col for col in columnas_dias_auditoria
+            if col in df_final.columns
+        ]
+
+        if columnas_dias_auditoria:
+            etapa_auditoria = st.selectbox(
+                "Selecciona etapa para revisar",
+                options=columnas_dias_auditoria,
+                index=0
+            )
+
+            modo_auditoria = st.radio(
+                "Ordenar por",
+                options=[
+                    "Días más altos",
+                    "Días más bajos / negativos",
+                ],
+                horizontal=True
+            )
+
+            ascendente = modo_auditoria == "Días más bajos / negativos"
+
+            serie_etapa = pd.to_numeric(
+                df_final[etapa_auditoria],
+                errors="coerce"
+            )
+
+            total_validos = int(serie_etapa.notna().sum())
+            total_negativos = int(serie_etapa.lt(0).sum())
+            total_mayor_umbral = 0
+
+            col_umbral_relacionada = etapa_auditoria.replace("dias_", "umbral_")
+            if col_umbral_relacionada in df_final.columns:
+                umbral_etapa = pd.to_numeric(
+                    df_final[col_umbral_relacionada],
+                    errors="coerce"
+                )
+                total_mayor_umbral = int(serie_etapa.gt(umbral_etapa).sum())
+
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Valores válidos", f"{total_validos:,}")
+            m2.metric("Días negativos", f"{total_negativos:,}")
+            m3.metric("Sobre umbral", f"{total_mayor_umbral:,}")
+
+            st.dataframe(
+                df_final
+                .assign(_etapa_auditoria_num=serie_etapa)
+                .sort_values("_etapa_auditoria_num", ascending=ascendente)
+                .drop(columns=["_etapa_auditoria_num"])
+                [columnas_auditoria]
+                .head(int(limite_vista)),
+                use_container_width=True,
+                hide_index=True
+            )
+        else:
+            st.info("No hay columnas de días disponibles para auditar.")
 
     with st.expander("Ver columnas disponibles", expanded=False):
         c1, c2 = st.columns(2)
