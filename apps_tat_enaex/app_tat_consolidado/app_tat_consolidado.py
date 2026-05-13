@@ -132,6 +132,21 @@ def validar_columnas_requeridas(df: pd.DataFrame):
         raise ValueError(f"Faltan columnas requeridas: {faltantes}")
 
 
+def normalizar_estado_match(df: pd.DataFrame) -> pd.DataFrame:
+    """Normaliza estados heredados del match integrado para evitar textos antiguos."""
+    df = df.copy()
+
+    if "estado_match" in df.columns:
+        df["estado_match"] = df["estado_match"].replace({
+            "Sin match": "No encontrado en ARIBA ni NME80FN",
+            "Match en ARIBA y NME80FN": "Encontrado en ARIBA y NME80FN",
+            "Match solo en ARIBA": "Encontrado solo en ARIBA",
+            "Match solo en NME80FN": "Encontrado solo en NME80FN"
+        })
+
+    return df
+
+
 @st.cache_data(show_spinner="Aplicando lógica de fechas finales...")
 def aplicar_logica_fechas_finales(df: pd.DataFrame) -> pd.DataFrame:
     # Conserva TODAS las columnas originales
@@ -139,6 +154,7 @@ def aplicar_logica_fechas_finales(df: pd.DataFrame) -> pd.DataFrame:
 
     # Limpia nombres de columnas, pero no elimina ninguna
     df.columns = df.columns.astype(str).str.strip()
+    df = normalizar_estado_match(df)
 
     validar_columnas_requeridas(df)
 
@@ -258,19 +274,206 @@ def resumen_fechas(df: pd.DataFrame) -> pd.DataFrame:
         if col in df.columns
     ]
 
+    total = len(df)
     data = []
 
     for col in columnas:
+        no_nulos = int(df[col].notna().sum())
+        nulos = int(df[col].isna().sum())
+
         data.append({
+            "Mensaje": f"{no_nulos:,} registros de {total:,} tienen {col}",
             "Columna": col,
-            "No nulos": df[col].notna().sum(),
-            "Nulos": df[col].isna().sum(),
+            "No nulos": no_nulos,
+            "Nulos": nulos,
             "% Nulos": round(df[col].isna().mean() * 100, 2),
             "Fecha mínima": df[col].min(),
             "Fecha máxima": df[col].max()
         })
 
     return pd.DataFrame(data)
+
+
+def obtener_valor_formateado(valor):
+    if pd.isna(valor):
+        return ""
+
+    if isinstance(valor, pd.Timestamp):
+        return valor.strftime("%Y-%m-%d")
+
+    return str(valor)
+
+
+def generar_tabla_ejemplo_logica_fechas(df_final: pd.DataFrame) -> pd.DataFrame:
+    if df_final.empty:
+        return pd.DataFrame()
+
+    solped_str = (
+        df_final["Solicitud de pedido"]
+        .astype("string")
+        .str.strip()
+    )
+
+    mask_solped_6 = solped_str.str.startswith("6").fillna(False)
+
+    ejemplo_df = df_final[mask_solped_6].copy()
+
+    if ejemplo_df.empty:
+        ejemplo_df = df_final.copy()
+
+    ejemplo = ejemplo_df.iloc[0]
+    solicitud = ejemplo.get("Solicitud de pedido", "")
+    usa_ariba = str(solicitud).strip().startswith("6")
+
+    campo_liberacion = "ariba_fecha_aprobacion" if usa_ariba else "Fe.liber.Z"
+    regla_liberacion = (
+        "Solicitud de pedido empieza con 6, por eso usa aprobación ARIBA"
+        if usa_ariba
+        else "Solicitud de pedido no empieza con 6, por eso usa Fe.liber.Z"
+    )
+
+    filas = [
+        {
+            "Fecha final": "fecha_solicitud_final",
+            "Campo origen usado": "Fecha de solicitud",
+            "Valor origen": obtener_valor_formateado(ejemplo.get("Fecha de solicitud")),
+            "Resultado final": obtener_valor_formateado(ejemplo.get("fecha_solicitud_final")),
+            "Regla aplicada": "Conserva la fecha de solicitud de ME5A"
+        },
+        {
+            "Fecha final": "fecha_liberacion_final",
+            "Campo origen usado": campo_liberacion,
+            "Valor origen": obtener_valor_formateado(ejemplo.get(campo_liberacion)),
+            "Resultado final": obtener_valor_formateado(ejemplo.get("fecha_liberacion_final")),
+            "Regla aplicada": regla_liberacion
+        },
+        {
+            "Fecha final": "fecha_pedido_final",
+            "Campo origen usado": "Fecha de pedido",
+            "Valor origen": obtener_valor_formateado(ejemplo.get("Fecha de pedido")),
+            "Resultado final": obtener_valor_formateado(ejemplo.get("fecha_pedido_final")),
+            "Regla aplicada": "Conserva la fecha de pedido de ME5A"
+        },
+        {
+            "Fecha final": "fecha_facturacion_final",
+            "Campo origen usado": "nme_fecha_facturacion_proveedor",
+            "Valor origen": obtener_valor_formateado(ejemplo.get("nme_fecha_facturacion_proveedor")),
+            "Resultado final": obtener_valor_formateado(ejemplo.get("fecha_facturacion_final")),
+            "Regla aplicada": "Usa la fecha de facturación proveedor de NME80FN"
+        },
+        {
+            "Fecha final": "fecha_recepcion_final",
+            "Campo origen usado": "nme_fecha_entrada_mercancia_recepcion",
+            "Valor origen": obtener_valor_formateado(ejemplo.get("nme_fecha_entrada_mercancia_recepcion")),
+            "Resultado final": obtener_valor_formateado(ejemplo.get("fecha_recepcion_final")),
+            "Regla aplicada": "Usa la fecha de recepción de mercancía de NME80FN"
+        }
+    ]
+
+    tabla = pd.DataFrame(filas)
+    tabla.insert(0, "Solicitud de pedido", obtener_valor_formateado(solicitud))
+
+    if "Pedido" in df_final.columns:
+        tabla.insert(1, "Pedido", obtener_valor_formateado(ejemplo.get("Pedido")))
+
+    if "estado_match" in df_final.columns:
+        tabla.insert(2, "Estado del match", obtener_valor_formateado(ejemplo.get("estado_match")))
+
+    return tabla
+
+
+def generar_resumen_cambios_fechas(
+    df_original: pd.DataFrame,
+    df_final: pd.DataFrame,
+    columnas_originales: list,
+    columnas_nuevas: list
+) -> dict:
+    total_original = int(len(df_original))
+    total_final = int(len(df_final))
+
+    solped_6 = int(
+        df_original["Solicitud de pedido"]
+        .astype("string")
+        .str.strip()
+        .str.startswith("6")
+        .fillna(False)
+        .sum()
+    )
+
+    solped_no_6 = total_original - solped_6
+
+    resumen = {
+        "total_original": total_original,
+        "total_final": total_final,
+        "columnas_originales": int(len(columnas_originales)),
+        "columnas_nuevas": int(len(columnas_nuevas)),
+        "solped_6": solped_6,
+        "solped_no_6": solped_no_6,
+        "tabla_ejemplo": generar_tabla_ejemplo_logica_fechas(df_final)
+    }
+
+    if "estado_match" in df_final.columns:
+        resumen["encontrado_ariba_nme"] = int(
+            df_final["estado_match"].eq("Encontrado en ARIBA y NME80FN").sum()
+        )
+        resumen["encontrado_solo_ariba"] = int(
+            df_final["estado_match"].eq("Encontrado solo en ARIBA").sum()
+        )
+        resumen["encontrado_solo_nme"] = int(
+            df_final["estado_match"].eq("Encontrado solo en NME80FN").sum()
+        )
+        resumen["no_encontrado"] = int(
+            df_final["estado_match"].eq("No encontrado en ARIBA ni NME80FN").sum()
+        )
+
+    return resumen
+
+
+def mostrar_resumen_cambios_fechas(resumen_cambios: dict):
+    with st.expander("Cambios realizados y lógica de fechas finales", expanded=False):
+        st.info(
+            f"""
+            **Archivos cargados**
+
+            - Se cargaron **{resumen_cambios['total_original']:,} registros** del match integrado.
+            - Se generó una salida con **{resumen_cambios['total_final']:,} registros**.
+            - Se conservaron **{resumen_cambios['columnas_originales']:,} columnas originales**.
+            - Se agregaron **{resumen_cambios['columnas_nuevas']:,} columnas nuevas**.
+
+            **Resultado de la lógica de fechas**
+
+            - **{resumen_cambios['solped_6']:,} registros de {resumen_cambios['total_original']:,} en ME5A usan fecha de aprobación ARIBA para la liberación**.
+            - **{resumen_cambios['solped_no_6']:,} registros de {resumen_cambios['total_original']:,} en ME5A usan Fe.liber.Z para la liberación**.
+            - **{resumen_cambios['total_final']:,} registros de {resumen_cambios['total_original']:,} en ME5A fueron procesados para generar fechas finales**.
+
+            **Reglas aplicadas**
+
+            - **fecha_solicitud_final** = Fecha de solicitud.
+            - **fecha_liberacion_final** = ariba_fecha_aprobacion cuando la Solicitud de pedido empieza con 6; en caso contrario usa Fe.liber.Z.
+            - **fecha_pedido_final** = Fecha de pedido.
+            - **fecha_facturacion_final** = nme_fecha_facturacion_proveedor.
+            - **fecha_recepcion_final** = nme_fecha_entrada_mercancia_recepcion.
+            """
+        )
+
+        if "encontrado_ariba_nme" in resumen_cambios:
+            st.markdown("**Estado del match normalizado**")
+            st.markdown(
+                f"""
+                - **{resumen_cambios['encontrado_ariba_nme']:,} registros de {resumen_cambios['total_original']:,} en ME5A fueron encontrados en ARIBA y NME80FN**.
+                - **{resumen_cambios['encontrado_solo_ariba']:,} registros de {resumen_cambios['total_original']:,} en ME5A fueron encontrados solo en ARIBA**.
+                - **{resumen_cambios['encontrado_solo_nme']:,} registros de {resumen_cambios['total_original']:,} en ME5A fueron encontrados solo en NME80FN**.
+                - **{resumen_cambios['no_encontrado']:,} registros de {resumen_cambios['total_original']:,} en ME5A no fueron encontrados en ARIBA ni NME80FN**.
+                """
+            )
+
+        st.markdown("**Ejemplo de lógica de fechas finales**")
+        tabla_ejemplo = resumen_cambios.get("tabla_ejemplo")
+
+        if isinstance(tabla_ejemplo, pd.DataFrame) and not tabla_ejemplo.empty:
+            st.table(tabla_ejemplo)
+        else:
+            st.warning("No se encontró un registro disponible para mostrar como ejemplo.")
 
 
 def convertir_a_parquet(df: pd.DataFrame) -> bytes:
@@ -417,8 +620,17 @@ if uploaded_file is not None:
 
         resumen = resumen_fechas(df_final)
 
+        resumen_cambios = generar_resumen_cambios_fechas(
+            df_original=df_original,
+            df_final=df_final,
+            columnas_originales=columnas_originales,
+            columnas_nuevas=columnas_nuevas
+        )
+
         if pagina == "Procesamiento":
             st.success("Lógica de fechas finales aplicada correctamente.")
+
+            mostrar_resumen_cambios_fechas(resumen_cambios)
 
             col1, col2, col3, col4 = st.columns(4)
 
@@ -476,7 +688,6 @@ if uploaded_file is not None:
                 "Texto breve",
                 "Centro",
                 "estado_match",
-                "score_total_integrado",
                 "criterio_fecha_liberacion",
                 "Fecha de solicitud",
                 "Fe.liber.Z",
