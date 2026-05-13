@@ -1297,6 +1297,15 @@ def crear_data_barplot_interactivo(
     modo_y: str = "Porcentaje",
     mostrar_sin_info: bool = False
 ) -> pd.DataFrame:
+    """
+    Crea la data larga para el barplot mensual.
+
+    Importante:
+    - Por defecto NO incluye "Sin información" en el gráfico.
+    - Cuando "Sin información" está excluido, los porcentajes se recalculan usando
+      solo Cumple + No cumple como total visible.
+    - Si se activa mostrar_sin_info, el porcentaje usa Cumple + No cumple + Sin información.
+    """
     if tabla.empty:
         return pd.DataFrame()
 
@@ -1311,11 +1320,20 @@ def crear_data_barplot_interactivo(
     data = []
 
     for _, row in tabla.iterrows():
+        total_visible = sum(float(row.get(estado, 0) or 0) for estado in estados)
+        total_original = float(row.get("Total", 0) or 0)
+
         for estado in estados:
-            porcentaje = row.get(f"% {estado}", 0)
+            cantidad_estado = float(row.get(estado, 0) or 0)
+
+            porcentaje = (
+                cantidad_estado / total_visible * 100
+                if total_visible > 0
+                else 0
+            )
 
             if modo_y == "Recuento":
-                valor = row.get(estado, 0)
+                valor = cantidad_estado
             else:
                 valor = porcentaje
 
@@ -1327,8 +1345,10 @@ def crear_data_barplot_interactivo(
                 "mes_nombre": row["mes_nombre"],
                 "estado": estado,
                 "valor": valor,
+                "cantidad": cantidad_estado,
                 "porcentaje": porcentaje,
-                "total": row.get("Total", 0)
+                "total_visible": total_visible,
+                "total_original": total_original
             })
 
     df_plot = pd.DataFrame(data)
@@ -1346,7 +1366,6 @@ def crear_data_barplot_interactivo(
     ).reset_index(drop=True)
 
     return df_plot
-
 
 def grafico_barplot_interactivo_altair(
     df_plot: pd.DataFrame,
@@ -1412,8 +1431,10 @@ def grafico_barplot_interactivo_altair(
                 alt.Tooltip("periodo_label:N", title="Periodo"),
                 alt.Tooltip("estado:N", title="Estado"),
                 alt.Tooltip("valor:Q", title=titulo_y, format=".2f"),
-                alt.Tooltip("porcentaje:Q", title="Porcentaje", format=".2f"),
-                alt.Tooltip("total:Q", title="Total mes", format=",.0f")
+                alt.Tooltip("cantidad:Q", title="Cantidad", format=",.0f"),
+                alt.Tooltip("porcentaje:Q", title="Porcentaje visible", format=".2f"),
+                alt.Tooltip("total_visible:Q", title="Total visible", format=",.0f"),
+                alt.Tooltip("total_original:Q", title="Total original", format=",.0f")
             ]
         )
         .properties(
@@ -1463,6 +1484,21 @@ def convertir_a_parquet(df: pd.DataFrame) -> bytes:
 # Interfaz
 # =========================================================
 
+MESES_NOMBRE = {
+    1: "enero",
+    2: "febrero",
+    3: "marzo",
+    4: "abril",
+    5: "mayo",
+    6: "junio",
+    7: "julio",
+    8: "agosto",
+    9: "septiembre",
+    10: "octubre",
+    11: "noviembre",
+    12: "diciembre"
+}
+
 st.markdown(
     """
     <h1 style='text-align: center;'>
@@ -1487,7 +1523,7 @@ st.divider()
 
 
 with st.sidebar:
-    st.header("Filtros")
+    st.header("Filtros generales")
 
     separador_csv = st.selectbox(
         "Separador CSV",
@@ -1510,8 +1546,12 @@ with st.sidebar:
     )
 
     mostrar_sin_info = st.checkbox(
-        "Mostrar Sin información",
-        value=False
+        "Incluir Sin información en gráfico mensual",
+        value=False,
+        help=(
+            "Por defecto, el gráfico Performance TAT mensual excluye Sin información "
+            "y recalcula los porcentajes solo con Cumple + No cumple."
+        )
     )
 
     mostrar_meses_sin_datos = st.checkbox(
@@ -1558,88 +1598,8 @@ if uploaded_file is not None:
                     use_container_width=True
                 )
 
-        with st.sidebar:
-            st.divider()
-
-            anios_disponibles = (
-                df["anio"]
-                .dropna()
-                .astype(int)
-                .sort_values()
-                .unique()
-                .tolist()
-            )
-
-            anios_sel = st.multiselect(
-                "Años recepción",
-                options=anios_disponibles,
-                default=anios_disponibles,
-                help="Por defecto se muestran todos los años juntos. Puedes filtrar uno o varios años."
-            )
-
-            fechas_validas = df["fecha_recepcion_final"].dropna()
-
-            fecha_min = fechas_validas.min().date() if not fechas_validas.empty else None
-            fecha_max = fechas_validas.max().date() if not fechas_validas.empty else None
-
-            fecha_inicio = None
-            fecha_fin = None
-
-            if fecha_min and fecha_max:
-                fecha_inicio = st.date_input(
-                    "Fecha inicio recepción",
-                    value=fecha_min,
-                    min_value=fecha_min,
-                    max_value=fecha_max,
-                    help="Fecha inicial para filtrar fecha_recepcion_final."
-                )
-
-                fecha_fin = st.date_input(
-                    "Fecha fin recepción",
-                    value=fecha_max,
-                    min_value=fecha_min,
-                    max_value=fecha_max,
-                    help="Fecha final para filtrar fecha_recepcion_final."
-                )
-            else:
-                st.info(
-                    "No hay fechas válidas en fecha_recepcion_final. "
-                    "El gráfico mensual no podrá generarse."
-                )
-
         # =========================
-        # Filtro por año
-        # =========================
-
-        if anios_sel:
-            df_filtrado = df[
-                df["anio"].isin(anios_sel)
-            ].copy()
-        else:
-            df_filtrado = df.copy()
-            anios_sel = anios_disponibles
-
-        # =========================
-        # Filtro por fecha inicio / fin
-        # =========================
-
-        if fecha_inicio and fecha_fin:
-            if fecha_inicio > fecha_fin:
-                st.error(
-                    "La fecha de inicio no puede ser mayor que la fecha de fin."
-                )
-                st.stop()
-
-            df_filtrado = df_filtrado[
-                df_filtrado["fecha_recepcion_final"].notna()
-                & df_filtrado["fecha_recepcion_final"].dt.date.between(
-                    fecha_inicio,
-                    fecha_fin
-                )
-            ].copy()
-
-        # =========================
-        # Filtros flexibles por columnas
+        # Filtros flexibles generales en sidebar
         # =========================
 
         with st.sidebar:
@@ -1654,19 +1614,14 @@ if uploaded_file is not None:
             ]
 
             columnas_disponibles_filtro = [
-                col for col in df_filtrado.columns
+                col for col in df.columns
                 if col not in columnas_excluir_filtros
             ]
-
-            columnas_default = []
-
-            if "Centro" in columnas_disponibles_filtro:
-                columnas_default.append("Centro")
 
             columnas_filtro_sel = st.multiselect(
                 "Selecciona columnas para filtrar",
                 options=columnas_disponibles_filtro,
-                default=columnas_default,
+                default=[],
                 help=(
                     "Puedes seleccionar columnas de texto, numéricas, fechas o categorías. "
                     "Cada columna tendrá opciones de filtro según su tipo."
@@ -1677,14 +1632,16 @@ if uploaded_file is not None:
 
             for columna in columnas_filtro_sel:
                 filtros_columnas[columna] = crear_filtro_sidebar_columna(
-                    df=df_filtrado,
+                    df=df,
                     columna=columna,
                     prefijo_key="filtro_flexible"
                 )
 
+        df_base = df.copy()
+
         for columna, config in filtros_columnas.items():
-            df_filtrado = aplicar_filtro_flexible(
-                df=df_filtrado,
+            df_base = aplicar_filtro_flexible(
+                df=df_base,
                 columna=columna,
                 config=config
             )
@@ -1703,38 +1660,6 @@ if uploaded_file is not None:
                 "quedan fuera del análisis filtrado."
             )
 
-        # =========================
-        # Resumen mensual
-        # =========================
-
-        tabla_resumen = crear_resumen_mensual(df_filtrado)
-
-        if mostrar_meses_sin_datos and not tabla_resumen.empty:
-            tabla_resumen = completar_meses_anios(
-                tabla=tabla_resumen,
-                anios=anios_sel
-            )
-
-        # =========================
-        # KPIs
-        # =========================
-
-        total = len(df_filtrado)
-        cumple = df_filtrado["performance_tat_estado"].eq("Cumple").sum()
-        no_cumple = df_filtrado["performance_tat_estado"].eq("No cumple").sum()
-        sin_info = df_filtrado["performance_tat_estado"].eq("Sin información").sum()
-
-        pct_cumple = round(cumple / total * 100, 2) if total > 0 else 0
-        pct_no_cumple = round(no_cumple / total * 100, 2) if total > 0 else 0
-
-        col1, col2, col3, col4, col5 = st.columns(5)
-
-        col1.metric("Filas filtradas", f"{total:,}")
-        col2.metric("Cumple", f"{cumple:,}")
-        col3.metric("No cumple", f"{no_cumple:,}")
-        col4.metric("% Cumple", f"{pct_cumple}%")
-        col5.metric("% No cumple", f"{pct_no_cumple}%")
-
         st.divider()
 
         # =========================
@@ -1742,6 +1667,173 @@ if uploaded_file is not None:
         # =========================
 
         st.subheader("Performance TAT mensual")
+
+        st.markdown("##### Filtros del gráfico")
+
+        df_grafico = df_base.copy()
+
+        fechas_validas = df_grafico["fecha_recepcion_final"].dropna()
+        fecha_min = fechas_validas.min().date() if not fechas_validas.empty else None
+        fecha_max = fechas_validas.max().date() if not fechas_validas.empty else None
+
+        anios_disponibles = (
+            df_grafico["anio"]
+            .dropna()
+            .astype(int)
+            .sort_values()
+            .unique()
+            .tolist()
+        )
+
+        meses_disponibles = (
+            df_grafico["mes_num"]
+            .dropna()
+            .astype(int)
+            .sort_values()
+            .unique()
+            .tolist()
+        )
+
+        col_centro = None
+
+        for posible_col_centro in ["Centro - ME5A", "Centro", "Centro - NME80FN"]:
+            if posible_col_centro in df_grafico.columns:
+                col_centro = posible_col_centro
+                break
+
+        centros_disponibles = (
+            opciones_columna(df_grafico, col_centro)
+            if col_centro is not None
+            else []
+        )
+
+        filtro_col1, filtro_col2, filtro_col3, filtro_col4 = st.columns([1.2, 1.2, 1.6, 1.6])
+
+        with filtro_col1:
+            anios_sel = st.multiselect(
+                "Años recepción",
+                options=anios_disponibles,
+                default=anios_disponibles,
+                key="grafico_anios_recepcion"
+            )
+
+        with filtro_col2:
+            meses_sel = st.multiselect(
+                "Meses recepción",
+                options=meses_disponibles,
+                default=meses_disponibles,
+                format_func=lambda x: MESES_NOMBRE.get(int(x), str(x)),
+                key="grafico_meses_recepcion"
+            )
+
+        with filtro_col3:
+            if fecha_min and fecha_max:
+                rango_fechas = st.date_input(
+                    "Rango fecha recepción",
+                    value=(fecha_min, fecha_max),
+                    min_value=fecha_min,
+                    max_value=fecha_max,
+                    key="grafico_rango_fecha_recepcion"
+                )
+            else:
+                rango_fechas = None
+                st.info("No hay fechas válidas.")
+
+        with filtro_col4:
+            if col_centro is not None and centros_disponibles:
+                centros_sel = st.multiselect(
+                    col_centro,
+                    options=centros_disponibles,
+                    default=[],
+                    help="Sin selección = todos los centros.",
+                    key="grafico_centro_me5a"
+                )
+            else:
+                centros_sel = []
+                st.info("No existe columna de centro para filtrar.")
+
+        # =========================
+        # Aplicación filtros del gráfico
+        # =========================
+
+        if anios_sel:
+            df_grafico = df_grafico[df_grafico["anio"].isin(anios_sel)].copy()
+        else:
+            anios_sel = anios_disponibles
+
+        if meses_sel:
+            df_grafico = df_grafico[df_grafico["mes_num"].isin(meses_sel)].copy()
+        else:
+            meses_sel = meses_disponibles
+
+        if rango_fechas:
+            if isinstance(rango_fechas, tuple) and len(rango_fechas) == 2:
+                fecha_inicio, fecha_fin = rango_fechas
+            else:
+                fecha_inicio = rango_fechas
+                fecha_fin = rango_fechas
+
+            if fecha_inicio and fecha_fin:
+                if fecha_inicio > fecha_fin:
+                    st.error("La fecha de inicio no puede ser mayor que la fecha de fin.")
+                    st.stop()
+
+                df_grafico = df_grafico[
+                    df_grafico["fecha_recepcion_final"].notna()
+                    & df_grafico["fecha_recepcion_final"].dt.date.between(
+                        fecha_inicio,
+                        fecha_fin
+                    )
+                ].copy()
+
+        if col_centro is not None and centros_sel:
+            centros_sel_str = [str(x).strip() for x in centros_sel]
+
+            df_grafico = df_grafico[
+                df_grafico[col_centro]
+                .astype(str)
+                .str.strip()
+                .isin(centros_sel_str)
+            ].copy()
+
+        # =========================
+        # Resumen mensual del gráfico
+        # =========================
+
+        tabla_resumen = crear_resumen_mensual(df_grafico)
+
+        if mostrar_meses_sin_datos and not tabla_resumen.empty:
+            tabla_resumen = completar_meses_anios(
+                tabla=tabla_resumen,
+                anios=anios_sel
+            )
+
+            if meses_sel:
+                tabla_resumen = tabla_resumen[
+                    tabla_resumen["mes_num"].isin(meses_sel)
+                ].copy()
+
+        # =========================
+        # KPIs del gráfico
+        # =========================
+
+        total_grafico = len(df_grafico)
+        cumple = df_grafico["performance_tat_estado"].eq("Cumple").sum()
+        no_cumple = df_grafico["performance_tat_estado"].eq("No cumple").sum()
+        sin_info = df_grafico["performance_tat_estado"].eq("Sin información").sum()
+        total_evaluable = cumple + no_cumple
+
+        pct_cumple = round(cumple / total_evaluable * 100, 2) if total_evaluable > 0 else 0
+        pct_no_cumple = round(no_cumple / total_evaluable * 100, 2) if total_evaluable > 0 else 0
+
+        col1, col2, col3, col4, col5, col6 = st.columns(6)
+
+        col1.metric("Filas filtradas", f"{total_grafico:,}")
+        col2.metric("Evaluables", f"{total_evaluable:,}")
+        col3.metric("Cumple", f"{cumple:,}")
+        col4.metric("No cumple", f"{no_cumple:,}")
+        col5.metric("% Cumple", f"{pct_cumple}%")
+        col6.metric("Sin información", f"{sin_info:,}")
 
         with st.expander("Ver lógica del gráfico Performance TAT mensual", expanded=False):
             st.markdown(
@@ -1756,8 +1848,10 @@ if uploaded_file is not None:
                    - `Cumple`
                    - `No cumple`
                    - `Sin información`
-                4. Para cada mes se calcula cuántos registros hay por estado.
-                5. Si la métrica seleccionada es **Porcentaje**, cada barra mensual representa el total del mes.
+                4. Por defecto, el gráfico excluye `Sin información`.
+                5. Si la métrica seleccionada es **Porcentaje**, el porcentaje se calcula sobre el total visible:
+                   - Por defecto: `Cumple + No cumple`.
+                   - Si activas `Incluir Sin información`: `Cumple + No cumple + Sin información`.
                 6. Si la métrica seleccionada es **Recuento**, la barra muestra cantidades absolutas.
                 7. Los registros sin `fecha_recepcion_final` no aparecen en este gráfico porque no pueden asignarse a un mes.
 
@@ -1765,7 +1859,7 @@ if uploaded_file is not None:
 
                 - Una mayor proporción de `Cumple` indica mejor desempeño TAT mensual.
                 - Una mayor proporción de `No cumple` indica desviación respecto al plazo esperado.
-                - `Sin información` aparece solo si se activa la opción correspondiente en el filtro lateral.
+                - `Sin información` aparece solo si se activa la opción correspondiente en la barra lateral.
                 """
             )
 
@@ -1781,7 +1875,7 @@ if uploaded_file is not None:
             grafico_barplot_interactivo_altair(
                 df_plot=df_plot,
                 modo_y=modo_y_barplot,
-                titulo="Performance TAT mensual - todos los años seleccionados"
+                titulo="Performance TAT mensual"
             )
 
         st.divider()
@@ -1830,7 +1924,7 @@ if uploaded_file is not None:
                 """
             )
 
-        bloque_donuts_cumplimiento(df_filtrado)
+        bloque_donuts_cumplimiento(df_grafico)
 
         st.divider()
 
@@ -1877,11 +1971,11 @@ if uploaded_file is not None:
 
         with st.expander("Ver datos filtrados"):
             st.caption(
-                f"Mostrando primeras 500 filas de un total filtrado de {len(df_filtrado):,} registros."
+                f"Mostrando primeras 500 filas de un total filtrado de {len(df_grafico):,} registros."
             )
 
             st.dataframe(
-                df_filtrado.head(500),
+                df_grafico.head(500),
                 use_container_width=True
             )
 
@@ -1894,7 +1988,7 @@ if uploaded_file is not None:
         col_d1, col_d2 = st.columns(2)
 
         with col_d1:
-            csv_bytes = convertir_a_csv(df_filtrado)
+            csv_bytes = convertir_a_csv(df_grafico)
 
             st.download_button(
                 label="Descargar datos filtrados CSV",
@@ -1904,7 +1998,7 @@ if uploaded_file is not None:
             )
 
         with col_d2:
-            parquet_bytes = convertir_a_parquet(df_filtrado)
+            parquet_bytes = convertir_a_parquet(df_grafico)
 
             st.download_button(
                 label="Descargar datos filtrados Parquet",
