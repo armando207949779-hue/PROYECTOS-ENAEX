@@ -8,6 +8,14 @@ import streamlit as st
 import altair as alt
 
 
+COLORES_ESTADO = {
+    "Cumple": "#2E7D32",
+    "No cumple": "#D94555",
+    "Sin información": "#BDBDBD"
+}
+
+
+
 # =========================
 # Ruta del logo ENAEX
 # =========================
@@ -1111,11 +1119,7 @@ def crear_resumen_cumplimiento_etapa(
 
 
 def crear_donut_altair(data: pd.DataFrame):
-    colores = {
-        "Cumple": "#5B5B5B",
-        "No cumple": "#D94555",
-        "Sin información": "#BDBDBD"
-    }
+    colores = COLORES_ESTADO
 
     estados = [
         "Cumple",
@@ -1165,7 +1169,8 @@ def tarjeta_donut_cumplimiento(
     col_performance_estado: str,
     col_dias_incumplimiento: str,
     regla: str,
-    texto_promedio: str
+    texto_promedio: str,
+    promedio_solo_dx_positivos: bool = True
 ):
     data = crear_resumen_cumplimiento_etapa(
         df=df,
@@ -1188,12 +1193,26 @@ def tarjeta_donut_cumplimiento(
         })
 
     promedio_dias = 0
+    pct_negativos = 0
+    total_dx_validos = 0
+    total_dx_negativos = 0
 
     if col_dias_incumplimiento in df.columns:
-        promedio_dias = (
-            pd.to_numeric(df[col_dias_incumplimiento], errors="coerce")
-            .mean()
-        )
+        serie_dx = pd.to_numeric(df[col_dias_incumplimiento], errors="coerce")
+        serie_dx_valida = serie_dx.dropna()
+        total_dx_validos = int(len(serie_dx_valida))
+        total_dx_negativos = int((serie_dx_valida < 0).sum())
+
+        if total_dx_validos > 0:
+            pct_negativos = total_dx_negativos / total_dx_validos * 100
+
+        if promedio_solo_dx_positivos:
+            serie_promedio = serie_dx_valida[serie_dx_valida >= 0]
+        else:
+            serie_promedio = serie_dx_valida
+
+        if not serie_promedio.empty:
+            promedio_dias = serie_promedio.mean()
 
         if pd.isna(promedio_dias):
             promedio_dias = 0
@@ -1219,6 +1238,12 @@ def tarjeta_donut_cumplimiento(
     chart = crear_donut_altair(data)
     st.altair_chart(chart, use_container_width=True)
 
+    etiqueta_promedio = (
+        f"{texto_promedio} (solo Dx ≥ 0)"
+        if promedio_solo_dx_positivos
+        else texto_promedio
+    )
+
     st.markdown(
         f"""
         <div style="text-align:center; margin-top:-6px;">
@@ -1226,15 +1251,17 @@ def tarjeta_donut_cumplimiento(
                 {promedio_dias:.0f}
             </div>
             <div style="font-size:12px; color:#666;">
-                {texto_promedio}
+                {etiqueta_promedio}
+            </div>
+            <div style="font-size:12px; color:#D94555; margin-top:4px; font-weight:600;">
+                Dx negativos: {pct_negativos:.1f}% ({total_dx_negativos:,}/{total_dx_validos:,})
             </div>
         </div>
         """,
         unsafe_allow_html=True
     )
 
-
-def bloque_donuts_cumplimiento(df: pd.DataFrame):
+def bloque_donuts_cumplimiento(df: pd.DataFrame, promedio_solo_dx_positivos: bool = True):
     st.markdown(
         """
         <div style="font-size:12px; font-weight:700; margin-bottom:10px;">
@@ -1254,7 +1281,8 @@ def bloque_donuts_cumplimiento(df: pd.DataFrame):
             col_performance_estado="performance_lib_solped_estado",
             col_dias_incumplimiento="dx_lib_solped",
             regla="Nacional e Internacional &lt; 2",
-            texto_promedio="Promedio de Dx Lib solped"
+            texto_promedio="Promedio de Dx Lib solped",
+            promedio_solo_dx_positivos=promedio_solo_dx_positivos
         )
 
     with col2:
@@ -1264,7 +1292,8 @@ def bloque_donuts_cumplimiento(df: pd.DataFrame):
             col_performance_estado="performance_comprador_1_estado",
             col_dias_incumplimiento="dx_comprador_1",
             regla="Nacional e Internacional &lt; 11",
-            texto_promedio="Promedio de Dx Comprador 1"
+            texto_promedio="Promedio de Dx Comprador 1",
+            promedio_solo_dx_positivos=promedio_solo_dx_positivos
         )
 
     with col3:
@@ -1274,7 +1303,8 @@ def bloque_donuts_cumplimiento(df: pd.DataFrame):
             col_performance_estado="performance_proveedor_estado",
             col_dias_incumplimiento="dx_proveedor",
             regla="Nacional &lt; 20<br>Internacional &lt;60",
-            texto_promedio="Promedio de Dx Proveedor"
+            texto_promedio="Promedio de Dx Proveedor",
+            promedio_solo_dx_positivos=promedio_solo_dx_positivos
         )
 
     with col4:
@@ -1284,7 +1314,8 @@ def bloque_donuts_cumplimiento(df: pd.DataFrame):
             col_performance_estado="performance_logistica_estado",
             col_dias_incumplimiento="dx_logistica",
             regla="Nacional e Internacional &lt; 10",
-            texto_promedio="Promedio de Dx Logística"
+            texto_promedio="Promedio de Dx Logística",
+            promedio_solo_dx_positivos=promedio_solo_dx_positivos
         )
 
 
@@ -1378,11 +1409,7 @@ def grafico_barplot_interactivo_altair(
 
     titulo_y = "Recuento" if modo_y == "Recuento" else "Porcentaje"
 
-    colores = {
-        "Cumple": "#5B5B5B",
-        "No cumple": "#D94555",
-        "Sin información": "#BDBDBD"
-    }
+    colores = COLORES_ESTADO
 
     orden_periodos = (
         df_plot[["periodo_label", "periodo_fecha"]]
@@ -1536,29 +1563,6 @@ with st.sidebar:
         index=0
     )
 
-    modo_y_barplot = st.radio(
-        "Métrica barplot interactivo",
-        options=[
-            "Porcentaje",
-            "Recuento"
-        ],
-        index=0
-    )
-
-    mostrar_sin_info = st.checkbox(
-        "Incluir Sin información en gráfico mensual",
-        value=False,
-        help=(
-            "Por defecto, el gráfico Performance TAT mensual excluye Sin información "
-            "y recalcula los porcentajes solo con Cumple + No cumple."
-        )
-    )
-
-    mostrar_meses_sin_datos = st.checkbox(
-        "Mostrar meses sin datos",
-        value=False
-    )
-
     mostrar_vista_previa = st.checkbox(
         "Mostrar vista previa del dataframe cargado",
         value=False
@@ -1663,12 +1667,14 @@ if uploaded_file is not None:
         st.divider()
 
         # =========================
-        # BARPLOT MENSUAL TAT
+        # FILTROS POR DEFECTO PARA AMBOS GRÁFICOS
         # =========================
 
-        st.subheader("Performance TAT mensual")
-
-        st.markdown("##### Filtros del gráfico")
+        st.subheader("Filtros por defecto")
+        st.caption(
+            "Estos filtros aplican tanto al gráfico Performance TAT mensual "
+            "como al gráfico Cumplimiento por etapa."
+        )
 
         df_grafico = df_base.copy()
 
@@ -1707,53 +1713,97 @@ if uploaded_file is not None:
             else []
         )
 
-        filtro_col1, filtro_col2, filtro_col3, filtro_col4 = st.columns([1.2, 1.2, 1.6, 1.6])
+        with st.container(border=True):
+            filtro_col1, filtro_col2, filtro_col3, filtro_col4 = st.columns([1.1, 1.2, 1.6, 1.6])
 
-        with filtro_col1:
-            anios_sel = st.multiselect(
-                "Años recepción",
-                options=anios_disponibles,
-                default=anios_disponibles,
-                key="grafico_anios_recepcion"
-            )
-
-        with filtro_col2:
-            meses_sel = st.multiselect(
-                "Meses recepción",
-                options=meses_disponibles,
-                default=meses_disponibles,
-                format_func=lambda x: MESES_NOMBRE.get(int(x), str(x)),
-                key="grafico_meses_recepcion"
-            )
-
-        with filtro_col3:
-            if fecha_min and fecha_max:
-                rango_fechas = st.date_input(
-                    "Rango fecha recepción",
-                    value=(fecha_min, fecha_max),
-                    min_value=fecha_min,
-                    max_value=fecha_max,
-                    key="grafico_rango_fecha_recepcion"
+            with filtro_col1:
+                anios_sel = st.multiselect(
+                    "Años recepción",
+                    options=anios_disponibles,
+                    default=anios_disponibles,
+                    key="filtros_default_anios_recepcion"
                 )
-            else:
-                rango_fechas = None
-                st.info("No hay fechas válidas.")
 
-        with filtro_col4:
-            if col_centro is not None and centros_disponibles:
-                centros_sel = st.multiselect(
-                    col_centro,
-                    options=centros_disponibles,
-                    default=[],
-                    help="Sin selección = todos los centros.",
-                    key="grafico_centro_me5a"
+            with filtro_col2:
+                meses_sel = st.multiselect(
+                    "Meses recepción",
+                    options=meses_disponibles,
+                    default=meses_disponibles,
+                    format_func=lambda x: MESES_NOMBRE.get(int(x), str(x)),
+                    key="filtros_default_meses_recepcion"
                 )
-            else:
-                centros_sel = []
-                st.info("No existe columna de centro para filtrar.")
+
+            with filtro_col3:
+                if fecha_min and fecha_max:
+                    rango_fechas = st.date_input(
+                        "Rango fecha recepción",
+                        value=(fecha_min, fecha_max),
+                        min_value=fecha_min,
+                        max_value=fecha_max,
+                        key="filtros_default_rango_fecha_recepcion"
+                    )
+                else:
+                    rango_fechas = None
+                    st.info("No hay fechas válidas.")
+
+            with filtro_col4:
+                if col_centro is not None and centros_disponibles:
+                    centros_sel = st.multiselect(
+                        col_centro,
+                        options=centros_disponibles,
+                        default=[],
+                        help="Sin selección = todos los centros.",
+                        key="filtros_default_centro_me5a"
+                    )
+                else:
+                    centros_sel = []
+                    st.info("No existe columna de centro para filtrar.")
+
+            filtro_col5, filtro_col6, filtro_col7, filtro_col8 = st.columns([1.2, 1.4, 1.4, 1.6])
+
+            with filtro_col5:
+                modo_y_barplot = st.radio(
+                    "Métrica gráfico mensual",
+                    options=[
+                        "Porcentaje",
+                        "Recuento"
+                    ],
+                    index=0,
+                    horizontal=True,
+                    key="filtros_default_modo_y_barplot"
+                )
+
+            with filtro_col6:
+                mostrar_sin_info = st.checkbox(
+                    "Incluir Sin información en mensual",
+                    value=False,
+                    help=(
+                        "Por defecto, el gráfico mensual excluye Sin información "
+                        "y recalcula los porcentajes solo con Cumple + No cumple."
+                    ),
+                    key="filtros_default_mostrar_sin_info"
+                )
+
+            with filtro_col7:
+                mostrar_meses_sin_datos = st.checkbox(
+                    "Mostrar meses sin datos",
+                    value=False,
+                    key="filtros_default_mostrar_meses_sin_datos"
+                )
+
+            with filtro_col8:
+                promedio_solo_dx_positivos = st.checkbox(
+                    "Promedios de etapa solo con Dx ≥ 0",
+                    value=True,
+                    help=(
+                        "Aplica solo al número promedio mostrado bajo cada donut. "
+                        "El porcentaje de Dx negativos se informa debajo de cada promedio."
+                    ),
+                    key="filtros_default_promedio_dx_positivos"
+                )
 
         # =========================
-        # Aplicación filtros del gráfico
+        # Aplicación filtros por defecto
         # =========================
 
         if anios_sel:
@@ -1795,6 +1845,14 @@ if uploaded_file is not None:
                 .str.strip()
                 .isin(centros_sel_str)
             ].copy()
+
+        st.divider()
+
+        # =========================
+        # BARPLOT MENSUAL TAT
+        # =========================
+
+        st.subheader("Performance TAT mensual")
 
         # =========================
         # Resumen mensual del gráfico
@@ -1859,7 +1917,7 @@ if uploaded_file is not None:
 
                 - Una mayor proporción de `Cumple` indica mejor desempeño TAT mensual.
                 - Una mayor proporción de `No cumple` indica desviación respecto al plazo esperado.
-                - `Sin información` aparece solo si se activa la opción correspondiente en la barra lateral.
+                - `Sin información` aparece solo si se activa la opción correspondiente en el bloque de filtros por defecto.
                 """
             )
 
@@ -1917,6 +1975,12 @@ if uploaded_file is not None:
                    - Si `dias_logistica < 10`: `Cumple`.
                    - En caso contrario: `No cumple`.
 
+                **Promedios de días:**
+
+                - Por defecto, el promedio mostrado bajo cada donut se calcula solo con Dx mayores o iguales a cero.
+                - Debajo de cada promedio se informa qué porcentaje de registros tiene Dx negativo.
+                - Puedes desactivar ese filtro en el bloque de filtros por defecto para calcular el promedio con todos los Dx válidos.
+
                 **Interpretación:**
 
                 - Un mayor porcentaje de `Cumple` indica que la etapa está dentro del plazo esperado.
@@ -1924,7 +1988,10 @@ if uploaded_file is not None:
                 """
             )
 
-        bloque_donuts_cumplimiento(df_grafico)
+        bloque_donuts_cumplimiento(
+            df=df_grafico,
+            promedio_solo_dx_positivos=promedio_solo_dx_positivos
+        )
 
         st.divider()
 
