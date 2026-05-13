@@ -1,9 +1,11 @@
 import io
+from html import escape
 from typing import Any
 
 import numpy as np
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 
 # =========================================================
@@ -469,7 +471,11 @@ def clase_dias(dias: Any, umbral: Any = None) -> str:
 
 
 def pill(texto: Any, color: str) -> str:
-    return f'<span class="pill pill-{color}">{formato_valor(texto)}</span>'
+    return f'<span class="pill pill-{color}">{escape(formato_valor(texto))}</span>'
+
+
+def html_texto(valor: Any) -> str:
+    return escape(formato_valor(valor))
 
 
 def etapa_color(row: pd.Series, etapa: dict) -> str:
@@ -546,18 +552,19 @@ def aplicar_estilo_tabla(df_tabla: pd.DataFrame):
 
 
 def html_estado_pedido(row: pd.Series) -> str:
+    """Construye el timeline completo como HTML renderizable."""
     cards = []
     for etapa in ETAPAS_PEDIDO:
         color = etapa_color(row, etapa)
-        fecha = formato_valor(row.get(etapa["fecha"], np.nan)) if etapa.get("fecha") else "-"
+        fecha = html_texto(row.get(etapa["fecha"], np.nan)) if etapa.get("fecha") else "-"
 
         dias_col = etapa.get("dias")
         umbral_col = etapa.get("umbral")
         perf_col = etapa.get("performance")
 
         if dias_col:
-            dias = formato_valor(row.get(dias_col, np.nan))
-            umbral = formato_valor(row.get(umbral_col, np.nan)) if umbral_col else "-"
+            dias = html_texto(row.get(dias_col, np.nan))
+            umbral = html_texto(row.get(umbral_col, np.nan)) if umbral_col else "-"
             dias_txt = f"{dias} días · umbral {umbral}"
         else:
             dias_txt = "Punto de inicio"
@@ -567,17 +574,100 @@ def html_estado_pedido(row: pd.Series) -> str:
 
         cards.append(
             f"""
-            <div class="stage-card stage-{color}">
-                <div class="stage-title">{etapa['titulo']}</div>
-                <div class="stage-date">{fecha}</div>
-                <div class="stage-note">{etapa['nota']}</div>
-                <div class="stage-days">{dias_txt}</div>
+            <div class=\"stage-card stage-{color}\">
+                <div class=\"stage-title\">{escape(etapa['titulo'])}</div>
+                <div class=\"stage-date\">{fecha}</div>
+                <div class=\"stage-note\">{escape(etapa['nota'])}</div>
+                <div class=\"stage-days\">{dias_txt}</div>
                 {pill(perf_val, perf_color)}
             </div>
             """
         )
 
-    return f'<div class="stage-wrap">{"".join(cards)}</div>'
+    return f"""
+    <!doctype html>
+    <html>
+    <head>
+        <meta charset=\"utf-8\">
+        <style>
+            html, body {{
+                margin: 0;
+                padding: 0;
+                font-family: "Source Sans Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+                color: #0f172a;
+                background: transparent;
+                overflow: hidden;
+            }}
+            .stage-wrap {{
+                display: grid;
+                grid-template-columns: repeat(6, minmax(150px, 1fr));
+                gap: 10px;
+                align-items: stretch;
+                margin-top: 0.55rem;
+                padding: 2px 0 18px 0;
+                box-sizing: border-box;
+            }}
+            .stage-card {{
+                border-radius: 16px;
+                padding: 13px 13px 12px 13px;
+                border: 1px solid #e5e7eb;
+                min-height: 150px;
+                position: relative;
+                box-sizing: border-box;
+            }}
+            .stage-card::after {{
+                content: "→";
+                position: absolute;
+                right: -9px;
+                top: 50%;
+                transform: translateY(-50%);
+                color: #94a3b8;
+                font-weight: 900;
+                font-size: 1rem;
+                z-index: 2;
+            }}
+            .stage-card:last-child::after {{content: "";}}
+            .stage-green {{background: #f0fdf4; border-color: #bbf7d0;}}
+            .stage-red {{background: #fef2f2; border-color: #fecaca;}}
+            .stage-yellow {{background: #fefce8; border-color: #fde68a;}}
+            .stage-gray {{background: #f8fafc; border-color: #e2e8f0;}}
+            .stage-blue {{background: #eff6ff; border-color: #bfdbfe;}}
+            .stage-title {{font-size: 0.82rem; font-weight: 850; color: #0f172a; margin-bottom: 6px;}}
+            .stage-date {{font-size: 1.05rem; font-weight: 850; color: #111827; margin-bottom: 5px;}}
+            .stage-note {{color: #64748b; font-size: 0.76rem; line-height: 1.25; min-height: 28px; margin-bottom: 9px;}}
+            .stage-days {{font-size: 0.88rem; color: #334155; margin-bottom: 7px;}}
+            .pill {{
+                display: inline-block;
+                border-radius: 999px;
+                padding: 4px 9px;
+                font-size: 0.76rem;
+                font-weight: 800;
+                border: 1px solid transparent;
+                white-space: nowrap;
+            }}
+            .pill-green {{background: #dcfce7; color: #166534; border-color: #bbf7d0;}}
+            .pill-red {{background: #fee2e2; color: #991b1b; border-color: #fecaca;}}
+            .pill-yellow {{background: #fef9c3; color: #854d0e; border-color: #fde68a;}}
+            .pill-gray {{background: #f1f5f9; color: #475569; border-color: #e2e8f0;}}
+            .pill-blue {{background: #dbeafe; color: #1e40af; border-color: #bfdbfe;}}
+            @media (max-width: 1200px) {{
+                .stage-wrap {{grid-template-columns: repeat(3, minmax(150px, 1fr));}}
+                html, body {{overflow: auto;}}
+            }}
+            @media (max-width: 760px) {{
+                .stage-wrap {{grid-template-columns: 1fr; padding-bottom: 24px;}}
+                .stage-card::after {{content: "↓"; right: 50%; top: auto; bottom: -14px; transform: translateX(50%);}}
+                .stage-card:last-child::after {{content: "";}}
+            }}
+        </style>
+    </head>
+    <body>
+        <div class=\"stage-wrap\">{''.join(cards)}</div>
+    </body>
+    </html>
+    """
+
+
 
 
 # =========================================================
@@ -885,7 +975,7 @@ else:
         unsafe_allow_html=True,
     )
 
-    st.markdown(html_estado_pedido(row), unsafe_allow_html=True)
+    components.html(html_estado_pedido(row), height=230, scrolling=False)
 
 
 # =========================================================
