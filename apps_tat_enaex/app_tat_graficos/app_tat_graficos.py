@@ -10,9 +10,10 @@ import altair as alt
 
 COLORES_ESTADO = {
     "Cumple": "#5B5B5B",
-    "No cumple": "#D94555",
-    "Sin información": "#BDBDBD"
+    "No cumple": "#D94555"
 }
+
+ESTADOS_GRAFICOS = ["Cumple", "No cumple"]
 
 
 
@@ -927,10 +928,20 @@ def crear_filtro_sidebar_columna(
 # =========================================================
 
 def crear_resumen_mensual(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Crea el resumen mensual TAT usando solo registros evaluables:
+    - Cumple
+    - No cumple
+
+    Los registros con Sin información, Sin datos, En proceso, No aplica,
+    No aplica al análisis o valores vacíos quedan fuera de los gráficos
+    y de los porcentajes.
+    """
     df = df.copy()
 
     df = df[
         df["fecha_recepcion_final"].notna()
+        & df["performance_tat_estado"].isin(ESTADOS_GRAFICOS)
     ].copy()
 
     if df.empty:
@@ -969,15 +980,11 @@ def crear_resumen_mensual(df: pd.DataFrame) -> pd.DataFrame:
         fill_value=0
     ).reset_index()
 
-    for col in ["Cumple", "No cumple", "Sin información"]:
+    for col in ESTADOS_GRAFICOS:
         if col not in tabla.columns:
             tabla[col] = 0
 
-    tabla["Total"] = (
-        tabla["Cumple"]
-        + tabla["No cumple"]
-        + tabla["Sin información"]
-    )
+    tabla["Total"] = tabla["Cumple"] + tabla["No cumple"]
 
     tabla["% Cumple"] = np.where(
         tabla["Total"].gt(0),
@@ -991,16 +998,9 @@ def crear_resumen_mensual(df: pd.DataFrame) -> pd.DataFrame:
         0
     )
 
-    tabla["% Sin información"] = np.where(
-        tabla["Total"].gt(0),
-        tabla["Sin información"] / tabla["Total"] * 100,
-        0
-    )
-
     tabla = tabla.sort_values("periodo_fecha").reset_index(drop=True)
 
     return tabla
-
 
 def completar_meses_anios(tabla: pd.DataFrame, anios: list[int]) -> pd.DataFrame:
     meses = {
@@ -1064,11 +1064,9 @@ def completar_meses_anios(tabla: pd.DataFrame, anios: list[int]) -> pd.DataFrame
     columnas_rellenar = [
         "Cumple",
         "No cumple",
-        "Sin información",
         "Total",
         "% Cumple",
-        "% No cumple",
-        "% Sin información"
+        "% No cumple"
     ]
 
     for col in columnas_rellenar:
@@ -1088,18 +1086,42 @@ def crear_resumen_cumplimiento_etapa(
     df: pd.DataFrame,
     col_performance_estado: str
 ):
+    """
+    Crea resumen de cumplimiento por etapa usando solo:
+    - Cumple
+    - No cumple
+
+    Todo estado no evaluable queda excluido de los donuts.
+    """
     if col_performance_estado not in df.columns:
         return None
 
-    data = (
+    serie = (
         df[col_performance_estado]
         .fillna("Sin información")
         .astype(str)
+        .str.strip()
+    )
+
+    serie = serie[serie.isin(ESTADOS_GRAFICOS)]
+
+    data = (
+        serie
         .value_counts()
         .reset_index()
     )
 
     data.columns = ["estado", "valor"]
+
+    for estado in ESTADOS_GRAFICOS:
+        if estado not in data["estado"].values:
+            data = pd.concat(
+                [
+                    data,
+                    pd.DataFrame({"estado": [estado], "valor": [0]})
+                ],
+                ignore_index=True
+            )
 
     total = data["valor"].sum()
 
@@ -1111,8 +1133,7 @@ def crear_resumen_cumplimiento_etapa(
 
     orden = {
         "Cumple": 1,
-        "No cumple": 2,
-        "Sin información": 3
+        "No cumple": 2
     }
 
     data["orden"] = data["estado"].map(orden).fillna(99)
@@ -1126,15 +1147,9 @@ def crear_resumen_cumplimiento_etapa(
 
     return data
 
-
 def crear_donut_altair(data: pd.DataFrame):
     colores = COLORES_ESTADO
-
-    estados = [
-        "Cumple",
-        "No cumple",
-        "Sin información"
-    ]
+    estados = ESTADOS_GRAFICOS
 
     chart = (
         alt.Chart(data)
@@ -1171,7 +1186,6 @@ def crear_donut_altair(data: pd.DataFrame):
 
     return chart
 
-
 def tarjeta_donut_cumplimiento(
     df: pd.DataFrame,
     titulo: str,
@@ -1191,15 +1205,12 @@ def tarjeta_donut_cumplimiento(
         return
 
     data = data[
-        data["estado"].isin(["Cumple", "No cumple"])
+        data["estado"].isin(ESTADOS_GRAFICOS)
     ].copy()
 
     if data.empty or data["valor"].sum() == 0:
-        data = pd.DataFrame({
-            "estado": ["Sin información"],
-            "valor": [1],
-            "porcentaje": [100]
-        })
+        st.info(f"No hay registros evaluables para {titulo}.")
+        return
 
     promedio_dias = 0
     pct_negativos = 0
@@ -1334,17 +1345,11 @@ def bloque_donuts_cumplimiento(df: pd.DataFrame, promedio_solo_dx_positivos: boo
 
 def crear_data_barplot_interactivo(
     tabla: pd.DataFrame,
-    modo_y: str = "Porcentaje",
-    mostrar_sin_info: bool = False
+    modo_y: str = "Porcentaje"
 ) -> pd.DataFrame:
     """
     Crea la data larga para el barplot mensual.
-
-    Importante:
-    - Por defecto NO incluye "Sin información" en el gráfico.
-    - Cuando "Sin información" está excluido, los porcentajes se recalculan usando
-      solo Cumple + No cumple como total visible.
-    - Si se activa mostrar_sin_info, el porcentaje usa Cumple + No cumple + Sin información.
+    Solo considera Cumple y No cumple.
     """
     if tabla.empty:
         return pd.DataFrame()
@@ -1352,16 +1357,12 @@ def crear_data_barplot_interactivo(
     tabla = tabla.copy()
     tabla = tabla.sort_values("periodo_fecha").reset_index(drop=True)
 
-    estados = ["Cumple", "No cumple"]
-
-    if mostrar_sin_info:
-        estados.append("Sin información")
+    estados = ESTADOS_GRAFICOS
 
     data = []
 
     for _, row in tabla.iterrows():
         total_visible = sum(float(row.get(estado, 0) or 0) for estado in estados)
-        total_original = float(row.get("Total", 0) or 0)
 
         for estado in estados:
             cantidad_estado = float(row.get(estado, 0) or 0)
@@ -1387,16 +1388,14 @@ def crear_data_barplot_interactivo(
                 "valor": valor,
                 "cantidad": cantidad_estado,
                 "porcentaje": porcentaje,
-                "total_visible": total_visible,
-                "total_original": total_original
+                "total_visible": total_visible
             })
 
     df_plot = pd.DataFrame(data)
 
     orden_estado = {
         "Cumple": 1,
-        "No cumple": 2,
-        "Sin información": 3
+        "No cumple": 2
     }
 
     df_plot["orden_estado"] = df_plot["estado"].map(orden_estado)
@@ -1413,7 +1412,7 @@ def grafico_barplot_interactivo_altair(
     titulo: str = "Barplot interactivo Performance TAT"
 ):
     if df_plot.empty:
-        st.warning("No hay datos para graficar con los filtros seleccionados.")
+        st.warning("No hay datos evaluables para graficar con los filtros seleccionados.")
         return
 
     titulo_y = "Recuento" if modo_y == "Recuento" else "Porcentaje"
@@ -1450,12 +1449,8 @@ def grafico_barplot_interactivo_altair(
             color=alt.Color(
                 "estado:N",
                 scale=alt.Scale(
-                    domain=["Cumple", "No cumple", "Sin información"],
-                    range=[
-                        colores["Cumple"],
-                        colores["No cumple"],
-                        colores["Sin información"]
-                    ]
+                    domain=ESTADOS_GRAFICOS,
+                    range=[colores[e] for e in ESTADOS_GRAFICOS]
                 ),
                 legend=alt.Legend(title="")
             ),
@@ -1469,8 +1464,7 @@ def grafico_barplot_interactivo_altair(
                 alt.Tooltip("valor:Q", title=titulo_y, format=".2f"),
                 alt.Tooltip("cantidad:Q", title="Cantidad", format=",.0f"),
                 alt.Tooltip("porcentaje:Q", title="Porcentaje visible", format=".2f"),
-                alt.Tooltip("total_visible:Q", title="Total visible", format=",.0f"),
-                alt.Tooltip("total_original:Q", title="Total original", format=",.0f")
+                alt.Tooltip("total_visible:Q", title="Total evaluable", format=",.0f")
             ]
         )
         .properties(
@@ -1784,15 +1778,7 @@ if uploaded_file is not None:
                 )
 
             with filtro_col6:
-                mostrar_sin_info = st.checkbox(
-                    "Incluir Sin información en mensual",
-                    value=False,
-                    help=(
-                        "Por defecto, el gráfico mensual excluye Sin información "
-                        "y recalcula los porcentajes solo con Cumple + No cumple."
-                    ),
-                    key="filtros_default_mostrar_sin_info"
-                )
+                st.info("Los gráficos solo consideran Cumple y No cumple.")
 
             with filtro_col7:
                 mostrar_meses_sin_datos = st.checkbox(
@@ -1888,8 +1874,8 @@ if uploaded_file is not None:
         total_grafico = len(df_grafico)
         cumple = df_grafico["performance_tat_estado"].eq("Cumple").sum()
         no_cumple = df_grafico["performance_tat_estado"].eq("No cumple").sum()
-        sin_info = df_grafico["performance_tat_estado"].eq("Sin información").sum()
         total_evaluable = cumple + no_cumple
+        no_evaluable = total_grafico - total_evaluable
 
         pct_cumple = round(cumple / total_evaluable * 100, 2) if total_evaluable > 0 else 0
         pct_no_cumple = round(no_cumple / total_evaluable * 100, 2) if total_evaluable > 0 else 0
@@ -1901,7 +1887,7 @@ if uploaded_file is not None:
         col3.metric("Cumple", f"{cumple:,}")
         col4.metric("No cumple", f"{no_cumple:,}")
         col5.metric("% Cumple", f"{pct_cumple}%")
-        col6.metric("Sin información", f"{sin_info:,}")
+        col6.metric("No evaluables excluidos", f"{no_evaluable:,}")
 
         with st.expander("Ver lógica del gráfico Performance TAT mensual", expanded=False):
             st.markdown(
@@ -1912,32 +1898,32 @@ if uploaded_file is not None:
 
                 1. Se usa la columna `fecha_recepcion_final` como fecha base.
                 2. Cada registro se asigna a un mes y año.
-                3. Se usa como fuente principal la columna `performance_tat_total` y se normaliza en tres estados:
+                3. Se usa como fuente principal la columna `performance_tat_total`.
+                4. Para los gráficos solo se consideran dos estados:
                    - `Cumple`
                    - `No cumple`
-                   - `Sin información`
-                4. Por defecto, el gráfico excluye `Sin información`.
-                5. Si la métrica seleccionada es **Porcentaje**, el porcentaje se calcula sobre el total visible:
-                   - Por defecto: `Cumple + No cumple`.
-                   - Si activas `Incluir Sin información`: `Cumple + No cumple + Sin información`.
-                6. Si la métrica seleccionada es **Recuento**, la barra muestra cantidades absolutas.
-                7. Los registros sin `fecha_recepcion_final` no aparecen en este gráfico porque no pueden asignarse a un mes.
+                5. Los registros con estados como `Sin información`, `Sin datos`, `En proceso`,
+                   `No aplica`, `No aplica al análisis` o valores vacíos quedan excluidos de los gráficos.
+                6. Si la métrica seleccionada es **Porcentaje**, el porcentaje se calcula sobre:
+                   `Cumple + No cumple`.
+                7. Si la métrica seleccionada es **Recuento**, la barra muestra cantidades absolutas.
+                8. Los registros sin `fecha_recepcion_final` no aparecen en el gráfico mensual
+                   porque no pueden asignarse a un mes.
 
                 **Interpretación:**
 
                 - Una mayor proporción de `Cumple` indica mejor desempeño TAT mensual.
                 - Una mayor proporción de `No cumple` indica desviación respecto al plazo esperado.
-                - `Sin información` aparece solo si se activa la opción correspondiente en el bloque de filtros por defecto.
                 """
             )
+
 
         if tabla_resumen.empty:
             st.warning("No hay datos para graficar con los filtros seleccionados.")
         else:
             df_plot = crear_data_barplot_interactivo(
                 tabla=tabla_resumen,
-                modo_y=modo_y_barplot,
-                mostrar_sin_info=mostrar_sin_info
+                modo_y=modo_y_barplot
             )
 
             grafico_barplot_interactivo_altair(
@@ -2014,11 +2000,9 @@ if uploaded_file is not None:
                 "mes_nombre",
                 "Cumple",
                 "No cumple",
-                "Sin información",
                 "Total",
                 "% Cumple",
-                "% No cumple",
-                "% Sin información"
+                "% No cumple"
             ]
 
             columnas_tabla = [
