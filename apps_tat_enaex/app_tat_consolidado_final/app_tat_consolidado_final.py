@@ -26,7 +26,7 @@ LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
 # Columnas esperadas
 # =========================================================
 
-# Fechas finales: se mantienen con estos nombres porque el archivo procesado las trae así.
+# Fechas finales usadas por el cálculo principal.
 COL_FECHA_SOLICITUD_FINAL = "fecha_solicitud_final"
 COL_FECHA_LIBERACION_FINAL = "fecha_liberacion_final"
 COL_FECHA_PEDIDO_FINAL = "fecha_pedido_final"
@@ -34,7 +34,6 @@ COL_FECHA_FACTURACION_FINAL = "fecha_facturacion_final"
 COL_FECHA_RECEPCION_FINAL = "fecha_recepcion_final"
 
 # Columnas de origen reales del dataframe integrado.
-# Nota: "Precio de valoración" no trae sufijo de origen en el dataframe recibido.
 COL_PEDIDO = "Pedido - ME5A"
 COL_DOCUMENTO_COMPRAS = "Documento de compras - NME80FN"
 COL_TIPO_COMPRA_ARIBA = "Tipo de compra - ARIBA"
@@ -90,39 +89,48 @@ COLUMNAS_FECHA_PERFORMANCE = [
     "nme_fecha_entrada_mercancia_recepcion",
 ]
 
+
+# =========================================================
+# Columnas nuevas ordenadas
+# =========================================================
+
 COLUMNAS_NUEVAS_ORDENADAS = [
+    # Clasificación y datos base.
     "tipo_oc",
-    "origen_oc",
-    "sistema_oc",
+    "origen",
+    "sistema",
     "nombre_tipo_compra",
-    "monto_valoracion",
-    "fecha_inicio_proveedor",
-    "dx_lib_solped",
-    "dx_comprador_1",
-    "dx_lib_pedido",
-    "dx_logistica",
-    "dx_proveedor",
-    "dx_tat",
-    "umbral_lib_solped",
-    "umbral_comprador_1",
-    "umbral_lib_pedido",
-    "umbral_logistica",
-    "umbral_tat",
+    "monto",
+
+    # Días calculados.
+    "dias_liberacion_solped",
+    "dias_comprador",
+    "dias_liberacion_pedido",
+    "dias_proveedor",
+    "dias_logistica",
+    "dias_tat_total",
+
+    # Umbrales.
+    "umbral_liberacion_solped",
+    "umbral_comprador",
+    "umbral_liberacion_pedido",
     "umbral_proveedor",
-    "performance_lib_solped",
-    "performance_comprador_1",
-    "performance_lib_pedido",
-    "performance_logistica",
-    "performance_tat",
+    "umbral_logistica",
+    "umbral_tat_total",
+
+    # Performance.
+    "performance_liberacion_solped",
+    "performance_comprador",
+    "performance_liberacion_pedido",
     "performance_proveedor",
-    "dias_incumplimiento_lib_solped",
-    "dias_incumplimiento_comprador_1",
-    "dias_incumplimiento_logistica",
+    "performance_logistica",
+    "performance_tat_total",
+
+    # Validación e incumplimiento.
+    "tiene_fechas_inconsistentes",
     "dias_incumplimiento_tat",
-    "dias_incumplimiento_proveedor",
-    "dias_incumplimiento_max",
-    "incumplimiento",
-    "rango_incumplimiento",
+    "incumplimiento_tat",
+    "rango_incumplimiento_tat",
 ]
 
 
@@ -169,6 +177,7 @@ def obtener_separador(separador_csv: str):
     if separador_csv == "Tabulación":
         return "\t"
     return None
+
 
 @st.cache_data(show_spinner=False)
 def leer_archivo_cache(
@@ -223,7 +232,7 @@ def validar_columnas_requeridas(df: pd.DataFrame):
 
     if faltantes:
         raise ValueError(
-            "Faltan columnas requeridas para calcular performance: "
+            "Faltan columnas requeridas para calcular performance TAT: "
             f"{faltantes}"
         )
 
@@ -233,7 +242,7 @@ def convertir_fecha_columna(serie: pd.Series) -> pd.Series:
     Convierte fechas que pueden venir como:
     - datetime
     - texto de fecha
-    - timestamp numérico en milisegundos, como 1704067200000
+    - timestamp numérico en milisegundos
     - timestamp numérico en segundos
     """
     if pd.api.types.is_datetime64_any_dtype(serie):
@@ -296,20 +305,12 @@ def extraer_tipo_oc(valor):
 
 
 def diferencia_dias(fecha_fin: pd.Series, fecha_inicio: pd.Series) -> pd.Series:
+    """
+    Calcula días calendario entre dos fechas.
+    Fórmula: fecha_fin - fecha_inicio.
+    Si falta alguna fecha, el resultado queda vacío.
+    """
     return (fecha_fin - fecha_inicio).dt.days
-
-
-def evaluar_cumplimiento(valor: pd.Series, umbral: pd.Series) -> pd.Series:
-    resultado = valor <= umbral
-    resultado = resultado.mask(valor.isna() | umbral.isna(), pd.NA)
-    return resultado
-
-
-def dias_incumplimiento(valor: pd.Series, umbral: pd.Series) -> pd.Series:
-    resultado = valor - umbral
-    resultado = resultado.where(resultado > 0, 0)
-    resultado = resultado.mask(valor.isna() | umbral.isna(), np.nan)
-    return resultado
 
 
 def formatear_valor(valor) -> str:
@@ -323,6 +324,205 @@ def formatear_valor(valor) -> str:
 
 
 # =========================================================
+# Evaluaciones de performance
+# =========================================================
+
+def evaluar_performance_basica(
+    dias: pd.Series,
+    umbral: pd.Series,
+    texto_sin_dato: str = "No aplica",
+    negativos_no_aplican: bool = False
+) -> pd.Series:
+    """
+    Evalúa una métrica simple contra su umbral.
+
+    Reglas:
+    - Si no hay días o no hay umbral: texto_sin_dato.
+    - Si hay días negativos y negativos_no_aplican=True: No aplica.
+    - Si días <= umbral: Cumple.
+    - Si días > umbral: No cumple.
+    """
+    resultado = pd.Series(texto_sin_dato, index=dias.index, dtype="object")
+
+    mask_sin_dato = dias.isna() | umbral.isna()
+    mask_negativo = dias.lt(0)
+
+    if negativos_no_aplican:
+        resultado.loc[mask_negativo] = "No aplica"
+
+    mask_evaluable = ~mask_sin_dato
+
+    if negativos_no_aplican:
+        mask_evaluable = mask_evaluable & ~mask_negativo
+
+    resultado.loc[mask_evaluable & dias.le(umbral)] = "Cumple"
+    resultado.loc[mask_evaluable & dias.gt(umbral)] = "No cumple"
+
+    return resultado
+
+
+def evaluar_performance_tat(df: pd.DataFrame) -> pd.Series:
+    """
+    Evalúa el TAT total según tipo de OC.
+
+    Reglas:
+    - Si alguna etapa tiene días negativos: No aplica al análisis.
+    - Si TAT total está vacío: En proceso.
+    - OC 35 o 45 cumple si TAT <= 40.
+    - OC 47 cumple si TAT <= 70.
+    - Si es OC 35, 45 o 47 y supera el umbral: No cumple.
+    - Otros tipos de OC: Sin datos.
+    """
+    resultado = pd.Series("Sin datos", index=df.index, dtype="object")
+
+    mask_negativos = df["tiene_fechas_inconsistentes"].eq(True)
+    mask_en_proceso = df["dias_tat_total"].isna()
+
+    mask_tipo_nacional = df["tipo_oc"].isin(["35", "45"])
+    mask_tipo_internacional = df["tipo_oc"].eq("47")
+    mask_tipo_valido = df["tipo_oc"].isin(["35", "45", "47"])
+
+    resultado.loc[mask_negativos] = "No aplica al análisis"
+    resultado.loc[~mask_negativos & mask_en_proceso] = "En proceso"
+
+    mask_evaluable = ~mask_negativos & ~mask_en_proceso
+
+    resultado.loc[
+        mask_evaluable & mask_tipo_nacional & df["dias_tat_total"].le(40)
+    ] = "Cumple"
+
+    resultado.loc[
+        mask_evaluable & mask_tipo_internacional & df["dias_tat_total"].le(70)
+    ] = "Cumple"
+
+    resultado.loc[
+        mask_evaluable
+        & mask_tipo_valido
+        & (
+            (mask_tipo_nacional & df["dias_tat_total"].gt(40))
+            | (mask_tipo_internacional & df["dias_tat_total"].gt(70))
+        )
+    ] = "No cumple"
+
+    return resultado
+
+
+def calcular_dias_incumplimiento_tat(
+    dias_tat: pd.Series,
+    umbral_tat: pd.Series
+) -> pd.Series:
+    """
+    Calcula días de incumplimiento solo contra el TAT total.
+
+    Reglas:
+    - Si no hay TAT o no hay umbral, queda vacío.
+    - Si TAT no supera el umbral, queda 0.
+    - Si TAT supera el umbral, queda TAT - umbral.
+    """
+    diferencia = dias_tat - umbral_tat
+    resultado = diferencia.where(diferencia > 0, 0)
+    resultado = resultado.mask(dias_tat.isna() | umbral_tat.isna(), np.nan)
+    return resultado
+
+
+def calcular_rango_incumplimiento_tat(dias_incumplimiento: pd.Series) -> pd.Series:
+    """
+    Clasifica los días de incumplimiento TAT.
+    """
+    return pd.Series(
+        np.select(
+            [
+                bool_array(dias_incumplimiento.isna()),
+                bool_array(dias_incumplimiento.eq(0)),
+                bool_array(dias_incumplimiento.between(1, 5, inclusive="both")),
+                bool_array(dias_incumplimiento.between(6, 15, inclusive="both")),
+                bool_array(dias_incumplimiento.between(16, 30, inclusive="both")),
+                bool_array(dias_incumplimiento.gt(30)),
+            ],
+            [
+                "Sin datos",
+                "Sin incumplimiento",
+                "0-5 días",
+                "6-15 días",
+                "16-30 días",
+                "Mayor a un mes",
+            ],
+            default="Sin datos"
+        ),
+        index=dias_incumplimiento.index
+    )
+
+
+# =========================================================
+# Tabla conceptual de fórmulas
+# =========================================================
+
+def tabla_inputs_formulas() -> pd.DataFrame:
+    return pd.DataFrame([
+        {
+            "Métrica": "Liberación SolPed",
+            "Nombre técnico": "dias_liberacion_solped",
+            "Fecha inicio": COL_FECHA_SOLICITUD_FINAL,
+            "Fecha fin": COL_FECHA_LIBERACION_FINAL,
+            "Fórmula": "fecha_liberacion_final - fecha_solicitud_final",
+            "Descripción": "Mide los días calendario entre la solicitud y la liberación de la SolPed.",
+            "Umbral": "2 días",
+            "Resultado esperado": "Cumple si los días son menores o iguales a 2.",
+        },
+        {
+            "Métrica": "Comprador",
+            "Nombre técnico": "dias_comprador",
+            "Fecha inicio": COL_FECHA_LIBERACION_FINAL,
+            "Fecha fin": COL_FECHA_PEDIDO_FINAL,
+            "Fórmula": "fecha_pedido_final - fecha_liberacion_final",
+            "Descripción": "Mide los días calendario entre la liberación de la SolPed y la creación/emisión del pedido.",
+            "Umbral": "10 días",
+            "Resultado esperado": "Cumple si los días son menores o iguales a 10.",
+        },
+        {
+            "Métrica": "Liberación Pedido",
+            "Nombre técnico": "dias_liberacion_pedido",
+            "Fecha inicio": "Sin input disponible",
+            "Fecha fin": "Sin input disponible",
+            "Fórmula": "Sin cálculo",
+            "Descripción": "No se calcula porque actualmente no existe la información necesaria.",
+            "Umbral": "2 días",
+            "Resultado esperado": "Sin datos.",
+        },
+        {
+            "Métrica": "Proveedor",
+            "Nombre técnico": "dias_proveedor",
+            "Fecha inicio": COL_FECHA_PEDIDO_FINAL,
+            "Fecha fin": COL_FECHA_FACTURACION_FINAL,
+            "Fórmula": "fecha_facturacion_final - fecha_pedido_final",
+            "Descripción": "Mide los días calendario entre la fecha de pedido y la fecha de facturación.",
+            "Umbral": "OC 35/45 = 20 días; OC 47 = 60 días",
+            "Resultado esperado": "Cumple si está dentro del umbral correspondiente al tipo de OC.",
+        },
+        {
+            "Métrica": "Logística",
+            "Nombre técnico": "dias_logistica",
+            "Fecha inicio": COL_FECHA_FACTURACION_FINAL,
+            "Fecha fin": COL_FECHA_RECEPCION_FINAL,
+            "Fórmula": "fecha_recepcion_final - fecha_facturacion_final",
+            "Descripción": "Mide los días calendario entre la facturación y la recepción de mercancía.",
+            "Umbral": "11 días",
+            "Resultado esperado": "Cumple si los días son menores o iguales a 11. Si el valor es negativo, no aplica.",
+        },
+        {
+            "Métrica": "TAT Total",
+            "Nombre técnico": "dias_tat_total",
+            "Fecha inicio": COL_FECHA_SOLICITUD_FINAL,
+            "Fecha fin": COL_FECHA_RECEPCION_FINAL,
+            "Fórmula": "fecha_recepcion_final - fecha_solicitud_final",
+            "Descripción": "Mide el ciclo completo punta a punta, desde la solicitud hasta la recepción.",
+            "Umbral": "OC 35/45 = 40 días; OC 47 = 70 días",
+            "Resultado esperado": "Cumple si está dentro del umbral correspondiente al tipo de OC.",
+        },
+    ])
+
+
+# =========================================================
 # Lógica principal de performance
 # =========================================================
 
@@ -331,6 +531,7 @@ def aplicar_logica_performance(df_original: pd.DataFrame) -> pd.DataFrame:
     df = limpiar_nombres_columnas(df_original)
     validar_columnas_requeridas(df)
 
+    # Convertir columnas de fecha.
     for col in COLUMNAS_FECHA_PERFORMANCE:
         if col in df.columns:
             df[col] = convertir_fecha_columna(df[col])
@@ -351,7 +552,7 @@ def aplicar_logica_performance(df_original: pd.DataFrame) -> pd.DataFrame:
 
     df["tipo_oc"] = df["tipo_oc"].astype("string")
 
-    df["origen_oc"] = np.select(
+    df["origen"] = np.select(
         [
             bool_array(df["tipo_oc"].isin(["35", "45"])),
             bool_array(df["tipo_oc"].eq("47")),
@@ -363,7 +564,7 @@ def aplicar_logica_performance(df_original: pd.DataFrame) -> pd.DataFrame:
         default="Otro"
     )
 
-    df["sistema_oc"] = np.select(
+    df["sistema"] = np.select(
         [
             bool_array(df["tipo_oc"].eq("35")),
             bool_array(df["tipo_oc"].isin(["45", "47"])),
@@ -375,6 +576,7 @@ def aplicar_logica_performance(df_original: pd.DataFrame) -> pd.DataFrame:
         default="Otro"
     )
 
+    # Tipo de compra ARIBA.
     if COL_TIPO_COMPRA_ARIBA in df.columns:
         tipo_compra_num = pd.to_numeric(df[COL_TIPO_COMPRA_ARIBA], errors="coerce")
     else:
@@ -394,91 +596,55 @@ def aplicar_logica_performance(df_original: pd.DataFrame) -> pd.DataFrame:
         default="Otro"
     )
 
+    # Monto.
     if COL_CANTIDAD_SOLICITADA in df.columns and COL_PRECIO_VALORACION in df.columns:
-        df["monto_valoracion"] = (
+        df["monto"] = (
             pd.to_numeric(df[COL_CANTIDAD_SOLICITADA], errors="coerce")
             * pd.to_numeric(df[COL_PRECIO_VALORACION], errors="coerce")
         )
     else:
-        df["monto_valoracion"] = np.nan
-
-    # =====================================================
-    # Fecha inicio proveedor
-    # OC 35      -> fecha_pedido_final
-    # OC 45 / 47 -> fecha_pedido_final + 3 días
-    # =====================================================
-
-    df["fecha_inicio_proveedor"] = pd.NaT
-
-    mask_oc_35 = bool_array(df["tipo_oc"].eq("35"))
-    mask_oc_45_47 = bool_array(df["tipo_oc"].isin(["45", "47"]))
-
-    df.loc[mask_oc_35, "fecha_inicio_proveedor"] = df.loc[
-        mask_oc_35,
-        COL_FECHA_PEDIDO_FINAL
-    ]
-
-    df.loc[mask_oc_45_47, "fecha_inicio_proveedor"] = (
-        df.loc[mask_oc_45_47, COL_FECHA_PEDIDO_FINAL]
-        + pd.Timedelta(days=3)
-    )
-
-    df["fecha_inicio_proveedor"] = pd.to_datetime(
-        df["fecha_inicio_proveedor"],
-        errors="coerce"
-    )
+        df["monto"] = np.nan
 
     # =====================================================
     # Cálculos de días
     # =====================================================
 
-    df["dx_lib_solped"] = diferencia_dias(
-        df[COL_FECHA_LIBERACION_FINAL],
-        df[COL_FECHA_SOLICITUD_FINAL]
+    df["dias_liberacion_solped"] = diferencia_dias(
+        fecha_fin=df[COL_FECHA_LIBERACION_FINAL],
+        fecha_inicio=df[COL_FECHA_SOLICITUD_FINAL]
     )
 
-    df["dx_comprador_1"] = diferencia_dias(
-        df[COL_FECHA_PEDIDO_FINAL],
-        df[COL_FECHA_LIBERACION_FINAL]
+    df["dias_comprador"] = diferencia_dias(
+        fecha_fin=df[COL_FECHA_PEDIDO_FINAL],
+        fecha_inicio=df[COL_FECHA_LIBERACION_FINAL]
     )
 
-    df["dx_lib_pedido"] = np.nan
+    # No se calcula porque no hay inputs disponibles.
+    df["dias_liberacion_pedido"] = np.nan
 
-    df["dx_logistica"] = diferencia_dias(
-        df[COL_FECHA_RECEPCION_FINAL],
-        df[COL_FECHA_FACTURACION_FINAL]
+    df["dias_proveedor"] = diferencia_dias(
+        fecha_fin=df[COL_FECHA_FACTURACION_FINAL],
+        fecha_inicio=df[COL_FECHA_PEDIDO_FINAL]
     )
 
-    df["dx_proveedor"] = diferencia_dias(
-        df[COL_FECHA_RECEPCION_FINAL],
-        df["fecha_inicio_proveedor"]
+    df["dias_logistica"] = diferencia_dias(
+        fecha_fin=df[COL_FECHA_RECEPCION_FINAL],
+        fecha_inicio=df[COL_FECHA_FACTURACION_FINAL]
     )
 
-    df["dx_tat"] = diferencia_dias(
-        df[COL_FECHA_RECEPCION_FINAL],
-        df[COL_FECHA_SOLICITUD_FINAL]
+    df["dias_tat_total"] = diferencia_dias(
+        fecha_fin=df[COL_FECHA_RECEPCION_FINAL],
+        fecha_inicio=df[COL_FECHA_SOLICITUD_FINAL]
     )
 
     # =====================================================
     # Umbrales
     # =====================================================
 
-    df["umbral_lib_solped"] = 2
-    df["umbral_comprador_1"] = 10
-    df["umbral_lib_pedido"] = 2
+    df["umbral_liberacion_solped"] = 2
+    df["umbral_comprador"] = 10
+    df["umbral_liberacion_pedido"] = 2
     df["umbral_logistica"] = 11
-
-    df["umbral_tat"] = np.select(
-        [
-            bool_array(df["tipo_oc"].isin(["35", "45"])),
-            bool_array(df["tipo_oc"].eq("47")),
-        ],
-        [
-            40,
-            70,
-        ],
-        default=np.nan
-    )
 
     df["umbral_proveedor"] = np.select(
         [
@@ -492,104 +658,101 @@ def aplicar_logica_performance(df_original: pd.DataFrame) -> pd.DataFrame:
         default=np.nan
     )
 
-    df["umbral_tat"] = pd.to_numeric(df["umbral_tat"], errors="coerce")
-    df["umbral_proveedor"] = pd.to_numeric(df["umbral_proveedor"], errors="coerce")
-
-    # =====================================================
-    # Evaluación de performance
-    # =====================================================
-
-    df["performance_lib_solped"] = evaluar_cumplimiento(
-        df["dx_lib_solped"],
-        pd.Series(df["umbral_lib_solped"], index=df.index)
+    df["umbral_tat_total"] = np.select(
+        [
+            bool_array(df["tipo_oc"].isin(["35", "45"])),
+            bool_array(df["tipo_oc"].eq("47")),
+        ],
+        [
+            40,
+            70,
+        ],
+        default=np.nan
     )
 
-    df["performance_comprador_1"] = evaluar_cumplimiento(
-        df["dx_comprador_1"],
-        pd.Series(df["umbral_comprador_1"], index=df.index)
+    df["umbral_proveedor"] = pd.to_numeric(
+        df["umbral_proveedor"],
+        errors="coerce"
     )
 
-    df["performance_lib_pedido"] = evaluar_cumplimiento(
-        pd.Series(df["dx_lib_pedido"], index=df.index),
-        pd.Series(df["umbral_lib_pedido"], index=df.index)
-    )
-
-    df["performance_logistica"] = evaluar_cumplimiento(
-        df["dx_logistica"],
-        pd.Series(df["umbral_logistica"], index=df.index)
-    )
-
-    df["performance_tat"] = evaluar_cumplimiento(
-        df["dx_tat"],
-        df["umbral_tat"]
-    )
-
-    df["performance_proveedor"] = evaluar_cumplimiento(
-        df["dx_proveedor"],
-        df["umbral_proveedor"]
+    df["umbral_tat_total"] = pd.to_numeric(
+        df["umbral_tat_total"],
+        errors="coerce"
     )
 
     # =====================================================
-    # Días de incumplimiento
+    # Validación de fechas inconsistentes
     # =====================================================
 
-    df["dias_incumplimiento_lib_solped"] = dias_incumplimiento(
-        df["dx_lib_solped"],
-        pd.Series(df["umbral_lib_solped"], index=df.index)
-    )
-
-    df["dias_incumplimiento_comprador_1"] = dias_incumplimiento(
-        df["dx_comprador_1"],
-        pd.Series(df["umbral_comprador_1"], index=df.index)
-    )
-
-    df["dias_incumplimiento_logistica"] = dias_incumplimiento(
-        df["dx_logistica"],
-        pd.Series(df["umbral_logistica"], index=df.index)
-    )
-
-    df["dias_incumplimiento_tat"] = dias_incumplimiento(
-        df["dx_tat"],
-        df["umbral_tat"]
-    )
-
-    df["dias_incumplimiento_proveedor"] = dias_incumplimiento(
-        df["dx_proveedor"],
-        df["umbral_proveedor"]
-    )
-
-    columnas_incumplimiento = [
-        "dias_incumplimiento_lib_solped",
-        "dias_incumplimiento_comprador_1",
-        "dias_incumplimiento_logistica",
-        "dias_incumplimiento_tat",
-        "dias_incumplimiento_proveedor",
+    columnas_dias_evaluables = [
+        "dias_liberacion_solped",
+        "dias_comprador",
+        "dias_liberacion_pedido",
+        "dias_proveedor",
+        "dias_logistica",
+        "dias_tat_total",
     ]
 
-    df["dias_incumplimiento_max"] = df[columnas_incumplimiento].max(
-        axis=1,
-        skipna=True
+    df["tiene_fechas_inconsistentes"] = (
+        df[columnas_dias_evaluables]
+        .lt(0)
+        .any(axis=1, skipna=True)
     )
 
-    df["dias_incumplimiento_max"] = df["dias_incumplimiento_max"].fillna(0)
-    df["incumplimiento"] = df["dias_incumplimiento_max"].gt(0)
+    # =====================================================
+    # Performance
+    # =====================================================
 
-    df["rango_incumplimiento"] = np.select(
-        [
-            bool_array(df["dias_incumplimiento_max"].eq(0)),
-            bool_array(df["dias_incumplimiento_max"].between(1, 5, inclusive="both")),
-            bool_array(df["dias_incumplimiento_max"].between(6, 15, inclusive="both")),
-            bool_array(df["dias_incumplimiento_max"].between(16, 30, inclusive="both")),
-            bool_array(df["dias_incumplimiento_max"].gt(30)),
-        ],
-        [
-            "Sin incumplimiento",
-            "0-5 días",
-            "6-15 días",
-            "16-30 días",
-            "Mayor a un mes",
-        ],
-        default="Sin información"
+    df["performance_liberacion_solped"] = evaluar_performance_basica(
+        dias=df["dias_liberacion_solped"],
+        umbral=pd.Series(df["umbral_liberacion_solped"], index=df.index),
+        texto_sin_dato="No aplica",
+        negativos_no_aplican=False
+    )
+
+    df["performance_comprador"] = evaluar_performance_basica(
+        dias=df["dias_comprador"],
+        umbral=pd.Series(df["umbral_comprador"], index=df.index),
+        texto_sin_dato="No aplica",
+        negativos_no_aplican=False
+    )
+
+    df["performance_liberacion_pedido"] = evaluar_performance_basica(
+        dias=pd.Series(df["dias_liberacion_pedido"], index=df.index),
+        umbral=pd.Series(df["umbral_liberacion_pedido"], index=df.index),
+        texto_sin_dato="Sin datos",
+        negativos_no_aplican=False
+    )
+
+    df["performance_proveedor"] = evaluar_performance_basica(
+        dias=df["dias_proveedor"],
+        umbral=df["umbral_proveedor"],
+        texto_sin_dato="Sin datos",
+        negativos_no_aplican=False
+    )
+
+    df["performance_logistica"] = evaluar_performance_basica(
+        dias=df["dias_logistica"],
+        umbral=pd.Series(df["umbral_logistica"], index=df.index),
+        texto_sin_dato="No aplica",
+        negativos_no_aplican=True
+    )
+
+    df["performance_tat_total"] = evaluar_performance_tat(df)
+
+    # =====================================================
+    # Incumplimiento TAT
+    # =====================================================
+
+    df["dias_incumplimiento_tat"] = calcular_dias_incumplimiento_tat(
+        dias_tat=df["dias_tat_total"],
+        umbral_tat=df["umbral_tat_total"]
+    )
+
+    df["incumplimiento_tat"] = df["dias_incumplimiento_tat"].gt(0)
+
+    df["rango_incumplimiento_tat"] = calcular_rango_incumplimiento_tat(
+        df["dias_incumplimiento_tat"]
     )
 
     return df
@@ -612,38 +775,69 @@ def reordenar_columnas_performance_al_final(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # =========================================================
-# Resúmenes y lógica explicativa
+# Resúmenes
 # =========================================================
 
 def resumen_performance(df: pd.DataFrame) -> pd.DataFrame:
     metricas = [
-        "performance_lib_solped",
-        "performance_comprador_1",
-        "performance_lib_pedido",
-        "performance_logistica",
-        "performance_tat",
-        "performance_proveedor",
+        {
+            "columna": "performance_liberacion_solped",
+            "metrica": "Liberación SolPed",
+            "descripcion": "Tiempo entre solicitud y liberación de la SolPed.",
+        },
+        {
+            "columna": "performance_comprador",
+            "metrica": "Comprador",
+            "descripcion": "Tiempo entre liberación de SolPed y creación/emisión del pedido.",
+        },
+        {
+            "columna": "performance_liberacion_pedido",
+            "metrica": "Liberación Pedido",
+            "descripcion": "No se calcula actualmente porque no hay inputs disponibles.",
+        },
+        {
+            "columna": "performance_proveedor",
+            "metrica": "Proveedor",
+            "descripcion": "Tiempo entre pedido y facturación.",
+        },
+        {
+            "columna": "performance_logistica",
+            "metrica": "Logística",
+            "descripcion": "Tiempo entre facturación y recepción de mercancía.",
+        },
+        {
+            "columna": "performance_tat_total",
+            "metrica": "TAT Total",
+            "descripcion": "Tiempo punta a punta desde solicitud hasta recepción.",
+        },
     ]
 
     data = []
 
-    for col in metricas:
+    for item in metricas:
+        col = item["columna"]
+
         if col not in df.columns:
             continue
 
-        serie = df[col]
-        total_con_info = int(serie.notna().sum())
-        cumple = int(serie.eq(True).sum())
-        no_cumple = int(serie.eq(False).sum())
-        sin_info = int(serie.isna().sum())
-        porcentaje_cumple = round((cumple / total_con_info) * 100, 2) if total_con_info else 0
+        serie = df[col].astype("object")
+
+        cumple = int(serie.eq("Cumple").sum())
+        no_cumple = int(serie.eq("No cumple").sum())
+        no_aplica = int(serie.isin(["No aplica", "No aplica al análisis"]).sum())
+        sin_datos = int(serie.isin(["Sin datos", "En proceso"]).sum())
+
+        total_evaluable = cumple + no_cumple
+        porcentaje_cumple = round((cumple / total_evaluable) * 100, 2) if total_evaluable else 0
 
         data.append({
-            "Métrica": col,
+            "Métrica": item["metrica"],
+            "Descripción": item["descripcion"],
             "Cumple": cumple,
             "No cumple": no_cumple,
-            "Sin información": sin_info,
-            "% Cumple": porcentaje_cumple,
+            "No aplica": no_aplica,
+            "Sin datos / En proceso": sin_datos,
+            "% Cumple sobre evaluables": porcentaje_cumple,
         })
 
     return pd.DataFrame(data)
@@ -679,15 +873,15 @@ def generar_resumen_cambios_performance(
         else {}
     )
 
-    incumplimientos = (
-        int(df_final["incumplimiento"].eq(True).sum())
-        if "incumplimiento" in df_final.columns
+    incumplimientos_tat = (
+        int(df_final["incumplimiento_tat"].eq(True).sum())
+        if "incumplimiento_tat" in df_final.columns
         else 0
     )
 
     ejemplo = None
     if not df_final.empty:
-        candidatos = df_final[df_final.get("incumplimiento", False) == True].copy()
+        candidatos = df_final[df_final.get("incumplimiento_tat", False) == True].copy()
         if candidatos.empty:
             candidatos = df_final.copy()
         ejemplo = candidatos.iloc[0].to_dict()
@@ -700,8 +894,8 @@ def generar_resumen_cambios_performance(
         "columnas_nuevas": int(len(columnas_nuevas)),
         "duplicados_final": int(df_final.duplicated().sum()),
         "conteo_tipo_oc": conteo_tipo_oc,
-        "incumplimientos": incumplimientos,
-        "sin_incumplimiento": int(total - incumplimientos),
+        "incumplimientos_tat": incumplimientos_tat,
+        "sin_incumplimiento_tat": int(total - incumplimientos_tat),
         "ejemplo": ejemplo,
     }
 
@@ -710,60 +904,71 @@ def generar_tabla_ejemplo_performance(ejemplo: dict) -> pd.DataFrame:
     if not ejemplo:
         return pd.DataFrame(
             columns=[
-                "Cálculo",
-                "Fecha / valor inicial",
-                "Fecha / valor final",
-                "Resultado",
+                "Métrica",
+                "Fecha inicio",
+                "Fecha fin",
+                "Días calculados",
                 "Umbral",
-                "Cumple",
+                "Performance",
             ]
         )
 
     return pd.DataFrame([
         {
-            "Cálculo": "Liberación vs solicitud",
-            "Fecha / valor inicial": formatear_valor(ejemplo.get(COL_FECHA_SOLICITUD_FINAL)),
-            "Fecha / valor final": formatear_valor(ejemplo.get(COL_FECHA_LIBERACION_FINAL)),
-            "Resultado": formatear_valor(ejemplo.get("dx_lib_solped")),
-            "Umbral": formatear_valor(ejemplo.get("umbral_lib_solped")),
-            "Cumple": formatear_valor(ejemplo.get("performance_lib_solped")),
+            "Métrica": "Liberación SolPed",
+            "Fecha inicio": formatear_valor(ejemplo.get(COL_FECHA_SOLICITUD_FINAL)),
+            "Fecha fin": formatear_valor(ejemplo.get(COL_FECHA_LIBERACION_FINAL)),
+            "Días calculados": formatear_valor(ejemplo.get("dias_liberacion_solped")),
+            "Umbral": formatear_valor(ejemplo.get("umbral_liberacion_solped")),
+            "Performance": formatear_valor(ejemplo.get("performance_liberacion_solped")),
         },
         {
-            "Cálculo": "Comprador 1",
-            "Fecha / valor inicial": formatear_valor(ejemplo.get(COL_FECHA_LIBERACION_FINAL)),
-            "Fecha / valor final": formatear_valor(ejemplo.get(COL_FECHA_PEDIDO_FINAL)),
-            "Resultado": formatear_valor(ejemplo.get("dx_comprador_1")),
-            "Umbral": formatear_valor(ejemplo.get("umbral_comprador_1")),
-            "Cumple": formatear_valor(ejemplo.get("performance_comprador_1")),
+            "Métrica": "Comprador",
+            "Fecha inicio": formatear_valor(ejemplo.get(COL_FECHA_LIBERACION_FINAL)),
+            "Fecha fin": formatear_valor(ejemplo.get(COL_FECHA_PEDIDO_FINAL)),
+            "Días calculados": formatear_valor(ejemplo.get("dias_comprador")),
+            "Umbral": formatear_valor(ejemplo.get("umbral_comprador")),
+            "Performance": formatear_valor(ejemplo.get("performance_comprador")),
         },
         {
-            "Cálculo": "Logística",
-            "Fecha / valor inicial": formatear_valor(ejemplo.get(COL_FECHA_FACTURACION_FINAL)),
-            "Fecha / valor final": formatear_valor(ejemplo.get(COL_FECHA_RECEPCION_FINAL)),
-            "Resultado": formatear_valor(ejemplo.get("dx_logistica")),
-            "Umbral": formatear_valor(ejemplo.get("umbral_logistica")),
-            "Cumple": formatear_valor(ejemplo.get("performance_logistica")),
+            "Métrica": "Liberación Pedido",
+            "Fecha inicio": "Sin input",
+            "Fecha fin": "Sin input",
+            "Días calculados": formatear_valor(ejemplo.get("dias_liberacion_pedido")),
+            "Umbral": formatear_valor(ejemplo.get("umbral_liberacion_pedido")),
+            "Performance": formatear_valor(ejemplo.get("performance_liberacion_pedido")),
         },
         {
-            "Cálculo": "Proveedor",
-            "Fecha / valor inicial": formatear_valor(ejemplo.get("fecha_inicio_proveedor")),
-            "Fecha / valor final": formatear_valor(ejemplo.get(COL_FECHA_RECEPCION_FINAL)),
-            "Resultado": formatear_valor(ejemplo.get("dx_proveedor")),
+            "Métrica": "Proveedor",
+            "Fecha inicio": formatear_valor(ejemplo.get(COL_FECHA_PEDIDO_FINAL)),
+            "Fecha fin": formatear_valor(ejemplo.get(COL_FECHA_FACTURACION_FINAL)),
+            "Días calculados": formatear_valor(ejemplo.get("dias_proveedor")),
             "Umbral": formatear_valor(ejemplo.get("umbral_proveedor")),
-            "Cumple": formatear_valor(ejemplo.get("performance_proveedor")),
+            "Performance": formatear_valor(ejemplo.get("performance_proveedor")),
         },
         {
-            "Cálculo": "TAT total",
-            "Fecha / valor inicial": formatear_valor(ejemplo.get(COL_FECHA_SOLICITUD_FINAL)),
-            "Fecha / valor final": formatear_valor(ejemplo.get(COL_FECHA_RECEPCION_FINAL)),
-            "Resultado": formatear_valor(ejemplo.get("dx_tat")),
-            "Umbral": formatear_valor(ejemplo.get("umbral_tat")),
-            "Cumple": formatear_valor(ejemplo.get("performance_tat")),
+            "Métrica": "Logística",
+            "Fecha inicio": formatear_valor(ejemplo.get(COL_FECHA_FACTURACION_FINAL)),
+            "Fecha fin": formatear_valor(ejemplo.get(COL_FECHA_RECEPCION_FINAL)),
+            "Días calculados": formatear_valor(ejemplo.get("dias_logistica")),
+            "Umbral": formatear_valor(ejemplo.get("umbral_logistica")),
+            "Performance": formatear_valor(ejemplo.get("performance_logistica")),
+        },
+        {
+            "Métrica": "TAT Total",
+            "Fecha inicio": formatear_valor(ejemplo.get(COL_FECHA_SOLICITUD_FINAL)),
+            "Fecha fin": formatear_valor(ejemplo.get(COL_FECHA_RECEPCION_FINAL)),
+            "Días calculados": formatear_valor(ejemplo.get("dias_tat_total")),
+            "Umbral": formatear_valor(ejemplo.get("umbral_tat_total")),
+            "Performance": formatear_valor(ejemplo.get("performance_tat_total")),
         },
     ])
 
 
-def mostrar_resumen_cambios_performance(resumen_cambios: dict, resumen_cols: pd.DataFrame):
+def mostrar_resumen_cambios_performance(
+    resumen_cambios: dict,
+    resumen_cols: pd.DataFrame
+):
     with st.expander("Cambios realizados y lógica de performance", expanded=True):
         conteo_tipo_oc = resumen_cambios.get("conteo_tipo_oc", {})
         texto_tipo_oc = "\n".join(
@@ -785,10 +990,23 @@ def mostrar_resumen_cambios_performance(resumen_cambios: dict, resumen_cols: pd.
             """
         )
 
-        st.markdown("### 2. Columnas agregadas")
+        st.markdown("### 2. Inputs utilizados por cada métrica")
+
         st.caption(
-            "Esta tabla muestra todas las columnas nuevas creadas por la lógica de performance, "
-            "junto con su cantidad de nulos, porcentaje de nulos y tipo de dato."
+            "Esta tabla permite auditar qué fechas usa cada indicador, cuál es su fórmula y cuál es el umbral aplicado."
+        )
+
+        st.dataframe(
+            tabla_inputs_formulas(),
+            use_container_width=True,
+            hide_index=True
+        )
+
+        st.markdown("### 3. Columnas agregadas")
+
+        st.caption(
+            "Esta tabla muestra las columnas nuevas creadas por la lógica de performance, "
+            "incluyendo cantidad de nulos, porcentaje de nulos y tipo de dato."
         )
 
         st.dataframe(
@@ -797,138 +1015,97 @@ def mostrar_resumen_cambios_performance(resumen_cambios: dict, resumen_cols: pd.
             hide_index=True
         )
 
-        st.markdown("### 3. Lógica de clasificación de OC")
+        st.markdown("### 4. Clasificación de OC")
 
         st.markdown(
             f"""
             La clasificación se realiza tomando los **dos primeros dígitos** del pedido/documento.
-            Primero se intenta usar `{COL_PEDIDO}`. Si esa columna no existe, se usa
-            `{COL_DOCUMENTO_COMPRAS}`.
 
-            | Columna agregada | Fórmula teórica | Lógica usada en el código |
-            |---|---|---|
-            | `tipo_oc` | Tipo de orden de compra según los 2 primeros dígitos del pedido/documento | `extraer_tipo_oc({COL_PEDIDO})`; si no existe `{COL_PEDIDO}`, usa `extraer_tipo_oc({COL_DOCUMENTO_COMPRAS})` |
-            | `origen_oc` | Clasifica la OC como nacional o internacional | `35` y `45` = `Nacional`; `47` = `Internacional`; otros = `Otro` |
-            | `sistema_oc` | Clasifica el sistema origen de la OC | `35` = `Ariba`; `45` y `47` = `ERP`; otros = `Otro` |
-            | `nombre_tipo_compra` | Traduce el código de tipo de compra ARIBA a nombre de negocio | `{COL_TIPO_COMPRA_ARIBA}`: `1` = `Catalogada`; `2` = `No catalogada`; `3` = `Directa`; otros = `Otro` |
-            | `monto_valoracion` | Valor estimado de la línea | `{COL_CANTIDAD_SOLICITADA} * {COL_PRECIO_VALORACION}` |
-            """
-        )
+            Primero se intenta usar `{COL_PEDIDO}`.  
+            Si esa columna no existe, se usa `{COL_DOCUMENTO_COMPRAS}`.
 
-        st.markdown("### 4. Lógica de fecha inicio proveedor")
-
-        st.markdown(
-            """
-            La fecha de inicio del proveedor se calcula según el tipo de OC.
-
-            | Tipo OC | Fórmula teórica | Lógica usada en el código |
-            |---|---|---|
-            | `35` | El proveedor empieza desde la fecha de pedido | `fecha_inicio_proveedor = fecha_pedido_final` |
-            | `45` / `47` | El proveedor empieza 3 días después de la fecha de pedido | `fecha_inicio_proveedor = fecha_pedido_final + 3 días` |
-            | Otro / sin dato | No se puede determinar fecha de inicio proveedor | `fecha_inicio_proveedor = NaT` |
+            | Columna | Lógica |
+            |---|---|
+            | `tipo_oc` | Dos primeros dígitos del pedido/documento |
+            | `origen` | `35` y `45` = Nacional; `47` = Internacional; otros = Otro |
+            | `sistema` | `35` = Ariba; `45` y `47` = ERP; otros = Otro |
+            | `nombre_tipo_compra` | `1` = Catalogada; `2` = No catalogada; `3` = Directa; otros = Otro |
+            | `monto` | Cantidad solicitada multiplicada por precio de valoración |
             """
         )
 
         st.markdown("### 5. Fórmulas de días calculados")
 
         st.markdown(
-            """
-            Las columnas `dx_*` calculan días calendario entre dos hitos. La operación usada es
-            `fecha_final - fecha_inicial` y se toma el resultado en días.
-
-            | Columna agregada | Fórmula teórica | Fórmula usada en el código |
+            f"""
+            | Métrica | Columna generada | Fórmula aplicada |
             |---|---|---|
-            | `dx_lib_solped` | Días entre liberación de SolPed y solicitud de SolPed | `fecha_liberacion_final - fecha_solicitud_final` |
-            | `dx_comprador_1` | Días entre creación/emisión del pedido y liberación de SolPed | `fecha_pedido_final - fecha_liberacion_final` |
-            | `dx_lib_pedido` | Días entre liberación del pedido y creación/emisión del pedido | Actualmente queda sin cálculo: `NaN` |
-            | `dx_logistica` | Días entre recepción final y facturación final | `fecha_recepcion_final - fecha_facturacion_final` |
-            | `dx_proveedor` | Días entre recepción final e inicio del proveedor | `fecha_recepcion_final - fecha_inicio_proveedor` |
-            | `dx_tat` | Días totales entre recepción final y solicitud inicial | `fecha_recepcion_final - fecha_solicitud_final` |
+            | Liberación SolPed | `dias_liberacion_solped` | `{COL_FECHA_LIBERACION_FINAL} - {COL_FECHA_SOLICITUD_FINAL}` |
+            | Comprador | `dias_comprador` | `{COL_FECHA_PEDIDO_FINAL} - {COL_FECHA_LIBERACION_FINAL}` |
+            | Liberación Pedido | `dias_liberacion_pedido` | Sin cálculo porque no hay input disponible |
+            | Proveedor | `dias_proveedor` | `{COL_FECHA_FACTURACION_FINAL} - {COL_FECHA_PEDIDO_FINAL}` |
+            | Logística | `dias_logistica` | `{COL_FECHA_RECEPCION_FINAL} - {COL_FECHA_FACTURACION_FINAL}` |
+            | TAT Total | `dias_tat_total` | `{COL_FECHA_RECEPCION_FINAL} - {COL_FECHA_SOLICITUD_FINAL}` |
             """
         )
 
-        st.markdown("### 6. Umbrales usados")
+        st.markdown("### 6. Umbrales aplicados")
 
         st.markdown(
             """
-            Los umbrales son la cantidad máxima de días permitida para considerar que una etapa cumple.
-
-            | Columna agregada | Fórmula teórica | Valor / lógica usada en el código |
-            |---|---|---|
-            | `umbral_lib_solped` | Máximo permitido para liberar SolPed | `2` días |
-            | `umbral_comprador_1` | Máximo permitido entre liberación de SolPed y pedido | `10` días |
-            | `umbral_lib_pedido` | Máximo permitido para liberar pedido | `2` días |
-            | `umbral_logistica` | Máximo permitido entre facturación y recepción | `11` días |
-            | `umbral_tat` | Máximo permitido para el ciclo total TAT | OC `35` / `45` = `40` días; OC `47` = `70` días |
-            | `umbral_proveedor` | Máximo permitido para el tramo proveedor | OC `35` / `45` = `20` días; OC `47` = `60` días |
+            | Métrica | Umbral |
+            |---|---|
+            | Liberación SolPed | 2 días |
+            | Comprador | 10 días |
+            | Liberación Pedido | 2 días, aunque queda sin datos por falta de input |
+            | Proveedor | OC 35/45 = 20 días; OC 47 = 60 días |
+            | Logística | 11 días |
+            | TAT Total | OC 35/45 = 40 días; OC 47 = 70 días |
             """
         )
 
-        st.markdown("### 7. Fórmulas de performance")
+        st.markdown("### 7. Reglas de performance")
 
         st.markdown(
             """
-            Cada columna de performance evalúa si los días calculados están dentro del umbral.
-            Si falta el valor de días o el umbral, el resultado queda sin información.
+            | Resultado | Significado |
+            |---|---|
+            | `Cumple` | La métrica tiene datos y está dentro del umbral |
+            | `No cumple` | La métrica tiene datos y supera el umbral |
+            | `No aplica` | No hay datos suficientes o el cálculo no es válido para esa métrica |
+            | `Sin datos` | No existe input suficiente para calcular la métrica |
+            | `En proceso` | El TAT Total aún no tiene fecha de recepción |
+            | `No aplica al análisis` | Existe alguna fecha inconsistente que genera días negativos |
+            """
+        )
+
+        st.markdown("### 8. Incumplimiento TAT")
+
+        st.markdown(
+            """
+            El incumplimiento oficial se calcula usando únicamente el **TAT Total**.
 
             ```text
-            performance = días_calculados <= umbral
+            dias_incumplimiento_tat = max(dias_tat_total - umbral_tat_total, 0)
             ```
 
-            | Columna agregada | Fórmula teórica | Comparación usada en el código |
-            |---|---|---|
-            | `performance_lib_solped` | Cumple si liberación de SolPed está dentro del umbral | `dx_lib_solped <= umbral_lib_solped` |
-            | `performance_comprador_1` | Cumple si comprador 1 está dentro del umbral | `dx_comprador_1 <= umbral_comprador_1` |
-            | `performance_lib_pedido` | Cumple si liberación de pedido está dentro del umbral | `dx_lib_pedido <= umbral_lib_pedido` |
-            | `performance_logistica` | Cumple si logística está dentro del umbral | `dx_logistica <= umbral_logistica` |
-            | `performance_tat` | Cumple si TAT total está dentro del umbral | `dx_tat <= umbral_tat` |
-            | `performance_proveedor` | Cumple si proveedor está dentro del umbral | `dx_proveedor <= umbral_proveedor` |
+            | Condición | Rango |
+            |---|---|
+            | Sin dato suficiente | Sin datos |
+            | 0 días de exceso | Sin incumplimiento |
+            | 1 a 5 días de exceso | 0-5 días |
+            | 6 a 15 días de exceso | 6-15 días |
+            | 16 a 30 días de exceso | 16-30 días |
+            | Más de 30 días de exceso | Mayor a un mes |
             """
         )
 
-        st.markdown("### 8. Fórmulas de incumplimiento")
-
-        st.markdown(
-            """
-            Para cada etapa se calcula el exceso de días contra el umbral. Si el resultado es menor
-            o igual a 0, se considera 0 porque no hay incumplimiento.
-
-            ```text
-            días_incumplimiento = max(días_calculados - umbral, 0)
-            ```
-
-            | Columna agregada | Fórmula teórica | Fórmula usada en el código |
-            |---|---|---|
-            | `dias_incumplimiento_lib_solped` | Exceso de días en liberación de SolPed | `max(dx_lib_solped - umbral_lib_solped, 0)` |
-            | `dias_incumplimiento_comprador_1` | Exceso de días en comprador 1 | `max(dx_comprador_1 - umbral_comprador_1, 0)` |
-            | `dias_incumplimiento_logistica` | Exceso de días en logística | `max(dx_logistica - umbral_logistica, 0)` |
-            | `dias_incumplimiento_tat` | Exceso de días en TAT total | `max(dx_tat - umbral_tat, 0)` |
-            | `dias_incumplimiento_proveedor` | Exceso de días en proveedor | `max(dx_proveedor - umbral_proveedor, 0)` |
-            | `dias_incumplimiento_max` | Mayor incumplimiento detectado entre todas las etapas | `max()` entre las columnas de incumplimiento anteriores |
-            | `incumplimiento` | Indica si existe algún incumplimiento | `True` si `dias_incumplimiento_max > 0`; si no, `False` |
-            """
-        )
-
-        st.markdown("### 9. Rangos de incumplimiento")
-
-        st.markdown(
-            """
-            | Condición teórica | Lógica usada en el código | Rango asignado |
-            |---|---|---|
-            | Sin exceso de días | `dias_incumplimiento_max = 0` | `Sin incumplimiento` |
-            | Incumplimiento menor | `dias_incumplimiento_max` entre `1` y `5` | `0-5 días` |
-            | Incumplimiento medio | `dias_incumplimiento_max` entre `6` y `15` | `6-15 días` |
-            | Incumplimiento alto | `dias_incumplimiento_max` entre `16` y `30` | `16-30 días` |
-            | Incumplimiento crítico | `dias_incumplimiento_max > 30` | `Mayor a un mes` |
-            """
-        )
-
-        st.markdown("### 10. Resultado general de incumplimiento")
+        st.markdown("### 9. Resultado general de incumplimiento TAT")
 
         st.info(
             f"""
-            - Registros con incumplimiento: **{resumen_cambios['incumplimientos']:,}**.
-            - Registros sin incumplimiento: **{resumen_cambios['sin_incumplimiento']:,}**.
+            - Registros con incumplimiento TAT: **{resumen_cambios['incumplimientos_tat']:,}**.
+            - Registros sin incumplimiento TAT: **{resumen_cambios['sin_incumplimiento_tat']:,}**.
 
             **Distribución por tipo de OC**
 
@@ -936,424 +1113,11 @@ def mostrar_resumen_cambios_performance(resumen_cambios: dict, resumen_cols: pd.
             """
         )
 
-        st.markdown("### 11. Ejemplo de cálculo de performance")
+        st.markdown("### 10. Ejemplo de cálculo de performance")
 
-        tabla_ejemplo = generar_tabla_ejemplo_performance(resumen_cambios.get("ejemplo"))
+        tabla_ejemplo = generar_tabla_ejemplo_performance(
+            resumen_cambios.get("ejemplo")
+        )
 
         if tabla_ejemplo.empty:
-            st.warning("No se encontró un registro para mostrar como ejemplo.")
-        else:
-            st.table(tabla_ejemplo)
-
-
-# =========================================================
-# Exportación
-# =========================================================
-
-def convertir_a_csv(df: pd.DataFrame) -> bytes:
-    return df.to_csv(
-        index=False,
-        encoding="utf-8-sig"
-    ).encode("utf-8-sig")
-
-
-def convertir_a_parquet(df: pd.DataFrame) -> bytes:
-    output = io.BytesIO()
-
-    df.to_parquet(
-        output,
-        index=False,
-        engine="pyarrow"
-    )
-
-    return output.getvalue()
-
-
-def convertir_a_excel(
-    df: pd.DataFrame,
-    resumen_perf: pd.DataFrame,
-    resumen_cols: pd.DataFrame
-) -> bytes:
-    output = io.BytesIO()
-
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df.to_excel(
-            writer,
-            index=False,
-            sheet_name="Performance_TAT"
-        )
-
-        resumen_perf.to_excel(
-            writer,
-            index=False,
-            sheet_name="Resumen_Performance"
-        )
-
-        resumen_cols.to_excel(
-            writer,
-            index=False,
-            sheet_name="Columnas_Nuevas"
-        )
-
-    return output.getvalue()
-
-
-@st.cache_data(show_spinner=False)
-def convertir_a_csv_cache(df: pd.DataFrame) -> bytes:
-    return convertir_a_csv(df)
-
-
-@st.cache_data(show_spinner=False)
-def convertir_a_parquet_cache(df: pd.DataFrame) -> bytes:
-    return convertir_a_parquet(df)
-
-
-@st.cache_data(show_spinner=False)
-def convertir_a_excel_cache(
-    df: pd.DataFrame,
-    resumen_perf: pd.DataFrame,
-    resumen_cols: pd.DataFrame
-) -> bytes:
-    return convertir_a_excel(df, resumen_perf, resumen_cols)
-
-
-# =========================================================
-# Interfaz
-# =========================================================
-
-mostrar_logo()
-
-st.title("Performance TAT - Match Integrado")
-st.caption("ME5A · ARIBA · NME80FN · Fechas finales")
-
-with st.sidebar:
-    st.header("Configuración")
-
-    separador_csv = st.selectbox(
-        "Separador CSV",
-        options=[
-            "Automático",
-            "Punto y coma (;)",
-            "Coma (,)",
-            "Tabulación",
-        ],
-        index=0
-    )
-
-    limite_vista = st.number_input(
-        "Filas en vista previa",
-        min_value=50,
-        max_value=1000,
-        value=300,
-        step=50
-    )
-
-    ordenar_performance_final = st.checkbox(
-        "Mover columnas de performance al final",
-        value=True
-    )
-
-    st.caption("El separador solo aplica a archivos CSV.")
-
-
-st.subheader("Archivo")
-
-uploaded_file = st.file_uploader(
-    "Selecciona archivo con fechas finales",
-    type=["parquet", "xlsx", "csv"]
-)
-
-if uploaded_file is None:
-    st.info("Carga el archivo con fechas finales para calcular performance TAT.")
-    st.stop()
-
-try:
-    with st.spinner("Leyendo archivo..."):
-        df_original = leer_archivo_cache(
-            bytes_archivo=uploaded_file.getvalue(),
-            nombre_archivo=uploaded_file.name,
-            separador_csv=separador_csv
-        )
-
-    columnas_originales = list(df_original.columns)
-
-    with st.spinner("Aplicando lógica de performance..."):
-        df_final = aplicar_logica_performance(df_original)
-
-        columnas_nuevas = [
-            col for col in df_final.columns
-            if col not in columnas_originales
-        ]
-
-        if ordenar_performance_final:
-            df_final = reordenar_columnas_performance_al_final(df_final)
-
-        resumen_perf = resumen_performance(df_final)
-        resumen_cols = resumen_columnas_nuevas(df_final)
-        parquet_bytes = convertir_a_parquet_cache(df_final)
-
-        resumen_cambios = generar_resumen_cambios_performance(
-            df_original=df_original,
-            df_final=df_final,
-            columnas_originales=columnas_originales,
-            columnas_nuevas=columnas_nuevas
-        )
-
-    st.success("Performance TAT calculada correctamente.")
-
-    mostrar_resumen_cambios_performance(resumen_cambios, resumen_cols)
-
-    st.subheader("Indicadores")
-
-    col1, col2, col3, col4 = st.columns(4)
-
-    col1.metric(
-        "Filas originales",
-        f"{len(df_original):,}"
-    )
-
-    col2.metric(
-        "Filas finales",
-        f"{len(df_final):,}"
-    )
-
-    col3.metric(
-        "Columnas originales",
-        f"{len(columnas_originales):,}"
-    )
-
-    col4.metric(
-        "Columnas nuevas",
-        f"{len(columnas_nuevas):,}"
-    )
-
-    st.subheader("Resumen de performance")
-
-    st.dataframe(
-        resumen_perf,
-        use_container_width=True,
-        hide_index=True
-    )
-
-
-    st.subheader("Rango de incumplimiento")
-
-    if "rango_incumplimiento" in df_final.columns:
-        conteo_rango = (
-            df_final["rango_incumplimiento"]
-            .value_counts(dropna=False)
-            .reset_index()
-        )
-
-        conteo_rango.columns = [
-            "Rango incumplimiento",
-            "Cantidad"
-        ]
-
-        st.dataframe(
-            conteo_rango,
-            use_container_width=True,
-            hide_index=True
-        )
-
-
-    with st.expander("Vista previa original", expanded=False):
-        st.caption(
-            f"Mostrando hasta {int(limite_vista):,} registros de "
-            f"{len(df_original):,} registros originales. "
-            f"Columnas visibles: {len(df_original.columns):,}."
-        )
-
-        st.dataframe(
-            df_original.head(int(limite_vista)),
-            use_container_width=True,
-            hide_index=True
-        )
-
-    st.subheader("Vista previa final")
-
-    columnas_preferidas = [
-        "Solicitud de pedido - ME5A",
-        COL_PEDIDO,
-        COL_DOCUMENTO_COMPRAS,
-        "tipo_oc",
-        "origen_oc",
-        "sistema_oc",
-        "nombre_tipo_compra",
-        COL_CANTIDAD_SOLICITADA,
-        COL_PRECIO_VALORACION,
-        "monto_valoracion",
-        COL_FECHA_SOLICITUD_FINAL,
-        COL_FECHA_LIBERACION_FINAL,
-        COL_FECHA_PEDIDO_FINAL,
-        COL_FECHA_FACTURACION_FINAL,
-        COL_FECHA_RECEPCION_FINAL,
-        "fecha_inicio_proveedor",
-        "dx_lib_solped",
-        "dx_comprador_1",
-        "dx_lib_pedido",
-        "dx_logistica",
-        "dx_proveedor",
-        "dx_tat",
-        "umbral_tat",
-        "umbral_proveedor",
-        "performance_lib_solped",
-        "performance_comprador_1",
-        "performance_lib_pedido",
-        "performance_logistica",
-        "performance_tat",
-        "performance_proveedor",
-        "dias_incumplimiento_max",
-        "incumplimiento",
-        "rango_incumplimiento",
-    ]
-
-    columnas_preferidas = [
-        col for col in columnas_preferidas
-        if col in df_final.columns
-    ]
-
-    if columnas_preferidas:
-        st.caption(
-            f"Mostrando hasta {int(limite_vista):,} registros de "
-            f"{len(df_final):,} registros generados. "
-            f"Columnas visibles preferidas: {len(columnas_preferidas):,}."
-        )
-
-        st.dataframe(
-            df_final[columnas_preferidas].head(int(limite_vista)),
-            use_container_width=True,
-            hide_index=True
-        )
-    else:
-        st.dataframe(
-            df_final.head(int(limite_vista)),
-            use_container_width=True,
-            hide_index=True
-        )
-
-    with st.expander("Ver columnas nuevas agregadas", expanded=False):
-        st.dataframe(
-            resumen_cols,
-            use_container_width=True,
-            hide_index=True
-        )
-
-    with st.expander("Top filas con mayor incumplimiento", expanded=False):
-        if "dias_incumplimiento_max" in df_final.columns:
-            columnas_top = [
-                "Solicitud de pedido - ME5A",
-                COL_PEDIDO,
-                COL_DOCUMENTO_COMPRAS,
-                "tipo_oc",
-                "origen_oc",
-                "sistema_oc",
-                "dx_tat",
-                "dx_proveedor",
-                "dx_logistica",
-                "dias_incumplimiento_max",
-                "rango_incumplimiento",
-                COL_FECHA_SOLICITUD_FINAL,
-                COL_FECHA_RECEPCION_FINAL,
-            ]
-
-            columnas_top = [
-                col for col in columnas_top
-                if col in df_final.columns
-            ]
-
-            st.dataframe(
-                df_final
-                .sort_values("dias_incumplimiento_max", ascending=False)
-                [columnas_top]
-                .head(int(limite_vista)),
-                use_container_width=True,
-                hide_index=True
-            )
-
-    with st.expander("Ver columnas disponibles", expanded=False):
-        c1, c2 = st.columns(2)
-
-        with c1:
-            st.markdown("**Columnas originales**")
-            st.write(columnas_originales)
-
-        with c2:
-            st.markdown("**Columnas finales**")
-            st.write(df_final.columns.tolist())
-
-    st.subheader("Descarga")
-
-    st.download_button(
-        label="Descargar resultado en Parquet",
-        data=parquet_bytes,
-        file_name="match_integrado_me5a_ariba_nme80fn_performance.parquet",
-        mime="application/octet-stream",
-        use_container_width=True
-    )
-
-    st.caption(
-        "Parquet es el formato principal recomendado para conservar tipos de datos. "
-        "CSV y Excel se preparan solo si los solicitas."
-    )
-
-    with st.expander("Opcional: descargar como CSV o Excel", expanded=False):
-        col_csv, col_excel = st.columns(2)
-
-        with col_csv:
-            preparar_csv = st.button(
-                "Preparar CSV",
-                use_container_width=True
-            )
-
-            if preparar_csv:
-                with st.spinner("Preparando CSV..."):
-                    csv_bytes = convertir_a_csv_cache(df_final)
-
-                st.download_button(
-                    label="Descargar CSV",
-                    data=csv_bytes,
-                    file_name="match_integrado_me5a_ariba_nme80fn_performance.csv",
-                    mime="text/csv",
-                    use_container_width=True
-                )
-
-        with col_excel:
-            limite_excel = 250_000
-
-            if len(df_final) > limite_excel:
-                st.button(
-                    "Excel no disponible",
-                    disabled=True,
-                    use_container_width=True
-                )
-
-                st.warning(
-                    f"Excel no está disponible porque la salida tiene más de {limite_excel:,} filas. "
-                    "Usa Parquet o CSV."
-                )
-            else:
-                preparar_excel = st.button(
-                    "Preparar Excel",
-                    use_container_width=True
-                )
-
-                if preparar_excel:
-                    with st.spinner("Preparando Excel..."):
-                        excel_bytes = convertir_a_excel_cache(
-                            df_final,
-                            resumen_perf,
-                            resumen_cols
-                        )
-
-                    st.download_button(
-                        label="Descargar Excel",
-                        data=excel_bytes,
-                        file_name="match_integrado_me5a_ariba_nme80fn_performance.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True
-                    )
-
-except Exception as e:
-    st.error("No se pudo calcular la performance TAT.")
-    st.exception(e)
+            st.warning("
