@@ -5,7 +5,6 @@ from typing import Optional, List, Dict, Any
 
 import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
 
 
@@ -580,37 +579,29 @@ def tabla_resumen_estados(df: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def plot_estado_pedidos(df: pd.DataFrame) -> go.Figure:
-    resumen = tabla_resumen_estados(df)
-    fig = go.Figure()
-    fig.add_trace(go.Bar(x=resumen["Estado visual"], y=resumen["Cantidad"], text=resumen["Cantidad"], textposition="auto"))
-    fig.update_layout(
-        title="Cantidad de líneas por estado visual",
-        xaxis_title="Estado",
-        yaxis_title="Cantidad",
-        height=360,
-        margin=dict(l=20, r=20, t=60, b=40),
-    )
-    return fig
-
-
-def plot_rangos_incumplimiento(df: pd.DataFrame) -> Optional[go.Figure]:
+def tabla_rangos_incumplimiento(df: pd.DataFrame) -> pd.DataFrame:
     if COL_RANGO_INCUMPLIMIENTO not in df.columns:
-        return None
-    resumen = (
+        return pd.DataFrame(columns=["Rango", "Cantidad"])
+
+    return (
         df[COL_RANGO_INCUMPLIMIENTO]
         .fillna("Sin información")
         .value_counts()
         .rename_axis("Rango")
         .reset_index(name="Cantidad")
     )
-    fig = go.Figure(data=[go.Pie(labels=resumen["Rango"], values=resumen["Cantidad"], hole=.45)])
-    fig.update_layout(
-        title="Distribución por rango de incumplimiento",
-        height=360,
-        margin=dict(l=20, r=20, t=60, b=20),
-    )
-    return fig
+
+
+def mostrar_barra_streamlit(titulo: str, df_resumen: pd.DataFrame, columna_categoria: str) -> None:
+    st.markdown(f"**{titulo}**")
+
+    if df_resumen.empty:
+        st.info("No hay datos para graficar.")
+        return
+
+    chart_data = df_resumen.set_index(columna_categoria)["Cantidad"]
+    st.bar_chart(chart_data, use_container_width=True)
+    st.dataframe(df_resumen, use_container_width=True, hide_index=True)
 
 
 def descargar_excel(df: pd.DataFrame, resumen_estados: pd.DataFrame) -> bytes:
@@ -729,15 +720,21 @@ try:
     c5.metric("TAT prom.", "" if pd.isna(tat_prom) else f"{tat_prom:,.1f}".replace(",", "X").replace(".", ",").replace("X", "."))
 
     # -------------------------
-    # Gráficos
+    # Gráficos nativos de Streamlit
     # -------------------------
     col_g1, col_g2 = st.columns(2)
     with col_g1:
-        st.plotly_chart(plot_estado_pedidos(df_filtrado), use_container_width=True)
+        mostrar_barra_streamlit(
+            "Cantidad de líneas por estado visual",
+            tabla_resumen_estados(df_filtrado),
+            "Estado visual",
+        )
     with col_g2:
-        fig_rango = plot_rangos_incumplimiento(df_filtrado)
-        if fig_rango:
-            st.plotly_chart(fig_rango, use_container_width=True)
+        mostrar_barra_streamlit(
+            "Cantidad de líneas por rango de incumplimiento",
+            tabla_rangos_incumplimiento(df_filtrado),
+            "Rango",
+        )
 
     # -------------------------
     # Línea visual de estado
