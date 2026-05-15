@@ -1,7 +1,6 @@
 # app.py
 
 import io
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -74,29 +73,26 @@ def preparar_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     col_fecha = "fecha_recepcion_final"
     col_performance = "performance_tat_total"
 
-    columnas_requeridas = [
-        col_fecha,
-        col_performance
-    ]
+    faltantes = []
 
-    faltantes = [
-        col for col in columnas_requeridas
-        if col not in df.columns
-    ]
+    if col_fecha not in df.columns:
+        faltantes.append(col_fecha)
+
+    if col_performance not in df.columns:
+        faltantes.append(col_performance)
 
     if faltantes:
         raise ValueError(f"Faltan columnas requeridas: {faltantes}")
 
-    # Fecha eje X
     df[col_fecha] = pd.to_datetime(
         df[col_fecha],
         errors="coerce"
     )
 
-    # Performance normalizada
-    df["performance_tat_estado"] = df[col_performance].apply(normalizar_performance)
+    df["performance_tat_estado"] = df[col_performance].apply(
+        normalizar_performance
+    )
 
-    # Variables de tiempo
     df["anio"] = df[col_fecha].dt.year
     df["mes_num"] = df[col_fecha].dt.month
 
@@ -110,7 +106,9 @@ def preparar_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
     df["periodo_label"] = np.where(
         df["anio"].notna() & df["mes_nombre"].notna(),
-        df["mes_nombre"].astype(str) + " " + df["anio"].astype("Int64").astype(str),
+        df["mes_nombre"].astype(str)
+        + " "
+        + df["anio"].astype("Int64").astype(str),
         pd.NA
     )
 
@@ -196,13 +194,20 @@ def crear_resumen_mensual(df: pd.DataFrame) -> pd.DataFrame:
     return tabla
 
 
-def completar_meses(tabla: pd.DataFrame, fecha_inicio, fecha_fin) -> pd.DataFrame:
+def completar_meses(
+    tabla: pd.DataFrame,
+    fecha_inicio,
+    fecha_fin
+) -> pd.DataFrame:
     if fecha_inicio is None or fecha_fin is None:
         return tabla
 
+    fecha_inicio_mes = pd.Timestamp(fecha_inicio).normalize()
+    fecha_fin_mes = pd.Timestamp(fecha_fin).normalize()
+
     periodos = pd.period_range(
-        start=pd.Timestamp(fecha_inicio).to_period("M"),
-        end=pd.Timestamp(fecha_fin).to_period("M"),
+        start=fecha_inicio_mes.to_period("M"),
+        end=fecha_fin_mes.to_period("M"),
         freq="M"
     )
 
@@ -218,6 +223,15 @@ def completar_meses(tabla: pd.DataFrame, fecha_inicio, fecha_fin) -> pd.DataFram
         + " "
         + base["anio"].astype(str)
     )
+
+    if tabla.empty:
+        base["Cumple"] = 0
+        base["No cumple"] = 0
+        base["Total"] = 0
+        base["% Cumple"] = 0
+        base["% No cumple"] = 0
+
+        return base.sort_values("periodo_fecha").reset_index(drop=True)
 
     salida = base.merge(
         tabla,
@@ -235,10 +249,15 @@ def completar_meses(tabla: pd.DataFrame, fecha_inicio, fecha_fin) -> pd.DataFram
         if col in salida.columns:
             salida[col] = salida[col].fillna(0)
 
-    return salida.sort_values("periodo_fecha").reset_index(drop=True)
+    salida = salida.sort_values("periodo_fecha").reset_index(drop=True)
+
+    return salida
 
 
-def crear_data_plot(tabla: pd.DataFrame, modo_y: str) -> pd.DataFrame:
+def crear_data_plot(
+    tabla: pd.DataFrame,
+    modo_y: str
+) -> pd.DataFrame:
     if tabla.empty:
         return pd.DataFrame()
 
@@ -250,7 +269,11 @@ def crear_data_plot(tabla: pd.DataFrame, modo_y: str) -> pd.DataFrame:
         for estado in ESTADOS_GRAFICO:
             cantidad = float(row.get(estado, 0) or 0)
 
-            porcentaje = cantidad / total * 100 if total > 0 else 0
+            porcentaje = (
+                cantidad / total * 100
+                if total > 0
+                else 0
+            )
 
             valor = cantidad if modo_y == "Recuento" else porcentaje
 
@@ -268,7 +291,10 @@ def crear_data_plot(tabla: pd.DataFrame, modo_y: str) -> pd.DataFrame:
     return pd.DataFrame(data)
 
 
-def grafico_performance_tat(df_plot: pd.DataFrame, modo_y: str):
+def grafico_performance_tat(
+    df_plot: pd.DataFrame,
+    modo_y: str
+):
     if df_plot.empty:
         st.warning("No hay datos evaluables para graficar.")
         return
@@ -299,13 +325,18 @@ def grafico_performance_tat(df_plot: pd.DataFrame, modo_y: str):
                 "valor:Q",
                 stack="zero",
                 title=titulo_y,
-                scale=alt.Scale(domain=[0, 100]) if modo_y == "Porcentaje" else alt.Undefined
+                scale=alt.Scale(domain=[0, 100])
+                if modo_y == "Porcentaje"
+                else alt.Undefined
             ),
             color=alt.Color(
                 "estado:N",
                 scale=alt.Scale(
                     domain=ESTADOS_GRAFICO,
-                    range=[COLORES_ESTADO[e] for e in ESTADOS_GRAFICO]
+                    range=[
+                        COLORES_ESTADO[e]
+                        for e in ESTADOS_GRAFICO
+                    ]
                 ),
                 legend=alt.Legend(title="")
             ),
@@ -323,7 +354,7 @@ def grafico_performance_tat(df_plot: pd.DataFrame, modo_y: str):
         )
     )
 
-    if modo_y == "Porcentaje":
+    if modo_y == "Porcentaje" and orden_periodos:
         linea_objetivo = (
             alt.Chart(pd.DataFrame({"objetivo": [65]}))
             .mark_rule(
@@ -384,6 +415,26 @@ def grafico_performance_tat(df_plot: pd.DataFrame, modo_y: str):
     st.altair_chart(chart, use_container_width=True)
 
 
+def extraer_rango_fechas(rango_fechas):
+    if isinstance(rango_fechas, (tuple, list)) and len(rango_fechas) == 2:
+        fecha_inicio, fecha_fin = rango_fechas
+    else:
+        fecha_inicio = rango_fechas
+        fecha_fin = rango_fechas
+
+    if fecha_inicio is None or fecha_fin is None:
+        return None, None
+
+    fecha_inicio = pd.Timestamp(fecha_inicio)
+    fecha_fin = (
+        pd.Timestamp(fecha_fin)
+        + pd.Timedelta(days=1)
+        - pd.Timedelta(microseconds=1)
+    )
+
+    return fecha_inicio, fecha_fin
+
+
 # =========================================================
 # APP
 # =========================================================
@@ -392,11 +443,12 @@ st.title("Dashboard Performance TAT")
 
 st.markdown(
     """
-    Este dashboard carga un archivo `.parquet`, permite filtrar por centro y grafica el cumplimiento mensual usando:
+    Este dashboard carga un archivo `.parquet`, permite filtrar por centro
+    y grafica el cumplimiento mensual usando:
 
     - Fecha eje X: `fecha_recepcion_final`
     - Estado: `performance_tat_total`
-    - Filtro de centro: `Centro - ME5A`
+    - Centro: `Centro - ME5A`
     """
 )
 
@@ -411,6 +463,11 @@ if archivo is None:
     st.warning("Carga el archivo parquet para comenzar.")
     st.stop()
 
+
+# =========================================================
+# CARGA Y PREPARACIÓN
+# =========================================================
+
 try:
     df_original = cargar_parquet(archivo.getvalue())
     df = preparar_dataframe(df_original)
@@ -422,7 +479,7 @@ except Exception as e:
 
 
 # =========================================================
-# SIDEBAR FILTROS
+# SIDEBAR
 # =========================================================
 
 st.sidebar.header("Filtros")
@@ -448,6 +505,7 @@ if col_centro is not None:
         default=default_centro,
         help="Si no seleccionas centro, se muestran todos."
     )
+
 else:
     centros_sel = []
     st.sidebar.warning("No se encontró columna de centro.")
@@ -492,25 +550,40 @@ mostrar_df = st.sidebar.checkbox(
 
 df_filtrado = df.copy()
 
+# Filtro centro
 if col_centro is not None and centros_sel:
-    centros_sel = [str(x).strip() for x in centros_sel]
+    centros_sel_str = [
+        str(x).strip()
+        for x in centros_sel
+    ]
 
     df_filtrado = df_filtrado[
         df_filtrado[col_centro]
         .astype(str)
         .str.strip()
-        .isin(centros_sel)
+        .isin(centros_sel_str)
     ].copy()
 
-if isinstance(rango_fechas, tuple) and len(rango_fechas) == 2:
-    fecha_inicio, fecha_fin = rango_fechas
-else:
-    fecha_inicio = rango_fechas
-    fecha_fin = rango_fechas
+
+# Filtro fecha robusto
+fecha_inicio, fecha_fin = extraer_rango_fechas(rango_fechas)
+
+if fecha_inicio is None or fecha_fin is None:
+    st.warning("Selecciona un rango de fechas válido.")
+    st.stop()
+
+if fecha_inicio > fecha_fin:
+    st.error("La fecha de inicio no puede ser mayor que la fecha de fin.")
+    st.stop()
+
+df_filtrado["fecha_recepcion_final"] = pd.to_datetime(
+    df_filtrado["fecha_recepcion_final"],
+    errors="coerce"
+)
 
 df_filtrado = df_filtrado[
     df_filtrado["fecha_recepcion_final"].notna()
-    & df_filtrado["fecha_recepcion_final"].dt.date.between(
+    & df_filtrado["fecha_recepcion_final"].between(
         fecha_inicio,
         fecha_fin
     )
@@ -522,21 +595,33 @@ df_filtrado = df_filtrado[
 # =========================================================
 
 total_filas = len(df_filtrado)
+
 cumple = df_filtrado["performance_tat_estado"].eq("Cumple").sum()
 no_cumple = df_filtrado["performance_tat_estado"].eq("No cumple").sum()
+
 total_evaluable = cumple + no_cumple
 no_evaluable = total_filas - total_evaluable
 
-pct_cumple = cumple / total_evaluable * 100 if total_evaluable > 0 else 0
-pct_no_cumple = no_cumple / total_evaluable * 100 if total_evaluable > 0 else 0
+pct_cumple = (
+    cumple / total_evaluable * 100
+    if total_evaluable > 0
+    else 0
+)
 
-kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
+pct_no_cumple = (
+    no_cumple / total_evaluable * 100
+    if total_evaluable > 0
+    else 0
+)
+
+kpi1, kpi2, kpi3, kpi4, kpi5, kpi6 = st.columns(6)
 
 kpi1.metric("Filas filtradas", f"{total_filas:,}")
 kpi2.metric("Evaluables", f"{total_evaluable:,}")
 kpi3.metric("Cumple", f"{cumple:,}")
 kpi4.metric("No cumple", f"{no_cumple:,}")
 kpi5.metric("% Cumple", f"{pct_cumple:.2f}%")
+kpi6.metric("% No cumple", f"{pct_no_cumple:.2f}%")
 
 st.caption(
     f"Registros no evaluables excluidos del gráfico: {no_evaluable:,}"
@@ -548,6 +633,8 @@ st.divider()
 # =========================================================
 # GRÁFICO
 # =========================================================
+
+st.subheader("Performance TAT mensual")
 
 tabla_resumen = crear_resumen_mensual(df_filtrado)
 
@@ -588,6 +675,11 @@ else:
         "% No cumple"
     ]
 
+    columnas_resumen = [
+        col for col in columnas_resumen
+        if col in tabla_resumen.columns
+    ]
+
     st.dataframe(
         tabla_resumen[columnas_resumen],
         use_container_width=True
@@ -617,7 +709,10 @@ if mostrar_df:
 
 st.subheader("Descarga")
 
-csv = df_filtrado.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
+csv = df_filtrado.to_csv(
+    index=False,
+    encoding="utf-8-sig"
+).encode("utf-8-sig")
 
 st.download_button(
     label="Descargar datos filtrados CSV",
