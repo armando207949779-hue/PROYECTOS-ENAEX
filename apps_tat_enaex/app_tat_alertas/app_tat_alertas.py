@@ -60,6 +60,7 @@ COL_DIAS_INC = "dias_incumplimiento_tat"
 COL_UMBRAL_TAT = "umbral_tat_total"
 COL_MONTO = "monto"
 COL_FECHAS_INCONSISTENTES = "tiene_fechas_inconsistentes"
+COL_ESTADO_RECEPCION_ALERTA = "estado_recepcion"
 
 FECHAS_CANDIDATAS = [
     "fecha_solicitud_final",
@@ -208,6 +209,7 @@ COLUMNAS_ALERTA = [
     "criterio_alerta",
     "score_riesgo",
     "estado_global",
+    COL_ESTADO_RECEPCION_ALERTA,
     "etapa_actual",
     "responsable_sugerido",
     "dias_transcurridos_tat",
@@ -848,6 +850,7 @@ def limpiar_filtros_principales():
     st.session_state["filtro_solped"] = ""
     st.session_state["filtro_oc"] = ""
     st.session_state["filtro_pos_solped"] = ""
+    st.session_state["filtro_estado_recepcion"] = "Sin recepción"
 
 
 def limpiar_columnas(df: pd.DataFrame) -> pd.DataFrame:
@@ -1623,6 +1626,22 @@ def fecha_fin_real_o_referencia_alerta(row: pd.Series, hoy: pd.Timestamp):
     return hoy, False
 
 
+def tiene_recepcion_registrada_alerta(row: pd.Series) -> bool:
+    """Identifica si el registro ya tiene recepción real.
+
+    Se usa para ocultar por defecto pedidos ya recepcionados aunque falten
+    hitos intermedios, como liberación. El usuario puede modificar el filtro.
+    """
+    for col in ["fecha_recepcion_final", "Fecha recepción mercancía - NME80FN"]:
+        if col in row.index and pd.notna(row.get(col, pd.NaT)):
+            return True
+    return False
+
+
+def estado_recepcion_alerta(row: pd.Series) -> str:
+    return "Recepcionado" if tiene_recepcion_registrada_alerta(row) else "Sin recepción"
+
+
 def detectar_etapa_actual_alerta(row: pd.Series) -> tuple[str, str]:
     for etapa in ETAPAS_ALERTA:
         fecha_fin = row.get(etapa["fecha_fin"], pd.NaT)
@@ -1680,6 +1699,7 @@ def construir_alertas(df: pd.DataFrame, dias_alerta_temprana: int = 7) -> pd.Dat
 
     niveles = []
     estados = []
+    estados_recepcion = []
     scores = []
     etapas_actuales = []
     responsables = []
@@ -1738,6 +1758,7 @@ def construir_alertas(df: pd.DataFrame, dias_alerta_temprana: int = 7) -> pd.Dat
 
         niveles.append(nivel)
         estados.append(estado)
+        estados_recepcion.append(estado_recepcion_alerta(row))
         scores.append(round(float(score), 1))
         etapas_actuales.append(etapa_actual)
         responsables.append(responsable)
@@ -1750,6 +1771,7 @@ def construir_alertas(df: pd.DataFrame, dias_alerta_temprana: int = 7) -> pd.Dat
     salida["criterio_alerta"] = criterios
     salida["score_riesgo"] = scores
     salida["estado_global"] = estados
+    salida[COL_ESTADO_RECEPCION_ALERTA] = estados_recepcion
     salida["etapa_actual"] = etapas_actuales
     salida["responsable_sugerido"] = responsables
     salida["dias_transcurridos_tat"] = dias_transcurridos
@@ -2258,7 +2280,7 @@ except Exception as e:
 # =========================================================
 st.markdown("### Filtros principales")
 
-c1, c2, c3, c4 = st.columns([1, 1, 0.8, 0.8])
+c1, c2, c3, c4, c5 = st.columns([1, 1, 0.8, 0.85, 0.9])
 
 with c1:
     txt_solped = st.text_input(
@@ -2293,6 +2315,15 @@ with c4:
         opciones_centro,
         default=centro_default,
         help="Por defecto queda E002 cuando existe en el archivo; puedes quitarlo o elegir otros centros.",
+    )
+
+with c5:
+    estado_recepcion_sel = st.selectbox(
+        "Recepción",
+        ["Sin recepción", "Recepcionado", "Todos"],
+        index=0,
+        key="filtro_estado_recepcion",
+        help="Por defecto muestra pedidos sin recepción registrada. Cambia a Todos o Recepcionado si necesitas revisar casos cerrados.",
     )
 
 st.button(
@@ -2547,6 +2578,7 @@ for nombre, default in {
     "nivel_alerta_sel": [],
     "estado_global_sel": [],
     "etapa_actual_sel": [],
+    "estado_recepcion_sel": "Sin recepción",
     "usar_dias_tat_min": False,
     "usar_dias_tat_max": False,
     "dias_tat_min": 0,
@@ -2582,6 +2614,9 @@ mask &= contiene_texto(df, COL_AUTOR, txt_autor)
 
 if centro_sel and COL_CENTRO in df.columns:
     mask &= df[COL_CENTRO].astype(str).isin(centro_sel)
+
+if estado_recepcion_sel != "Todos" and COL_ESTADO_RECEPCION_ALERTA in df_alertas.columns:
+    mask &= df_alertas[COL_ESTADO_RECEPCION_ALERTA].astype(str).eq(estado_recepcion_sel)
 
 if tipo_oc_sel and COL_TIPO_OC in df.columns:
     mask &= df[COL_TIPO_OC].astype(str).isin(tipo_oc_sel)
@@ -2700,7 +2735,7 @@ else:
         f"{media_score:,.1f}".replace(",", "X").replace(".", ",").replace("X", "."),
     )
 
-    st.caption("Vista compacta: se muestran las 5 alertas de mayor prioridad. La matriz completa queda colapsada abajo.")
+    st.caption("Vista compacta: por defecto se excluyen pedidos recepcionados para evitar ruido por fechas intermedias faltantes. Puedes modificar el filtro Recepción.")
 
     for _, row_alerta in df_alertas_filtrado.head(5).iterrows():
         st.markdown(
