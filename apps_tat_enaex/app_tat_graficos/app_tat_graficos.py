@@ -300,42 +300,60 @@ def crear_data_plot(
     for _, row in tabla.iterrows():
         total = float(row.get("Total", 0) or 0)
 
-        for estado in ESTADOS_GRAFICO:
-            cantidad = float(row.get(estado, 0) or 0)
+        cumple = float(row.get("Cumple", 0) or 0)
+        no_cumple = float(row.get("No cumple", 0) or 0)
 
-            porcentaje = (
-                cantidad / total * 100
-                if total > 0
-                else 0
+        pct_cumple = cumple / total * 100 if total > 0 else 0
+        pct_no_cumple = no_cumple / total * 100 if total > 0 else 0
+
+        if modo_y == "Porcentaje":
+            valor_cumple = pct_cumple
+            valor_no_cumple = pct_no_cumple
+        else:
+            valor_cumple = cumple
+            valor_no_cumple = no_cumple
+
+        data.append({
+            "periodo_fecha": row["periodo_fecha"],
+            "periodo_label": row["periodo_label"],
+            "estado": "Cumple",
+            "valor": valor_cumple,
+            "cantidad": cumple,
+            "porcentaje": pct_cumple,
+            "total": total,
+            "orden_estado": 1,
+            "texto_barra": (
+                f"{pct_cumple:.1f}%"
+                if modo_y == "Porcentaje" and pct_cumple > 0
+                else f"{cumple:,.0f}"
+                if cumple > 0
+                else ""
             )
+        })
 
-            valor = cantidad if modo_y == "Recuento" else porcentaje
-
-            if modo_y == "Porcentaje" and porcentaje > 0:
-                texto_barra = f"{porcentaje:.1f}%"
-            elif modo_y == "Recuento" and cantidad > 0:
-                texto_barra = f"{cantidad:,.0f}"
-            else:
-                texto_barra = ""
-
-            data.append({
-                "periodo_fecha": row["periodo_fecha"],
-                "periodo_label": row["periodo_label"],
-                "estado": estado,
-                "valor": valor,
-                "cantidad": cantidad,
-                "porcentaje": porcentaje,
-                "total": total,
-                "orden_estado": 1 if estado == "Cumple" else 2,
-                "texto_barra": texto_barra
-            })
+        data.append({
+            "periodo_fecha": row["periodo_fecha"],
+            "periodo_label": row["periodo_label"],
+            "estado": "No cumple",
+            "valor": valor_no_cumple,
+            "cantidad": no_cumple,
+            "porcentaje": pct_no_cumple,
+            "total": total,
+            "orden_estado": 2,
+            "texto_barra": (
+                f"{pct_no_cumple:.1f}%"
+                if modo_y == "Porcentaje" and pct_no_cumple > 0
+                else f"{no_cumple:,.0f}"
+                if no_cumple > 0
+                else ""
+            )
+        })
 
     df_plot = pd.DataFrame(data)
 
-    if not df_plot.empty:
-        df_plot = df_plot.sort_values(
-            ["periodo_fecha", "orden_estado"]
-        ).reset_index(drop=True)
+    df_plot = df_plot.sort_values(
+        ["periodo_fecha", "orden_estado"]
+    ).reset_index(drop=True)
 
     return df_plot
 
@@ -348,13 +366,8 @@ def grafico_performance_tat(
         st.warning("No hay datos evaluables para graficar.")
         return
 
-    total_visible = df_plot["cantidad"].sum()
-
-    if total_visible == 0:
-        st.warning(
-            "El gráfico mensual no tiene registros Cumple / No cumple para mostrar. "
-            "Revisa el rango de fechas, centro o los valores de performance_tat_total."
-        )
+    if df_plot["cantidad"].sum() == 0:
+        st.warning("No hay registros Cumple / No cumple para graficar.")
         return
 
     orden_periodos = (
@@ -366,26 +379,29 @@ def grafico_performance_tat(
 
     titulo_y = "Porcentaje" if modo_y == "Porcentaje" else "Recuento"
 
+    base = alt.Chart(df_plot).encode(
+        x=alt.X(
+            "periodo_label:N",
+            sort=orden_periodos,
+            title="Mes recepción",
+            axis=alt.Axis(
+                labelAngle=-35,
+                labelOverlap=False,
+                labelFontSize=11,
+                titleFontSize=12
+            )
+        )
+    )
+
     barras = (
-        alt.Chart(df_plot)
+        base
         .mark_bar(
-            cornerRadiusTopLeft=3,
-            cornerRadiusTopRight=3
+            size=34,
+            opacity=1
         )
         .encode(
-            x=alt.X(
-                "periodo_label:N",
-                sort=orden_periodos,
-                title="Mes recepción",
-                axis=alt.Axis(
-                    labelAngle=-35,
-                    labelOverlap=False,
-                    labelFontSize=11,
-                    titleFontSize=12
-                )
-            ),
             y=alt.Y(
-                "valor:Q",
+                "sum(valor):Q",
                 stack="zero",
                 title=titulo_y,
                 scale=alt.Scale(domain=[0, 100])
@@ -401,8 +417,8 @@ def grafico_performance_tat(
                 scale=alt.Scale(
                     domain=["Cumple", "No cumple"],
                     range=[
-                        COLORES_ESTADO["Cumple"],
-                        COLORES_ESTADO["No cumple"]
+                        "#5B5B5B",
+                        "#D94555"
                     ]
                 ),
                 legend=alt.Legend(
@@ -426,20 +442,18 @@ def grafico_performance_tat(
     )
 
     etiquetas = (
-        alt.Chart(df_plot[df_plot["valor"] > 0])
+        base
+        .transform_filter("datum.valor >= 8")
         .mark_text(
             color="white",
-            fontSize=11,
-            fontWeight="bold"
+            fontSize=10,
+            fontWeight="bold",
+            dy=4
         )
         .encode(
-            x=alt.X(
-                "periodo_label:N",
-                sort=orden_periodos
-            ),
             y=alt.Y(
-                "valor:Q",
-                stack="zero"
+                "sum(valor):Q",
+                stack="center"
             ),
             detail="estado:N",
             order=alt.Order(
@@ -457,7 +471,7 @@ def grafico_performance_tat(
                 "y2": [100]
             }))
             .mark_rect(
-                opacity=0.10,
+                opacity=0.05,
                 color="#006B4F"
             )
             .encode(
@@ -471,7 +485,7 @@ def grafico_performance_tat(
             .mark_rule(
                 strokeDash=[10, 5],
                 color="#006B4F",
-                size=4
+                size=5
             )
             .encode(
                 y="objetivo:Q"
@@ -521,7 +535,7 @@ def grafico_performance_tat(
         )
         .configure_axis(
             grid=True,
-            gridOpacity=0.25
+            gridOpacity=0.20
         )
         .configure_view(
             strokeWidth=0
