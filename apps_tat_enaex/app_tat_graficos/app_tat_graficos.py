@@ -5,6 +5,7 @@ import io
 import numpy as np
 import pandas as pd
 import streamlit as st
+import altair as alt
 
 
 # =========================================================
@@ -334,15 +335,18 @@ def grafico_performance_tat(df_plot: pd.DataFrame):
     df_chart = df_plot.copy()
     df_chart = df_chart.sort_values("periodo_fecha")
 
-    df_chart["Mes"] = df_chart["periodo_label"].astype(str)
     df_chart["% Cumplimiento"] = df_chart["pct_cumple"].round(1)
+
+    chart_data = (
+        df_chart[["periodo_fecha", "% Cumplimiento"]]
+        .rename(columns={"periodo_fecha": "Mes"})
+        .set_index("Mes")
+    )
 
     st.caption("Porcentaje mensual de cumplimiento sobre registros evaluables.")
 
     st.bar_chart(
-        data=df_chart,
-        x="Mes",
-        y="% Cumplimiento",
+        data=chart_data,
         use_container_width=True,
         height=420
     )
@@ -498,6 +502,101 @@ def crear_tabla_diagnostico_etapas(df_base: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(data)
 
 
+def crear_donut_etapa(
+    pct_cumple: float,
+    cumple: int,
+    no_cumple: int
+):
+    pct_cumple = max(0, min(float(pct_cumple), 100))
+
+    total = cumple + no_cumple
+
+    if total <= 0:
+        data = pd.DataFrame({
+            "Estado": ["Sin datos"],
+            "Cantidad": [1],
+            "Porcentaje": [0]
+        })
+    else:
+        data = pd.DataFrame({
+            "Estado": ["Cumple", "No cumple"],
+            "Cantidad": [cumple, no_cumple],
+            "Porcentaje": [
+                pct_cumple,
+                100 - pct_cumple
+            ]
+        })
+
+    donut = (
+        alt.Chart(data)
+        .mark_arc(
+            innerRadius=55,
+            outerRadius=80,
+            cornerRadius=4
+        )
+        .encode(
+            theta=alt.Theta("Cantidad:Q"),
+            color=alt.Color(
+                "Estado:N",
+                scale=alt.Scale(
+                    domain=["Cumple", "No cumple", "Sin datos"],
+                    range=["#2E7D32", "#D94555", "#D9D9D9"]
+                ),
+                legend=alt.Legend(
+                    title=None,
+                    orient="bottom"
+                )
+            ),
+            tooltip=[
+                alt.Tooltip("Estado:N", title="Estado"),
+                alt.Tooltip("Cantidad:Q", title="Cantidad", format=",.0f"),
+                alt.Tooltip("Porcentaje:Q", title="Porcentaje", format=".1f")
+            ]
+        )
+        .properties(
+            height=190
+        )
+    )
+
+    texto_centro = (
+        alt.Chart(pd.DataFrame({
+            "texto": [f"{pct_cumple:.1f}%"]
+        }))
+        .mark_text(
+            align="center",
+            baseline="middle",
+            fontSize=28,
+            fontWeight="bold",
+            color="#2F3340"
+        )
+        .encode(
+            text="texto:N"
+        )
+    )
+
+    texto_sub = (
+        alt.Chart(pd.DataFrame({
+            "texto": ["Cumple"]
+        }))
+        .mark_text(
+            align="center",
+            baseline="middle",
+            dy=25,
+            fontSize=12,
+            color="#667085"
+        )
+        .encode(
+            text="texto:N"
+        )
+    )
+
+    return (
+        donut + texto_centro + texto_sub
+    ).configure_view(
+        strokeWidth=0
+    )
+
+
 def render_tarjeta_etapa(
     titulo,
     regla,
@@ -516,6 +615,17 @@ def render_tarjeta_etapa(
     with st.container(border=True):
         st.subheader(titulo)
         st.caption(regla)
+
+        donut = crear_donut_etapa(
+            pct_cumple=pct_cumple,
+            cumple=cumple,
+            no_cumple=no_cumple
+        )
+
+        st.altair_chart(
+            donut,
+            use_container_width=True
+        )
 
         st.metric(
             label="Cumplimiento de la etapa",
