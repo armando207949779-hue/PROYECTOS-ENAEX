@@ -34,10 +34,13 @@ LOGO_CANDIDATOS = [
 COLOR_CUMPLE = "#606060"
 COLOR_NO_CUMPLE = "#EF3E52"
 COLOR_SIN_DATOS = "#BFC3C7"
+COLOR_META = "#008060"
 COLOR_TEXTO = "#1F2937"
 COLOR_MUTED = "#6B7280"
 COLOR_BG = "#F3F4F6"
 COLOR_CARD = "#FFFFFF"
+
+META_CUMPLIMIENTO = 65
 
 MESES_NOMBRE = {
     1: "enero",
@@ -1035,7 +1038,7 @@ def grafico_mensual_100(tabla: pd.DataFrame):
 
     order = tabla["periodo_label"].tolist()
 
-    chart = (
+    barras = (
         alt.Chart(plot)
         .mark_bar(size=34, cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
         .encode(
@@ -1073,6 +1076,54 @@ def grafico_mensual_100(tabla: pd.DataFrame):
                 alt.Tooltip("Total:Q", title="Total evaluable", format=",.0f"),
             ],
         )
+    )
+
+    linea_meta = (
+        alt.Chart(pd.DataFrame({"Meta": [META_CUMPLIMIENTO]}))
+        .mark_rule(
+            color=COLOR_META,
+            strokeDash=[6, 4],
+            strokeWidth=2,
+        )
+        .encode(
+            y=alt.Y("Meta:Q"),
+            tooltip=[
+                alt.Tooltip(
+                    "Meta:Q",
+                    title="Meta cumplimiento",
+                    format=".0f",
+                )
+            ],
+        )
+    )
+
+    etiqueta_meta = (
+        alt.Chart(
+            pd.DataFrame(
+                {
+                    "Meta": [META_CUMPLIMIENTO],
+                    "Texto": [f"Meta {META_CUMPLIMIENTO}%"],
+                }
+            )
+        )
+        .mark_text(
+            align="left",
+            baseline="bottom",
+            dx=6,
+            dy=-4,
+            color=COLOR_META,
+            fontSize=12,
+            fontWeight="bold",
+        )
+        .encode(
+            x=alt.value(5),
+            y=alt.Y("Meta:Q"),
+            text="Texto:N",
+        )
+    )
+
+    chart = (
+        (barras + linea_meta + etiqueta_meta)
         .properties(height=340)
         .configure_view(strokeWidth=0)
     )
