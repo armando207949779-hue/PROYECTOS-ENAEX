@@ -43,7 +43,7 @@ MESES_NOMBRE = {
 
 
 # =========================================================
-# FUNCIONES
+# FUNCIONES BASE
 # =========================================================
 
 @st.cache_data(show_spinner="Leyendo archivo parquet...")
@@ -129,6 +129,30 @@ def detectar_columna_centro(df: pd.DataFrame):
 
     return None
 
+
+def extraer_rango_fechas(rango_fechas):
+    if isinstance(rango_fechas, (tuple, list)) and len(rango_fechas) == 2:
+        fecha_inicio, fecha_fin = rango_fechas
+    else:
+        fecha_inicio = rango_fechas
+        fecha_fin = rango_fechas
+
+    if fecha_inicio is None or fecha_fin is None:
+        return None, None
+
+    fecha_inicio = pd.Timestamp(fecha_inicio)
+    fecha_fin = (
+        pd.Timestamp(fecha_fin)
+        + pd.Timedelta(days=1)
+        - pd.Timedelta(microseconds=1)
+    )
+
+    return fecha_inicio, fecha_fin
+
+
+# =========================================================
+# PERFORMANCE TAT MENSUAL
+# =========================================================
 
 def crear_resumen_mensual(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
@@ -311,15 +335,20 @@ def grafico_performance_tat(
 
     barras = (
         alt.Chart(df_plot)
-        .mark_bar()
+        .mark_bar(
+            cornerRadiusTopLeft=4,
+            cornerRadiusTopRight=4
+        )
         .encode(
             x=alt.X(
                 "periodo_label:N",
                 sort=orden_periodos,
                 title="Mes recepción",
                 axis=alt.Axis(
-                    labelAngle=-45,
-                    labelOverlap=False
+                    labelAngle=-35,
+                    labelOverlap=False,
+                    labelFontSize=11,
+                    titleFontSize=12
                 )
             ),
             y=alt.Y(
@@ -328,7 +357,11 @@ def grafico_performance_tat(
                 title=titulo_y,
                 scale=alt.Scale(domain=[0, 100])
                 if modo_y == "Porcentaje"
-                else alt.Undefined
+                else alt.Undefined,
+                axis=alt.Axis(
+                    labelFontSize=11,
+                    titleFontSize=12
+                )
             ),
             color=alt.Color(
                 "estado:N",
@@ -339,7 +372,11 @@ def grafico_performance_tat(
                         for e in ESTADOS_GRAFICO
                     ]
                 ),
-                legend=alt.Legend(title="")
+                legend=alt.Legend(
+                    title="",
+                    orient="bottom",
+                    labelFontSize=12
+                )
             ),
             order=alt.Order(
                 "orden_estado:Q",
@@ -356,12 +393,27 @@ def grafico_performance_tat(
     )
 
     if modo_y == "Porcentaje" and orden_periodos:
+        zona_objetivo = (
+            alt.Chart(pd.DataFrame({
+                "y1": [65],
+                "y2": [100]
+            }))
+            .mark_rect(
+                opacity=0.08,
+                color="#006B4F"
+            )
+            .encode(
+                y="y1:Q",
+                y2="y2:Q"
+            )
+        )
+
         linea_objetivo = (
             alt.Chart(pd.DataFrame({"objetivo": [65]}))
             .mark_rule(
-                strokeDash=[6, 4],
+                strokeDash=[10, 5],
                 color="#006B4F",
-                size=2
+                size=4
             )
             .encode(
                 y="objetivo:Q"
@@ -372,15 +424,16 @@ def grafico_performance_tat(
             alt.Chart(pd.DataFrame({
                 "periodo_label": [orden_periodos[0]],
                 "objetivo": [65],
-                "texto": ["65%"]
+                "texto": ["Objetivo 65%"]
             }))
             .mark_text(
                 align="left",
                 baseline="bottom",
-                dx=5,
-                dy=-5,
+                dx=8,
+                dy=-8,
                 color="#006B4F",
-                fontWeight="bold"
+                fontWeight="bold",
+                fontSize=14
             )
             .encode(
                 x=alt.X(
@@ -392,7 +445,7 @@ def grafico_performance_tat(
             )
         )
 
-        chart = barras + linea_objetivo + texto_objetivo
+        chart = zona_objetivo + barras + linea_objetivo + texto_objetivo
 
     else:
         chart = barras
@@ -400,7 +453,12 @@ def grafico_performance_tat(
     chart = (
         chart
         .properties(
-            title="Performance TAT mensual",
+            title=alt.TitleParams(
+                text="Performance TAT mensual",
+                fontSize=18,
+                fontWeight="bold",
+                anchor="start"
+            ),
             height=430
         )
         .configure_axis(
@@ -416,34 +474,11 @@ def grafico_performance_tat(
     st.altair_chart(chart, use_container_width=True)
 
 
-def extraer_rango_fechas(rango_fechas):
-    if isinstance(rango_fechas, (tuple, list)) and len(rango_fechas) == 2:
-        fecha_inicio, fecha_fin = rango_fechas
-    else:
-        fecha_inicio = rango_fechas
-        fecha_fin = rango_fechas
-
-    if fecha_inicio is None or fecha_fin is None:
-        return None, None
-
-    fecha_inicio = pd.Timestamp(fecha_inicio)
-    fecha_fin = (
-        pd.Timestamp(fecha_fin)
-        + pd.Timedelta(days=1)
-        - pd.Timedelta(microseconds=1)
-    )
-
-    return fecha_inicio, fecha_fin
-
-
 # =========================================================
-# FUNCIONES NUEVAS: GRÁFICOS POR ETAPA
+# GRÁFICOS POR ETAPA
 # =========================================================
 
 def detectar_columnas_etapas(df: pd.DataFrame):
-    """
-    Busca columnas del dataframe integrado.
-    """
     etapas = [
         {
             "titulo": "Lib Solped",
@@ -460,7 +495,7 @@ def detectar_columnas_etapas(df: pd.DataFrame):
             "texto_promedio": "Promedio días Comprador"
         },
         {
-            "titulo": "Prov",
+            "titulo": "Proveedor",
             "col_perf": "performance_proveedor",
             "col_dias": "dias_proveedor",
             "regla": "• Nacional < 20\n• Internacional < 60",
@@ -508,7 +543,6 @@ def calcular_resumen_etapa(
 
     temp["estado_etapa"] = temp[col_perf].apply(normalizar_estado_etapa)
 
-    # Dona: solo Cumple / No cumple
     temp_eval = temp[
         temp["estado_etapa"].isin(["Cumple", "No cumple"])
     ].copy()
@@ -523,7 +557,6 @@ def calcular_resumen_etapa(
 
     porcentaje = conteo / total * 100 if total > 0 else conteo * 0
 
-    # Promedio: sobre el dataframe filtrado general, replicando Power BI Dx > 0
     dias = pd.to_numeric(
         temp[col_dias],
         errors="coerce"
@@ -548,16 +581,18 @@ def crear_figura_cumplimiento_etapas(
     }
 
     fig, axes = plt.subplots(
-        nrows=1,
-        ncols=4,
-        figsize=(18, 5)
+        nrows=2,
+        ncols=2,
+        figsize=(13, 9)
     )
+
+    axes = axes.flatten()
 
     fig.suptitle(
         f"Cumplimiento por etapa - Centro {centro_label}",
-        fontsize=15,
+        fontsize=18,
         fontweight="bold",
-        y=1.06
+        y=0.98
     )
 
     for ax, etapa in zip(axes, etapas):
@@ -571,7 +606,8 @@ def crear_figura_cumplimiento_etapas(
                 0.5,
                 f"Falta columna\n{col_perf}\no\n{col_dias}",
                 ha="center",
-                va="center"
+                va="center",
+                fontsize=10
             )
             ax.axis("off")
             continue
@@ -593,21 +629,18 @@ def crear_figura_cumplimiento_etapas(
                 0.5,
                 "Sin datos evaluables",
                 ha="center",
-                va="center"
+                va="center",
+                fontsize=11
             )
             ax.set_title(f"Cumplimiento {etapa['titulo']}")
             ax.axis("off")
             continue
 
-        etiquetas = [
-            f"Cumple\n{porcentaje['Cumple']:.0f}%",
-            f"No Cumple\n{porcentaje['No cumple']:.0f}%"
-        ]
+        pct_cumple = porcentaje["Cumple"]
+        pct_no_cumple = porcentaje["No cumple"]
 
         ax.pie(
             valores,
-            labels=etiquetas,
-            autopct=None,
             startangle=90,
             counterclock=False,
             colors=[
@@ -615,75 +648,97 @@ def crear_figura_cumplimiento_etapas(
                 colores["No cumple"]
             ],
             wedgeprops={
-                "width": 0.42,
-                "edgecolor": "white"
-            },
-            labeldistance=1.18,
-            textprops={
-                "fontsize": 8
+                "width": 0.34,
+                "edgecolor": "white",
+                "linewidth": 2
             }
         )
 
         ax.set_title(
-            f"Cumplimiento {etapa['titulo']}",
-            fontsize=11,
+            etapa["titulo"],
+            fontsize=15,
             fontweight="bold",
             pad=18
         )
 
         ax.text(
             0,
-            1.38,
-            etapa["regla"],
+            0.10,
+            f"{pct_cumple:.0f}%",
             ha="center",
             va="center",
-            fontsize=7,
-            color="#222222"
-        )
-
-        ax.text(
-            0,
-            -1.45,
-            f"{promedio:.0f}",
-            ha="center",
-            va="center",
-            fontsize=26,
+            fontsize=30,
             fontweight="bold",
             color="#222222"
         )
 
         ax.text(
             0,
-            -1.72,
-            etapa["texto_promedio"],
+            -0.14,
+            "Cumple",
             ha="center",
             va="center",
-            fontsize=8,
+            fontsize=11,
+            color="#555555"
+        )
+
+        ax.text(
+            0,
+            -1.25,
+            f"Promedio: {promedio:.0f} días",
+            ha="center",
+            va="center",
+            fontsize=12,
+            fontweight="bold",
+            color="#222222"
+        )
+
+        ax.text(
+            0,
+            -1.45,
+            f"Evaluables: {total:,} | Dx > 0: {n_promedio:,}",
+            ha="center",
+            va="center",
+            fontsize=9,
             color="#666666"
         )
 
         ax.text(
             0,
-            -1.95,
-            f"Evaluables: {total:,} | Promedio Dx > 0: {n_promedio:,}",
+            1.25,
+            etapa["regla"],
             ha="center",
             va="center",
-            fontsize=7,
-            color="#777777"
+            fontsize=9,
+            color="#333333"
         )
 
-        ax.legend(
-            ["Cumple", "No cumple"],
-            loc="lower center",
-            bbox_to_anchor=(0.5, -0.30),
-            ncol=2,
-            frameon=False,
-            fontsize=8
+        ax.text(
+            -1.35,
+            -1.65,
+            f"● Cumple {pct_cumple:.0f}%",
+            ha="left",
+            va="center",
+            fontsize=10,
+            color=colores["Cumple"],
+            fontweight="bold"
+        )
+
+        ax.text(
+            0.25,
+            -1.65,
+            f"● No cumple {pct_no_cumple:.0f}%",
+            ha="left",
+            va="center",
+            fontsize=10,
+            color=colores["No cumple"],
+            fontweight="bold"
         )
 
         ax.set_aspect("equal")
+        ax.axis("off")
 
-    plt.tight_layout()
+    plt.tight_layout(rect=[0, 0, 1, 0.94])
 
     return fig
 
@@ -737,10 +792,10 @@ st.title("Dashboard Performance TAT")
 st.markdown(
     """
     Este dashboard carga un archivo `.parquet`, permite filtrar por centro
-    y grafica el cumplimiento mensual usando:
+    y grafica el cumplimiento mensual y por etapa usando:
 
     - Fecha eje X: `fecha_recepcion_final`
-    - Estado: `performance_tat_total`
+    - Estado TAT: `performance_tat_total`
     - Centro: `Centro - ME5A`
     """
 )
@@ -821,7 +876,7 @@ rango_fechas = st.sidebar.date_input(
 )
 
 modo_y = st.sidebar.radio(
-    "Métrica",
+    "Métrica gráfico mensual",
     options=["Porcentaje", "Recuento"],
     index=0
 )
@@ -840,7 +895,7 @@ filtrar_tat_evaluable_etapas = st.sidebar.checkbox(
     "Etapas: filtrar Performance TAT Cumple / No cumple",
     value=True,
     help=(
-        "Replica el filtro que vimos en Power BI para las donas: "
+        "Replica el filtro usado en Power BI para las donas: "
         "performance_tat_total debe ser Cumple o No cumple."
     )
 )
@@ -852,7 +907,6 @@ filtrar_tat_evaluable_etapas = st.sidebar.checkbox(
 
 df_filtrado = df.copy()
 
-# Filtro centro
 if col_centro is not None and centros_sel:
     centros_sel_str = [
         str(x).strip()
@@ -867,7 +921,6 @@ if col_centro is not None and centros_sel:
     ].copy()
 
 
-# Filtro fecha robusto
 fecha_inicio, fecha_fin = extraer_rango_fechas(rango_fechas)
 
 if fecha_inicio is None or fecha_fin is None:
@@ -896,23 +949,22 @@ df_filtrado = df_filtrado[
 # TABS
 # =========================================================
 
-tab_mensual, tab_etapas, tab_datos = st.tabs(
+tab_dashboard, tab_datos = st.tabs(
     [
-        "Performance TAT mensual",
-        "Cumplimiento por etapa",
+        "Dashboard",
         "Datos filtrados"
     ]
 )
 
 
 # =========================================================
-# TAB 1: PERFORMANCE TAT MENSUAL
+# TAB 1: DASHBOARD COMPLETO
 # =========================================================
 
-with tab_mensual:
+with tab_dashboard:
 
     # =====================================================
-    # KPIS
+    # KPIS PRINCIPALES
     # =====================================================
 
     total_filas = len(df_filtrado)
@@ -945,7 +997,7 @@ with tab_mensual:
     kpi6.metric("% No cumple", f"{pct_no_cumple:.2f}%")
 
     st.caption(
-        f"Registros no evaluables excluidos del gráfico: {no_evaluable:,}"
+        f"Registros no evaluables excluidos del gráfico mensual: {no_evaluable:,}"
     )
 
     st.divider()
@@ -953,8 +1005,6 @@ with tab_mensual:
     # =====================================================
     # GRÁFICO MENSUAL
     # =====================================================
-
-    st.subheader("Performance TAT mensual")
 
     tabla_resumen = crear_resumen_mensual(df_filtrado)
 
@@ -975,37 +1025,35 @@ with tab_mensual:
         modo_y=modo_y
     )
 
-    st.subheader("Resumen mensual")
+    with st.expander("Ver resumen mensual", expanded=False):
+        if tabla_resumen.empty:
+            st.info("No hay resumen mensual disponible.")
+        else:
+            columnas_resumen = [
+                "periodo_fecha",
+                "periodo_label",
+                "Cumple",
+                "No cumple",
+                "Total",
+                "% Cumple",
+                "% No cumple"
+            ]
 
-    if tabla_resumen.empty:
-        st.info("No hay resumen mensual disponible.")
-    else:
-        columnas_resumen = [
-            "periodo_fecha",
-            "periodo_label",
-            "Cumple",
-            "No cumple",
-            "Total",
-            "% Cumple",
-            "% No cumple"
-        ]
+            columnas_resumen = [
+                col for col in columnas_resumen
+                if col in tabla_resumen.columns
+            ]
 
-        columnas_resumen = [
-            col for col in columnas_resumen
-            if col in tabla_resumen.columns
-        ]
+            st.dataframe(
+                tabla_resumen[columnas_resumen],
+                use_container_width=True
+            )
 
-        st.dataframe(
-            tabla_resumen[columnas_resumen],
-            use_container_width=True
-        )
+    st.divider()
 
-
-# =========================================================
-# TAB 2: CUMPLIMIENTO POR ETAPA
-# =========================================================
-
-with tab_etapas:
+    # =====================================================
+    # GRÁFICOS POR ETAPA
+    # =====================================================
 
     st.subheader("Cumplimiento por etapa")
 
@@ -1018,16 +1066,19 @@ with tab_etapas:
             )
         ].copy()
 
-    total_etapas = len(df_etapas)
+    etapa_kpi1, etapa_kpi2, etapa_kpi3 = st.columns(3)
 
-    k1, k2, k3 = st.columns(3)
+    etapa_kpi1.metric(
+        "Filas usadas en etapas",
+        f"{len(df_etapas):,}"
+    )
 
-    k1.metric("Filas usadas en etapas", f"{total_etapas:,}")
-    k2.metric(
+    etapa_kpi2.metric(
         "TAT Cumple",
         f"{df_etapas['performance_tat_estado'].eq('Cumple').sum():,}"
     )
-    k3.metric(
+
+    etapa_kpi3.metric(
         "TAT No cumple",
         f"{df_etapas['performance_tat_estado'].eq('No cumple').sum():,}"
     )
@@ -1051,9 +1102,9 @@ with tab_etapas:
             centro_label=centro_label
         )
 
-        st.pyplot(fig_etapas)
+        st.pyplot(fig_etapas, use_container_width=True)
 
-    with st.expander("Ver diagnóstico de etapas", expanded=True):
+    with st.expander("Ver diagnóstico de etapas", expanded=False):
         tabla_diag = crear_tabla_diagnostico_etapas(df_etapas)
 
         st.dataframe(
@@ -1062,37 +1113,9 @@ with tab_etapas:
             hide_index=True
         )
 
-    with st.expander("Ver distribuciones de columnas de etapa", expanded=False):
-        etapas = detectar_columnas_etapas(df_etapas)
-
-        for etapa in etapas:
-            col_perf = etapa["col_perf"]
-
-            if col_perf in df_etapas.columns:
-                st.markdown(f"**{col_perf}**")
-
-                dist = (
-                    df_etapas[col_perf]
-                    .astype(str)
-                    .str.strip()
-                    .value_counts(dropna=False)
-                    .reset_index()
-                )
-
-                dist.columns = [col_perf, "Cantidad"]
-                dist["Porcentaje"] = (
-                    dist["Cantidad"] / dist["Cantidad"].sum() * 100
-                ).round(2)
-
-                st.dataframe(
-                    dist,
-                    use_container_width=True,
-                    hide_index=True
-                )
-
 
 # =========================================================
-# TAB 3: DATOS FILTRADOS
+# TAB 2: DATOS FILTRADOS
 # =========================================================
 
 with tab_datos:
