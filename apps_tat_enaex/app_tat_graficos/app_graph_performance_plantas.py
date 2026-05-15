@@ -1,35 +1,56 @@
 import io
+import base64
 from pathlib import Path
 
 import altair as alt
+import numpy as np
 import pandas as pd
 import streamlit as st
 
 
 # =========================================================
-# CONFIGURACIÓN
+# CONFIGURACIÓN GENERAL
 # =========================================================
+# IMPORTANTE:
+# Si esta app se ejecuta dentro de st.navigation() desde app_tat_global.py,
+# NO uses st.set_page_config() aquí, porque debe estar solo en la app principal.
+#
+# Si la ejecutas sola con:
+# streamlit run app_graph_performance_plantas.py
+# puedes descomentar este bloque.
+#
+# st.set_page_config(
+#     page_title="Performance de Plantas",
+#     page_icon="🏭",
+#     layout="wide",
+#     initial_sidebar_state="expanded",
+# )
+
+BASE_DIR = Path(__file__).resolve().parent
+
+LOGO_CANDIDATOS = [
+    BASE_DIR / "assets" / "logo.svg",
+    BASE_DIR / "assets" / "logo.png",
+    BASE_DIR / "assets" / "enaex.svg",
+    BASE_DIR / "assets" / "enaex.png",
+    BASE_DIR / "logo.svg",
+    BASE_DIR / "logo.png",
+    BASE_DIR.parent / "assets" / "logo.svg",
+    BASE_DIR.parent / "assets" / "logo.png",
+    BASE_DIR.parent.parent / "assets" / "logo.svg",
+    BASE_DIR.parent.parent / "assets" / "logo.png",
+]
 
 COLOR_CUMPLE = "#606060"
 COLOR_NO_CUMPLE = "#EF3E52"
+COLOR_SIN_DATOS = "#BFC3C7"
 COLOR_META = "#008060"
-COLOR_BG = "#F3F4F6"
-COLOR_CARD = "#FFFFFF"
 COLOR_TEXTO = "#1F2937"
 COLOR_MUTED = "#6B7280"
+COLOR_BG = "#F3F4F6"
+COLOR_CARD = "#FFFFFF"
 
-META = 65
-
-COL_FECHA_RECEPCION = "fecha_recepcion_final"
-COL_FECHA_FACTURA = "fecha_facturacion_final"
-COL_PERF = "performance_tat_total"
-
-COL_CENTRO_PRIORIDAD = "Centro - ME5A"
-COL_CENTRO_FALLBACK = "Centro - NME80FN"
-
-FECHA_FILTRO_POWERBI = pd.Timestamp("2024-02-01")
-
-CENTROS_EXCLUIR_SERVICIOS = ["E001", "E002", "E009", "E024", "E021"]
+META_CUMPLIMIENTO = 65
 
 MESES_NOMBRE = {
     1: "enero",
@@ -46,9 +67,65 @@ MESES_NOMBRE = {
     12: "diciembre",
 }
 
+# Columnas del dataframe nuevo
+COL_FECHA_SOLICITUD_FINAL = "fecha_solicitud_final"
+COL_FECHA_LIBERACION_FINAL = "fecha_liberacion_final"
+COL_FECHA_PEDIDO_FINAL = "fecha_pedido_final"
+COL_FECHA_FACTURACION_FINAL = "fecha_facturacion_final"
+COL_FECHA_RECEPCION_FINAL = "fecha_recepcion_final"
+
+COL_PERFORMANCE_TAT = "performance_tat_total"
+
+COL_CENTRO_ME5A = "Centro - ME5A"
+COL_CENTRO_NME80FN = "Centro - NME80FN"
+COL_CENTRO_SIMPLE = "Centro"
+
+COL_PEDIDO = "Pedido - ME5A"
+COL_DOCUMENTO_COMPRAS = "Documento de compras - NME80FN"
+
+COLUMNAS_REQUERIDAS_BASE = [
+    COL_FECHA_SOLICITUD_FINAL,
+    COL_FECHA_LIBERACION_FINAL,
+    COL_FECHA_PEDIDO_FINAL,
+    COL_FECHA_FACTURACION_FINAL,
+    COL_FECHA_RECEPCION_FINAL,
+]
+
+COLUMNAS_FECHA_PERFORMANCE = [
+    COL_FECHA_SOLICITUD_FINAL,
+    COL_FECHA_LIBERACION_FINAL,
+    COL_FECHA_PEDIDO_FINAL,
+    COL_FECHA_FACTURACION_FINAL,
+    COL_FECHA_RECEPCION_FINAL,
+    "Fecha de solicitud - ME5A",
+    "Fecha modificación",
+    "Fecha de liberación - ME5A",
+    "Fecha de pedido - ME5A",
+    "Fecha de entrega - ME5A",
+    "Fecha de liberación",
+    "Fecha solicitud de compra - ARIBA",
+    "Fecha de aprobación - ARIBA",
+    "Fecha de entrada - NME80FN",
+    "Fecha de documento - NME80FN",
+    "Fecha contabilización - NME80FN",
+    "Fecha facturación proveedor - NME80FN",
+    "Fecha recepción mercancía - NME80FN",
+    "ariba_fecha_solicitud_compra",
+    "ariba_fecha_aprobacion",
+    "nme_fecha_entrada",
+    "nme_fecha_documento",
+    "nme_fecha_contabiliz",
+    "nme_fecha_facturacion_proveedor",
+    "nme_fecha_entrada_mercancia_recepcion",
+]
+
+CENTROS_EXCLUIR_PLANTAS_SERVICIOS = ["E001", "E002", "E009", "E024", "E021"]
+
+FECHA_FILTRO_POWERBI = pd.Timestamp("2024-02-01")
+
 
 # =========================================================
-# ESTILO
+# ESTILO UI
 # =========================================================
 
 def aplicar_css():
@@ -59,62 +136,202 @@ def aplicar_css():
                 background: {COLOR_BG};
             }}
             .block-container {{
-                padding-top: 1.5rem;
+                padding-top: 2rem;
                 padding-bottom: 2rem;
                 max-width: 1500px;
             }}
-            .main-title {{
-                text-align: center;
-                font-size: 34px;
-                font-weight: 850;
-                color: {COLOR_TEXTO};
-                margin-bottom: 4px;
+            .header-card {{
+                background: {COLOR_CARD};
+                border: 1px solid #E5E7EB;
+                border-radius: 18px;
+                padding: 18px 22px;
+                box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+                margin-bottom: 16px;
             }}
-            .main-caption {{
-                text-align: center;
+            .title-main {{
+                font-size: 24px;
+                font-weight: 800;
+                color: {COLOR_TEXTO};
+                margin: 0;
+                line-height: 1.15;
+            }}
+            .subtitle-main {{
                 font-size: 13px;
                 color: {COLOR_MUTED};
-                margin-bottom: 18px;
+                margin-top: 4px;
+            }}
+            .section-card {{
+                background: {COLOR_CARD};
+                border: 1px solid #E5E7EB;
+                border-radius: 18px;
+                padding: 16px;
+                box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
+                margin-bottom: 16px;
+            }}
+            .section-title {{
+                font-size: 18px;
+                font-weight: 750;
+                color: {COLOR_TEXTO};
+                margin-bottom: 2px;
+            }}
+            .section-caption {{
+                font-size: 12px;
+                color: {COLOR_MUTED};
+                margin-bottom: 12px;
+            }}
+            .metric-card {{
+                background: linear-gradient(180deg, #FFFFFF 0%, #F9FAFB 100%);
+                border: 1px solid #E5E7EB;
+                border-radius: 16px;
+                padding: 14px 16px;
+                min-height: 102px;
+            }}
+            .metric-label {{
+                color: {COLOR_MUTED};
+                font-size: 12px;
+                font-weight: 650;
+                margin-bottom: 6px;
+            }}
+            .metric-value {{
+                color: {COLOR_TEXTO};
+                font-size: 28px;
+                font-weight: 850;
+                line-height: 1;
+            }}
+            .metric-note {{
+                color: {COLOR_MUTED};
+                font-size: 11px;
+                margin-top: 7px;
             }}
             .chart-card {{
                 background: {COLOR_CARD};
                 border: 1px solid #E5E7EB;
-                border-radius: 16px;
+                border-radius: 18px;
                 padding: 14px 16px 8px 16px;
-                box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
-                margin-bottom: 14px;
+                box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
+                margin-bottom: 16px;
             }}
             .chart-title {{
                 font-size: 17px;
-                font-weight: 750;
+                font-weight: 800;
                 color: {COLOR_TEXTO};
-                margin-bottom: 4px;
+                margin-bottom: 2px;
             }}
             .chart-caption {{
                 font-size: 12px;
                 color: {COLOR_MUTED};
-                margin-bottom: 8px;
+                margin-bottom: 10px;
             }}
-            .metric-box {{
-                background: #FFFFFF;
-                border: 1px solid #E5E7EB;
-                border-radius: 14px;
-                padding: 10px 12px;
-            }}
-            .metric-label {{
-                font-size: 11px;
-                color: {COLOR_MUTED};
-                font-weight: 650;
-            }}
-            .metric-value {{
-                font-size: 22px;
-                font-weight: 850;
+            .status-pill {{
+                display: inline-block;
+                border-radius: 999px;
+                padding: 5px 10px;
+                background: #F3F4F6;
                 color: {COLOR_TEXTO};
+                font-size: 12px;
+                font-weight: 700;
+                border: 1px solid #E5E7EB;
+            }}
+            [data-testid="stFileUploader"] section {{
+                border-radius: 14px;
+                border-color: #CBD5E1;
+                background: #F8FAFC;
+            }}
+            .stTabs [data-baseweb="tab-list"] {{
+                gap: 8px;
+            }}
+            .stTabs [data-baseweb="tab"] {{
+                background: #FFFFFF;
+                border-radius: 999px;
+                border: 1px solid #E5E7EB;
+                padding-left: 18px;
+                padding-right: 18px;
             }}
         </style>
         """,
         unsafe_allow_html=True,
     )
+
+
+def encontrar_logo():
+    for path in LOGO_CANDIDATOS:
+        if path.exists():
+            return path
+    return None
+
+
+def mostrar_logo(ancho: int = 220):
+    logo_path = encontrar_logo()
+
+    if logo_path is None:
+        st.markdown(
+            """
+            <div style="
+                display:flex;
+                align-items:center;
+                justify-content:center;
+                min-height:72px;
+                margin:0 0 14px 0;
+            ">
+                <div style="text-align:center;">
+                    <div style="font-weight:850;font-size:30px;color:#374151;line-height:1;">Enaex</div>
+                    <div style="font-size:9px;color:#6B7280;font-weight:700;letter-spacing:.08em;">STRONGER BONDS</div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        return
+
+    suffix = logo_path.suffix.lower()
+    mime = "image/svg+xml" if suffix == ".svg" else "image/png"
+    raw = logo_path.read_bytes()
+    logo_base64 = base64.b64encode(raw).decode("utf-8")
+
+    st.markdown(
+        f"""
+        <div style="
+            width:100%;
+            display:flex;
+            justify-content:center;
+            align-items:center;
+            min-height:84px;
+            margin:0 0 16px 0;
+            overflow:visible;
+        ">
+            <img
+                src="data:{mime};base64,{logo_base64}"
+                style="
+                    width:{ancho}px;
+                    max-width:80%;
+                    height:auto;
+                    display:block;
+                    object-fit:contain;
+                "
+            >
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def card_metric(label: str, value: str, note: str = ""):
+    st.markdown(
+        f"""
+        <div class="metric-card">
+            <div class="metric-label">{label}</div>
+            <div class="metric-value">{value}</div>
+            <div class="metric-note">{note}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def section_header(title: str, caption: str = ""):
+    st.markdown(f"<div class='section-title'>{title}</div>", unsafe_allow_html=True)
+    if caption:
+        st.markdown(f"<div class='section-caption'>{caption}</div>", unsafe_allow_html=True)
 
 
 # =========================================================
@@ -124,7 +341,7 @@ def aplicar_css():
 def obtener_separador(separador_csv: str):
     if separador_csv == "Automático":
         return None
-    if separador_csv == "Punto y coma (;)":
+    if separador_csv == "Punto y coma (;)" or separador_csv == "Punto y coma (;):":
         return ";"
     if separador_csv == "Coma (,)":
         return ","
@@ -135,8 +352,14 @@ def obtener_separador(separador_csv: str):
 
 @st.cache_data(show_spinner=False)
 def leer_archivo_cache(bytes_archivo: bytes, nombre_archivo: str, separador_csv: str) -> pd.DataFrame:
-    nombre = nombre_archivo.lower()
     buffer = io.BytesIO(bytes_archivo)
+    nombre = nombre_archivo.lower()
+
+    if nombre.endswith(".parquet"):
+        return pd.read_parquet(buffer)
+
+    if nombre.endswith(".xlsx") or nombre.endswith(".xls"):
+        return pd.read_excel(buffer)
 
     if nombre.endswith(".csv") or nombre.endswith(".txt"):
         sep = obtener_separador(separador_csv)
@@ -159,12 +382,6 @@ def leer_archivo_cache(bytes_archivo: bytes, nombre_archivo: str, separador_csv:
                 on_bad_lines="skip",
             )
 
-    if nombre.endswith(".xlsx") or nombre.endswith(".xls"):
-        return pd.read_excel(buffer)
-
-    if nombre.endswith(".parquet"):
-        return pd.read_parquet(buffer)
-
     if nombre.endswith(".json") or nombre.endswith(".jsonl"):
         try:
             return pd.read_json(buffer, lines=True)
@@ -172,12 +389,18 @@ def leer_archivo_cache(bytes_archivo: bytes, nombre_archivo: str, separador_csv:
             buffer.seek(0)
             return pd.read_json(buffer)
 
-    raise ValueError("Formato no soportado. Usa CSV, TXT, Excel, Parquet, JSON o JSONL.")
+    raise ValueError("Formato no soportado. Usa .parquet, .xlsx, .xls, .csv, .txt, .json o .jsonl")
 
 
 # =========================================================
-# PREPARACIÓN
+# LÓGICA PERFORMANCE
 # =========================================================
+
+def limpiar_nombres_columnas(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    df.columns = df.columns.astype(str).str.strip()
+    return df
+
 
 def convertir_fecha_columna(serie: pd.Series) -> pd.Series:
     if pd.api.types.is_datetime64_any_dtype(serie):
@@ -211,169 +434,240 @@ def convertir_fecha_columna(serie: pd.Series) -> pd.Series:
                 errors="coerce",
             )
 
-    mask_texto = ~mask_num
+    mask_no_num = ~mask_num
 
-    if mask_texto.any():
-        resultado.loc[mask_texto] = pd.to_datetime(
-            serie.loc[mask_texto],
-            dayfirst=True,
+    if mask_no_num.any():
+        resultado.loc[mask_no_num] = pd.to_datetime(
+            serie.loc[mask_no_num],
             errors="coerce",
+            dayfirst=True,
         )
 
     return resultado
 
 
-def normalizar_performance(serie: pd.Series) -> pd.Series:
-    salida = serie.astype(str).str.strip()
+def bool_array(condicion) -> np.ndarray:
+    return pd.Series(condicion).fillna(False).to_numpy(dtype=bool)
 
-    salida = salida.replace(
-        {
-            "Cumple": "Cumple",
-            "CUMPLE": "Cumple",
-            "cumple": "Cumple",
-            "No cumple": "No cumple",
-            "No Cumple": "No cumple",
-            "NO CUMPLE": "No cumple",
-            "no cumple": "No cumple",
-            "No aplica al análisis": "No aplica al analisis",
-            "No aplica al analisis": "No aplica al analisis",
-            "Sin datos": "Sin datos",
-            "Sin Datos": "Sin datos",
-            "En proceso": "En proceso",
-        }
+
+def extraer_tipo_oc(valor):
+    if pd.isna(valor):
+        return pd.NA
+
+    texto = str(valor).strip()
+
+    try:
+        texto = str(int(float(texto)))
+    except Exception:
+        texto = texto.replace(".0", "")
+
+    return texto[:2] if len(texto) >= 2 else pd.NA
+
+
+def diferencia_dias(fecha_fin: pd.Series, fecha_inicio: pd.Series) -> pd.Series:
+    return (fecha_fin - fecha_inicio).dt.days
+
+
+def evaluar_performance_tat(df: pd.DataFrame) -> pd.Series:
+    resultado = pd.Series("Sin datos", index=df.index, dtype="object")
+
+    mask_negativos = df["tiene_fechas_inconsistentes"].eq(True)
+    mask_en_proceso = df["dias_tat_total"].isna()
+    mask_tipo_nacional = df["tipo_oc"].isin(["35", "45"])
+    mask_tipo_internacional = df["tipo_oc"].eq("47")
+    mask_tipo_valido = df["tipo_oc"].isin(["35", "45", "47"])
+
+    resultado.loc[mask_negativos] = "No aplica al análisis"
+    resultado.loc[~mask_negativos & mask_en_proceso] = "En proceso"
+
+    mask_evaluable = ~mask_negativos & ~mask_en_proceso
+
+    resultado.loc[
+        mask_evaluable
+        & mask_tipo_nacional
+        & df["dias_tat_total"].le(40)
+    ] = "Cumple"
+
+    resultado.loc[
+        mask_evaluable
+        & mask_tipo_internacional
+        & df["dias_tat_total"].le(70)
+    ] = "Cumple"
+
+    resultado.loc[
+        mask_evaluable
+        & mask_tipo_valido
+        & (
+            (mask_tipo_nacional & df["dias_tat_total"].gt(40))
+            | (mask_tipo_internacional & df["dias_tat_total"].gt(70))
+        )
+    ] = "No cumple"
+
+    return resultado
+
+
+def normalizar_estado_tat(valor) -> str:
+    texto = str(valor).strip().lower()
+    texto = (
+        texto.replace("á", "a")
+        .replace("é", "e")
+        .replace("í", "i")
+        .replace("ó", "o")
+        .replace("ú", "u")
     )
 
-    return salida
+    if texto == "cumple":
+        return "Cumple"
+
+    if texto in ["no cumple", "nocumple"]:
+        return "No cumple"
+
+    if texto in ["no aplica", "no aplica al analisis"]:
+        return "No aplica al análisis"
+
+    if texto == "en proceso":
+        return "En proceso"
+
+    if texto in ["sin datos", "sin dato"]:
+        return "Sin datos"
+
+    return str(valor).strip()
 
 
 def obtener_columna_centro(df: pd.DataFrame) -> str:
-    if COL_CENTRO_PRIORIDAD in df.columns:
-        return COL_CENTRO_PRIORIDAD
+    for col in [COL_CENTRO_ME5A, COL_CENTRO_NME80FN, COL_CENTRO_SIMPLE]:
+        if col in df.columns:
+            return col
 
-    if COL_CENTRO_FALLBACK in df.columns:
-        return COL_CENTRO_FALLBACK
-
-    if "Centro" in df.columns:
-        return "Centro"
-
-    raise ValueError(
-        "No se encontró columna de centro. Se esperaba 'Centro - ME5A', "
-        "'Centro - NME80FN' o 'Centro'."
-    )
+    raise ValueError("No se encontró columna de centro: Centro - ME5A, Centro - NME80FN o Centro")
 
 
-def validar_columnas(df: pd.DataFrame, col_centro: str):
-    requeridas = [
-        COL_FECHA_RECEPCION,
-        COL_FECHA_FACTURA,
-        COL_PERF,
-        col_centro,
-    ]
-
-    faltantes = [col for col in requeridas if col not in df.columns]
+def validar_columnas_base(df: pd.DataFrame):
+    faltantes = [col for col in COLUMNAS_REQUERIDAS_BASE if col not in df.columns]
 
     if faltantes:
-        raise ValueError(f"Faltan columnas requeridas: {faltantes}")
+        raise ValueError(f"Faltan columnas requeridas para calcular Performance TAT: {faltantes}")
 
 
 @st.cache_data(show_spinner=False)
-def preparar_dataframe(df_original: pd.DataFrame) -> pd.DataFrame:
-    df = df_original.copy()
-    df.columns = df.columns.astype(str).str.strip()
+def aplicar_logica_performance_plantas(df_original: pd.DataFrame) -> pd.DataFrame:
+    df = limpiar_nombres_columnas(df_original)
+
+    validar_columnas_base(df)
+
+    for col in COLUMNAS_FECHA_PERFORMANCE:
+        if col in df.columns:
+            df[col] = convertir_fecha_columna(df[col])
 
     col_centro = obtener_columna_centro(df)
-    validar_columnas(df, col_centro)
-
-    df[COL_FECHA_RECEPCION] = convertir_fecha_columna(df[COL_FECHA_RECEPCION])
-    df[COL_FECHA_FACTURA] = convertir_fecha_columna(df[COL_FECHA_FACTURA])
-    df[COL_PERF] = normalizar_performance(df[COL_PERF])
     df["centro_grafico"] = df[col_centro].astype(str).str.strip()
 
-    df = df[
-        (df[COL_FECHA_FACTURA] > FECHA_FILTRO_POWERBI)
-        & df[COL_FECHA_RECEPCION].notna()
-        & df[COL_PERF].isin(["Cumple", "No cumple"])
-    ].copy()
+    if COL_PEDIDO in df.columns:
+        df["tipo_oc"] = df[COL_PEDIDO].apply(extraer_tipo_oc)
+    elif COL_DOCUMENTO_COMPRAS in df.columns:
+        df["tipo_oc"] = df[COL_DOCUMENTO_COMPRAS].apply(extraer_tipo_oc)
+    elif "tipo_oc" in df.columns:
+        df["tipo_oc"] = df["tipo_oc"].apply(extraer_tipo_oc)
+    else:
+        df["tipo_oc"] = pd.NA
 
-    df["periodo_fecha"] = df[COL_FECHA_RECEPCION].dt.to_period("M").dt.to_timestamp()
-    df["anio"] = df[COL_FECHA_RECEPCION].dt.year
-    df["mes_num"] = df[COL_FECHA_RECEPCION].dt.month
+    df["tipo_oc"] = df["tipo_oc"].astype("string")
+
+    df["dias_tat_total"] = diferencia_dias(
+        df[COL_FECHA_RECEPCION_FINAL],
+        df[COL_FECHA_SOLICITUD_FINAL],
+    )
+
+    df["dias_liberacion_solped"] = diferencia_dias(
+        df[COL_FECHA_LIBERACION_FINAL],
+        df[COL_FECHA_SOLICITUD_FINAL],
+    )
+
+    df["dias_comprador"] = diferencia_dias(
+        df[COL_FECHA_PEDIDO_FINAL],
+        df[COL_FECHA_LIBERACION_FINAL],
+    )
+
+    df["dias_proveedor"] = diferencia_dias(
+        df[COL_FECHA_FACTURACION_FINAL],
+        df[COL_FECHA_PEDIDO_FINAL],
+    )
+
+    df["dias_logistica"] = diferencia_dias(
+        df[COL_FECHA_RECEPCION_FINAL],
+        df[COL_FECHA_FACTURACION_FINAL],
+    )
+
+    columnas_dias_evaluables = [
+        "dias_liberacion_solped",
+        "dias_comprador",
+        "dias_proveedor",
+        "dias_logistica",
+        "dias_tat_total",
+    ]
+
+    df["tiene_fechas_inconsistentes"] = (
+        df[columnas_dias_evaluables]
+        .lt(0)
+        .any(axis=1, skipna=True)
+    )
+
+    if COL_PERFORMANCE_TAT not in df.columns:
+        df[COL_PERFORMANCE_TAT] = evaluar_performance_tat(df)
+    else:
+        df[COL_PERFORMANCE_TAT] = df[COL_PERFORMANCE_TAT].apply(normalizar_estado_tat)
+
+    df["periodo_fecha"] = df[COL_FECHA_RECEPCION_FINAL].dt.to_period("M").dt.to_timestamp()
+    df["anio"] = df[COL_FECHA_RECEPCION_FINAL].dt.year
+    df["mes_num"] = df[COL_FECHA_RECEPCION_FINAL].dt.month
     df["mes_nombre"] = df["mes_num"].map(MESES_NOMBRE)
-    df["periodo_label"] = (
-        df["mes_nombre"].astype(str)
-        + " "
-        + df["anio"].astype("Int64").astype(str)
+
+    df["periodo_label"] = np.where(
+        df["anio"].notna() & df["mes_nombre"].notna(),
+        df["mes_nombre"].astype(str) + " " + df["anio"].astype("Int64").astype(str),
+        pd.NA,
     )
 
     df["grupo_planta"] = "Plantas de servicios"
-
     df.loc[df["centro_grafico"].eq("E002"), "grupo_planta"] = "Prillex"
     df.loc[df["centro_grafico"].eq("E024"), "grupo_planta"] = "Rio Loa"
 
     df.loc[
-        df["centro_grafico"].isin(CENTROS_EXCLUIR_SERVICIOS)
+        df["centro_grafico"].isin(CENTROS_EXCLUIR_PLANTAS_SERVICIOS)
         & ~df["centro_grafico"].isin(["E002", "E024"]),
         "grupo_planta",
     ] = "Excluir"
 
-    df = df[df["grupo_planta"].ne("Excluir")].copy()
-
     return df
 
 
+def aplicar_filtro_powerbi(df: pd.DataFrame) -> pd.DataFrame:
+    return df[
+        (df[COL_FECHA_FACTURACION_FINAL] > FECHA_FILTRO_POWERBI)
+        & df[COL_FECHA_RECEPCION_FINAL].notna()
+        & df[COL_PERFORMANCE_TAT].isin(["Cumple", "No cumple"])
+        & df["grupo_planta"].ne("Excluir")
+    ].copy()
+
+
 # =========================================================
-# RESÚMENES
+# RESÚMENES Y GRÁFICOS
 # =========================================================
 
-def crear_resumen_grupo(df: pd.DataFrame, grupo: str) -> pd.DataFrame:
-    data = df[df["grupo_planta"].eq(grupo)].copy()
-
-    if data.empty:
-        return pd.DataFrame()
-
-    resumen = (
-        data
-        .groupby(["periodo_fecha", "periodo_label", COL_PERF])
-        .size()
-        .reset_index(name="cantidad")
-    )
-
-    resumen["total_mes"] = resumen.groupby("periodo_fecha")["cantidad"].transform("sum")
-    resumen["porcentaje"] = resumen["cantidad"] / resumen["total_mes"] * 100
-
-    resumen["estado"] = resumen[COL_PERF].replace(
-        {
-            "Cumple": "Cumple",
-            "No cumple": "No Cumple",
-        }
-    )
-
-    resumen["orden_estado"] = resumen["estado"].map(
-        {
-            "Cumple": 1,
-            "No Cumple": 2,
-        }
-    )
-
-    resumen = resumen.sort_values(["periodo_fecha", "orden_estado"])
-
-    return resumen
-
-
-def resumen_kpis(df: pd.DataFrame) -> pd.DataFrame:
+def resumen_kpis_plantas(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame()
 
     tabla = (
         df
-        .groupby(["grupo_planta", COL_PERF])
+        .groupby(["grupo_planta", COL_PERFORMANCE_TAT])
         .size()
         .reset_index(name="cantidad")
     )
 
     pivot = tabla.pivot_table(
         index="grupo_planta",
-        columns=COL_PERF,
+        columns=COL_PERFORMANCE_TAT,
         values="cantidad",
         fill_value=0,
         aggfunc="sum",
@@ -384,51 +678,105 @@ def resumen_kpis(df: pd.DataFrame) -> pd.DataFrame:
             pivot[col] = 0
 
     pivot["Total evaluable"] = pivot["Cumple"] + pivot["No cumple"]
-    pivot["% Cumple"] = pivot["Cumple"] / pivot["Total evaluable"] * 100
-    pivot["% Cumple"] = pivot["% Cumple"].fillna(0)
+    pivot["% Cumple"] = np.where(
+        pivot["Total evaluable"] > 0,
+        pivot["Cumple"] / pivot["Total evaluable"] * 100,
+        0,
+    )
 
     return pivot
 
 
-# =========================================================
-# GRÁFICOS ALTAIR
-# =========================================================
+def crear_resumen_mensual_grupo(df: pd.DataFrame, grupo: str) -> pd.DataFrame:
+    base = df[
+        df["grupo_planta"].eq(grupo)
+        & df[COL_PERFORMANCE_TAT].isin(["Cumple", "No cumple"])
+        & df["periodo_fecha"].notna()
+    ].copy()
 
-def grafico_grupo(df: pd.DataFrame, grupo: str, titulo: str):
-    resumen = crear_resumen_grupo(df, grupo)
+    if base.empty:
+        return pd.DataFrame()
 
+    resumen = (
+        base
+        .groupby(["periodo_fecha", "periodo_label", COL_PERFORMANCE_TAT])
+        .size()
+        .reset_index(name="cantidad")
+    )
+
+    tabla = resumen.pivot_table(
+        index=["periodo_fecha", "periodo_label"],
+        columns=COL_PERFORMANCE_TAT,
+        values="cantidad",
+        aggfunc="sum",
+        fill_value=0,
+    ).reset_index()
+
+    for col in ["Cumple", "No cumple"]:
+        if col not in tabla.columns:
+            tabla[col] = 0
+
+    tabla["Total"] = tabla["Cumple"] + tabla["No cumple"]
+    tabla["% Cumple"] = np.where(tabla["Total"] > 0, tabla["Cumple"] / tabla["Total"] * 100, 0)
+    tabla["% No cumple"] = np.where(tabla["Total"] > 0, tabla["No cumple"] / tabla["Total"] * 100, 0)
+
+    return tabla.sort_values("periodo_fecha").reset_index(drop=True)
+
+
+def grafico_mensual_100_plantas(tabla: pd.DataFrame, titulo: str):
     st.markdown("<div class='chart-card'>", unsafe_allow_html=True)
     st.markdown(f"<div class='chart-title'>{titulo}</div>", unsafe_allow_html=True)
     st.markdown(
-        "<div class='chart-caption'>Base: Performance TAT Cumple / No cumple. "
-        "Filtro aplicado: fecha_facturacion_final posterior a 01-02-2024.</div>",
+        """
+        <div class='chart-caption'>
+            Base evaluable: Performance TAT Cumple / No cumple ·
+            Fecha eje: recepción final · Filtro: facturación final posterior a 01-02-2024.
+        </div>
+        """,
         unsafe_allow_html=True,
     )
 
-    if resumen.empty:
-        st.info("Sin datos para este grupo.")
+    if tabla.empty:
+        st.info("No hay datos evaluables para este grupo.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
 
-    orden_periodos = (
-        resumen
-        .drop_duplicates("periodo_fecha")
-        .sort_values("periodo_fecha")["periodo_label"]
-        .tolist()
+    plot = tabla.melt(
+        id_vars=["periodo_fecha", "periodo_label", "Total"],
+        value_vars=["Cumple", "No cumple"],
+        var_name="Estado",
+        value_name="Cantidad",
     )
 
+    plot["Estado"] = plot["Estado"].replace({"No cumple": "No Cumple"})
+
+    plot["Porcentaje"] = np.where(
+        plot["Total"] > 0,
+        plot["Cantidad"] / plot["Total"] * 100,
+        0,
+    )
+
+    plot["Orden"] = plot["Estado"].map(
+        {
+            "Cumple": 1,
+            "No Cumple": 2,
+        }
+    ).fillna(9)
+
+    order = tabla["periodo_label"].tolist()
+
     barras = (
-        alt.Chart(resumen)
-        .mark_bar(size=28)
+        alt.Chart(plot)
+        .mark_bar(size=30, cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
         .encode(
             x=alt.X(
                 "periodo_label:N",
-                sort=orden_periodos,
+                sort=order,
                 title=None,
-                axis=alt.Axis(labelAngle=-90, labelFontSize=10),
+                axis=alt.Axis(labelAngle=0, labelFontSize=10),
             ),
             y=alt.Y(
-                "porcentaje:Q",
+                "Porcentaje:Q",
                 stack="zero",
                 title="% Performance TAT",
                 scale=alt.Scale(domain=[0, 100]),
@@ -439,59 +787,54 @@ def grafico_grupo(df: pd.DataFrame, grupo: str, titulo: str):
                 ),
             ),
             color=alt.Color(
-                "estado:N",
+                "Estado:N",
                 scale=alt.Scale(
                     domain=["Cumple", "No Cumple"],
                     range=[COLOR_CUMPLE, COLOR_NO_CUMPLE],
                 ),
-                legend=alt.Legend(
-                    title="Performance TAT",
-                    orient="top",
-                    direction="horizontal",
-                ),
+                legend=alt.Legend(title=None, orient="top", direction="horizontal"),
             ),
-            order=alt.Order("orden_estado:Q", sort="ascending"),
+            order=alt.Order("Orden:Q", sort="ascending"),
             tooltip=[
                 alt.Tooltip("periodo_label:N", title="Mes"),
-                alt.Tooltip("estado:N", title="Estado"),
-                alt.Tooltip("cantidad:Q", title="Cantidad", format=",.0f"),
-                alt.Tooltip("porcentaje:Q", title="Porcentaje", format=".1f"),
-                alt.Tooltip("total_mes:Q", title="Total mes", format=",.0f"),
+                alt.Tooltip("Estado:N", title="Estado"),
+                alt.Tooltip("Cantidad:Q", title="Cantidad", format=",.0f"),
+                alt.Tooltip("Porcentaje:Q", title="Porcentaje", format=".1f"),
+                alt.Tooltip("Total:Q", title="Total evaluable", format=",.0f"),
             ],
         )
     )
 
     etiquetas = (
-        alt.Chart(resumen)
+        alt.Chart(plot)
         .mark_text(
             color="white",
             fontSize=10,
-            dy=0,
-            angle=270,
             fontWeight="bold",
+            angle=270,
         )
         .encode(
-            x=alt.X("periodo_label:N", sort=orden_periodos),
-            y=alt.Y("porcentaje:Q", stack="center"),
-            text=alt.Text("porcentaje:Q", format=".1f"),
-            order=alt.Order("orden_estado:Q", sort="ascending"),
+            x=alt.X("periodo_label:N", sort=order),
+            y=alt.Y("Porcentaje:Q", stack="center"),
+            text=alt.Text("Porcentaje:Q", format=".1f"),
+            order=alt.Order("Orden:Q", sort="ascending"),
         )
     )
 
     linea_meta = (
-        alt.Chart(pd.DataFrame({"meta": [META]}))
+        alt.Chart(pd.DataFrame({"Meta": [META_CUMPLIMIENTO]}))
         .mark_rule(
             color=COLOR_META,
             strokeDash=[6, 4],
             strokeWidth=2,
         )
         .encode(
-            y="meta:Q",
+            y=alt.Y("Meta:Q"),
         )
     )
 
     texto_meta = (
-        alt.Chart(pd.DataFrame({"meta": [META], "x": [orden_periodos[0]]}))
+        alt.Chart(pd.DataFrame({"Meta": [META_CUMPLIMIENTO], "periodo_label": [order[0]]}))
         .mark_text(
             align="left",
             baseline="bottom",
@@ -502,15 +845,15 @@ def grafico_grupo(df: pd.DataFrame, grupo: str, titulo: str):
             fontWeight="bold",
         )
         .encode(
-            x=alt.X("x:N", sort=orden_periodos),
-            y="meta:Q",
-            text=alt.value(f"Meta {META}%"),
+            x=alt.X("periodo_label:N", sort=order),
+            y=alt.Y("Meta:Q"),
+            text=alt.value(f"Meta {META_CUMPLIMIENTO}%"),
         )
     )
 
     chart = (
         (barras + etiquetas + linea_meta + texto_meta)
-        .properties(height=185)
+        .properties(height=230)
         .configure_view(strokeWidth=0)
     )
 
@@ -518,18 +861,14 @@ def grafico_grupo(df: pd.DataFrame, grupo: str, titulo: str):
     st.markdown("</div>", unsafe_allow_html=True)
 
 
-def mostrar_kpis(df: pd.DataFrame):
-    kpis = resumen_kpis(df)
-
-    if kpis.empty:
-        return
+def mostrar_kpis_plantas(df: pd.DataFrame):
+    kpis = resumen_kpis_plantas(df)
 
     orden = ["Prillex", "Rio Loa", "Plantas de servicios"]
-
     cols = st.columns(3)
 
     for i, grupo in enumerate(orden):
-        data = kpis[kpis["grupo_planta"].eq(grupo)]
+        data = kpis[kpis["grupo_planta"].eq(grupo)] if not kpis.empty else pd.DataFrame()
 
         if data.empty:
             cumple = 0
@@ -544,17 +883,10 @@ def mostrar_kpis(df: pd.DataFrame):
             pct = float(fila["% Cumple"])
 
         with cols[i]:
-            st.markdown(
-                f"""
-                <div class="metric-box">
-                    <div class="metric-label">{grupo}</div>
-                    <div class="metric-value">{pct:.1f}%</div>
-                    <div style="font-size:11px;color:{COLOR_MUTED};">
-                        Cumple: {cumple:,} · No cumple: {no_cumple:,} · Total: {total:,}
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
+            card_metric(
+                grupo,
+                f"{pct:.1f}%",
+                f"Cumple: {cumple:,} · No cumple: {no_cumple:,} · Total: {total:,}",
             )
 
 
@@ -564,35 +896,30 @@ def mostrar_diagnostico(df: pd.DataFrame):
 
         st.write(
             "Rango fecha recepción:",
-            df[COL_FECHA_RECEPCION].min(),
+            df[COL_FECHA_RECEPCION_FINAL].min(),
             "→",
-            df[COL_FECHA_RECEPCION].max(),
+            df[COL_FECHA_RECEPCION_FINAL].max(),
         )
 
-        st.write("Centros principales:")
-        centros = (
-            df["centro_grafico"]
-            .value_counts()
-            .reset_index()
+        st.write(
+            "Rango fecha facturación:",
+            df[COL_FECHA_FACTURACION_FINAL].min(),
+            "→",
+            df[COL_FECHA_FACTURACION_FINAL].max(),
         )
-        centros.columns = ["Centro", "Filas"]
-        st.dataframe(centros, use_container_width=True, hide_index=True)
 
         st.write("Performance TAT:")
-        perf = (
-            df[COL_PERF]
-            .value_counts()
-            .reset_index()
-        )
+        perf = df[COL_PERFORMANCE_TAT].value_counts().reset_index()
         perf.columns = ["Estado", "Filas"]
         st.dataframe(perf, use_container_width=True, hide_index=True)
 
+        st.write("Centros principales:")
+        centros = df["centro_grafico"].value_counts().reset_index()
+        centros.columns = ["Centro", "Filas"]
+        st.dataframe(centros, use_container_width=True, hide_index=True)
+
         st.write("Grupos:")
-        grupos = (
-            df["grupo_planta"]
-            .value_counts()
-            .reset_index()
-        )
+        grupos = df["grupo_planta"].value_counts().reset_index()
         grupos.columns = ["Grupo", "Filas"]
         st.dataframe(grupos, use_container_width=True, hide_index=True)
 
@@ -603,18 +930,30 @@ def mostrar_diagnostico(df: pd.DataFrame):
 
 aplicar_css()
 
+# ---------------------------------------------------------
+# 1) Logo y encabezado
+# ---------------------------------------------------------
+mostrar_logo(220)
+
 st.markdown(
     """
-    <div class="main-title">PERFORMANCE DE PLANTAS</div>
-    <div class="main-caption">
-        Prillex = E002 · Rio Loa = E024 · Plantas de servicios = todos excepto E001, E002, E009, E024 y E021
+    <div style="text-align:center; margin-bottom: 22px;">
+        <div style="font-size:42px; font-weight:850; color:#1F2937; line-height:1.12;">
+            Performance de Plantas
+        </div>
+        <div style="font-size:14px; color:#6B7280; margin-top:10px;">
+            Prillex · Rio Loa · Plantas de servicios
+        </div>
     </div>
     """,
     unsafe_allow_html=True,
 )
 
+# ---------------------------------------------------------
+# 2) Configuración lateral
+# ---------------------------------------------------------
 with st.sidebar:
-    st.header("Performance de Plantas")
+    st.header("Configuración")
 
     separador_csv = st.selectbox(
         "Separador CSV",
@@ -627,64 +966,171 @@ with st.sidebar:
         value=False,
     )
 
+    st.markdown("---")
+
     st.caption(
-        "El gráfico usa fecha_recepcion_final como eje X y filtra "
-        "fecha_facturacion_final > 01-02-2024."
+        """
+        **Agrupación de centros**
+
+        Prillex = E002  
+        Rio Loa = E024  
+        Plantas de servicios = todos excepto E001, E002, E009, E024 y E021
+        """
     )
 
-archivo = st.file_uploader(
-    "Carga el dataframe con fechas finales",
-    type=["csv", "txt", "xlsx", "xls", "parquet", "json", "jsonl"],
+    st.caption(
+        """
+        **Filtro fijo**
+
+        fecha_facturacion_final > 01-02-2024
+        """
+    )
+
+# ---------------------------------------------------------
+# 3) Subir archivo
+# ---------------------------------------------------------
+st.subheader("Archivo")
+
+uploaded_file = st.file_uploader(
+    "Selecciona archivo con fechas finales",
+    type=["parquet", "xlsx", "xls", "csv", "txt", "json", "jsonl"],
 )
 
-if archivo is None:
-    st.info("Carga un archivo para visualizar el gráfico de Performance de Plantas.")
+if uploaded_file is None:
+    st.info("Carga el archivo con fechas finales para visualizar Performance de Plantas.")
     st.stop()
 
+# ---------------------------------------------------------
+# 4) Procesar archivo
+# ---------------------------------------------------------
 try:
     with st.spinner("Leyendo archivo..."):
         df_original = leer_archivo_cache(
-            bytes_archivo=archivo.getvalue(),
-            nombre_archivo=archivo.name,
+            bytes_archivo=uploaded_file.getvalue(),
+            nombre_archivo=uploaded_file.name,
             separador_csv=separador_csv,
         )
 
-    with st.spinner("Preparando gráfico..."):
-        df_base = preparar_dataframe(df_original)
+    with st.spinner("Aplicando lógica de performance y agrupación de plantas..."):
+        df_final = aplicar_logica_performance_plantas(df_original)
+        df_dashboard = aplicar_filtro_powerbi(df_final)
 
-    if df_base.empty:
+    if df_dashboard.empty:
         st.warning(
-            "No hay datos después de aplicar los filtros: "
-            "fecha_facturacion_final > 01-02-2024, fecha_recepcion_final válida "
-            "y Performance TAT en Cumple / No cumple."
+            "No hay datos después de aplicar filtros: "
+            "fecha_facturacion_final > 01-02-2024, fecha_recepcion_final válida, "
+            "Performance TAT Cumple / No cumple y agrupación de plantas."
         )
         st.stop()
 
-    mostrar_kpis(df_base)
+    st.success("Performance de Plantas generada correctamente.")
 
-    st.divider()
+    # -----------------------------------------------------
+    # 5) Dashboard
+    # -----------------------------------------------------
+    tab_dashboard, tab_datos = st.tabs(["Dashboard", "Datos"])
 
-    grafico_grupo(
-        df=df_base,
-        grupo="Prillex",
-        titulo="Performance TAT Prillex",
-    )
+    with tab_dashboard:
+        section_header(
+            "Indicadores generales",
+            "Base evaluable: Performance TAT Cumple / No cumple.",
+        )
 
-    grafico_grupo(
-        df=df_base,
-        grupo="Rio Loa",
-        titulo="Performance TAT Rio Loa",
-    )
+        total_filas = len(df_dashboard)
+        cumple_tat = int(df_dashboard[COL_PERFORMANCE_TAT].eq("Cumple").sum())
+        no_cumple_tat = int(df_dashboard[COL_PERFORMANCE_TAT].eq("No cumple").sum())
+        evaluables_tat = cumple_tat + no_cumple_tat
+        pct_cumple_tat = cumple_tat / evaluables_tat * 100 if evaluables_tat else 0
 
-    grafico_grupo(
-        df=df_base,
-        grupo="Plantas de servicios",
-        titulo="Performance TAT Plantas de servicios",
-    )
+        k1, k2, k3, k4 = st.columns(4)
 
-    if mostrar_diagnostico_check:
-        mostrar_diagnostico(df_base)
+        with k1:
+            card_metric("Filas filtradas", f"{total_filas:,}")
+
+        with k2:
+            card_metric("TAT evaluable", f"{evaluables_tat:,}")
+
+        with k3:
+            card_metric("Cumple TAT", f"{cumple_tat:,}", f"{pct_cumple_tat:.1f}%")
+
+        with k4:
+            card_metric("No cumple TAT", f"{no_cumple_tat:,}")
+
+        st.divider()
+
+        section_header(
+            "Resumen por planta",
+            "Porcentaje de cumplimiento TAT por grupo.",
+        )
+
+        mostrar_kpis_plantas(df_dashboard)
+
+        st.divider()
+
+        grafico_mensual_100_plantas(
+            crear_resumen_mensual_grupo(df_dashboard, "Prillex"),
+            "Performance TAT Prillex",
+        )
+
+        grafico_mensual_100_plantas(
+            crear_resumen_mensual_grupo(df_dashboard, "Rio Loa"),
+            "Performance TAT Rio Loa",
+        )
+
+        grafico_mensual_100_plantas(
+            crear_resumen_mensual_grupo(df_dashboard, "Plantas de servicios"),
+            "Performance TAT Plantas de servicios",
+        )
+
+        if mostrar_diagnostico_check:
+            mostrar_diagnostico(df_dashboard)
+
+    with tab_datos:
+        st.subheader("Vista previa original")
+        st.caption(f"Mostrando hasta 300 registros de {len(df_original):,} originales.")
+        st.dataframe(
+            df_original.head(300),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        st.subheader("Vista previa final filtrada")
+
+        columnas_preferidas = [
+            "grupo_planta",
+            "centro_grafico",
+            COL_FECHA_SOLICITUD_FINAL,
+            COL_FECHA_FACTURACION_FINAL,
+            COL_FECHA_RECEPCION_FINAL,
+            "tipo_oc",
+            "dias_tat_total",
+            COL_PERFORMANCE_TAT,
+            "periodo_fecha",
+            "periodo_label",
+        ]
+
+        columnas_preferidas = [
+            col for col in columnas_preferidas
+            if col in df_dashboard.columns
+        ]
+
+        st.dataframe(
+            df_dashboard[columnas_preferidas].head(300),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        with st.expander("Ver columnas disponibles", expanded=False):
+            c1, c2 = st.columns(2)
+
+            with c1:
+                st.markdown("**Columnas originales**")
+                st.write(df_original.columns.tolist())
+
+            with c2:
+                st.markdown("**Columnas finales**")
+                st.write(df_final.columns.tolist())
 
 except Exception as e:
-    st.error("No se pudo generar el gráfico de Performance de Plantas.")
+    st.error("No se pudo generar Performance de Plantas.")
     st.exception(e)
