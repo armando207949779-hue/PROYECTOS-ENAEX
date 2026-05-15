@@ -15,7 +15,7 @@ st.set_page_config(
     page_title="Performance TAT 2025",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -153,13 +153,8 @@ def aplicar_css():
             .stApp {{
                 background: {COLOR_BG};
             }}
-            div[data-testid="stToolbar"] {{
-                visibility: hidden;
-                height: 0%;
-                position: fixed;
-            }}
             .block-container {{
-                padding-top: 1rem;
+                padding-top: 2rem;
                 padding-bottom: 2rem;
                 max-width: 1500px;
             }}
@@ -299,13 +294,25 @@ def encontrar_logo():
     return None
 
 
-def mostrar_logo(ancho: int = 170):
+def mostrar_logo(ancho: int = 220):
+    """Muestra el logo sin interferir con el encabezado de la app global."""
     logo_path = encontrar_logo()
+
     if logo_path is None:
         st.markdown(
             """
-            <div style="font-weight:850;font-size:30px;color:#374151;line-height:1;">Enaex</div>
-            <div style="font-size:9px;color:#6B7280;font-weight:700;letter-spacing:.08em;">STRONGER BONDS</div>
+            <div style="
+                display:flex;
+                align-items:center;
+                justify-content:center;
+                min-height:72px;
+                margin:0 0 14px 0;
+            ">
+                <div style="text-align:center;">
+                    <div style="font-weight:850;font-size:30px;color:#374151;line-height:1;">Enaex</div>
+                    <div style="font-size:9px;color:#6B7280;font-weight:700;letter-spacing:.08em;">STRONGER BONDS</div>
+                </div>
+            </div>
             """,
             unsafe_allow_html=True,
         )
@@ -315,13 +322,32 @@ def mostrar_logo(ancho: int = 170):
     mime = "image/svg+xml" if suffix == ".svg" else "image/png"
     raw = logo_path.read_bytes()
     logo_base64 = base64.b64encode(raw).decode("utf-8")
+
     st.markdown(
         f"""
-        <img src="data:{mime};base64,{logo_base64}" width="{ancho}">
+        <div style="
+            width:100%;
+            display:flex;
+            justify-content:center;
+            align-items:center;
+            min-height:84px;
+            margin:0 0 16px 0;
+            overflow:visible;
+        ">
+            <img
+                src="data:{mime};base64,{logo_base64}"
+                style="
+                    width:{ancho}px;
+                    max-width:80%;
+                    height:auto;
+                    display:block;
+                    object-fit:contain;
+                "
+            >
+        </div>
         """,
         unsafe_allow_html=True,
     )
-
 
 def card_metric(label: str, value: str, note: str = ""):
     st.markdown(
@@ -663,50 +689,67 @@ def crear_resumen_mensual(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def grafico_mensual_100(tabla: pd.DataFrame):
+    """Gráfico mensual 100% apilado, sin etiquetas numéricas sobre las barras."""
     if tabla.empty:
         st.info("No hay datos evaluables para el gráfico mensual.")
         return
+
     plot = tabla.melt(
         id_vars=["periodo_fecha", "periodo_label", "Total"],
         value_vars=["Cumple", "No cumple"],
         var_name="Estado",
         value_name="Cantidad",
     )
-    plot["Porcentaje"] = np.where(plot["Total"] > 0, plot["Cantidad"] / plot["Total"] * 100, 0)
-    plot["Etiqueta"] = plot["Porcentaje"].map(lambda x: f"{x:.1f}%" if x >= 4 else "")
+
+    plot["Estado"] = plot["Estado"].replace({"No cumple": "No Cumple"})
+    plot["Porcentaje"] = np.where(
+        plot["Total"] > 0,
+        plot["Cantidad"] / plot["Total"] * 100,
+        0,
+    )
+    plot["Orden"] = plot["Estado"].map({"Cumple": 1, "No Cumple": 2}).fillna(9)
 
     order = tabla["periodo_label"].tolist()
-    base = alt.Chart(plot).encode(
-        x=alt.X("periodo_label:N", sort=order, title=None, axis=alt.Axis(labelAngle=0, labelFontSize=11)),
-        y=alt.Y("Porcentaje:Q", stack="normalize", title="% sobre evaluables", axis=alt.Axis(format="%", grid=True)),
-        color=alt.Color(
-            "Estado:N",
-            scale=alt.Scale(domain=["Cumple", "No cumple"], range=[COLOR_CUMPLE, COLOR_NO_CUMPLE]),
-            legend=alt.Legend(title=None, orient="bottom"),
-        ),
-        order=alt.Order("Estado:N", sort="ascending"),
-        tooltip=[
-            alt.Tooltip("periodo_label:N", title="Mes"),
-            alt.Tooltip("Estado:N", title="Estado"),
-            alt.Tooltip("Cantidad:Q", title="Cantidad", format=",.0f"),
-            alt.Tooltip("Porcentaje:Q", title="Porcentaje", format=".1f"),
-            alt.Tooltip("Total:Q", title="Total evaluable", format=",.0f"),
-        ],
+
+    chart = (
+        alt.Chart(plot)
+        .mark_bar(size=34, cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
+        .encode(
+            x=alt.X(
+                "periodo_label:N",
+                sort=order,
+                title=None,
+                axis=alt.Axis(labelAngle=0, labelFontSize=11),
+            ),
+            y=alt.Y(
+                "Porcentaje:Q",
+                stack="zero",
+                title="% sobre evaluables",
+                scale=alt.Scale(domain=[0, 100]),
+                axis=alt.Axis(values=[0, 50, 100], labelExpr="datum.value + '%'", grid=True),
+            ),
+            color=alt.Color(
+                "Estado:N",
+                scale=alt.Scale(
+                    domain=["Cumple", "No Cumple"],
+                    range=[COLOR_CUMPLE, COLOR_NO_CUMPLE],
+                ),
+                legend=alt.Legend(title=None, orient="bottom"),
+            ),
+            order=alt.Order("Orden:Q", sort="ascending"),
+            tooltip=[
+                alt.Tooltip("periodo_label:N", title="Mes"),
+                alt.Tooltip("Estado:N", title="Estado"),
+                alt.Tooltip("Cantidad:Q", title="Cantidad", format=",.0f"),
+                alt.Tooltip("Porcentaje:Q", title="Porcentaje", format=".1f"),
+                alt.Tooltip("Total:Q", title="Total evaluable", format=",.0f"),
+            ],
+        )
+        .properties(height=340)
+        .configure_view(strokeWidth=0)
     )
 
-    bars = base.mark_bar(size=34, cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
-    text = base.mark_text(color="white", fontWeight="bold", fontSize=10).encode(text="Etiqueta:N")
-
-    line_df = tabla[["periodo_label", "% Cumple"]].copy()
-    line = alt.Chart(line_df).mark_line(point=True, strokeWidth=2, color="#111827").encode(
-        x=alt.X("periodo_label:N", sort=order, title=None),
-        y=alt.Y("% Cumple:Q", title="% Cumple"),
-        tooltip=[alt.Tooltip("periodo_label:N", title="Mes"), alt.Tooltip("% Cumple:Q", title="% Cumple", format=".1f")],
-    )
-
-    chart = (bars + text + line).resolve_scale(y="independent").properties(height=360).configure_view(strokeWidth=0)
     st.altair_chart(chart, use_container_width=True)
-
 
 def normalizar_estado_donut(valor) -> str:
     """Normaliza estados de performance para las donas, replicando la lógica del script Power BI."""
@@ -799,14 +842,23 @@ def datos_etapa(df: pd.DataFrame, etapa: dict) -> dict:
 
 
 def grafico_donut(cumple: int, no_cumple: int):
+    """Dona con asignación explícita: Cumple = gris, No Cumple = rojo."""
     data = pd.DataFrame({
         "Estado": ["Cumple", "No Cumple"],
-        "Cantidad": [cumple, no_cumple],
+        "Cantidad": [int(cumple), int(no_cumple)],
+        "Orden": [1, 2],
     })
 
     total = int(data["Cantidad"].sum())
+
     if total <= 0:
-        data = pd.DataFrame({"Estado": ["Sin datos"], "Cantidad": [1], "Porcentaje": [0.0], "Etiqueta": [""]})
+        data = pd.DataFrame({
+            "Estado": ["Sin datos"],
+            "Cantidad": [1],
+            "Orden": [3],
+            "Porcentaje": [0.0],
+            "Etiqueta": [""],
+        })
         domain = ["Cumple", "No Cumple", "Sin datos"]
         colors = [COLOR_CUMPLE, COLOR_NO_CUMPLE, COLOR_SIN_DATOS]
     else:
@@ -819,37 +871,42 @@ def grafico_donut(cumple: int, no_cumple: int):
         domain = ["Cumple", "No Cumple"]
         colors = [COLOR_CUMPLE, COLOR_NO_CUMPLE]
 
-    donut = alt.Chart(data).mark_arc(
-        innerRadius=58,
-        outerRadius=86,
-        cornerRadius=3,
-        stroke="white",
-        strokeWidth=2,
-    ).encode(
-        theta=alt.Theta("Cantidad:Q"),
-        color=alt.Color(
-            "Estado:N",
-            scale=alt.Scale(domain=domain, range=colors),
-            legend=alt.Legend(title=None, orient="bottom", labelFontSize=11),
-        ),
-        tooltip=[
-            alt.Tooltip("Estado:N", title="Estado"),
-            alt.Tooltip("Cantidad:Q", title="Cantidad", format=",.0f"),
-            alt.Tooltip("Porcentaje:Q", title="Porcentaje", format=".1f"),
-        ],
+    donut = (
+        alt.Chart(data)
+        .mark_arc(
+            innerRadius=58,
+            outerRadius=86,
+            cornerRadius=3,
+            stroke="white",
+            strokeWidth=2,
+        )
+        .encode(
+            theta=alt.Theta("Cantidad:Q", stack=True),
+            color=alt.Color(
+                "Estado:N",
+                scale=alt.Scale(domain=domain, range=colors),
+                legend=alt.Legend(title=None, orient="bottom", labelFontSize=11),
+            ),
+            order=alt.Order("Orden:Q", sort="ascending"),
+            tooltip=[
+                alt.Tooltip("Estado:N", title="Estado"),
+                alt.Tooltip("Cantidad:Q", title="Cantidad", format=",.0f"),
+                alt.Tooltip("Porcentaje:Q", title="Porcentaje", format=".1f"),
+            ],
+        )
     )
 
-    labels = alt.Chart(data).mark_text(
-        radius=112,
-        fontSize=10,
-        color=COLOR_MUTED,
-    ).encode(
-        theta=alt.Theta("Cantidad:Q", stack=True),
-        text="Etiqueta:N",
+    labels = (
+        alt.Chart(data)
+        .mark_text(radius=112, fontSize=10, color=COLOR_MUTED)
+        .encode(
+            theta=alt.Theta("Cantidad:Q", stack=True),
+            order=alt.Order("Orden:Q", sort="ascending"),
+            text="Etiqueta:N",
+        )
     )
 
     return (donut + labels).properties(height=230).configure_view(strokeWidth=0)
-
 
 def grafico_barras_etapas(resumen: pd.DataFrame):
     if resumen.empty:
@@ -929,10 +986,21 @@ aplicar_css()
 # ---------------------------------------------------------
 # 1) Logo y encabezado
 # ---------------------------------------------------------
-mostrar_logo(180)
+mostrar_logo(220)
 
-st.title("Performance TAT - Match Integrado")
-st.caption("ME5A · ARIBA · NME80FN · Fechas finales")
+st.markdown(
+    """
+    <div style="text-align:center; margin-bottom: 22px;">
+        <div style="font-size:42px; font-weight:850; color:#1F2937; line-height:1.12;">
+            Performance TAT - Match Integrado
+        </div>
+        <div style="font-size:14px; color:#6B7280; margin-top:10px;">
+            ME5A · ARIBA · NME80FN · Fechas finales
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 # ---------------------------------------------------------
 # 2) Configuración lateral
