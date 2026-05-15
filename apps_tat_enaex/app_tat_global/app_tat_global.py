@@ -13,7 +13,6 @@ PROJECT_DIR = BASE_DIR.parent
 
 LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
 
-APP_TAT_CONSOLIDADO = PROJECT_DIR / "app_tat_consolidado" / "app_tat_consolidado.py"
 APP_CREAR_FECHAS_CALCULOS_TAT = (
     PROJECT_DIR
     / "app_crear_fechas_calculos_tat"
@@ -21,6 +20,7 @@ APP_CREAR_FECHAS_CALCULOS_TAT = (
 )
 APP_TAT_ESTADO_PEDIDO = PROJECT_DIR / "app_tat_estado_pedido" / "app_tat_estado_pedido.py"
 APP_TAT_FILTRO = PROJECT_DIR / "app_tat_filtro" / "app_tat_filtro.py"
+APP_TAT_GRAFICOS = PROJECT_DIR / "app_tat_graficos" / "app_tat_graficos.py"
 APP_TAT_LIMPIEZA_ARIBA = PROJECT_DIR / "app_tat_limpieza_ariba" / "app_tat_limpieza_ariba.py"
 APP_TAT_LIMPIEZA_ME5A = PROJECT_DIR / "app_tat_limpieza_me5a" / "app_tat_limpieza_me5a.py"
 APP_TAT_LIMPIEZA_ME80FN = PROJECT_DIR / "app_tat_limpieza_me80fn" / "app_tat_limpieza_me80fn.py"
@@ -87,8 +87,8 @@ def pagina_inicio():
         """
         <p style='text-align: center; font-size: 18px;'>
             Selecciona una aplicación desde el menú lateral para limpiar archivos,
-            consolidar información, realizar cruces, generar fechas finales,
-            calcular performance TAT y preparar reportes relacionados con el análisis TAT.
+            realizar cruces, generar fechas finales, calcular performance TAT,
+            filtrar datos y visualizar gráficos relacionados con el análisis TAT.
         </p>
         """,
         unsafe_allow_html=True
@@ -139,18 +139,19 @@ def pagina_inicio():
     with col5:
         st.info(
             """
-            **Consolidado TAT**
+            **Fechas + Cálculos TAT**
 
-            Consolidación inicial de archivos procesados.
+            Reemplaza Consolidado TAT y Consolidado Final. Genera fechas finales
+            y calcula performance TAT en un solo flujo.
             """
         )
 
     with col6:
         st.info(
             """
-            **Fechas + Cálculos TAT**
+            **Filtro TAT**
 
-            Genera fechas finales y calcula performance TAT en un solo flujo.
+            Filtrado y depuración de información TAT según criterios definidos.
             """
         )
 
@@ -159,9 +160,9 @@ def pagina_inicio():
     with col7:
         st.info(
             """
-            **Filtro TAT**
+            **Gráficos TAT**
 
-            Filtrado y depuración de información TAT según criterios definidos.
+            Visualización y análisis gráfico de resultados TAT.
             """
         )
 
@@ -181,9 +182,9 @@ apps_requeridas = {
     "Limpieza ME5A": APP_TAT_LIMPIEZA_ME5A,
     "Limpieza ME80FN": APP_TAT_LIMPIEZA_ME80FN,
     "Match TAT": APP_TAT_MATCH,
-    "Consolidado TAT": APP_TAT_CONSOLIDADO,
     "Fechas + Cálculos TAT": APP_CREAR_FECHAS_CALCULOS_TAT,
     "Filtro TAT": APP_TAT_FILTRO,
+    "Gráficos TAT": APP_TAT_GRAFICOS,
 }
 
 apps_faltantes = {
@@ -238,13 +239,6 @@ pagina = st.navigation(
                 icon="🔗"
             ),
         ],
-        "Consolidado": [
-            st.Page(
-                APP_TAT_CONSOLIDADO,
-                title="Consolidado TAT",
-                icon="🧩"
-            ),
-        ],
         "Fechas y cálculos": [
             st.Page(
                 APP_CREAR_FECHAS_CALCULOS_TAT,
@@ -257,6 +251,13 @@ pagina = st.navigation(
                 APP_TAT_FILTRO,
                 title="Filtro TAT",
                 icon="🔎"
+            ),
+        ],
+        "Visualización": [
+            st.Page(
+                APP_TAT_GRAFICOS,
+                title="Gráficos TAT",
+                icon="📊"
             ),
         ],
     }
