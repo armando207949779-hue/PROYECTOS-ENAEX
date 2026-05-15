@@ -1,7 +1,6 @@
 # app.py
 
 import io
-import textwrap
 
 import numpy as np
 import pandas as pd
@@ -489,7 +488,7 @@ def grafico_performance_tat(df_plot: pd.DataFrame):
 
 
 # =========================================================
-# TARJETAS POR ETAPA
+# TARJETAS POR ETAPA SIN HTML
 # =========================================================
 
 def detectar_columnas_etapas(df: pd.DataFrame):
@@ -601,6 +600,14 @@ def crear_tabla_diagnostico_etapas(df_base: pd.DataFrame) -> pd.DataFrame:
             data.append({
                 "Etapa": etapa["titulo"],
                 "Estado": "Faltan columnas",
+                "Regla": etapa["regla"],
+                "Cumple": 0,
+                "No cumple": 0,
+                "Total evaluable etapa": 0,
+                "% Cumple": 0,
+                "% No cumple": 0,
+                "Promedio días Dx > 0": 0,
+                "N usado promedio": 0,
                 "Columna performance": col_perf,
                 "Columna días": col_dias,
             })
@@ -614,10 +621,11 @@ def crear_tabla_diagnostico_etapas(df_base: pd.DataFrame) -> pd.DataFrame:
 
         data.append({
             "Etapa": etapa["titulo"],
+            "Estado": "OK",
             "Regla": etapa["regla"],
             "Cumple": int(conteo["Cumple"]),
             "No cumple": int(conteo["No cumple"]),
-            "Total evaluable dona": int(total),
+            "Total evaluable etapa": int(total),
             "% Cumple": round(float(porcentaje["Cumple"]), 2),
             "% No cumple": round(float(porcentaje["No cumple"]), 2),
             "Promedio días Dx > 0": round(float(promedio), 2),
@@ -639,150 +647,34 @@ def render_tarjeta_etapa(
     promedio,
     objetivo=65
 ):
-    color_estado = COLOR_OBJETIVO if pct_cumple >= objetivo else COLOR_NO_CUMPLE
-    texto_estado = "Superó 65%" if pct_cumple >= objetivo else "No superó 65%"
-    ancho_barra = max(0, min(float(pct_cumple), 100))
+    estado_objetivo = "Superó 65%" if pct_cumple >= objetivo else "No superó 65%"
+    delta_objetivo = pct_cumple - objetivo
 
-    html = textwrap.dedent(f"""
-    <div style="
-        background: white;
-        border: 1px solid #E5E7EB;
-        border-radius: 18px;
-        padding: 20px;
-        box-shadow: 0 4px 14px rgba(0,0,0,0.04);
-        min-height: 360px;
-    ">
-        <div style="
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 10px;
-        ">
-            <div style="
-                font-size: 20px;
-                font-weight: 800;
-                color: #222222;
-            ">
-                {titulo}
-            </div>
+    with st.container(border=True):
+        st.subheader(titulo)
+        st.caption(regla)
 
-            <div style="
-                background: {color_estado};
-                color: white;
-                padding: 8px 12px;
-                border-radius: 999px;
-                font-size: 12px;
-                font-weight: 800;
-                white-space: nowrap;
-            ">
-                {texto_estado}
-            </div>
-        </div>
+        st.metric(
+            label="Cumplimiento de la etapa",
+            value=f"{pct_cumple:.1f}%",
+            delta=f"{delta_objetivo:.1f} pp vs objetivo"
+        )
 
-        <div style="
-            margin-top: 10px;
-            font-size: 13px;
-            color: #666666;
-            min-height: 38px;
-        ">
-            {regla}
-        </div>
+        avance = max(0, min(float(pct_cumple), 100)) / 100
+        st.progress(avance)
 
-        <div style="
-            margin-top: 18px;
-            font-size: 42px;
-            font-weight: 900;
-            color: #222222;
-            line-height: 1;
-        ">
-            {pct_cumple:.1f}%
-        </div>
+        st.caption(f"Objetivo: {objetivo}% · Resultado: {estado_objetivo}")
 
-        <div style="
-            margin-top: 7px;
-            font-size: 12px;
-            color: #666666;
-        ">
-            Cumplimiento de la etapa
-        </div>
+        c1, c2 = st.columns(2)
 
-        <div style="
-            margin-top: 16px;
-            width: 100%;
-            height: 12px;
-            background: #F3F4F6;
-            border-radius: 999px;
-            overflow: hidden;
-        ">
-            <div style="
-                width: {ancho_barra:.1f}%;
-                height: 12px;
-                background: {color_estado};
-                border-radius: 999px;
-            "></div>
-        </div>
+        with c1:
+            st.metric("Cumple", f"{cumple:,}")
 
-        <div style="
-            margin-top: 8px;
-            display: flex;
-            justify-content: space-between;
-            font-size: 11px;
-            color: #666666;
-        ">
-            <span>0%</span>
-            <span style="font-weight: 700; color: {COLOR_OBJETIVO};">Objetivo {objetivo}%</span>
-            <span>100%</span>
-        </div>
+        with c2:
+            st.metric("No cumple", f"{no_cumple:,}")
 
-        <div style="
-            margin-top: 18px;
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            font-size: 12px;
-        ">
-            <div style="
-                background: #F3F4F6;
-                border-radius: 12px;
-                padding: 12px;
-            ">
-                <div style="color: #666666;">Cumple</div>
-                <div style="
-                    font-size: 20px;
-                    font-weight: 800;
-                    color: #222222;
-                ">
-                    {cumple:,}
-                </div>
-            </div>
-
-            <div style="
-                background: #F3F4F6;
-                border-radius: 12px;
-                padding: 12px;
-            ">
-                <div style="color: #666666;">No cumple</div>
-                <div style="
-                    font-size: 20px;
-                    font-weight: 800;
-                    color: #222222;
-                ">
-                    {no_cumple:,}
-                </div>
-            </div>
-        </div>
-
-        <div style="
-            margin-top: 14px;
-            font-size: 12px;
-            color: #666666;
-        ">
-            Total evaluable: <b>{total:,}</b> · Promedio días: <b>{promedio:.1f}</b>
-        </div>
-    </div>
-    """).strip()
-
-    st.markdown(html, unsafe_allow_html=True)
+        st.write(f"**Total evaluable:** {total:,}")
+        st.write(f"**Promedio días:** {promedio:.1f}")
 
 
 # =========================================================
@@ -1082,7 +974,7 @@ with tab_dashboard:
         ].copy()
 
     st.caption(
-        "Las tarjetas y el ranking consideran solo Cumple / No cumple por etapa. "
+        "Las tarjetas consideran solo Cumple / No cumple por etapa. "
         "Los promedios usan días > 0 sobre el dataframe filtrado."
     )
 
@@ -1095,8 +987,12 @@ with tab_dashboard:
 
         for col, (_, row) in zip(cols, tabla_diag.iterrows()):
             with col:
-                if "Estado" in row and row.get("Estado") == "Faltan columnas":
-                    st.warning(f"Faltan columnas para {row['Etapa']}")
+                if row.get("Estado") == "Faltan columnas":
+                    with st.container(border=True):
+                        st.subheader(row["Etapa"])
+                        st.warning("Faltan columnas para esta etapa.")
+                        st.caption(f"Columna performance: {row['Columna performance']}")
+                        st.caption(f"Columna días: {row['Columna días']}")
                     continue
 
                 render_tarjeta_etapa(
@@ -1105,7 +1001,7 @@ with tab_dashboard:
                     pct_cumple=float(row["% Cumple"]),
                     cumple=int(row["Cumple"]),
                     no_cumple=int(row["No cumple"]),
-                    total=int(row["Total evaluable dona"]),
+                    total=int(row["Total evaluable etapa"]),
                     promedio=float(row["Promedio días Dx > 0"]),
                     objetivo=OBJETIVO_CUMPLIMIENTO
                 )
