@@ -56,12 +56,21 @@ def normalizar_performance(valor):
     if pd.isna(valor):
         return "Sin información"
 
-    texto = str(valor).strip().lower()
+    texto = (
+        str(valor)
+        .strip()
+        .lower()
+        .replace("á", "a")
+        .replace("é", "e")
+        .replace("í", "i")
+        .replace("ó", "o")
+        .replace("ú", "u")
+    )
 
     if texto in ["cumple", "true", "1", "si", "sí", "yes"]:
         return "Cumple"
 
-    if texto in ["no cumple", "false", "0", "no"]:
+    if texto in ["no cumple", "nocumple", "false", "0", "no"]:
         return "No cumple"
 
     return "Sin información"
@@ -302,6 +311,13 @@ def crear_data_plot(
 
             valor = cantidad if modo_y == "Recuento" else porcentaje
 
+            if modo_y == "Porcentaje" and porcentaje > 0:
+                texto_barra = f"{porcentaje:.1f}%"
+            elif modo_y == "Recuento" and cantidad > 0:
+                texto_barra = f"{cantidad:,.0f}"
+            else:
+                texto_barra = ""
+
             data.append({
                 "periodo_fecha": row["periodo_fecha"],
                 "periodo_label": row["periodo_label"],
@@ -310,10 +326,18 @@ def crear_data_plot(
                 "cantidad": cantidad,
                 "porcentaje": porcentaje,
                 "total": total,
-                "orden_estado": 1 if estado == "Cumple" else 2
+                "orden_estado": 1 if estado == "Cumple" else 2,
+                "texto_barra": texto_barra
             })
 
-    return pd.DataFrame(data)
+    df_plot = pd.DataFrame(data)
+
+    if not df_plot.empty:
+        df_plot = df_plot.sort_values(
+            ["periodo_fecha", "orden_estado"]
+        ).reset_index(drop=True)
+
+    return df_plot
 
 
 def grafico_performance_tat(
@@ -322,6 +346,15 @@ def grafico_performance_tat(
 ):
     if df_plot.empty:
         st.warning("No hay datos evaluables para graficar.")
+        return
+
+    total_visible = df_plot["cantidad"].sum()
+
+    if total_visible == 0:
+        st.warning(
+            "El gráfico mensual no tiene registros Cumple / No cumple para mostrar. "
+            "Revisa el rango de fechas, centro o los valores de performance_tat_total."
+        )
         return
 
     orden_periodos = (
@@ -336,8 +369,8 @@ def grafico_performance_tat(
     barras = (
         alt.Chart(df_plot)
         .mark_bar(
-            cornerRadiusTopLeft=4,
-            cornerRadiusTopRight=4
+            cornerRadiusTopLeft=3,
+            cornerRadiusTopRight=3
         )
         .encode(
             x=alt.X(
@@ -366,10 +399,10 @@ def grafico_performance_tat(
             color=alt.Color(
                 "estado:N",
                 scale=alt.Scale(
-                    domain=ESTADOS_GRAFICO,
+                    domain=["Cumple", "No cumple"],
                     range=[
-                        COLORES_ESTADO[e]
-                        for e in ESTADOS_GRAFICO
+                        COLORES_ESTADO["Cumple"],
+                        COLORES_ESTADO["No cumple"]
                     ]
                 ),
                 legend=alt.Legend(
@@ -392,14 +425,39 @@ def grafico_performance_tat(
         )
     )
 
-    if modo_y == "Porcentaje" and orden_periodos:
+    etiquetas = (
+        alt.Chart(df_plot[df_plot["valor"] > 0])
+        .mark_text(
+            color="white",
+            fontSize=11,
+            fontWeight="bold"
+        )
+        .encode(
+            x=alt.X(
+                "periodo_label:N",
+                sort=orden_periodos
+            ),
+            y=alt.Y(
+                "valor:Q",
+                stack="zero"
+            ),
+            detail="estado:N",
+            order=alt.Order(
+                "orden_estado:Q",
+                sort="ascending"
+            ),
+            text="texto_barra:N"
+        )
+    )
+
+    if modo_y == "Porcentaje":
         zona_objetivo = (
             alt.Chart(pd.DataFrame({
                 "y1": [65],
                 "y2": [100]
             }))
             .mark_rect(
-                opacity=0.08,
+                opacity=0.10,
                 color="#006B4F"
             )
             .encode(
@@ -445,10 +503,10 @@ def grafico_performance_tat(
             )
         )
 
-        chart = zona_objetivo + barras + linea_objetivo + texto_objetivo
+        chart = zona_objetivo + barras + etiquetas + linea_objetivo + texto_objetivo
 
     else:
-        chart = barras
+        chart = barras + etiquetas
 
     chart = (
         chart
@@ -517,7 +575,16 @@ def normalizar_estado_etapa(valor):
     if pd.isna(valor):
         return "Sin información"
 
-    texto = str(valor).strip().lower()
+    texto = (
+        str(valor)
+        .strip()
+        .lower()
+        .replace("á", "a")
+        .replace("é", "e")
+        .replace("í", "i")
+        .replace("ó", "o")
+        .replace("ú", "u")
+    )
 
     if texto == "cumple":
         return "Cumple"
@@ -525,7 +592,7 @@ def normalizar_estado_etapa(valor):
     if texto == "no cumple":
         return "No cumple"
 
-    if texto in ["no aplica", "no aplica al análisis", "no aplica al analisis"]:
+    if texto in ["no aplica", "no aplica al analisis"]:
         return "No aplica"
 
     if texto in ["sin datos", "en proceso"]:
@@ -900,6 +967,11 @@ filtrar_tat_evaluable_etapas = st.sidebar.checkbox(
     )
 )
 
+mostrar_diagnostico_tat = st.sidebar.checkbox(
+    "Mostrar diagnóstico Performance TAT",
+    value=False
+)
+
 
 # =========================================================
 # APLICAR FILTROS GENERALES
@@ -999,6 +1071,24 @@ with tab_dashboard:
     st.caption(
         f"Registros no evaluables excluidos del gráfico mensual: {no_evaluable:,}"
     )
+
+    if mostrar_diagnostico_tat:
+        with st.expander("Diagnóstico rápido Performance TAT", expanded=True):
+            st.write("Distribución original de performance_tat_total filtrado:")
+
+            if "performance_tat_total" in df_filtrado.columns:
+                st.write(
+                    df_filtrado["performance_tat_total"]
+                    .astype(str)
+                    .str.strip()
+                    .value_counts(dropna=False)
+                )
+
+            st.write("Distribución normalizada:")
+            st.write(
+                df_filtrado["performance_tat_estado"]
+                .value_counts(dropna=False)
+            )
 
     st.divider()
 
