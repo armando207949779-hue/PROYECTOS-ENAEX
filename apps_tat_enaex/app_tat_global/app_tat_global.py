@@ -1,3 +1,8 @@
+# ============================================================
+# Portal principal TAT ENAEX
+# Navegación general entre carga, limpieza, cruce, cálculos y análisis
+# ============================================================
+
 import base64
 from pathlib import Path
 
@@ -25,9 +30,23 @@ APP_CREAR_FECHAS_CALCULOS_TAT = (
     / "app_crear_fechas_calculos_tat.py"
 )
 
-APP_TAT_ESTADO_PEDIDO = PROJECT_DIR / "app_tat_estado_pedido" / "app_tat_estado_pedido.py"
-APP_TAT_FILTRO = PROJECT_DIR / "app_tat_filtro" / "app_tat_filtro.py"
-APP_TAT_GRAFICOS = PROJECT_DIR / "app_tat_graficos" / "app_tat_graficos.py"
+APP_TAT_ESTADO_PEDIDO = (
+    PROJECT_DIR
+    / "app_tat_estado_pedido"
+    / "app_tat_estado_pedido.py"
+)
+
+APP_TAT_FILTRO = (
+    PROJECT_DIR
+    / "app_tat_filtro"
+    / "app_tat_filtro.py"
+)
+
+APP_TAT_GRAFICOS = (
+    PROJECT_DIR
+    / "app_tat_graficos"
+    / "app_tat_graficos.py"
+)
 
 APP_GRAPH_PERFORMANCE_PLANTAS = (
     PROJECT_DIR
@@ -35,10 +54,29 @@ APP_GRAPH_PERFORMANCE_PLANTAS = (
     / "app_graph_performance_plantas.py"
 )
 
-APP_TAT_LIMPIEZA_ARIBA = PROJECT_DIR / "app_tat_limpieza_ariba" / "app_tat_limpieza_ariba.py"
-APP_TAT_LIMPIEZA_ME5A = PROJECT_DIR / "app_tat_limpieza_me5a" / "app_tat_limpieza_me5a.py"
-APP_TAT_LIMPIEZA_ME80FN = PROJECT_DIR / "app_tat_limpieza_me80fn" / "app_tat_limpieza_me80fn.py"
-APP_TAT_MATCH = PROJECT_DIR / "app_tat_match" / "app_tat_match.py"
+APP_TAT_LIMPIEZA_ARIBA = (
+    PROJECT_DIR
+    / "app_tat_limpieza_ariba"
+    / "app_tat_limpieza_ariba.py"
+)
+
+APP_TAT_LIMPIEZA_ME5A = (
+    PROJECT_DIR
+    / "app_tat_limpieza_me5a"
+    / "app_tat_limpieza_me5a.py"
+)
+
+APP_TAT_LIMPIEZA_ME80FN = (
+    PROJECT_DIR
+    / "app_tat_limpieza_me80fn"
+    / "app_tat_limpieza_me80fn.py"
+)
+
+APP_TAT_MATCH = (
+    PROJECT_DIR
+    / "app_tat_match"
+    / "app_tat_match.py"
+)
 
 
 # =========================
@@ -59,6 +97,7 @@ st.set_page_config(
 def mostrar_logo_centrado():
     if LOGO_PATH.exists():
         logo_svg = LOGO_PATH.read_text(encoding="utf-8")
+
         logo_base64 = base64.b64encode(
             logo_svg.encode("utf-8")
         ).decode("utf-8")
@@ -124,18 +163,18 @@ def pagina_inicio():
     with col2:
         st.info(
             """
-            **Filtro TAT**
+            **Limpieza de datos**
 
-            Filtrado y depuración de información TAT según criterios definidos.
+            Prepara la información proveniente de Ariba, ME5A y ME80FN antes del cruce.
             """
         )
 
     with col3:
         st.info(
             """
-            **Gráficos TAT**
+            **Match TAT**
 
-            Visualización y análisis gráfico de resultados TAT.
+            Cruce y validación de información entre las fuentes principales del proceso.
             """
         )
 
@@ -144,27 +183,27 @@ def pagina_inicio():
     with col4:
         st.info(
             """
-            **Performance de Plantas**
+            **Fechas + Cálculos TAT**
 
-            Visualización del performance TAT para Prillex, Rio Loa y Plantas de servicios.
+            Generación de fechas finales, cálculo de indicadores y performance TAT.
             """
         )
 
     with col5:
         st.info(
             """
-            **Limpieza Ariba**
+            **Filtro TAT**
 
-            Limpieza y preparación de datos provenientes de Ariba.
+            Filtrado y depuración de información TAT según criterios definidos.
             """
         )
 
     with col6:
         st.info(
             """
-            **Limpieza ME5A**
+            **Gráficos TAT**
 
-            Limpieza y preparación de información desde ME5A.
+            Visualización y análisis gráfico de resultados TAT.
             """
         )
 
@@ -173,28 +212,27 @@ def pagina_inicio():
     with col7:
         st.info(
             """
-            **Limpieza ME80FN**
+            **Performance de Plantas**
 
-            Limpieza y preparación de información desde ME80FN.
+            Visualización del performance TAT para Prillex, Río Loa y plantas de servicios.
             """
         )
 
     with col8:
         st.info(
             """
-            **Match TAT**
+            **Flujo recomendado**
 
-            Cruce y validación de información para análisis TAT.
+            Limpieza → Cruce → Fechas y cálculos → Análisis TAT.
             """
         )
 
     with col9:
         st.info(
             """
-            **Fechas + Cálculos TAT**
+            **Portal centralizado**
 
-            Reemplaza Consolidado TAT y Consolidado Final. Genera fechas finales
-            y calcula performance TAT en un solo flujo.
+            Acceso ordenado a todas las aplicaciones del flujo TAT.
             """
         )
 
@@ -243,6 +281,41 @@ pagina = st.navigation(
                 icon="🏠"
             )
         ],
+
+        "Limpieza": [
+            st.Page(
+                APP_TAT_LIMPIEZA_ARIBA,
+                title="Limpieza Ariba",
+                icon="🧹"
+            ),
+            st.Page(
+                APP_TAT_LIMPIEZA_ME5A,
+                title="Limpieza ME5A",
+                icon="🧾"
+            ),
+            st.Page(
+                APP_TAT_LIMPIEZA_ME80FN,
+                title="Limpieza ME80FN",
+                icon="📄"
+            ),
+        ],
+
+        "Cruce": [
+            st.Page(
+                APP_TAT_MATCH,
+                title="Match TAT",
+                icon="🔗"
+            ),
+        ],
+
+        "Fechas y cálculos": [
+            st.Page(
+                APP_CREAR_FECHAS_CALCULOS_TAT,
+                title="Fechas + Cálculos TAT",
+                icon="📊"
+            ),
+        ],
+
         "Análisis TAT": [
             st.Page(
                 APP_TAT_CARGAR_ARCHIVO,
@@ -263,37 +336,6 @@ pagina = st.navigation(
                 APP_GRAPH_PERFORMANCE_PLANTAS,
                 title="Performance de Plantas",
                 icon="🏭"
-            ),
-        ],
-        "Limpieza": [
-            st.Page(
-                APP_TAT_LIMPIEZA_ARIBA,
-                title="Limpieza Ariba",
-                icon="🧹"
-            ),
-            st.Page(
-                APP_TAT_LIMPIEZA_ME5A,
-                title="Limpieza ME5A",
-                icon="🧾"
-            ),
-            st.Page(
-                APP_TAT_LIMPIEZA_ME80FN,
-                title="Limpieza ME80FN",
-                icon="📄"
-            ),
-        ],
-        "Cruce": [
-            st.Page(
-                APP_TAT_MATCH,
-                title="Match TAT",
-                icon="🔗"
-            ),
-        ],
-        "Fechas y cálculos": [
-            st.Page(
-                APP_CREAR_FECHAS_CALCULOS_TAT,
-                title="Fechas + Cálculos TAT",
-                icon="📊"
             ),
         ],
     }
