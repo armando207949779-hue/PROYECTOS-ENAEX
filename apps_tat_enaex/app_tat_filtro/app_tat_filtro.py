@@ -1,5 +1,4 @@
 import io
-import re
 import base64
 from html import escape
 from pathlib import Path
@@ -22,7 +21,15 @@ import streamlit.components.v1 as components
 
 BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
-LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
+
+LOGO_CANDIDATOS = [
+    ROOT_DIR / "assets" / "logo.svg",
+    ROOT_DIR / "assets" / "logo.png",
+    BASE_DIR / "assets" / "logo.svg",
+    BASE_DIR / "assets" / "logo.png",
+    BASE_DIR / "logo.svg",
+    BASE_DIR / "logo.png",
+]
 
 
 # =========================================================
@@ -167,37 +174,6 @@ st.markdown(
         h3 {
             font-size: 1.05rem !important;
             margin-top: 1rem !important;
-        }
-        .logo-container {
-            width: 100%;
-            text-align: center;
-            margin-top: 0.25rem;
-            margin-bottom: 1.25rem;
-            padding: 10px 0 8px 0;
-            line-height: normal;
-            overflow: visible;
-            min-height: 72px;
-            box-sizing: border-box;
-        }
-        .logo-container img {
-            display: inline-block;
-            width: 220px;
-            max-width: min(220px, 60vw);
-            height: auto;
-            object-fit: contain;
-            vertical-align: middle;
-        }
-        @media (max-width: 760px) {
-            .logo-container {
-                margin-top: 0.15rem;
-                margin-bottom: 0.9rem;
-                padding: 8px 0 6px 0;
-                min-height: 62px;
-            }
-            .logo-container img {
-                width: 170px;
-                max-width: 70vw;
-            }
         }
         div[data-testid="stMetric"] {
             background: #ffffff;
@@ -614,6 +590,55 @@ st.markdown(
 # =========================================================
 # Utilidades de preparación
 # =========================================================
+def encontrar_logo():
+    for path in LOGO_CANDIDATOS:
+        if path.exists():
+            return path
+
+    return None
+
+
+def mostrar_logo(ancho: int = 220):
+    logo_path = encontrar_logo()
+
+    if logo_path is None:
+        st.warning(f"Logo no encontrado: {ROOT_DIR / 'assets' / 'logo.svg'}")
+        return
+
+    suffix = logo_path.suffix.lower()
+    mime = "image/svg+xml" if suffix == ".svg" else "image/png"
+
+    raw = logo_path.read_bytes()
+    logo_base64 = base64.b64encode(raw).decode("utf-8")
+
+    st.markdown(
+        f"""
+        <div style="
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 84px;
+            margin: 0 0 16px 0;
+            overflow: visible;
+        ">
+            <img
+                src="data:{mime};base64,{logo_base64}"
+                style="
+                    width: {ancho}px;
+                    max-width: 80%;
+                    height: auto;
+                    display: block;
+                    object-fit: contain;
+                "
+                alt="Logo Enaex"
+            >
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def limpiar_columnas(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df.columns = df.columns.astype(str).str.strip()
@@ -823,6 +848,31 @@ def formato_valor(valor: Any) -> str:
         return f"{valor:,}".replace(",", ".")
 
     return str(valor)
+
+
+def formato_id(valor: Any) -> str:
+    """
+    Formatea identificadores como SolPed, OC, posición o material
+    sin separador de miles y sin .0 final.
+    """
+    if pd.isna(valor):
+        return "-"
+
+    texto = str(valor).strip()
+
+    try:
+        numero = float(texto)
+
+        if np.isfinite(numero) and numero.is_integer():
+            return str(int(numero))
+
+    except Exception:
+        pass
+
+    if texto.endswith(".0"):
+        texto = texto[:-2]
+
+    return texto
 
 
 def formato_numero(valor: Any, decimales: int = 0) -> str:
@@ -1099,10 +1149,8 @@ def html_avance_actual(row: pd.Series) -> str:
 
     if avance["esta_cerrado"]:
         tat_total_estado = "Cerrado"
-        siguiente = "Recepción registrada"
     else:
         tat_total_estado = "Pendiente hasta recepción"
-        siguiente = avance["siguiente_etapa"]
 
     return dedent(
         f"""
@@ -1268,6 +1316,10 @@ def html_texto(valor: Any) -> str:
     return escape(formato_valor(valor))
 
 
+def html_id(valor: Any) -> str:
+    return escape(formato_id(valor))
+
+
 def etapa_color(row: pd.Series, etapa: dict) -> str:
     perf_col = etapa.get("performance")
     dias_col = etapa.get("dias")
@@ -1337,9 +1389,9 @@ def construir_label_registro(row: pd.Series) -> str:
     texto = str(row.get(COL_TEXTO, ""))[:55]
 
     return (
-        f"SolPed {formato_valor(solped)} | "
-        f"OC {formato_valor(oc)} | "
-        f"Pos {formato_valor(pos)} | "
+        f"SolPed {formato_id(solped)} | "
+        f"OC {formato_id(oc)} | "
+        f"Pos {formato_id(pos)} | "
         f"TAT {texto_dias_y_meses(dias)} | "
         f"{perf} | "
         f"{texto}"
@@ -1614,74 +1666,6 @@ def html_estado_pedido(row: pd.Series) -> str:
     </body>
     </html>
     """
-
-
-# =========================================================
-# UI común
-# =========================================================
-def agregar_padding_a_svg(
-    svg_texto: str,
-    padding_ratio: float = 0.18,
-) -> str:
-    match = re.search(
-        r'viewBox=["\']\s*([\-\d.]+)\s+([\-\d.]+)\s+([\d.]+)\s+([\d.]+)\s*["\']',
-        svg_texto,
-    )
-
-    if not match:
-        return svg_texto
-
-    min_x, min_y, width, height = map(float, match.groups())
-
-    pad_x = width * padding_ratio
-    pad_y = height * padding_ratio
-
-    nuevo_viewbox = (
-        f'viewBox="{min_x - pad_x:.3f} {min_y - pad_y:.3f} '
-        f'{width + (2 * pad_x):.3f} {height + (2 * pad_y):.3f}"'
-    )
-
-    return (
-        svg_texto[:match.start()]
-        + nuevo_viewbox
-        + svg_texto[match.end():]
-    )
-
-
-@st.cache_data(show_spinner=False)
-def obtener_logo_base64() -> str:
-    if not LOGO_PATH.exists():
-        return ""
-
-    logo_svg = LOGO_PATH.read_text(encoding="utf-8")
-    logo_svg = agregar_padding_a_svg(
-        logo_svg,
-        padding_ratio=0.22,
-    )
-
-    return base64.b64encode(
-        logo_svg.encode("utf-8")
-    ).decode("utf-8")
-
-
-def mostrar_logo(ancho: int = 220):
-    logo_base64 = obtener_logo_base64()
-
-    if not logo_base64:
-        return
-
-    st.markdown(
-        f"""
-        <div class="logo-container">
-            <img
-                src="data:image/svg+xml;base64,{logo_base64}"
-                style="width: {ancho}px; max-width: min({ancho}px, 60vw);"
-                alt="Logo Enaex"
-            >
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
 
 
 # =========================================================
@@ -2107,11 +2091,11 @@ if df_filtrado.empty:
 else:
     opciones_detalle = []
 
-    for idx, row in df_filtrado.head(5000).iterrows():
+    for idx, row_iter in df_filtrado.head(5000).iterrows():
         opciones_detalle.append(
             (
                 idx,
-                construir_label_registro(row),
+                construir_label_registro(row_iter),
             )
         )
 
@@ -2195,19 +2179,19 @@ else:
             <div class="head-grid">
                 <div>
                     <div class="head-label">SolPed</div>
-                    <div class="head-value">{html_texto(row.get(COL_SOLPED, np.nan))}</div>
+                    <div class="head-value">{html_id(row.get(COL_SOLPED, np.nan))}</div>
                 </div>
                 <div>
                     <div class="head-label">Orden de compra / Pedido</div>
-                    <div class="head-value">{html_texto(row.get(COL_OC_ME5A, row.get(COL_OC_NME, np.nan)))}</div>
+                    <div class="head-value">{html_id(row.get(COL_OC_ME5A, row.get(COL_OC_NME, np.nan)))}</div>
                 </div>
                 <div>
                     <div class="head-label">Posición SolPed</div>
-                    <div class="head-value">{html_texto(row.get(COL_POS_SOLPED, np.nan))}</div>
+                    <div class="head-value">{html_id(row.get(COL_POS_SOLPED, np.nan))}</div>
                 </div>
                 <div>
                     <div class="head-label">Material</div>
-                    <div class="head-value">{html_texto(row.get(COL_MATERIAL, np.nan))}</div>
+                    <div class="head-value">{html_id(row.get(COL_MATERIAL, np.nan))}</div>
                 </div>
                 <div>
                     <div class="head-label">Centro</div>
