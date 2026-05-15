@@ -113,28 +113,32 @@ ETAPAS_DASHBOARD = [
         "titulo_largo": "Cumplimiento Lib SolPed",
         "col_perf": "performance_liberacion_solped",
         "col_dias": "dias_liberacion_solped",
-        "regla": "Nacional e Internacional ≤ 2 días",
+        "regla": "• Nacional e Internacional < 2",
+        "texto_promedio": "Promedio de Dx Lib SolPed",
     },
     {
         "titulo": "Comprador",
         "titulo_largo": "Cumplimiento Comprador",
         "col_perf": "performance_comprador",
         "col_dias": "dias_comprador",
-        "regla": "Nacional e Internacional ≤ 10 días",
+        "regla": "• Nacional e Internacional < 11",
+        "texto_promedio": "Promedio de Dx Comprador",
     },
     {
         "titulo": "Proveedor",
         "titulo_largo": "Cumplimiento Proveedor",
         "col_perf": "performance_proveedor",
         "col_dias": "dias_proveedor",
-        "regla": "Nacional ≤ 20 días · Internacional ≤ 60 días",
+        "regla": "• Nacional < 20<br>• Internacional < 60",
+        "texto_promedio": "Promedio de Dx Proveedor",
     },
     {
         "titulo": "Logística",
         "titulo_largo": "Cumplimiento Logística",
         "col_perf": "performance_logistica",
         "col_dias": "dias_logistica",
-        "regla": "Nacional e Internacional ≤ 11 días",
+        "regla": "• Nacional e Internacional < 10",
+        "texto_promedio": "Promedio de Dx Logística",
     },
 ]
 
@@ -704,48 +708,147 @@ def grafico_mensual_100(tabla: pd.DataFrame):
     st.altair_chart(chart, use_container_width=True)
 
 
+def normalizar_estado_donut(valor) -> str:
+    """Normaliza estados de performance para las donas, replicando la lógica del script Power BI."""
+    texto = str(valor).strip().lower()
+    texto = (
+        texto.replace("á", "a")
+        .replace("é", "e")
+        .replace("í", "i")
+        .replace("ó", "o")
+        .replace("ú", "u")
+    )
+
+    if texto == "cumple":
+        return "Cumple"
+    if texto in ["no cumple", "nocumple"]:
+        return "No Cumple"
+    if texto in ["no aplica", "no aplica al analisis"]:
+        return "No aplica"
+    return "Sin información"
+
+
 def datos_etapa(df: pd.DataFrame, etapa: dict) -> dict:
+    """
+    Calcula cada dona con la misma lógica del script entregado:
+    1) Toma el dataframe ya filtrado por fecha/centro/sistema.
+    2) Replica el slicer de Power BI: Performance TAT solo Cumple / No cumple.
+    3) Para la dona usa únicamente Cumple / No Cumple de la etapa.
+    4) Para el promedio usa todos los días de la etapa con Dx > 0.
+    """
     col_perf = etapa["col_perf"]
     col_dias = etapa["col_dias"]
+
+    salida_vacia = {
+        "cumple": 0,
+        "no_cumple": 0,
+        "total": 0,
+        "pct_cumple": 0.0,
+        "pct_no_cumple": 0.0,
+        "promedio": 0.0,
+        "n_promedio": 0,
+        "sin_info": 0,
+    }
+
     if col_perf not in df.columns:
-        return {"cumple": 0, "no_cumple": 0, "sin_datos": 0, "total": 0, "pct": 0, "promedio": 0}
-    serie = df[col_perf].astype("object")
-    cumple = int(serie.eq("Cumple").sum())
-    no_cumple = int(serie.eq("No cumple").sum())
-    sin_datos = int((~serie.isin(["Cumple", "No cumple"])).sum())
+        return salida_vacia
+
+    temp = df.copy()
+
+    if "performance_tat_total" in temp.columns:
+        tat_norm = temp["performance_tat_total"].apply(normalizar_estado_donut)
+        temp = temp[tat_norm.isin(["Cumple", "No Cumple"])].copy()
+
+    temp["estado_donut"] = temp[col_perf].apply(normalizar_estado_donut)
+
+    temp_eval = temp[temp["estado_donut"].isin(["Cumple", "No Cumple"])].copy()
+
+    conteo = (
+        temp_eval["estado_donut"]
+        .value_counts()
+        .reindex(["Cumple", "No Cumple"], fill_value=0)
+    )
+
+    cumple = int(conteo["Cumple"])
+    no_cumple = int(conteo["No Cumple"])
     total = cumple + no_cumple
-    pct = cumple / total * 100 if total else 0
-    promedio = 0
-    if col_dias in df.columns:
-        dias = pd.to_numeric(df[col_dias], errors="coerce")
-        dias = dias[dias.ge(0)]
-        promedio = dias.mean() if dias.notna().any() else 0
-    return {"cumple": cumple, "no_cumple": no_cumple, "sin_datos": sin_datos, "total": total, "pct": pct, "promedio": promedio}
+
+    pct_cumple = cumple / total * 100 if total > 0 else 0.0
+    pct_no_cumple = no_cumple / total * 100 if total > 0 else 0.0
+
+    sin_info = int((~temp["estado_donut"].isin(["Cumple", "No Cumple"])).sum())
+
+    promedio = 0.0
+    n_promedio = 0
+    if col_dias in temp.columns:
+        dias = pd.to_numeric(temp[col_dias], errors="coerce").dropna()
+        dias = dias[dias > 0]
+        n_promedio = int(len(dias))
+        promedio = float(dias.mean()) if not dias.empty else 0.0
+
+    return {
+        "cumple": cumple,
+        "no_cumple": no_cumple,
+        "total": total,
+        "pct_cumple": pct_cumple,
+        "pct_no_cumple": pct_no_cumple,
+        "promedio": promedio,
+        "n_promedio": n_promedio,
+        "sin_info": sin_info,
+    }
 
 
-def grafico_donut(cumple: int, no_cumple: int, sin_datos: int = 0):
+def grafico_donut(cumple: int, no_cumple: int):
     data = pd.DataFrame({
-        "Estado": ["Cumple", "No cumple", "Sin datos"],
-        "Cantidad": [cumple, no_cumple, sin_datos],
+        "Estado": ["Cumple", "No Cumple"],
+        "Cantidad": [cumple, no_cumple],
     })
-    data = data[data["Cantidad"] > 0]
-    if data.empty:
-        data = pd.DataFrame({"Estado": ["Sin datos"], "Cantidad": [1]})
-    total_eval = cumple + no_cumple
-    pct = cumple / total_eval * 100 if total_eval else 0
 
-    donut = alt.Chart(data).mark_arc(innerRadius=62, outerRadius=88, cornerRadius=4).encode(
+    total = int(data["Cantidad"].sum())
+    if total <= 0:
+        data = pd.DataFrame({"Estado": ["Sin datos"], "Cantidad": [1], "Porcentaje": [0.0], "Etiqueta": [""]})
+        domain = ["Cumple", "No Cumple", "Sin datos"]
+        colors = [COLOR_CUMPLE, COLOR_NO_CUMPLE, COLOR_SIN_DATOS]
+    else:
+        data["Porcentaje"] = data["Cantidad"] / total * 100
+        data["Etiqueta"] = data.apply(
+            lambda r: f"{r['Estado']} {r['Porcentaje']:.0f}%" if r["Cantidad"] > 0 else "",
+            axis=1,
+        )
+        data = data[data["Cantidad"] > 0].copy()
+        domain = ["Cumple", "No Cumple"]
+        colors = [COLOR_CUMPLE, COLOR_NO_CUMPLE]
+
+    donut = alt.Chart(data).mark_arc(
+        innerRadius=58,
+        outerRadius=86,
+        cornerRadius=3,
+        stroke="white",
+        strokeWidth=2,
+    ).encode(
         theta=alt.Theta("Cantidad:Q"),
         color=alt.Color(
             "Estado:N",
-            scale=alt.Scale(domain=["Cumple", "No cumple", "Sin datos"], range=[COLOR_CUMPLE, COLOR_NO_CUMPLE, COLOR_SIN_DATOS]),
+            scale=alt.Scale(domain=domain, range=colors),
             legend=alt.Legend(title=None, orient="bottom", labelFontSize=11),
         ),
-        tooltip=[alt.Tooltip("Estado:N"), alt.Tooltip("Cantidad:Q", format=",.0f")],
+        tooltip=[
+            alt.Tooltip("Estado:N", title="Estado"),
+            alt.Tooltip("Cantidad:Q", title="Cantidad", format=",.0f"),
+            alt.Tooltip("Porcentaje:Q", title="Porcentaje", format=".1f"),
+        ],
     )
-    centro = alt.Chart(pd.DataFrame({"texto": [f"{pct:.0f}%"]})).mark_text(fontSize=26, fontWeight="bold", color=COLOR_TEXTO).encode(text="texto:N")
-    sub = alt.Chart(pd.DataFrame({"texto": ["Cumple"]})).mark_text(fontSize=11, color=COLOR_MUTED, dy=24).encode(text="texto:N")
-    return (donut + centro + sub).properties(height=220).configure_view(strokeWidth=0)
+
+    labels = alt.Chart(data).mark_text(
+        radius=112,
+        fontSize=10,
+        color=COLOR_MUTED,
+    ).encode(
+        theta=alt.Theta("Cantidad:Q", stack=True),
+        text="Etiqueta:N",
+    )
+
+    return (donut + labels).properties(height=230).configure_view(strokeWidth=0)
 
 
 def grafico_barras_etapas(resumen: pd.DataFrame):
@@ -936,7 +1039,7 @@ try:
         st.markdown("</div>", unsafe_allow_html=True)
 
         st.markdown("<div class='section-card'>", unsafe_allow_html=True)
-        section_header("Cumplimiento por etapa", "Cada tarjeta muestra distribución, porcentaje de cumplimiento y promedio de días no negativos.")
+        section_header("Cumplimiento por etapa", "Donas calculadas solo con Cumple / No Cumple de la etapa y promedio calculado con Dx > 0, replicando la lógica Power BI.")
         cols_etapas = st.columns(4)
         for col, etapa in zip(cols_etapas, ETAPAS_DASHBOARD):
             with col:
@@ -944,9 +1047,10 @@ try:
                 st.markdown("<div class='stage-card'>", unsafe_allow_html=True)
                 st.markdown(f"<div class='stage-title'>{etapa['titulo_largo']}</div>", unsafe_allow_html=True)
                 st.markdown(f"<div class='stage-rule'>{etapa['regla']}</div>", unsafe_allow_html=True)
-                st.altair_chart(grafico_donut(stats["cumple"], stats["no_cumple"], stats["sin_datos"]), use_container_width=True)
+                st.altair_chart(grafico_donut(stats["cumple"], stats["no_cumple"]), use_container_width=True)
                 st.markdown(f"<div class='stage-days'>{stats['promedio']:.0f}</div>", unsafe_allow_html=True)
-                st.markdown(f"<div class='stage-days-label'>Promedio de días · {stats['titulo'] if 'titulo' in stats else etapa['titulo']}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='stage-days-label'>{etapa['texto_promedio']}</div>", unsafe_allow_html=True)
+                st.caption(f"Evaluables dona: {stats['total']:,} · Promedio Dx > 0: {stats['n_promedio']:,}")
                 st.markdown("</div>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
