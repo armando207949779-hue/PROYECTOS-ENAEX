@@ -13,14 +13,35 @@ PROJECT_DIR = BASE_DIR.parent
 
 LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
 
+APP_TAT_CARGAR_ARCHIVO = (
+    PROJECT_DIR
+    / "app_tat_cargar_archivo"
+    / "app_tat_crear_archivo.py"
+)
+
 APP_CREAR_FECHAS_CALCULOS_TAT = (
     PROJECT_DIR
     / "app_crear_fechas_calculos_tat"
     / "app_crear_fechas_calculos_tat.py"
 )
-APP_TAT_ESTADO_PEDIDO = PROJECT_DIR / "app_tat_estado_pedido" / "app_tat_estado_pedido.py"
-APP_TAT_FILTRO = PROJECT_DIR / "app_tat_filtro" / "app_tat_filtro.py"
-APP_TAT_GRAFICOS = PROJECT_DIR / "app_tat_graficos" / "app_tat_graficos.py"
+
+APP_TAT_ESTADO_PEDIDO = (
+    PROJECT_DIR
+    / "app_tat_estado_pedido"
+    / "app_tat_estado_pedido.py"
+)
+
+APP_TAT_FILTRO = (
+    PROJECT_DIR
+    / "app_tat_filtro"
+    / "app_tat_filtro.py"
+)
+
+APP_TAT_GRAFICOS = (
+    PROJECT_DIR
+    / "app_tat_graficos"
+    / "app_tat_graficos.py"
+)
 
 APP_GRAPH_PERFORMANCE_PLANTAS = (
     PROJECT_DIR
@@ -28,10 +49,29 @@ APP_GRAPH_PERFORMANCE_PLANTAS = (
     / "app_graph_performance_plantas.py"
 )
 
-APP_TAT_LIMPIEZA_ARIBA = PROJECT_DIR / "app_tat_limpieza_ariba" / "app_tat_limpieza_ariba.py"
-APP_TAT_LIMPIEZA_ME5A = PROJECT_DIR / "app_tat_limpieza_me5a" / "app_tat_limpieza_me5a.py"
-APP_TAT_LIMPIEZA_ME80FN = PROJECT_DIR / "app_tat_limpieza_me80fn" / "app_tat_limpieza_me80fn.py"
-APP_TAT_MATCH = PROJECT_DIR / "app_tat_match" / "app_tat_match.py"
+APP_TAT_LIMPIEZA_ARIBA = (
+    PROJECT_DIR
+    / "app_tat_limpieza_ariba"
+    / "app_tat_limpieza_ariba.py"
+)
+
+APP_TAT_LIMPIEZA_ME5A = (
+    PROJECT_DIR
+    / "app_tat_limpieza_me5a"
+    / "app_tat_limpieza_me5a.py"
+)
+
+APP_TAT_LIMPIEZA_ME80FN = (
+    PROJECT_DIR
+    / "app_tat_limpieza_me80fn"
+    / "app_tat_limpieza_me80fn.py"
+)
+
+APP_TAT_MATCH = (
+    PROJECT_DIR
+    / "app_tat_match"
+    / "app_tat_match.py"
+)
 
 
 # =========================
@@ -93,8 +133,8 @@ def pagina_inicio():
     st.markdown(
         """
         <p style='text-align: center; font-size: 18px;'>
-            Selecciona una aplicación desde el menú lateral para limpiar archivos,
-            realizar cruces, generar fechas finales, calcular performance TAT,
+            Selecciona una aplicación desde el menú lateral para cargar archivos,
+            limpiar datos, realizar cruces, generar fechas finales, calcular performance TAT,
             filtrar datos y visualizar gráficos relacionados con el análisis TAT.
         </p>
         """,
@@ -108,13 +148,22 @@ def pagina_inicio():
     with col1:
         st.info(
             """
+            **Cargar archivo**
+
+            Carga el archivo base una sola vez para reutilizarlo en las visualizaciones.
+            """
+        )
+
+    with col2:
+        st.info(
+            """
             **Limpieza Ariba**
 
             Limpieza y preparación de datos provenientes de Ariba.
             """
         )
 
-    with col2:
+    with col3:
         st.info(
             """
             **Limpieza ME5A**
@@ -123,7 +172,9 @@ def pagina_inicio():
             """
         )
 
-    with col3:
+    col4, col5, col6 = st.columns(3)
+
+    with col4:
         st.info(
             """
             **Limpieza ME80FN**
@@ -132,9 +183,7 @@ def pagina_inicio():
             """
         )
 
-    col4, col5, col6 = st.columns(3)
-
-    with col4:
+    with col5:
         st.info(
             """
             **Match TAT**
@@ -143,7 +192,7 @@ def pagina_inicio():
             """
         )
 
-    with col5:
+    with col6:
         st.info(
             """
             **Fechas + Cálculos TAT**
@@ -153,7 +202,9 @@ def pagina_inicio():
             """
         )
 
-    with col6:
+    col7, col8, col9 = st.columns(3)
+
+    with col7:
         st.info(
             """
             **Filtro TAT**
@@ -162,9 +213,7 @@ def pagina_inicio():
             """
         )
 
-    col7, col8, col9 = st.columns(3)
-
-    with col7:
+    with col8:
         st.info(
             """
             **Gráficos TAT**
@@ -173,7 +222,7 @@ def pagina_inicio():
             """
         )
 
-    with col8:
+    with col9:
         st.info(
             """
             **Performance de Plantas**
@@ -182,15 +231,13 @@ def pagina_inicio():
             """
         )
 
-    with col9:
-        st.empty()
-
 
 # =========================
 # Validación rápida de archivos
 # =========================
 
 apps_requeridas = {
+    "Cargar archivo": APP_TAT_CARGAR_ARCHIVO,
     "Limpieza Ariba": APP_TAT_LIMPIEZA_ARIBA,
     "Limpieza ME5A": APP_TAT_LIMPIEZA_ME5A,
     "Limpieza ME80FN": APP_TAT_LIMPIEZA_ME80FN,
@@ -228,6 +275,13 @@ pagina = st.navigation(
                 title="Inicio",
                 icon="🏠"
             )
+        ],
+        "Datos": [
+            st.Page(
+                APP_TAT_CARGAR_ARCHIVO,
+                title="Cargar archivo",
+                icon="📁"
+            ),
         ],
         "Limpieza": [
             st.Page(
