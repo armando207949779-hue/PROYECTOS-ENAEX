@@ -352,9 +352,9 @@ def grafico_performance_tat(df_plot: pd.DataFrame):
     barras = (
         alt.Chart(df_plot)
         .mark_bar(
-            size=34,
-            cornerRadiusTopLeft=5,
-            cornerRadiusTopRight=5
+            size=32,
+            cornerRadiusTopLeft=6,
+            cornerRadiusTopRight=6
         )
         .encode(
             x=alt.X(
@@ -385,7 +385,7 @@ def grafico_performance_tat(df_plot: pd.DataFrame):
                     range=[COLOR_CUMPLE, COLOR_NO_CUMPLE]
                 ),
                 legend=alt.Legend(
-                    title="Resultado objetivo",
+                    title="Resultado",
                     orient="bottom",
                     labelFontSize=12
                 )
@@ -419,64 +419,24 @@ def grafico_performance_tat(df_plot: pd.DataFrame):
         )
     )
 
-    linea_objetivo = (
-        alt.Chart(pd.DataFrame({"objetivo": [OBJETIVO_CUMPLIMIENTO]}))
-        .mark_rule(
-            strokeDash=[10, 5],
-            color=COLOR_OBJETIVO,
-            size=4
-        )
-        .encode(
-            y="objetivo:Q"
-        )
-    )
-
-    texto_objetivo = (
-        alt.Chart(pd.DataFrame({
-            "periodo_label": [orden_periodos[0]],
-            "objetivo": [OBJETIVO_CUMPLIMIENTO],
-            "texto": [f"Objetivo {OBJETIVO_CUMPLIMIENTO}%"]
-        }))
-        .mark_text(
-            align="left",
-            baseline="bottom",
-            dx=8,
-            dy=-8,
-            color=COLOR_OBJETIVO,
-            fontWeight="bold",
-            fontSize=14
-        )
-        .encode(
-            x=alt.X(
-                "periodo_label:N",
-                sort=orden_periodos
-            ),
-            y="objetivo:Q",
-            text="texto:N"
-        )
-    )
-
-    chart = barras + etiquetas + linea_objetivo + texto_objetivo
+    chart = barras + etiquetas
 
     chart = (
         chart
         .properties(
             title=alt.TitleParams(
                 text="% Cumplimiento TAT mensual",
-                subtitle=(
-                    "Se muestra solo el porcentaje de cumplimiento. "
-                    "El color indica si el mes superó o no el objetivo."
-                ),
+                subtitle="Porcentaje mensual de cumplimiento sobre registros evaluables.",
                 fontSize=18,
                 subtitleFontSize=12,
                 fontWeight="bold",
                 anchor="start"
             ),
-            height=430
+            height=390
         )
         .configure_axis(
             grid=True,
-            gridOpacity=0.20
+            gridOpacity=0.15
         )
         .configure_view(
             strokeWidth=0
@@ -488,7 +448,7 @@ def grafico_performance_tat(df_plot: pd.DataFrame):
 
 
 # =========================================================
-# TARJETAS POR ETAPA SIN HTML
+# TARJETAS POR ETAPA CON DONUTS
 # =========================================================
 
 def detectar_columnas_etapas(df: pd.DataFrame):
@@ -637,6 +597,74 @@ def crear_tabla_diagnostico_etapas(df_base: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(data)
 
 
+def crear_donut_etapa(pct_cumple: float, titulo: str):
+    pct_cumple = max(0, min(float(pct_cumple), 100))
+    pct_no_cumple = 100 - pct_cumple
+
+    data = pd.DataFrame({
+        "Estado": ["Cumple", "No cumple"],
+        "Porcentaje": [pct_cumple, pct_no_cumple]
+    })
+
+    donut = (
+        alt.Chart(data)
+        .mark_arc(
+            innerRadius=58,
+            outerRadius=82,
+            cornerRadius=4
+        )
+        .encode(
+            theta=alt.Theta("Porcentaje:Q"),
+            color=alt.Color(
+                "Estado:N",
+                scale=alt.Scale(
+                    domain=["Cumple", "No cumple"],
+                    range=[COLOR_CUMPLE, COLOR_NO_CUMPLE]
+                ),
+                legend=None
+            ),
+            tooltip=[
+                alt.Tooltip("Estado:N", title="Estado"),
+                alt.Tooltip("Porcentaje:Q", title="Porcentaje", format=".1f")
+            ]
+        )
+        .properties(
+            height=190,
+            width=190,
+            title=alt.TitleParams(
+                text=titulo,
+                anchor="middle",
+                fontSize=15,
+                fontWeight="bold"
+            )
+        )
+    )
+
+    texto = (
+        alt.Chart(pd.DataFrame({
+            "texto": [f"{pct_cumple:.1f}%"]
+        }))
+        .mark_text(
+            align="center",
+            baseline="middle",
+            fontSize=28,
+            fontWeight="bold",
+            color="#2F3340"
+        )
+        .encode(
+            text="texto:N"
+        )
+    )
+
+    chart = (
+        donut + texto
+    ).configure_view(
+        strokeWidth=0
+    )
+
+    return chart
+
+
 def render_tarjeta_etapa(
     titulo,
     regla,
@@ -647,31 +675,38 @@ def render_tarjeta_etapa(
     promedio,
     objetivo=65
 ):
-    estado_objetivo = "Superó 65%" if pct_cumple >= objetivo else "No superó 65%"
-    delta_objetivo = pct_cumple - objetivo
+    pct_cumple = float(pct_cumple)
+    pct_no_cumple = 100 - pct_cumple if total > 0 else 0
+
+    estado_objetivo = "Superó objetivo" if pct_cumple >= objetivo else "No superó objetivo"
+    diferencia = pct_cumple - objetivo
 
     with st.container(border=True):
         st.subheader(titulo)
         st.caption(regla)
 
-        st.metric(
-            label="Cumplimiento de la etapa",
-            value=f"{pct_cumple:.1f}%",
-            delta=f"{delta_objetivo:.1f} pp vs objetivo"
+        donut = crear_donut_etapa(
+            pct_cumple=pct_cumple,
+            titulo="Cumplimiento"
         )
 
-        avance = max(0, min(float(pct_cumple), 100)) / 100
-        st.progress(avance)
+        st.altair_chart(donut, use_container_width=True)
 
-        st.caption(f"Objetivo: {objetivo}% · Resultado: {estado_objetivo}")
+        st.metric(
+            label="Resultado vs objetivo",
+            value=estado_objetivo,
+            delta=f"{diferencia:.1f} pp"
+        )
 
         c1, c2 = st.columns(2)
 
         with c1:
-            st.metric("Cumple", f"{cumple:,}")
+            st.metric("Cumple", f"{cumple:,}", f"{pct_cumple:.1f}%")
 
         with c2:
-            st.metric("No cumple", f"{no_cumple:,}")
+            st.metric("No cumple", f"{no_cumple:,}", f"{pct_no_cumple:.1f}%")
+
+        st.divider()
 
         st.write(f"**Total evaluable:** {total:,}")
         st.write(f"**Promedio días:** {promedio:.1f}")
@@ -974,8 +1009,8 @@ with tab_dashboard:
         ].copy()
 
     st.caption(
-        "Las tarjetas consideran solo Cumple / No cumple por etapa. "
-        "Los promedios usan días > 0 sobre el dataframe filtrado."
+        "Los donuts muestran el porcentaje de cumplimiento por etapa. "
+        "El cálculo considera solo estados Cumple / No cumple."
     )
 
     tabla_diag = crear_tabla_diagnostico_etapas(df_etapas)
