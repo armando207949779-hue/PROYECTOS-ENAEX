@@ -1,4 +1,3 @@
-import io
 import base64
 from pathlib import Path
 
@@ -234,11 +233,6 @@ def aplicar_css():
                 font-weight: 700;
                 border: 1px solid #E5E7EB;
             }}
-            [data-testid="stFileUploader"] section {{
-                border-radius: 14px;
-                border-color: #CBD5E1;
-                background: #F8FAFC;
-            }}
             .stTabs [data-baseweb="tab-list"] {{
                 gap: 8px;
             }}
@@ -334,64 +328,6 @@ def section_header(title: str, caption: str = ""):
     st.markdown(f"<div class='section-title'>{title}</div>", unsafe_allow_html=True)
     if caption:
         st.markdown(f"<div class='section-caption'>{caption}</div>", unsafe_allow_html=True)
-
-
-# =========================================================
-# LECTURA
-# =========================================================
-
-def obtener_separador(separador_csv: str):
-    if separador_csv == "Automático":
-        return None
-    if separador_csv == "Punto y coma (;)" or separador_csv == "Punto y coma (;):":
-        return ";"
-    if separador_csv == "Coma (,)":
-        return ","
-    if separador_csv == "Tabulación":
-        return "\t"
-    return None
-
-
-@st.cache_data(show_spinner=False)
-def leer_archivo_cache(bytes_archivo: bytes, nombre_archivo: str, separador_csv: str) -> pd.DataFrame:
-    buffer = io.BytesIO(bytes_archivo)
-    nombre = nombre_archivo.lower()
-
-    if nombre.endswith(".parquet"):
-        return pd.read_parquet(buffer)
-
-    if nombre.endswith(".xlsx") or nombre.endswith(".xls"):
-        return pd.read_excel(buffer)
-
-    if nombre.endswith(".csv") or nombre.endswith(".txt"):
-        sep = obtener_separador(separador_csv)
-
-        try:
-            return pd.read_csv(
-                buffer,
-                sep=sep,
-                engine="python",
-                encoding="utf-8-sig",
-                on_bad_lines="skip",
-            )
-        except Exception:
-            buffer.seek(0)
-            return pd.read_csv(
-                buffer,
-                sep=sep,
-                engine="python",
-                encoding="latin1",
-                on_bad_lines="skip",
-            )
-
-    if nombre.endswith(".json") or nombre.endswith(".jsonl"):
-        try:
-            return pd.read_json(buffer, lines=True)
-        except ValueError:
-            buffer.seek(0)
-            return pd.read_json(buffer)
-
-    raise ValueError("Formato no soportado. Usa .parquet, .xlsx, .xls, .csv, .txt, .json o .jsonl")
 
 
 # =========================================================
@@ -537,14 +473,18 @@ def obtener_columna_centro(df: pd.DataFrame) -> str:
         if col in df.columns:
             return col
 
-    raise ValueError("No se encontró columna de centro: Centro - ME5A, Centro - NME80FN o Centro")
+    raise ValueError(
+        "No se encontró columna de centro: Centro - ME5A, Centro - NME80FN o Centro"
+    )
 
 
 def validar_columnas_base(df: pd.DataFrame):
     faltantes = [col for col in COLUMNAS_REQUERIDAS_BASE if col not in df.columns]
 
     if faltantes:
-        raise ValueError(f"Faltan columnas requeridas para calcular Performance TAT: {faltantes}")
+        raise ValueError(
+            f"Faltan columnas requeridas para calcular Performance TAT: {faltantes}"
+        )
 
 
 @st.cache_data(show_spinner=False)
@@ -667,7 +607,6 @@ def aplicar_filtros_dashboard(
     else:
         return pd.DataFrame()
 
-    # Filtro opcional por centros específicos.
     if centros_sel:
         data = data[data["centro_grafico"].isin(centros_sel)].copy()
 
@@ -755,8 +694,16 @@ def crear_resumen_mensual_grupo(df: pd.DataFrame, grupo: str) -> pd.DataFrame:
             tabla[col] = 0
 
     tabla["Total"] = tabla["Cumple"] + tabla["No cumple"]
-    tabla["% Cumple"] = np.where(tabla["Total"] > 0, tabla["Cumple"] / tabla["Total"] * 100, 0)
-    tabla["% No cumple"] = np.where(tabla["Total"] > 0, tabla["No cumple"] / tabla["Total"] * 100, 0)
+    tabla["% Cumple"] = np.where(
+        tabla["Total"] > 0,
+        tabla["Cumple"] / tabla["Total"] * 100,
+        0,
+    )
+    tabla["% No cumple"] = np.where(
+        tabla["Total"] > 0,
+        tabla["No cumple"] / tabla["Total"] * 100,
+        0,
+    )
 
     return tabla.sort_values("periodo_fecha").reset_index(drop=True)
 
@@ -959,12 +906,6 @@ st.markdown(
 with st.sidebar:
     st.header("Configuración")
 
-    separador_csv = st.selectbox(
-        "Separador CSV",
-        options=["Automático", "Punto y coma (;)", "Coma (,)", "Tabulación"],
-        index=0,
-    )
-
     mostrar_diagnostico_check = st.checkbox(
         "Mostrar diagnóstico",
         value=False,
@@ -983,30 +924,23 @@ with st.sidebar:
     )
 
 # ---------------------------------------------------------
-# 3) Subir archivo
+# 3) Leer dataframe global cargado previamente
 # ---------------------------------------------------------
 st.subheader("Archivo")
 
-uploaded_file = st.file_uploader(
-    "Selecciona archivo con fechas finales",
-    type=["parquet", "xlsx", "xls", "csv", "txt", "json", "jsonl"],
-)
-
-if uploaded_file is None:
-    st.info("Carga el archivo con fechas finales para visualizar Performance de Plantas.")
+if "df_tat" not in st.session_state:
+    st.warning("Primero debes cargar el archivo base en Análisis TAT > Cargar archivo.")
     st.stop()
 
+df_original = st.session_state["df_tat"].copy()
+nombre_archivo = st.session_state.get("nombre_archivo_tat", "Archivo cargado")
+
+st.success(f"Archivo activo: {nombre_archivo}")
+
 # ---------------------------------------------------------
-# 4) Procesar archivo y crear filtros modificables
+# 4) Procesar dataframe global y crear filtros modificables
 # ---------------------------------------------------------
 try:
-    with st.spinner("Leyendo archivo..."):
-        df_original = leer_archivo_cache(
-            bytes_archivo=uploaded_file.getvalue(),
-            nombre_archivo=uploaded_file.name,
-            separador_csv=separador_csv,
-        )
-
     with st.spinner("Aplicando lógica de performance y agrupación de plantas..."):
         df_final = aplicar_logica_performance_plantas(df_original)
 
@@ -1025,8 +959,18 @@ try:
 
         estados_disponibles = [
             estado
-            for estado in ["Cumple", "No cumple", "En proceso", "No aplica al análisis", "Sin datos"]
-            if estado in df_final[COL_PERFORMANCE_TAT].dropna().astype(str).unique().tolist()
+            for estado in [
+                "Cumple",
+                "No cumple",
+                "En proceso",
+                "No aplica al análisis",
+                "Sin datos",
+            ]
+            if estado in df_final[COL_PERFORMANCE_TAT]
+            .dropna()
+            .astype(str)
+            .unique()
+            .tolist()
         ]
 
         estados_default = [
@@ -1046,7 +990,11 @@ try:
         grupos_disponibles = [
             grupo
             for grupo in grupos_todos
-            if grupo in df_final["grupo_planta"].dropna().astype(str).unique().tolist()
+            if grupo in df_final["grupo_planta"]
+            .dropna()
+            .astype(str)
+            .unique()
+            .tolist()
         ]
 
         grupos_sel = st.multiselect(
