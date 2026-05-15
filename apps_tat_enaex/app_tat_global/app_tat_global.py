@@ -1,6 +1,7 @@
 # ============================================================
 # Portal principal TAT ENAEX
-# Navegación general entre carga, limpieza, cruce, cálculos y análisis
+# Navegación general entre carga, limpieza, cruce, cálculos,
+# análisis gráfico y alertas TAT
 # ============================================================
 
 import base64
@@ -52,6 +53,12 @@ APP_GRAPH_PERFORMANCE_PLANTAS = (
     PROJECT_DIR
     / "app_tat_graficos"
     / "app_graph_performance_plantas.py"
+)
+
+APP_TAT_ALERTAS = (
+    PROJECT_DIR
+    / "app_tat_alertas"
+    / "app_tat_alertas.py"
 )
 
 APP_TAT_LIMPIEZA_ARIBA = (
@@ -141,7 +148,7 @@ def pagina_inicio():
         <p style='text-align: center; font-size: 18px;'>
             Selecciona una aplicación desde el menú lateral para cargar archivos,
             limpiar datos, realizar cruces, generar fechas finales, calcular performance TAT,
-            filtrar datos y visualizar gráficos relacionados con el análisis TAT.
+            filtrar datos, visualizar gráficos y revisar alertas operacionales del proceso TAT.
         </p>
         """,
         unsafe_allow_html=True
@@ -221,18 +228,18 @@ def pagina_inicio():
     with col8:
         st.info(
             """
-            **Flujo recomendado**
+            **Alertas TAT**
 
-            Limpieza → Cruce → Fechas y cálculos → Análisis TAT.
+            Identificación de casos críticos, atrasos, incumplimientos y registros que requieren revisión.
             """
         )
 
     with col9:
         st.info(
             """
-            **Portal centralizado**
+            **Flujo recomendado**
 
-            Acceso ordenado a todas las aplicaciones del flujo TAT.
+            Limpieza → Cruce → Fechas y cálculos → Análisis TAT → Alertas.
             """
         )
 
@@ -251,6 +258,7 @@ apps_requeridas = {
     "Filtro TAT": APP_TAT_FILTRO,
     "Gráficos TAT": APP_TAT_GRAFICOS,
     "Performance de Plantas": APP_GRAPH_PERFORMANCE_PLANTAS,
+    "Alertas TAT": APP_TAT_ALERTAS,
 }
 
 apps_faltantes = {
@@ -336,6 +344,11 @@ pagina = st.navigation(
                 APP_GRAPH_PERFORMANCE_PLANTAS,
                 title="Performance de Plantas",
                 icon="🏭"
+            ),
+            st.Page(
+                APP_TAT_ALERTAS,
+                title="Alertas TAT",
+                icon="🚨"
             ),
         ],
     }
