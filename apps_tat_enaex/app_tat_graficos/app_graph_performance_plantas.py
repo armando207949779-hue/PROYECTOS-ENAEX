@@ -446,10 +446,6 @@ def convertir_fecha_columna(serie: pd.Series) -> pd.Series:
     return resultado
 
 
-def bool_array(condicion) -> np.ndarray:
-    return pd.Series(condicion).fillna(False).to_numpy(dtype=bool)
-
-
 def extraer_tipo_oc(valor):
     if pd.isna(valor):
         return pd.NA
@@ -805,22 +801,6 @@ def grafico_mensual_100_plantas(tabla: pd.DataFrame, titulo: str):
         )
     )
 
-    etiquetas = (
-        alt.Chart(plot)
-        .mark_text(
-            color="white",
-            fontSize=10,
-            fontWeight="bold",
-            angle=270,
-        )
-        .encode(
-            x=alt.X("periodo_label:N", sort=order),
-            y=alt.Y("Porcentaje:Q", stack="center"),
-            text=alt.Text("Porcentaje:Q", format=".1f"),
-            order=alt.Order("Orden:Q", sort="ascending"),
-        )
-    )
-
     linea_meta = (
         alt.Chart(pd.DataFrame({"Meta": [META_CUMPLIMIENTO]}))
         .mark_rule(
@@ -833,26 +813,8 @@ def grafico_mensual_100_plantas(tabla: pd.DataFrame, titulo: str):
         )
     )
 
-    texto_meta = (
-        alt.Chart(pd.DataFrame({"Meta": [META_CUMPLIMIENTO], "periodo_label": [order[0]]}))
-        .mark_text(
-            align="left",
-            baseline="bottom",
-            dx=4,
-            dy=-4,
-            color=COLOR_META,
-            fontSize=11,
-            fontWeight="bold",
-        )
-        .encode(
-            x=alt.X("periodo_label:N", sort=order),
-            y=alt.Y("Meta:Q"),
-            text=alt.value(f"Meta {META_CUMPLIMIENTO}%"),
-        )
-    )
-
     chart = (
-        (barras + etiquetas + linea_meta + texto_meta)
+        (barras + linea_meta)
         .properties(height=230)
         .configure_view(strokeWidth=0)
     )
