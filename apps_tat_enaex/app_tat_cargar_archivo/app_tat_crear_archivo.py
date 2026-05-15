@@ -1,3 +1,4 @@
+import base64
 from pathlib import Path
 
 import pandas as pd
@@ -5,34 +6,66 @@ import streamlit as st
 
 
 # =========================
-# Configuración
+# Rutas
 # =========================
 
-st.title("Cargar archivo base TAT")
+BASE_DIR = Path(__file__).resolve().parent
+PROJECT_DIR = BASE_DIR.parent
 
-st.markdown(
-    """
-    Sube el archivo base una sola vez.  
-    Luego podrás cambiar entre pestañas de visualización sin volver a cargarlo.
-    """
-)
+LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
 
 
 # =========================
-# Funciones
+# Logo
+# =========================
+
+def mostrar_logo_centrado():
+    if LOGO_PATH.exists():
+        logo_svg = LOGO_PATH.read_text(encoding="utf-8")
+        logo_base64 = base64.b64encode(
+            logo_svg.encode("utf-8")
+        ).decode("utf-8")
+
+        st.markdown(
+            f"""
+            <div style="
+                width: 100%;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                margin-top: 10px;
+                margin-bottom: 20px;
+            ">
+                <img
+                    src="data:image/svg+xml;base64,{logo_base64}"
+                    style="width: 220px; display: block;"
+                >
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+    else:
+        st.warning(f"Logo no encontrado: {LOGO_PATH}")
+
+
+# =========================
+# Lectura de archivo
 # =========================
 
 @st.cache_data(show_spinner="Leyendo archivo...")
-def leer_archivo(uploaded_file, nombre_archivo):
+def leer_archivo(archivo_bytes, nombre_archivo):
     extension = Path(nombre_archivo).suffix.lower()
 
     if extension == ".csv":
-        return pd.read_csv(uploaded_file)
+        return pd.read_csv(archivo_bytes)
 
     if extension in [".xlsx", ".xls"]:
-        return pd.read_excel(uploaded_file)
+        return pd.read_excel(archivo_bytes)
 
-    raise ValueError("Formato no soportado. Usa CSV, XLSX o XLS.")
+    if extension == ".parquet":
+        return pd.read_parquet(archivo_bytes)
+
+    raise ValueError("Formato no soportado. Usa CSV, XLSX, XLS o PARQUET.")
 
 
 def guardar_dataframe_en_sesion(df, nombre_archivo):
@@ -46,12 +79,31 @@ def eliminar_dataframe_de_sesion():
 
 
 # =========================
-# Carga de archivo
+# Interfaz
 # =========================
+
+mostrar_logo_centrado()
+
+st.markdown(
+    "<h1 style='text-align: center;'>Cargar archivo base TAT</h1>",
+    unsafe_allow_html=True
+)
+
+st.markdown(
+    """
+    <p style='text-align: center; font-size: 17px;'>
+        Sube el archivo base una sola vez para reutilizarlo en Filtro TAT,
+        Gráficos TAT y Performance de Plantas.
+    </p>
+    """,
+    unsafe_allow_html=True
+)
+
+st.markdown("---")
 
 archivo = st.file_uploader(
     "Selecciona el archivo base TAT",
-    type=["xlsx", "xls", "csv"],
+    type=["xlsx", "xls", "csv", "parquet"],
     key="archivo_base_tat_uploader"
 )
 
@@ -66,10 +118,6 @@ if archivo is not None:
         st.error("No se pudo cargar el archivo.")
         st.exception(error)
 
-
-# =========================
-# Estado actual
-# =========================
 
 st.markdown("---")
 
@@ -91,14 +139,11 @@ with col2:
 with col3:
     st.metric("Columnas", f"{df_tat.shape[1]:,}")
 
-
 st.subheader("Vista previa del archivo cargado")
 st.dataframe(df_tat.head(50), use_container_width=True)
 
-
 st.subheader("Columnas disponibles")
 st.write(list(df_tat.columns))
-
 
 if st.button("Eliminar archivo cargado"):
     eliminar_dataframe_de_sesion()
