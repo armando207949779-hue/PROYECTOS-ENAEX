@@ -1,6 +1,7 @@
 # app.py
 
 import io
+import textwrap
 
 import numpy as np
 import pandas as pd
@@ -288,9 +289,7 @@ def completar_meses(
     return salida
 
 
-def crear_data_plot(
-    tabla: pd.DataFrame,
-) -> pd.DataFrame:
+def crear_data_plot(tabla: pd.DataFrame) -> pd.DataFrame:
     if tabla.empty:
         return pd.DataFrame()
 
@@ -644,7 +643,7 @@ def render_tarjeta_etapa(
     texto_estado = "Superó 65%" if pct_cumple >= objetivo else "No superó 65%"
     ancho_barra = max(0, min(float(pct_cumple), 100))
 
-    html = f"""
+    html = textwrap.dedent(f"""
     <div style="
         background: white;
         border: 1px solid #E5E7EB;
@@ -781,7 +780,7 @@ def render_tarjeta_etapa(
             Total evaluable: <b>{total:,}</b> · Promedio días: <b>{promedio:.1f}</b>
         </div>
     </div>
-    """
+    """).strip()
 
     st.markdown(html, unsafe_allow_html=True)
 
