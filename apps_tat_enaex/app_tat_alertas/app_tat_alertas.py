@@ -2279,35 +2279,15 @@ except Exception as e:
 # Filtros principales visibles
 # =========================================================
 st.markdown("### Filtros principales")
+st.caption("Ordenados por uso: primero centro, recepción, TAT y alerta; luego búsqueda puntual por documentos.")
 
-c1, c2, c3, c4, c5 = st.columns([1, 1, 0.8, 0.85, 0.9])
+# 1) Filtros de gestión diaria.
+f1, f2, f3, f4 = st.columns([0.95, 0.9, 1.15, 1.05])
 
-with c1:
-    txt_solped = st.text_input(
-        "SolPed",
-        placeholder="Ej: 1001973319",
-        key="filtro_solped",
-    )
-
-with c2:
-    txt_oc = st.text_input(
-        "Orden de compra / Pedido",
-        placeholder="Ej: 4502321875",
-        key="filtro_oc",
-    )
-
-with c3:
-    txt_pos_solped = st.text_input(
-        "Posición SolPed",
-        placeholder="Ej: 10",
-        key="filtro_pos_solped",
-    )
-
-with c4:
+with f1:
     opciones_centro = opciones_filtros.get(COL_CENTRO, [])
     centro_default = [
-        centro
-        for centro in opciones_centro
+        centro for centro in opciones_centro
         if str(centro).strip().upper() == "E002"
     ]
     centro_sel = st.multiselect(
@@ -2317,7 +2297,7 @@ with c4:
         help="Por defecto queda E002 cuando existe en el archivo; puedes quitarlo o elegir otros centros.",
     )
 
-with c5:
+with f2:
     estado_recepcion_sel = st.selectbox(
         "Recepción",
         ["Sin recepción", "Recepcionado", "Todos"],
@@ -2326,8 +2306,103 @@ with c5:
         help="Por defecto muestra pedidos sin recepción registrada. Cambia a Todos o Recepcionado si necesitas revisar casos cerrados.",
     )
 
+with f3:
+    opciones_perf_tat = opciones_filtros.get(COL_PERF_TAT, [])
+    perf_tat_default = [
+        valor for valor in opciones_perf_tat
+        if str(valor).strip().lower() == "en proceso"
+    ]
+    perf_tat_sel = st.multiselect(
+        "Performance TAT",
+        opciones_perf_tat,
+        default=perf_tat_default,
+        help="Por defecto queda filtrado en En proceso cuando existe en el archivo.",
+    )
+
+with f4:
+    nivel_alerta_sel = st.multiselect(
+        "Nivel de alerta",
+        sorted(df_alertas["nivel_alerta"].dropna().astype(str).unique().tolist())
+        if "nivel_alerta" in df_alertas.columns else [],
+    )
+
+f5, f6, f7 = st.columns([1.05, 1.05, 1.1])
+
+with f5:
+    estado_global_sel = st.multiselect(
+        "Estado global",
+        sorted(df_alertas["estado_global"].dropna().astype(str).unique().tolist())
+        if "estado_global" in df_alertas.columns else [],
+    )
+
+with f6:
+    etapa_actual_sel = st.multiselect(
+        "Etapa actual",
+        sorted(df_alertas["etapa_actual"].dropna().astype(str).unique().tolist())
+        if "etapa_actual" in df_alertas.columns else [],
+    )
+
+with f7:
+    usar_dias_restantes = st.checkbox(
+        "Filtrar días restantes TAT",
+        value=False,
+        help="Valores negativos significan días sobre el umbral. Ejemplo: máximo 7 muestra pedidos vencidos o próximos a vencer.",
+    )
+
+if usar_dias_restantes:
+    serie_restante = pd.to_numeric(
+        df_alertas.get("dias_restantes_tat", pd.Series(dtype=float)),
+        errors="coerce",
+    )
+    min_restante_real = int(np.floor(serie_restante.min())) if serie_restante.notna().any() else -9999
+    max_restante_real = int(np.ceil(serie_restante.max())) if serie_restante.notna().any() else 9999
+
+    dr1, dr2 = st.columns(2)
+    with dr1:
+        dias_restantes_min = st.number_input(
+            "Días restantes mínimo",
+            value=min_restante_real,
+            step=1,
+            help="Usa 0 si quieres excluir pedidos ya vencidos.",
+        )
+    with dr2:
+        dias_restantes_max = st.number_input(
+            "Días restantes máximo",
+            value=max_restante_real,
+            step=1,
+            help="Usa 7 para ver pedidos con 7 días o menos contra el umbral.",
+        )
+else:
+    dias_restantes_min = None
+    dias_restantes_max = None
+
+# 2) Búsqueda puntual por documentos.
+st.markdown("#### Búsqueda puntual")
+b1, b2, b3 = st.columns([1, 1, 0.8])
+
+with b1:
+    txt_solped = st.text_input(
+        "SolPed",
+        placeholder="Ej: 1001973319",
+        key="filtro_solped",
+    )
+
+with b2:
+    txt_oc = st.text_input(
+        "Orden de compra / Pedido",
+        placeholder="Ej: 4502321875",
+        key="filtro_oc",
+    )
+
+with b3:
+    txt_pos_solped = st.text_input(
+        "Posición SolPed",
+        placeholder="Ej: 10",
+        key="filtro_pos_solped",
+    )
+
 st.button(
-    "Limpiar filtros principales",
+    "Limpiar búsqueda puntual",
     on_click=limpiar_filtros_principales,
     use_container_width=False,
 )
@@ -2336,222 +2411,83 @@ st.button(
 # =========================================================
 # Filtros avanzados colapsados
 # =========================================================
-with st.expander("Filtros avanzados", expanded=False):
+with st.expander("Más filtros", expanded=False):
     st.caption("Úsalos solo cuando necesites acotar más la búsqueda.")
 
     a1, a2, a3, a4 = st.columns(4)
 
     with a1:
-        txt_pos_oc = st.text_input(
-            "Posición OC",
-            placeholder="Ej: 10",
-        )
-
-        txt_material = st.text_input(
-            "Material",
-            placeholder="Ej: 20012021",
-        )
-
-        txt_descripcion = st.text_input(
-            "Descripción / texto breve",
-            placeholder="Ej: bloqueador",
-        )
+        txt_pos_oc = st.text_input("Posición OC", placeholder="Ej: 10")
+        txt_material = st.text_input("Material", placeholder="Ej: 20012021")
+        txt_descripcion = st.text_input("Descripción / texto breve", placeholder="Ej: bloqueador")
 
     with a2:
-        txt_solicitante = st.text_input(
-            "Solicitante",
-            placeholder="Ej: c.silva",
-        )
-
-        txt_autor = st.text_input(
-            "Autor",
-            placeholder="Ej: CL17330735",
-        )
-
+        txt_solicitante = st.text_input("Solicitante", placeholder="Ej: c.silva")
+        txt_autor = st.text_input("Autor", placeholder="Ej: CL17330735")
 
     with a3:
-        tipo_oc_sel = st.multiselect(
-            "Tipo OC",
-            opciones_filtros.get(COL_TIPO_OC, []),
-        )
-
-        origen_sel = st.multiselect(
-            "Origen",
-            opciones_filtros.get(COL_ORIGEN, []),
-        )
-
-        sistema_sel = st.multiselect(
-            "Sistema",
-            opciones_filtros.get(COL_SISTEMA, []),
-        )
+        tipo_oc_sel = st.multiselect("Tipo OC", opciones_filtros.get(COL_TIPO_OC, []))
+        grupo_sel = st.multiselect("Grupo de compras", opciones_filtros.get(COL_GRUPO_COMPRAS, []))
+        estado_match_sel = st.multiselect("Estado del match", opciones_filtros.get(COL_ESTADO_MATCH, []))
 
     with a4:
-        grupo_sel = st.multiselect(
-            "Grupo de compras",
-            opciones_filtros.get(COL_GRUPO_COMPRAS, []),
-        )
-
-        estado_match_sel = st.multiselect(
-            "Estado del match",
-            opciones_filtros.get(COL_ESTADO_MATCH, []),
-        )
-
-        opciones_perf_tat = opciones_filtros.get(COL_PERF_TAT, [])
-        perf_tat_default = [
-            valor for valor in opciones_perf_tat
-            if str(valor).strip().lower() == "en proceso"
-        ]
-        perf_tat_sel = st.multiselect(
-            "Performance TAT",
-            opciones_perf_tat,
-            default=perf_tat_default,
-            help="Por defecto queda filtrado en En proceso cuando existe en el archivo.",
-        )
-
-        rango_inc_sel = st.multiselect(
-            "Rango incumplimiento TAT",
-            opciones_filtros.get(COL_RANGO_INC, []),
-        )
-
-    st.markdown("#### Filtros de alerta")
-    fa1, fa2, fa3 = st.columns(3)
-
-    with fa1:
-        nivel_alerta_sel = st.multiselect(
-            "Nivel de alerta",
-            sorted(df_alertas["nivel_alerta"].dropna().astype(str).unique().tolist())
-            if "nivel_alerta" in df_alertas.columns else [],
-        )
-
-    with fa2:
-        estado_global_sel = st.multiselect(
-            "Estado global",
-            sorted(df_alertas["estado_global"].dropna().astype(str).unique().tolist())
-            if "estado_global" in df_alertas.columns else [],
-        )
-
-    with fa3:
-        etapa_actual_sel = st.multiselect(
-            "Etapa actual",
-            sorted(df_alertas["etapa_actual"].dropna().astype(str).unique().tolist())
-            if "etapa_actual" in df_alertas.columns else [],
-        )
+        origen_sel = st.multiselect("Origen", opciones_filtros.get(COL_ORIGEN, []))
+        sistema_sel = st.multiselect("Sistema", opciones_filtros.get(COL_SISTEMA, []))
+        rango_inc_sel = st.multiselect("Rango incumplimiento TAT", opciones_filtros.get(COL_RANGO_INC, []))
 
     st.markdown("#### Rango de días / monto")
-
     r1, r2, r3, r4 = st.columns(4)
 
     with r1:
-        usar_dias_tat_min = st.checkbox(
-            "TAT mínimo",
-            value=False,
-        )
-
-        dias_tat_min = st.number_input(
-            "Valor mínimo TAT",
-            value=0,
-            step=1,
-            disabled=not usar_dias_tat_min,
-        )
+        usar_dias_tat_min = st.checkbox("TAT mínimo", value=False)
+        dias_tat_min = st.number_input("Valor mínimo TAT", value=0, step=1, disabled=not usar_dias_tat_min)
 
     with r2:
-        usar_dias_tat_max = st.checkbox(
-            "TAT máximo",
-            value=False,
-        )
-
-        dias_tat_max = st.number_input(
-            "Valor máximo TAT",
-            value=9999,
-            step=1,
-            disabled=not usar_dias_tat_max,
-        )
+        usar_dias_tat_max = st.checkbox("TAT máximo", value=False)
+        dias_tat_max = st.number_input("Valor máximo TAT", value=9999, step=1, disabled=not usar_dias_tat_max)
 
     with r3:
-        usar_monto_min = st.checkbox(
-            "Monto mínimo",
-            value=False,
-        )
-
-        monto_min = st.number_input(
-            "Valor mínimo monto",
-            value=0.0,
-            step=1000.0,
-            disabled=not usar_monto_min,
-        )
+        usar_monto_min = st.checkbox("Monto mínimo", value=False)
+        monto_min = st.number_input("Valor mínimo monto", value=0.0, step=1000.0, disabled=not usar_monto_min)
 
     with r4:
-        usar_monto_max = st.checkbox(
-            "Monto máximo",
-            value=False,
-        )
+        usar_monto_max = st.checkbox("Monto máximo", value=False)
+        monto_max = st.number_input("Valor máximo monto", value=0.0, step=1000.0, disabled=not usar_monto_max)
 
-        monto_max = st.number_input(
-            "Valor máximo monto",
-            value=0.0,
-            step=1000.0,
-            disabled=not usar_monto_max,
-        )
-
-    f1, f2 = st.columns(2)
-
-    with f1:
-        solo_incumplimiento = st.checkbox(
-            "Solo incumplimiento TAT",
-            value=False,
-        )
-
-    with f2:
-        solo_fechas_inconsistentes = st.checkbox(
-            "Solo fechas inconsistentes",
-            value=False,
-        )
+    c_inc, c_fechas = st.columns(2)
+    with c_inc:
+        solo_incumplimiento = st.checkbox("Solo incumplimiento TAT", value=False)
+    with c_fechas:
+        solo_fechas_inconsistentes = st.checkbox("Solo fechas inconsistentes", value=False)
 
     st.markdown("#### Fecha")
-
     fecha_col_disponibles = [
         c for c in FECHAS_CANDIDATAS
         if c in df.columns and pd.api.types.is_datetime64_any_dtype(df[c])
     ]
 
     if fecha_col_disponibles:
-        usar_filtro_fecha = st.checkbox(
-            "Aplicar filtro de fecha",
-            value=False,
-        )
-
+        usar_filtro_fecha = st.checkbox("Aplicar filtro de fecha", value=False)
         col_fecha_filtro = st.selectbox(
             "Columna de fecha",
             fecha_col_disponibles,
             index=0,
             disabled=not usar_filtro_fecha,
         )
-
         fecha_min_real = df[col_fecha_filtro].min()
         fecha_max_real = df[col_fecha_filtro].max()
 
         if pd.notna(fecha_min_real) and pd.notna(fecha_max_real):
             fc1, fc2 = st.columns(2)
-
             with fc1:
-                fecha_desde = st.date_input(
-                    "Desde",
-                    value=fecha_min_real.date(),
-                    disabled=not usar_filtro_fecha,
-                )
-
+                fecha_desde = st.date_input("Desde", value=fecha_min_real.date(), disabled=not usar_filtro_fecha)
             with fc2:
-                fecha_hasta = st.date_input(
-                    "Hasta",
-                    value=fecha_max_real.date(),
-                    disabled=not usar_filtro_fecha,
-                )
+                fecha_hasta = st.date_input("Hasta", value=fecha_max_real.date(), disabled=not usar_filtro_fecha)
         else:
             usar_filtro_fecha = False
             fecha_desde = None
             fecha_hasta = None
             st.warning("La columna seleccionada no tiene fechas válidas.")
-
     else:
         usar_filtro_fecha = False
         fecha_desde = None
@@ -2579,6 +2515,9 @@ for nombre, default in {
     "estado_global_sel": [],
     "etapa_actual_sel": [],
     "estado_recepcion_sel": "Sin recepción",
+    "usar_dias_restantes": False,
+    "dias_restantes_min": None,
+    "dias_restantes_max": None,
     "usar_dias_tat_min": False,
     "usar_dias_tat_max": False,
     "dias_tat_min": 0,
@@ -2647,6 +2586,14 @@ if estado_global_sel and "estado_global" in df_alertas.columns:
 
 if etapa_actual_sel and "etapa_actual" in df_alertas.columns:
     mask &= df_alertas["etapa_actual"].astype(str).isin(etapa_actual_sel)
+
+if usar_dias_restantes and "dias_restantes_tat" in df_alertas.columns:
+    mask &= aplicar_rango_numerico(
+        df_alertas,
+        "dias_restantes_tat",
+        dias_restantes_min,
+        dias_restantes_max,
+    )
 
 mask &= aplicar_rango_numerico(
     df,
@@ -2744,8 +2691,24 @@ else:
         )
 
     with st.expander("Matriz de alertas", expanded=False):
+        columnas_relevantes_alerta = [
+            "nivel_alerta",
+            "criterio_alerta",
+            "estado_global",
+            COL_ESTADO_RECEPCION_ALERTA,
+            "etapa_actual",
+            "dias_restantes_tat",
+            "brecha_tat",
+            COL_SOLPED,
+            COL_OC_ME5A,
+            COL_POS_SOLPED,
+            COL_CENTRO,
+            COL_GRUPO_COMPRAS,
+            COL_MATERIAL,
+            COL_TEXTO,
+        ]
         columnas_default_alerta = [
-            c for c in COLUMNAS_ALERTA
+            c for c in columnas_relevantes_alerta
             if c in df_alertas_filtrado.columns
         ]
 
@@ -2777,7 +2740,7 @@ idx_sel = None
 if df_filtrado.empty:
     st.warning("No hay resultados con los filtros aplicados.")
 else:
-    with st.expander("Detalle por pedido", expanded=False):
+    with st.expander("Detalle por pedido", expanded=True):
         st.caption("Selecciona un registro para revisar el avance, la línea del pedido y las etapas TAT.")
         opciones_detalle = []
 
