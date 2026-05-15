@@ -1,311 +1,690 @@
 import io
 from pathlib import Path
 
+import altair as alt
 import pandas as pd
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import streamlit as st
+
 
 # =========================================================
 # CONFIGURACIÓN
 # =========================================================
 
-st.set_page_config(
-    page_title="Performance de Plantas",
-    page_icon="📊",
-    layout="wide",
-)
+COLOR_CUMPLE = "#606060"
+COLOR_NO_CUMPLE = "#EF3E52"
+COLOR_META = "#008060"
+COLOR_BG = "#F3F4F6"
+COLOR_CARD = "#FFFFFF"
+COLOR_TEXTO = "#1F2937"
+COLOR_MUTED = "#6B7280"
 
-COLOR_CUMPLE = "#666666"      # Gris
-COLOR_NO_CUMPLE = "#E84A5F"   # Rojo
-COLOR_META = "#008060"        # Verde
 META = 65
 
-# Columnas del NUEVO dataframe
 COL_FECHA_RECEPCION = "fecha_recepcion_final"
 COL_FECHA_FACTURA = "fecha_facturacion_final"
 COL_PERF = "performance_tat_total"
-COL_CENTRO = "Centro - ME5A"
 
-# Si no existe Centro - ME5A, se intenta usar esta columna
+COL_CENTRO_PRIORIDAD = "Centro - ME5A"
 COL_CENTRO_FALLBACK = "Centro - NME80FN"
 
-# Filtro igual al de Power BI:
-# fecha_facturacion_final posterior a 01-02-2024 12:00 a. m.
 FECHA_FILTRO_POWERBI = pd.Timestamp("2024-02-01")
 
 CENTROS_EXCLUIR_SERVICIOS = ["E001", "E002", "E009", "E024", "E021"]
 
+MESES_NOMBRE = {
+    1: "enero",
+    2: "febrero",
+    3: "marzo",
+    4: "abril",
+    5: "mayo",
+    6: "junio",
+    7: "julio",
+    8: "agosto",
+    9: "septiembre",
+    10: "octubre",
+    11: "noviembre",
+    12: "diciembre",
+}
+
+
 # =========================================================
-# FUNCIONES
+# ESTILO
 # =========================================================
 
-def leer_archivo(uploaded_file: st.runtime.uploaded_file_manager.UploadedFile) -> pd.DataFrame:
-    nombre = uploaded_file.name.lower()
-    data = uploaded_file.getvalue()
+def aplicar_css():
+    st.markdown(
+        f"""
+        <style>
+            .stApp {{
+                background: {COLOR_BG};
+            }}
+            .block-container {{
+                padding-top: 1.5rem;
+                padding-bottom: 2rem;
+                max-width: 1500px;
+            }}
+            .main-title {{
+                text-align: center;
+                font-size: 34px;
+                font-weight: 850;
+                color: {COLOR_TEXTO};
+                margin-bottom: 4px;
+            }}
+            .main-caption {{
+                text-align: center;
+                font-size: 13px;
+                color: {COLOR_MUTED};
+                margin-bottom: 18px;
+            }}
+            .chart-card {{
+                background: {COLOR_CARD};
+                border: 1px solid #E5E7EB;
+                border-radius: 16px;
+                padding: 14px 16px 8px 16px;
+                box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
+                margin-bottom: 14px;
+            }}
+            .chart-title {{
+                font-size: 17px;
+                font-weight: 750;
+                color: {COLOR_TEXTO};
+                margin-bottom: 4px;
+            }}
+            .chart-caption {{
+                font-size: 12px;
+                color: {COLOR_MUTED};
+                margin-bottom: 8px;
+            }}
+            .metric-box {{
+                background: #FFFFFF;
+                border: 1px solid #E5E7EB;
+                border-radius: 14px;
+                padding: 10px 12px;
+            }}
+            .metric-label {{
+                font-size: 11px;
+                color: {COLOR_MUTED};
+                font-weight: 650;
+            }}
+            .metric-value {{
+                font-size: 22px;
+                font-weight: 850;
+                color: {COLOR_TEXTO};
+            }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# =========================================================
+# LECTURA
+# =========================================================
+
+def obtener_separador(separador_csv: str):
+    if separador_csv == "Automático":
+        return None
+    if separador_csv == "Punto y coma (;)":
+        return ";"
+    if separador_csv == "Coma (,)":
+        return ","
+    if separador_csv == "Tabulación":
+        return "\t"
+    return None
+
+
+@st.cache_data(show_spinner=False)
+def leer_archivo_cache(bytes_archivo: bytes, nombre_archivo: str, separador_csv: str) -> pd.DataFrame:
+    nombre = nombre_archivo.lower()
+    buffer = io.BytesIO(bytes_archivo)
 
     if nombre.endswith(".csv") or nombre.endswith(".txt"):
-        # Intenta separador automático; si falla, prueba ; y tab
-        for sep in [None, ";", "\t", ","]:
-            try:
-                return pd.read_csv(
-                    io.BytesIO(data),
-                    sep=sep,
-                    engine="python",
-                    encoding="utf-8-sig",
-                    on_bad_lines="skip",
-                )
-            except Exception:
-                continue
-        return pd.read_csv(io.BytesIO(data), engine="python", encoding="latin1", on_bad_lines="skip")
+        sep = obtener_separador(separador_csv)
+
+        try:
+            return pd.read_csv(
+                buffer,
+                sep=sep,
+                engine="python",
+                encoding="utf-8-sig",
+                on_bad_lines="skip",
+            )
+        except Exception:
+            buffer.seek(0)
+            return pd.read_csv(
+                buffer,
+                sep=sep,
+                engine="python",
+                encoding="latin1",
+                on_bad_lines="skip",
+            )
 
     if nombre.endswith(".xlsx") or nombre.endswith(".xls"):
-        return pd.read_excel(io.BytesIO(data))
+        return pd.read_excel(buffer)
 
     if nombre.endswith(".parquet"):
-        return pd.read_parquet(io.BytesIO(data))
+        return pd.read_parquet(buffer)
 
     if nombre.endswith(".json") or nombre.endswith(".jsonl"):
-        # Soporta JSON normal o JSON Lines
         try:
-            return pd.read_json(io.BytesIO(data), lines=True)
+            return pd.read_json(buffer, lines=True)
         except ValueError:
-            return pd.read_json(io.BytesIO(data))
+            buffer.seek(0)
+            return pd.read_json(buffer)
 
     raise ValueError("Formato no soportado. Usa CSV, TXT, Excel, Parquet, JSON o JSONL.")
 
 
-def convertir_fecha(serie: pd.Series) -> pd.Series:
-    """Convierte fechas en epoch ms, epoch s o texto a datetime."""
+# =========================================================
+# PREPARACIÓN
+# =========================================================
+
+def convertir_fecha_columna(serie: pd.Series) -> pd.Series:
     if pd.api.types.is_datetime64_any_dtype(serie):
         return pd.to_datetime(serie, errors="coerce")
 
     serie_num = pd.to_numeric(serie, errors="coerce")
-    resultado = pd.Series(pd.NaT, index=serie.index, dtype="datetime64[ns]")
+
+    resultado = pd.Series(
+        pd.NaT,
+        index=serie.index,
+        dtype="datetime64[ns]",
+    )
 
     mask_num = serie_num.notna()
+
     if mask_num.any():
-        # En tu nuevo dataframe las fechas vienen como 1704067200000, o sea epoch en milisegundos
         mask_ms = mask_num & serie_num.abs().ge(10**11)
         mask_s = mask_num & serie_num.abs().lt(10**11)
 
-        resultado.loc[mask_ms] = pd.to_datetime(serie_num.loc[mask_ms], unit="ms", errors="coerce")
-        resultado.loc[mask_s] = pd.to_datetime(serie_num.loc[mask_s], unit="s", errors="coerce")
+        if mask_ms.any():
+            resultado.loc[mask_ms] = pd.to_datetime(
+                serie_num.loc[mask_ms],
+                unit="ms",
+                errors="coerce",
+            )
+
+        if mask_s.any():
+            resultado.loc[mask_s] = pd.to_datetime(
+                serie_num.loc[mask_s],
+                unit="s",
+                errors="coerce",
+            )
 
     mask_texto = ~mask_num
+
     if mask_texto.any():
-        resultado.loc[mask_texto] = pd.to_datetime(serie.loc[mask_texto], dayfirst=True, errors="coerce")
+        resultado.loc[mask_texto] = pd.to_datetime(
+            serie.loc[mask_texto],
+            dayfirst=True,
+            errors="coerce",
+        )
 
     return resultado
 
 
 def normalizar_performance(serie: pd.Series) -> pd.Series:
-    serie = serie.astype(str).str.strip()
-    serie = serie.replace({
-        "No Cumple": "No cumple",
-        "NO CUMPLE": "No cumple",
-        "CUMPLE": "Cumple",
-        "cumple": "Cumple",
-        "no cumple": "No cumple",
-        "No aplica al análisis": "No aplica al analisis",
-    })
-    return serie
+    salida = serie.astype(str).str.strip()
+
+    salida = salida.replace(
+        {
+            "Cumple": "Cumple",
+            "CUMPLE": "Cumple",
+            "cumple": "Cumple",
+            "No cumple": "No cumple",
+            "No Cumple": "No cumple",
+            "NO CUMPLE": "No cumple",
+            "no cumple": "No cumple",
+            "No aplica al análisis": "No aplica al analisis",
+            "No aplica al analisis": "No aplica al analisis",
+            "Sin datos": "Sin datos",
+            "Sin Datos": "Sin datos",
+            "En proceso": "En proceso",
+        }
+    )
+
+    return salida
 
 
-def preparar_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    df.columns = df.columns.astype(str).str.strip()
+def obtener_columna_centro(df: pd.DataFrame) -> str:
+    if COL_CENTRO_PRIORIDAD in df.columns:
+        return COL_CENTRO_PRIORIDAD
 
-    col_centro = COL_CENTRO
-    if col_centro not in df.columns and COL_CENTRO_FALLBACK in df.columns:
-        col_centro = COL_CENTRO_FALLBACK
+    if COL_CENTRO_FALLBACK in df.columns:
+        return COL_CENTRO_FALLBACK
 
-    columnas_requeridas = [COL_FECHA_RECEPCION, COL_FECHA_FACTURA, COL_PERF, col_centro]
-    faltantes = [c for c in columnas_requeridas if c not in df.columns]
+    if "Centro" in df.columns:
+        return "Centro"
+
+    raise ValueError(
+        "No se encontró columna de centro. Se esperaba 'Centro - ME5A', "
+        "'Centro - NME80FN' o 'Centro'."
+    )
+
+
+def validar_columnas(df: pd.DataFrame, col_centro: str):
+    requeridas = [
+        COL_FECHA_RECEPCION,
+        COL_FECHA_FACTURA,
+        COL_PERF,
+        col_centro,
+    ]
+
+    faltantes = [col for col in requeridas if col not in df.columns]
+
     if faltantes:
         raise ValueError(f"Faltan columnas requeridas: {faltantes}")
 
-    df[COL_FECHA_RECEPCION] = convertir_fecha(df[COL_FECHA_RECEPCION])
-    df[COL_FECHA_FACTURA] = convertir_fecha(df[COL_FECHA_FACTURA])
+
+@st.cache_data(show_spinner=False)
+def preparar_dataframe(df_original: pd.DataFrame) -> pd.DataFrame:
+    df = df_original.copy()
+    df.columns = df.columns.astype(str).str.strip()
+
+    col_centro = obtener_columna_centro(df)
+    validar_columnas(df, col_centro)
+
+    df[COL_FECHA_RECEPCION] = convertir_fecha_columna(df[COL_FECHA_RECEPCION])
+    df[COL_FECHA_FACTURA] = convertir_fecha_columna(df[COL_FECHA_FACTURA])
     df[COL_PERF] = normalizar_performance(df[COL_PERF])
-    df[col_centro] = df[col_centro].astype(str).str.strip()
+    df["centro_grafico"] = df[col_centro].astype(str).str.strip()
 
-    # Columna estándar para graficar
-    df["centro_grafico"] = df[col_centro]
-
-    # Filtro Power BI: fecha_facturacion_final posterior a 01-02-2024
     df = df[
-        (df[COL_FECHA_FACTURA] > FECHA_FILTRO_POWERBI) &
-        (df[COL_FECHA_RECEPCION].notna()) &
-        (df[COL_PERF].isin(["Cumple", "No cumple"]))
+        (df[COL_FECHA_FACTURA] > FECHA_FILTRO_POWERBI)
+        & df[COL_FECHA_RECEPCION].notna()
+        & df[COL_PERF].isin(["Cumple", "No cumple"])
     ].copy()
 
-    df["Mes"] = df[COL_FECHA_RECEPCION].dt.to_period("M").dt.to_timestamp()
+    df["periodo_fecha"] = df[COL_FECHA_RECEPCION].dt.to_period("M").dt.to_timestamp()
+    df["anio"] = df[COL_FECHA_RECEPCION].dt.year
+    df["mes_num"] = df[COL_FECHA_RECEPCION].dt.month
+    df["mes_nombre"] = df["mes_num"].map(MESES_NOMBRE)
+    df["periodo_label"] = (
+        df["mes_nombre"].astype(str)
+        + " "
+        + df["anio"].astype("Int64").astype(str)
+    )
+
+    df["grupo_planta"] = "Plantas de servicios"
+
+    df.loc[df["centro_grafico"].eq("E002"), "grupo_planta"] = "Prillex"
+    df.loc[df["centro_grafico"].eq("E024"), "grupo_planta"] = "Rio Loa"
+
+    df.loc[
+        df["centro_grafico"].isin(CENTROS_EXCLUIR_SERVICIOS)
+        & ~df["centro_grafico"].isin(["E002", "E024"]),
+        "grupo_planta",
+    ] = "Excluir"
+
+    df = df[df["grupo_planta"].ne("Excluir")].copy()
 
     return df
 
 
-def crear_resumen(data: pd.DataFrame) -> pd.DataFrame:
+# =========================================================
+# RESÚMENES
+# =========================================================
+
+def crear_resumen_grupo(df: pd.DataFrame, grupo: str) -> pd.DataFrame:
+    data = df[df["grupo_planta"].eq(grupo)].copy()
+
+    if data.empty:
+        return pd.DataFrame()
+
     resumen = (
         data
-        .groupby(["Mes", COL_PERF])
+        .groupby(["periodo_fecha", "periodo_label", COL_PERF])
         .size()
-        .reset_index(name="Cantidad")
+        .reset_index(name="cantidad")
     )
 
-    resumen["Total Mes"] = resumen.groupby("Mes")["Cantidad"].transform("sum")
-    resumen["Porcentaje"] = resumen["Cantidad"] / resumen["Total Mes"] * 100
-    resumen = resumen.sort_values("Mes")
+    resumen["total_mes"] = resumen.groupby("periodo_fecha")["cantidad"].transform("sum")
+    resumen["porcentaje"] = resumen["cantidad"] / resumen["total_mes"] * 100
+
+    resumen["estado"] = resumen[COL_PERF].replace(
+        {
+            "Cumple": "Cumple",
+            "No cumple": "No Cumple",
+        }
+    )
+
+    resumen["orden_estado"] = resumen["estado"].map(
+        {
+            "Cumple": 1,
+            "No Cumple": 2,
+        }
+    )
+
+    resumen = resumen.sort_values(["periodo_fecha", "orden_estado"])
+
     return resumen
 
 
-def agregar_grafico(fig, data: pd.DataFrame, fila: int, mostrar_leyenda: bool):
-    resumen = crear_resumen(data)
+def resumen_kpis(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return pd.DataFrame()
 
-    for estado, color in [("Cumple", COLOR_CUMPLE), ("No cumple", COLOR_NO_CUMPLE)]:
-        estado_data = resumen[resumen[COL_PERF] == estado].copy()
+    tabla = (
+        df
+        .groupby(["grupo_planta", COL_PERF])
+        .size()
+        .reset_index(name="cantidad")
+    )
 
-        fig.add_trace(
-            go.Bar(
-                x=estado_data["Mes"],
-                y=estado_data["Porcentaje"],
-                name=estado,
-                marker_color=color,
-                text=estado_data["Porcentaje"].round(1).astype(str) + "%",
-                textposition="inside",
-                textfont=dict(color="white", size=11),
-                hovertemplate=(
-                    "Mes: %{x|%b %Y}<br>"
-                    f"Estado: {estado}<br>"
-                    "Porcentaje: %{y:.1f}%<br>"
-                    "<extra></extra>"
-                ),
-                showlegend=mostrar_leyenda,
+    pivot = tabla.pivot_table(
+        index="grupo_planta",
+        columns=COL_PERF,
+        values="cantidad",
+        fill_value=0,
+        aggfunc="sum",
+    ).reset_index()
+
+    for col in ["Cumple", "No cumple"]:
+        if col not in pivot.columns:
+            pivot[col] = 0
+
+    pivot["Total evaluable"] = pivot["Cumple"] + pivot["No cumple"]
+    pivot["% Cumple"] = pivot["Cumple"] / pivot["Total evaluable"] * 100
+    pivot["% Cumple"] = pivot["% Cumple"].fillna(0)
+
+    return pivot
+
+
+# =========================================================
+# GRÁFICOS ALTAIR
+# =========================================================
+
+def grafico_grupo(df: pd.DataFrame, grupo: str, titulo: str):
+    resumen = crear_resumen_grupo(df, grupo)
+
+    st.markdown("<div class='chart-card'>", unsafe_allow_html=True)
+    st.markdown(f"<div class='chart-title'>{titulo}</div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div class='chart-caption'>Base: Performance TAT Cumple / No cumple. "
+        "Filtro aplicado: fecha_facturacion_final posterior a 01-02-2024.</div>",
+        unsafe_allow_html=True,
+    )
+
+    if resumen.empty:
+        st.info("Sin datos para este grupo.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    orden_periodos = (
+        resumen
+        .drop_duplicates("periodo_fecha")
+        .sort_values("periodo_fecha")["periodo_label"]
+        .tolist()
+    )
+
+    barras = (
+        alt.Chart(resumen)
+        .mark_bar(size=28)
+        .encode(
+            x=alt.X(
+                "periodo_label:N",
+                sort=orden_periodos,
+                title=None,
+                axis=alt.Axis(labelAngle=-90, labelFontSize=10),
             ),
-            row=fila,
-            col=1,
+            y=alt.Y(
+                "porcentaje:Q",
+                stack="zero",
+                title="% Performance TAT",
+                scale=alt.Scale(domain=[0, 100]),
+                axis=alt.Axis(
+                    values=[0, 50, 100],
+                    labelExpr="datum.value + '%'",
+                    grid=True,
+                ),
+            ),
+            color=alt.Color(
+                "estado:N",
+                scale=alt.Scale(
+                    domain=["Cumple", "No Cumple"],
+                    range=[COLOR_CUMPLE, COLOR_NO_CUMPLE],
+                ),
+                legend=alt.Legend(
+                    title="Performance TAT",
+                    orient="top",
+                    direction="horizontal",
+                ),
+            ),
+            order=alt.Order("orden_estado:Q", sort="ascending"),
+            tooltip=[
+                alt.Tooltip("periodo_label:N", title="Mes"),
+                alt.Tooltip("estado:N", title="Estado"),
+                alt.Tooltip("cantidad:Q", title="Cantidad", format=",.0f"),
+                alt.Tooltip("porcentaje:Q", title="Porcentaje", format=".1f"),
+                alt.Tooltip("total_mes:Q", title="Total mes", format=",.0f"),
+            ],
         )
-
-    fig.add_hline(
-        y=META,
-        line_dash="dash",
-        line_color=COLOR_META,
-        annotation_text=f"Meta {META}%",
-        annotation_position="top left",
-        row=fila,
-        col=1,
     )
 
-
-def grafico_performance_plantas(df: pd.DataFrame):
-    grupos = {
-        "Performance TAT Prillex": df[df["centro_grafico"] == "E002"].copy(),
-        "Performance TAT Rio Loa": df[df["centro_grafico"] == "E024"].copy(),
-        "Performance TAT Plantas de servicios": df[~df["centro_grafico"].isin(CENTROS_EXCLUIR_SERVICIOS)].copy(),
-    }
-
-    fig = make_subplots(
-        rows=3,
-        cols=1,
-        shared_xaxes=True,
-        vertical_spacing=0.10,
-        subplot_titles=list(grupos.keys()),
+    etiquetas = (
+        alt.Chart(resumen)
+        .mark_text(
+            color="white",
+            fontSize=10,
+            dy=0,
+            angle=270,
+            fontWeight="bold",
+        )
+        .encode(
+            x=alt.X("periodo_label:N", sort=orden_periodos),
+            y=alt.Y("porcentaje:Q", stack="center"),
+            text=alt.Text("porcentaje:Q", format=".1f"),
+            order=alt.Order("orden_estado:Q", sort="ascending"),
+        )
     )
 
-    for fila, (titulo, data) in enumerate(grupos.items(), start=1):
+    linea_meta = (
+        alt.Chart(pd.DataFrame({"meta": [META]}))
+        .mark_rule(
+            color=COLOR_META,
+            strokeDash=[6, 4],
+            strokeWidth=2,
+        )
+        .encode(
+            y="meta:Q",
+        )
+    )
+
+    texto_meta = (
+        alt.Chart(pd.DataFrame({"meta": [META], "x": [orden_periodos[0]]}))
+        .mark_text(
+            align="left",
+            baseline="bottom",
+            dx=4,
+            dy=-4,
+            color=COLOR_META,
+            fontSize=11,
+            fontWeight="bold",
+        )
+        .encode(
+            x=alt.X("x:N", sort=orden_periodos),
+            y="meta:Q",
+            text=alt.value(f"Meta {META}%"),
+        )
+    )
+
+    chart = (
+        (barras + etiquetas + linea_meta + texto_meta)
+        .properties(height=185)
+        .configure_view(strokeWidth=0)
+    )
+
+    st.altair_chart(chart, use_container_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def mostrar_kpis(df: pd.DataFrame):
+    kpis = resumen_kpis(df)
+
+    if kpis.empty:
+        return
+
+    orden = ["Prillex", "Rio Loa", "Plantas de servicios"]
+
+    cols = st.columns(3)
+
+    for i, grupo in enumerate(orden):
+        data = kpis[kpis["grupo_planta"].eq(grupo)]
+
         if data.empty:
-            fig.add_annotation(
-                text="Sin datos",
-                x=0.5,
-                y=0.5,
-                xref=f"x{fila if fila > 1 else ''} domain",
-                yref=f"y{fila if fila > 1 else ''} domain",
-                showarrow=False,
-                row=fila,
-                col=1,
+            cumple = 0
+            no_cumple = 0
+            total = 0
+            pct = 0
+        else:
+            fila = data.iloc[0]
+            cumple = int(fila["Cumple"])
+            no_cumple = int(fila["No cumple"])
+            total = int(fila["Total evaluable"])
+            pct = float(fila["% Cumple"])
+
+        with cols[i]:
+            st.markdown(
+                f"""
+                <div class="metric-box">
+                    <div class="metric-label">{grupo}</div>
+                    <div class="metric-value">{pct:.1f}%</div>
+                    <div style="font-size:11px;color:{COLOR_MUTED};">
+                        Cumple: {cumple:,} · No cumple: {no_cumple:,} · Total: {total:,}
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
             )
-            continue
-
-        agregar_grafico(fig, data, fila=fila, mostrar_leyenda=(fila == 1))
-
-    fig.update_layout(
-        title={
-            "text": "<b>PERFORMANCE DE PLANTAS</b>",
-            "x": 0.5,
-            "xanchor": "center",
-            "font": {"size": 28},
-        },
-        barmode="stack",
-        height=850,
-        margin=dict(l=40, r=40, t=100, b=40),
-        legend=dict(
-            title="Performance TAT",
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="center",
-            x=0.5,
-        ),
-        plot_bgcolor="#F2F2F2",
-        paper_bgcolor="#FFFFFF",
-    )
-
-    for fila in range(1, 4):
-        fig.update_yaxes(
-            range=[0, 100],
-            ticksuffix="%",
-            tickvals=[0, 50, 100],
-            title_text="",
-            row=fila,
-            col=1,
-        )
-        fig.update_xaxes(
-            tickformat="%b\n%Y",
-            row=fila,
-            col=1,
-        )
-
-    fig.update_xaxes(title_text="Fecha recepción mercancía", row=3, col=1)
-
-    st.plotly_chart(fig, use_container_width=True)
 
 
 def mostrar_diagnostico(df: pd.DataFrame):
-    with st.expander("Ver diagnóstico de datos"):
+    with st.expander("Ver diagnóstico de datos", expanded=False):
         st.write("Filas usadas después de filtros:", len(df))
-        st.write("Rango fecha recepción:", df[COL_FECHA_RECEPCION].min(), "→", df[COL_FECHA_RECEPCION].max())
+
+        st.write(
+            "Rango fecha recepción:",
+            df[COL_FECHA_RECEPCION].min(),
+            "→",
+            df[COL_FECHA_RECEPCION].max(),
+        )
+
         st.write("Centros principales:")
-        st.dataframe(df["centro_grafico"].value_counts().reset_index().rename(columns={"centro_grafico": "Centro", "count": "Filas"}))
+        centros = (
+            df["centro_grafico"]
+            .value_counts()
+            .reset_index()
+        )
+        centros.columns = ["Centro", "Filas"]
+        st.dataframe(centros, use_container_width=True, hide_index=True)
+
         st.write("Performance TAT:")
-        st.dataframe(df[COL_PERF].value_counts().reset_index().rename(columns={COL_PERF: "Estado", "count": "Filas"}))
+        perf = (
+            df[COL_PERF]
+            .value_counts()
+            .reset_index()
+        )
+        perf.columns = ["Estado", "Filas"]
+        st.dataframe(perf, use_container_width=True, hide_index=True)
+
+        st.write("Grupos:")
+        grupos = (
+            df["grupo_planta"]
+            .value_counts()
+            .reset_index()
+        )
+        grupos.columns = ["Grupo", "Filas"]
+        st.dataframe(grupos, use_container_width=True, hide_index=True)
+
 
 # =========================================================
 # APP
 # =========================================================
 
-st.title("Performance de Plantas")
-st.caption("Prillex = E002 · Rio Loa = E024 · Plantas de servicios = todos excepto E001, E002, E009, E024 y E021")
+aplicar_css()
+
+st.markdown(
+    """
+    <div class="main-title">PERFORMANCE DE PLANTAS</div>
+    <div class="main-caption">
+        Prillex = E002 · Rio Loa = E024 · Plantas de servicios = todos excepto E001, E002, E009, E024 y E021
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+with st.sidebar:
+    st.header("Performance de Plantas")
+
+    separador_csv = st.selectbox(
+        "Separador CSV",
+        options=["Automático", "Punto y coma (;)", "Coma (,)", "Tabulación"],
+        index=0,
+    )
+
+    mostrar_diagnostico_check = st.checkbox(
+        "Mostrar diagnóstico",
+        value=False,
+    )
+
+    st.caption(
+        "El gráfico usa fecha_recepcion_final como eje X y filtra "
+        "fecha_facturacion_final > 01-02-2024."
+    )
 
 archivo = st.file_uploader(
-    "Carga el nuevo dataframe",
+    "Carga el dataframe con fechas finales",
     type=["csv", "txt", "xlsx", "xls", "parquet", "json", "jsonl"],
 )
 
 if archivo is None:
-    st.info("Carga un archivo para ver el gráfico.")
+    st.info("Carga un archivo para visualizar el gráfico de Performance de Plantas.")
     st.stop()
 
 try:
-    df_original = leer_archivo(archivo)
-    df_base = preparar_dataframe(df_original)
+    with st.spinner("Leyendo archivo..."):
+        df_original = leer_archivo_cache(
+            bytes_archivo=archivo.getvalue(),
+            nombre_archivo=archivo.name,
+            separador_csv=separador_csv,
+        )
+
+    with st.spinner("Preparando gráfico..."):
+        df_base = preparar_dataframe(df_original)
 
     if df_base.empty:
-        st.warning("No hay datos después de aplicar el filtro de fecha y Performance TAT.")
+        st.warning(
+            "No hay datos después de aplicar los filtros: "
+            "fecha_facturacion_final > 01-02-2024, fecha_recepcion_final válida "
+            "y Performance TAT en Cumple / No cumple."
+        )
         st.stop()
 
-    grafico_performance_plantas(df_base)
-    mostrar_diagnostico(df_base)
+    mostrar_kpis(df_base)
+
+    st.divider()
+
+    grafico_grupo(
+        df=df_base,
+        grupo="Prillex",
+        titulo="Performance TAT Prillex",
+    )
+
+    grafico_grupo(
+        df=df_base,
+        grupo="Rio Loa",
+        titulo="Performance TAT Rio Loa",
+    )
+
+    grafico_grupo(
+        df=df_base,
+        grupo="Plantas de servicios",
+        titulo="Performance TAT Plantas de servicios",
+    )
+
+    if mostrar_diagnostico_check:
+        mostrar_diagnostico(df_base)
 
 except Exception as e:
-    st.error("No se pudo generar el gráfico.")
+    st.error("No se pudo generar el gráfico de Performance de Plantas.")
     st.exception(e)
