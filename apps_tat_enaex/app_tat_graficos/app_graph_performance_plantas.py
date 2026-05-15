@@ -67,7 +67,7 @@ MESES_NOMBRE = {
     12: "diciembre",
 }
 
-# Columnas del dataframe nuevo
+# Columnas del dataframe
 COL_FECHA_SOLICITUD_FINAL = "fecha_solicitud_final"
 COL_FECHA_LIBERACION_FINAL = "fecha_liberacion_final"
 COL_FECHA_PEDIDO_FINAL = "fecha_pedido_final"
@@ -121,7 +121,9 @@ COLUMNAS_FECHA_PERFORMANCE = [
 
 CENTROS_EXCLUIR_PLANTAS_SERVICIOS = ["E001", "E002", "E009", "E024", "E021"]
 
-FECHA_FILTRO_POWERBI = pd.Timestamp("2024-02-01")
+# Filtro por defecto, editable en sidebar.
+# Este filtro NO define el eje temporal. Solo filtra registros.
+FECHA_FILTRO_FACTURACION_DEFAULT = pd.Timestamp("2024-02-01")
 
 
 # =========================================================
@@ -613,6 +615,7 @@ def aplicar_logica_performance_plantas(df_original: pd.DataFrame) -> pd.DataFram
     else:
         df[COL_PERFORMANCE_TAT] = df[COL_PERFORMANCE_TAT].apply(normalizar_estado_tat)
 
+    # Eje temporal SIEMPRE basado en fecha_recepcion_final
     df["periodo_fecha"] = df[COL_FECHA_RECEPCION_FINAL].dt.to_period("M").dt.to_timestamp()
     df["anio"] = df[COL_FECHA_RECEPCION_FINAL].dt.year
     df["mes_num"] = df[COL_FECHA_RECEPCION_FINAL].dt.month
@@ -642,8 +645,10 @@ def aplicar_filtros_dashboard(
     fecha_facturacion_desde,
     estados_tat_sel,
     grupos_sel,
+    centros_sel=None,
     rango_recepcion=None,
 ) -> pd.DataFrame:
+    # fecha_facturacion_final se usa SOLO como filtro.
     fecha_facturacion_desde = pd.Timestamp(fecha_facturacion_desde)
 
     data = df[
@@ -662,6 +667,11 @@ def aplicar_filtros_dashboard(
     else:
         return pd.DataFrame()
 
+    # Filtro opcional por centros específicos.
+    if centros_sel:
+        data = data[data["centro_grafico"].isin(centros_sel)].copy()
+
+    # fecha_recepcion_final filtra rango visible y también define el eje temporal.
     if rango_recepcion is not None:
         if isinstance(rango_recepcion, (tuple, list)) and len(rango_recepcion) == 2:
             fecha_inicio = pd.Timestamp(rango_recepcion[0])
@@ -757,8 +767,8 @@ def grafico_mensual_100_plantas(tabla: pd.DataFrame, titulo: str):
     st.markdown(
         """
         <div class='chart-caption'>
-            Base evaluable: Performance TAT Cumple / No cumple ·
-            Fecha eje: recepción final.
+            Eje temporal: fecha_recepcion_final ·
+            Filtro disponible: fecha_facturacion_final.
         </div>
         """,
         unsafe_allow_html=True,
@@ -824,7 +834,7 @@ def grafico_mensual_100_plantas(tabla: pd.DataFrame, titulo: str):
             ),
             order=alt.Order("Orden:Q", sort="ascending"),
             tooltip=[
-                alt.Tooltip("periodo_label:N", title="Mes"),
+                alt.Tooltip("periodo_label:N", title="Mes recepción"),
                 alt.Tooltip("Estado:N", title="Estado"),
                 alt.Tooltip("Cantidad:Q", title="Cantidad", format=",.0f"),
                 alt.Tooltip("Porcentaje:Q", title="Porcentaje", format=".1f"),
@@ -1009,7 +1019,8 @@ try:
 
         fecha_facturacion_desde = st.date_input(
             "Fecha facturación posterior a",
-            value=FECHA_FILTRO_POWERBI.date(),
+            value=FECHA_FILTRO_FACTURACION_DEFAULT.date(),
+            help="Este filtro usa fecha_facturacion_final. No modifica el eje temporal.",
         )
 
         estados_disponibles = [
@@ -1030,19 +1041,44 @@ try:
             default=estados_default,
         )
 
+        grupos_todos = ["Prillex", "Rio Loa", "Plantas de servicios"]
+
         grupos_disponibles = [
             grupo
-            for grupo in ["Prillex", "Rio Loa", "Plantas de servicios"]
+            for grupo in grupos_todos
             if grupo in df_final["grupo_planta"].dropna().astype(str).unique().tolist()
         ]
-
-        grupos_todos = ["Prillex", "Rio Loa", "Plantas de servicios"]
 
         grupos_sel = st.multiselect(
             "Grupos a mostrar",
             options=grupos_todos,
             default=grupos_disponibles if grupos_disponibles else grupos_todos,
         )
+
+        centros_disponibles = sorted(
+            df_final[
+                df_final["grupo_planta"].ne("Excluir")
+            ]["centro_grafico"]
+            .dropna()
+            .astype(str)
+            .str.strip()
+            .unique()
+            .tolist()
+        )
+
+        usar_filtro_centros = st.checkbox(
+            "Filtrar centros específicos",
+            value=False,
+        )
+
+        if usar_filtro_centros:
+            centros_sel = st.multiselect(
+                "Centros",
+                options=centros_disponibles,
+                default=centros_disponibles,
+            )
+        else:
+            centros_sel = None
 
         fechas_recepcion_validas = df_final[COL_FECHA_RECEPCION_FINAL].dropna()
 
@@ -1051,10 +1087,11 @@ try:
             fecha_recepcion_max = fechas_recepcion_validas.max().date()
 
             rango_recepcion = st.date_input(
-                "Fecha recepción",
+                "Fecha recepción para eje temporal",
                 value=(fecha_recepcion_min, fecha_recepcion_max),
                 min_value=fecha_recepcion_min,
                 max_value=fecha_recepcion_max,
+                help="Este rango usa fecha_recepcion_final. También es la fecha del eje X.",
             )
         else:
             rango_recepcion = None
@@ -1066,13 +1103,12 @@ try:
             fecha_facturacion_desde=fecha_facturacion_desde,
             estados_tat_sel=estados_tat_sel,
             grupos_sel=grupos_sel,
+            centros_sel=centros_sel,
             rango_recepcion=rango_recepcion,
         )
 
     if df_dashboard.empty:
-        st.warning(
-            "No hay datos después de aplicar los filtros seleccionados."
-        )
+        st.warning("No hay datos después de aplicar los filtros seleccionados.")
         st.stop()
 
     st.success("Performance de Plantas generada correctamente.")
@@ -1085,7 +1121,7 @@ try:
     with tab_dashboard:
         section_header(
             "Indicadores generales",
-            "Base según filtros seleccionados.",
+            "Eje temporal de gráficos: fecha_recepcion_final. Filtro de facturación: fecha_facturacion_final.",
         )
 
         total_filas = len(df_dashboard)
