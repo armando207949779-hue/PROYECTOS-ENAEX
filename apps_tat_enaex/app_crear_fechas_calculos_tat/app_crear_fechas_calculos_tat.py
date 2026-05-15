@@ -12,7 +12,7 @@ import streamlit as st
 # =========================================================
 
 st.set_page_config(
-    page_title="Match Integrado - Fechas Finales y Performance TAT",
+    page_title="Calculos TAT",
     page_icon="📊",
     layout="wide"
 )
@@ -1487,7 +1487,7 @@ def mostrar_resumen_cambios_performance(
     resumen_cambios: dict,
     resumen_cols: pd.DataFrame
 ):
-    with st.expander("Cambios realizados y lógica de performance", expanded=True):
+    with st.expander("Detalle de lógica de performance", expanded=False):
         conteo_tipo_oc = resumen_cambios.get("conteo_tipo_oc", {})
         texto_tipo_oc = "\n".join(
             [f"- **{tipo}**: {cantidad:,} registros" for tipo, cantidad in conteo_tipo_oc.items()]
@@ -1777,7 +1777,7 @@ def convertir_a_excel_unificado_cache(
 
 mostrar_logo()
 
-st.title("Match integrado: fechas finales + Performance TAT")
+st.title("Calculos TAT")
 st.caption("ME5A · ARIBA · NME80FN")
 
 with st.sidebar:
@@ -1884,7 +1884,7 @@ try:
             columnas_nuevas=columnas_nuevas_performance,
         )
 
-    st.success("Proceso completo: fechas finales generadas y Performance TAT calculado correctamente.")
+    st.success("Proceso completo: cálculos TAT generados correctamente.")
 
     st.subheader("Indicadores generales")
 
@@ -1914,29 +1914,29 @@ try:
         resumen_cols=resumen_cols_df,
     )
 
-    st.subheader("Resumen de fechas finales")
-    st.dataframe(
-        resumen_fechas_df,
-        use_container_width=True,
-        hide_index=True,
-    )
-
-    st.subheader("Resumen de performance")
-    st.dataframe(
-        resumen_perf_df,
-        use_container_width=True,
-        hide_index=True,
-    )
-
-    st.subheader("Rango de incumplimiento TAT")
-    if "rango_incumplimiento_tat" in df_final.columns:
-        conteo_rango = (
-            df_final["rango_incumplimiento_tat"]
-            .value_counts(dropna=False)
-            .reset_index()
+    with st.expander("Resumen de fechas finales", expanded=False):
+        st.dataframe(
+            resumen_fechas_df,
+            use_container_width=True,
+            hide_index=True,
         )
-        conteo_rango.columns = ["Rango incumplimiento TAT", "Cantidad"]
-        st.dataframe(conteo_rango, use_container_width=True, hide_index=True)
+
+    with st.expander("Resumen de performance", expanded=False):
+        st.dataframe(
+            resumen_perf_df,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    with st.expander("Rango de incumplimiento TAT", expanded=False):
+        if "rango_incumplimiento_tat" in df_final.columns:
+            conteo_rango = (
+                df_final["rango_incumplimiento_tat"]
+                .value_counts(dropna=False)
+                .reset_index()
+            )
+            conteo_rango.columns = ["Rango incumplimiento TAT", "Cantidad"]
+            st.dataframe(conteo_rango, use_container_width=True, hide_index=True)
 
     with st.expander("Vista previa original", expanded=False):
         st.caption(
@@ -2059,7 +2059,7 @@ try:
     st.download_button(
         label="Descargar resultado final en Parquet",
         data=parquet_bytes,
-        file_name="match_integrado_me5a_ariba_nme80fn_fechas_performance.parquet",
+        file_name="calculos_tat_resultado_final.parquet",
         mime="application/octet-stream",
         use_container_width=True,
     )
@@ -2079,7 +2079,7 @@ try:
                 st.download_button(
                     label="Descargar CSV",
                     data=csv_bytes,
-                    file_name="match_integrado_me5a_ariba_nme80fn_fechas_performance.csv",
+                    file_name="calculos_tat_resultado_final.csv",
                     mime="text/csv",
                     use_container_width=True,
                 )
@@ -2105,7 +2105,7 @@ try:
                     st.download_button(
                         label="Descargar Excel",
                         data=excel_bytes,
-                        file_name="match_integrado_me5a_ariba_nme80fn_fechas_performance.xlsx",
+                        file_name="calculos_tat_resultado_final.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True,
                     )
