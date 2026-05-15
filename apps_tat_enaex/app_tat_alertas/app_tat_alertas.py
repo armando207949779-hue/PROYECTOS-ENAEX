@@ -731,47 +731,48 @@ st.markdown(
 
 
         .alert-box {
-            border-radius: 18px;
-            padding: 16px 18px;
+            border-radius: 14px;
+            padding: 11px 13px;
             border: 1px solid #e5e7eb;
             background: #ffffff;
-            box-shadow: 0 1px 5px rgba(15, 23, 42, 0.04);
-            margin: 0.8rem 0;
+            box-shadow: none;
+            margin: 0.45rem 0;
         }
 
-        .alert-red { background: #fef2f2; border-color: #fecaca; }
-        .alert-orange { background: #fff7ed; border-color: #fed7aa; }
-        .alert-yellow { background: #fefce8; border-color: #fde68a; }
-        .alert-green { background: #f0fdf4; border-color: #bbf7d0; }
-        .alert-gray { background: #f8fafc; border-color: #e2e8f0; }
+        .alert-red { background: #fffafa; border-left: 4px solid #ef4444; }
+        .alert-orange { background: #fffaf5; border-left: 4px solid #f97316; }
+        .alert-yellow { background: #fffdf2; border-left: 4px solid #eab308; }
+        .alert-green { background: #f8fff9; border-left: 4px solid #22c55e; }
+        .alert-gray { background: #f8fafc; border-left: 4px solid #94a3b8; }
 
         .alert-title {
             color: #0f172a;
-            font-size: 1.02rem;
-            font-weight: 900;
-            margin-bottom: 8px;
+            font-size: 0.94rem;
+            font-weight: 850;
+            margin-bottom: 7px;
         }
 
         .alert-grid {
             display: grid;
-            grid-template-columns: repeat(5, minmax(120px, 1fr));
-            gap: 10px;
+            grid-template-columns: 1fr 0.9fr 1.2fr 1fr;
+            gap: 8px 14px;
         }
 
         .alert-label {
             color: #64748b;
-            font-size: 0.72rem;
+            font-size: 0.67rem;
             text-transform: uppercase;
             letter-spacing: 0.04em;
             font-weight: 800;
-            margin-bottom: 4px;
+            margin-bottom: 2px;
         }
 
         .alert-value {
             color: #0f172a;
-            font-size: 0.98rem;
-            font-weight: 850;
+            font-size: 0.88rem;
+            font-weight: 780;
             overflow-wrap: anywhere;
+            line-height: 1.25;
         }
 
         .criteria-box {
@@ -1803,22 +1804,23 @@ def html_alerta(row: pd.Series) -> str:
         f"OC {formato_id(oc)} · "
         f"Pos {formato_id(row.get(COL_POS_SOLPED, np.nan))}"
     )
+    criterio = str(formato_valor(row.get("criterio_alerta", np.nan)))
+    if len(criterio) > 105:
+        criterio = criterio[:102].rstrip() + "..."
 
     return dedent(
         f"""
         <div class="alert-box {clase_alerta(row.get('nivel_alerta', 'Sin datos'))}">
             <div class="alert-title">{escape(titulo)} {pill_alerta(row.get('nivel_alerta', 'Sin datos'))}</div>
             <div class="alert-grid">
-                <div><div class="alert-label">Estado</div><div class="alert-value">{escape(formato_valor(row.get('estado_global', np.nan)))}</div></div>
-                <div><div class="alert-label">Score riesgo</div><div class="alert-value">{escape(formato_valor(row.get('score_riesgo', np.nan)))}</div></div>
-                <div><div class="alert-label">Criterio</div><div class="alert-value">{escape(formato_valor(row.get('criterio_alerta', np.nan)))}</div></div>
+                <div><div class="alert-label">Estado global</div><div class="alert-value">{escape(formato_valor(row.get('estado_global', np.nan)))}</div></div>
                 <div><div class="alert-label">Etapa actual</div><div class="alert-value">{escape(formato_valor(row.get('etapa_actual', np.nan)))}</div></div>
+                <div><div class="alert-label">Criterio</div><div class="alert-value">{escape(criterio)}</div></div>
                 <div><div class="alert-label">Restante TAT</div><div class="alert-value">{escape(texto_dias_restantes(row.get('dias_restantes_tat', np.nan)))}</div></div>
                 <div><div class="alert-label">Centro</div><div class="alert-value">{escape(formato_valor(row.get(COL_CENTRO, np.nan)))}</div></div>
                 <div><div class="alert-label">Grupo compras</div><div class="alert-value">{escape(formato_valor(row.get(COL_GRUPO_COMPRAS, np.nan)))}</div></div>
-                <div><div class="alert-label">Responsable sugerido</div><div class="alert-value">{escape(formato_valor(row.get('responsable_sugerido', np.nan)))}</div></div>
                 <div><div class="alert-label">Material</div><div class="alert-value">{escape(formato_valor(row.get(COL_MATERIAL, np.nan)))}</div></div>
-                <div><div class="alert-label">Descripción</div><div class="alert-value">{escape(str(row.get(COL_TEXTO, '-'))[:70])}</div></div>
+                <div><div class="alert-label">Descripción</div><div class="alert-value">{escape(str(row.get(COL_TEXTO, '-'))[:58])}</div></div>
             </div>
         </div>
         """
@@ -2184,7 +2186,7 @@ st.markdown(
             Buscador SolPed / OC
         </div>
         <div style="font-size:14px; color:#6B7280; margin-top:10px;">
-            Filtro · Estado del pedido · Seguimiento TAT
+            Filtro · Alertas · Estado del pedido · Seguimiento TAT
         </div>
     </div>
     """,
@@ -2363,14 +2365,45 @@ with st.expander("Filtros avanzados", expanded=False):
             opciones_filtros.get(COL_ESTADO_MATCH, []),
         )
 
+        opciones_perf_tat = opciones_filtros.get(COL_PERF_TAT, [])
+        perf_tat_default = [
+            valor for valor in opciones_perf_tat
+            if str(valor).strip().lower() == "en proceso"
+        ]
         perf_tat_sel = st.multiselect(
             "Performance TAT",
-            opciones_filtros.get(COL_PERF_TAT, []),
+            opciones_perf_tat,
+            default=perf_tat_default,
+            help="Por defecto queda filtrado en En proceso cuando existe en el archivo.",
         )
 
         rango_inc_sel = st.multiselect(
             "Rango incumplimiento TAT",
             opciones_filtros.get(COL_RANGO_INC, []),
+        )
+
+    st.markdown("#### Filtros de alerta")
+    fa1, fa2, fa3 = st.columns(3)
+
+    with fa1:
+        nivel_alerta_sel = st.multiselect(
+            "Nivel de alerta",
+            sorted(df_alertas["nivel_alerta"].dropna().astype(str).unique().tolist())
+            if "nivel_alerta" in df_alertas.columns else [],
+        )
+
+    with fa2:
+        estado_global_sel = st.multiselect(
+            "Estado global",
+            sorted(df_alertas["estado_global"].dropna().astype(str).unique().tolist())
+            if "estado_global" in df_alertas.columns else [],
+        )
+
+    with fa3:
+        etapa_actual_sel = st.multiselect(
+            "Etapa actual",
+            sorted(df_alertas["etapa_actual"].dropna().astype(str).unique().tolist())
+            if "etapa_actual" in df_alertas.columns else [],
         )
 
     st.markdown("#### Rango de días / monto")
@@ -2511,6 +2544,9 @@ for nombre, default in {
     "estado_match_sel": [],
     "perf_tat_sel": [],
     "rango_inc_sel": [],
+    "nivel_alerta_sel": [],
+    "estado_global_sel": [],
+    "etapa_actual_sel": [],
     "usar_dias_tat_min": False,
     "usar_dias_tat_max": False,
     "dias_tat_min": 0,
@@ -2567,6 +2603,15 @@ if perf_tat_sel and COL_PERF_TAT in df.columns:
 
 if rango_inc_sel and COL_RANGO_INC in df.columns:
     mask &= df[COL_RANGO_INC].astype(str).isin(rango_inc_sel)
+
+if nivel_alerta_sel and "nivel_alerta" in df_alertas.columns:
+    mask &= df_alertas["nivel_alerta"].astype(str).isin(nivel_alerta_sel)
+
+if estado_global_sel and "estado_global" in df_alertas.columns:
+    mask &= df_alertas["estado_global"].astype(str).isin(estado_global_sel)
+
+if etapa_actual_sel and "etapa_actual" in df_alertas.columns:
+    mask &= df_alertas["etapa_actual"].astype(str).isin(etapa_actual_sel)
 
 mask &= aplicar_rango_numerico(
     df,
@@ -2655,7 +2700,9 @@ else:
         f"{media_score:,.1f}".replace(",", "X").replace(".", ",").replace("X", "."),
     )
 
-    for _, row_alerta in df_alertas_filtrado.head(10).iterrows():
+    st.caption("Vista compacta: se muestran las 5 alertas de mayor prioridad. La matriz completa queda colapsada abajo.")
+
+    for _, row_alerta in df_alertas_filtrado.head(5).iterrows():
         st.markdown(
             html_alerta(row_alerta),
             unsafe_allow_html=True,
@@ -2695,214 +2742,146 @@ idx_sel = None
 if df_filtrado.empty:
     st.warning("No hay resultados con los filtros aplicados.")
 else:
-    opciones_detalle = []
+    with st.expander("Detalle por pedido", expanded=False):
+        st.caption("Selecciona un registro para revisar el avance, la línea del pedido y las etapas TAT.")
+        opciones_detalle = []
 
-    for idx, row_iter in df_filtrado.head(5000).iterrows():
-        opciones_detalle.append(
-            (
-                idx,
-                construir_label_registro(row_iter),
+        for idx, row_iter in df_filtrado.head(5000).iterrows():
+            opciones_detalle.append(
+                (
+                    idx,
+                    construir_label_registro(row_iter),
+                )
             )
+
+        labels = [
+            item[1]
+            for item in opciones_detalle
+        ]
+
+        label_sel = st.selectbox(
+            "Registro",
+            labels,
         )
 
-    labels = [
-        item[1]
-        for item in opciones_detalle
-    ]
+        idx_sel = opciones_detalle[
+            labels.index(label_sel)
+        ][0]
 
-    label_sel = st.selectbox(
-        "Registro",
-        labels,
-    )
+        row = df_filtrado.loc[idx_sel]
 
-    idx_sel = opciones_detalle[
-        labels.index(label_sel)
-    ][0]
+        perf_tat = row.get(COL_PERF_TAT, np.nan)
+        perf_color = clase_performance(perf_tat)
+        rango_inc = row.get(COL_RANGO_INC, np.nan)
+        dias_tat = row.get(COL_DIAS_TAT, np.nan)
+        dias_inc = row.get(COL_DIAS_INC, np.nan)
+        umbral_tat = obtener_umbral_tat(row)
 
-    row = df_filtrado.loc[idx_sel]
-
-    perf_tat = row.get(COL_PERF_TAT, np.nan)
-    perf_color = clase_performance(perf_tat)
-    rango_inc = row.get(COL_RANGO_INC, np.nan)
-    dias_tat = row.get(COL_DIAS_TAT, np.nan)
-    dias_inc = row.get(COL_DIAS_INC, np.nan)
-    umbral_tat = obtener_umbral_tat(row)
-
-    tat_total_txt = texto_tat_total_usuario(
-        perf_tat,
-        dias_tat,
-    )
-
-    dias_inc_txt = (
-        "Pendiente"
-        if (
-            str(perf_tat).strip().lower() == "en proceso"
-            and pd.isna(
-                pd.to_numeric(
-                    pd.Series([dias_inc]),
-                    errors="coerce",
-                ).iloc[0]
-            )
+        tat_total_txt = texto_tat_total_usuario(
+            perf_tat,
+            dias_tat,
         )
-        else texto_dias_y_meses(dias_inc)
-    )
 
-    detalle_tat = detalle_estado_tat(
-        perf_tat,
-        umbral_tat,
-        dias_inc,
-        rango_inc,
-    )
+        dias_inc_txt = (
+            "Pendiente"
+            if (
+                str(perf_tat).strip().lower() == "en proceso"
+                and pd.isna(
+                    pd.to_numeric(
+                        pd.Series([dias_inc]),
+                        errors="coerce",
+                    ).iloc[0]
+                )
+            )
+            else texto_dias_y_meses(dias_inc)
+        )
 
-    tat_html = dedent(
-        f"""
-        <div class="tat-summary">
-            <div class="tat-card tat-card-primary">
-                <div class="tat-label">TAT total</div>
-                <div class="tat-main">{escape(tat_total_txt)}</div>
-                <div class="tat-sub">Duración desde la solicitud hasta la recepción.</div>
-                <div class="tat-muted">Umbral aplicado: {escape(texto_dias_simple(umbral_tat))}</div>
-            </div>
-            <div class="tat-card">
-                <div class="tat-label">Estado TAT</div>
-                <div class="tat-main-small">{pill(perf_tat, perf_color)}</div>
-                <div class="tat-sub">{escape(detalle_tat)}</div>
-            </div>
-            <div class="tat-card">
-                <div class="tat-label">Incumplimiento TAT</div>
-                <div class="tat-main-small">{escape(dias_inc_txt)}</div>
-                <div class="tat-sub">Rango: {escape(formato_valor(rango_inc))}</div>
-                <div class="tat-muted">Solo cuenta exceso sobre el umbral TAT.</div>
-            </div>
-        </div>
-        """
-    ).strip()
+        detalle_tat = detalle_estado_tat(
+            perf_tat,
+            umbral_tat,
+            dias_inc,
+            rango_inc,
+        )
 
-    order_head_html = dedent(
-        f"""
-        <div class="order-head">
-            <div class="order-title">Datos principales del pedido</div>
-            <div class="head-grid">
-                <div>
-                    <div class="head-label">SolPed</div>
-                    <div class="head-value">{html_id(row.get(COL_SOLPED, np.nan))}</div>
+        tat_html = dedent(
+            f"""
+            <div class="tat-summary">
+                <div class="tat-card tat-card-primary">
+                    <div class="tat-label">TAT total</div>
+                    <div class="tat-main">{escape(tat_total_txt)}</div>
+                    <div class="tat-sub">Duración desde la solicitud hasta la recepción.</div>
+                    <div class="tat-muted">Umbral aplicado: {escape(texto_dias_simple(umbral_tat))}</div>
                 </div>
-                <div>
-                    <div class="head-label">Orden de compra / Pedido</div>
-                    <div class="head-value">{html_id(row.get(COL_OC_ME5A, row.get(COL_OC_NME, np.nan)))}</div>
+                <div class="tat-card">
+                    <div class="tat-label">Estado TAT</div>
+                    <div class="tat-main-small">{pill(perf_tat, perf_color)}</div>
+                    <div class="tat-sub">{escape(detalle_tat)}</div>
                 </div>
-                <div>
-                    <div class="head-label">Posición SolPed</div>
-                    <div class="head-value">{html_id(row.get(COL_POS_SOLPED, np.nan))}</div>
-                </div>
-                <div>
-                    <div class="head-label">Material</div>
-                    <div class="head-value">{html_id(row.get(COL_MATERIAL, np.nan))}</div>
-                </div>
-                <div>
-                    <div class="head-label">Centro</div>
-                    <div class="head-value">{html_texto(row.get(COL_CENTRO, np.nan))}</div>
+                <div class="tat-card">
+                    <div class="tat-label">Incumplimiento TAT</div>
+                    <div class="tat-main-small">{escape(dias_inc_txt)}</div>
+                    <div class="tat-sub">Rango: {escape(formato_valor(rango_inc))}</div>
+                    <div class="tat-muted">Solo cuenta exceso sobre el umbral TAT.</div>
                 </div>
             </div>
-        </div>
-        """
-    ).strip()
+            """
+        ).strip()
 
-    st.markdown(
-        tat_html,
-        unsafe_allow_html=True,
-    )
+        order_head_html = dedent(
+            f"""
+            <div class="order-head">
+                <div class="order-title">Datos principales del pedido</div>
+                <div class="head-grid">
+                    <div>
+                        <div class="head-label">SolPed</div>
+                        <div class="head-value">{html_id(row.get(COL_SOLPED, np.nan))}</div>
+                    </div>
+                    <div>
+                        <div class="head-label">Orden de compra / Pedido</div>
+                        <div class="head-value">{html_id(row.get(COL_OC_ME5A, row.get(COL_OC_NME, np.nan)))}</div>
+                    </div>
+                    <div>
+                        <div class="head-label">Posición SolPed</div>
+                        <div class="head-value">{html_id(row.get(COL_POS_SOLPED, np.nan))}</div>
+                    </div>
+                    <div>
+                        <div class="head-label">Material</div>
+                        <div class="head-value">{html_id(row.get(COL_MATERIAL, np.nan))}</div>
+                    </div>
+                    <div>
+                        <div class="head-label">Centro</div>
+                        <div class="head-value">{html_texto(row.get(COL_CENTRO, np.nan))}</div>
+                    </div>
+                </div>
+            </div>
+            """
+        ).strip()
 
-    st.markdown(
-        html_avance_actual(row),
-        unsafe_allow_html=True,
-    )
+        st.markdown(
+            tat_html,
+            unsafe_allow_html=True,
+        )
 
-    st.markdown(
-        dedent(html_linea_pedido(row)).strip(),
-        unsafe_allow_html=True,
-    )
+        st.markdown(
+            html_avance_actual(row),
+            unsafe_allow_html=True,
+        )
 
-    st.markdown(
-        order_head_html,
-        unsafe_allow_html=True,
-    )
+        st.markdown(
+            dedent(html_linea_pedido(row)).strip(),
+            unsafe_allow_html=True,
+        )
 
-    components.html(
-        html_estado_pedido(row),
-        height=230,
-        scrolling=False,
-    )
+        st.markdown(
+            order_head_html,
+            unsafe_allow_html=True,
+        )
 
-
-# =========================================================
-# Distribuciones simples
-# =========================================================
-with st.expander("Distribuciones del resultado", expanded=False):
-    b1, b2, b3 = st.columns(3)
-
-    with b1:
-        if COL_PERF_TAT in df_filtrado.columns:
-            st.markdown("**Performance TAT**")
-
-            tabla_perf = (
-                df_filtrado[COL_PERF_TAT]
-                .value_counts(dropna=False)
-                .reset_index()
-            )
-
-            tabla_perf.columns = [
-                "Performance TAT",
-                "Cantidad",
-            ]
-
-            st.dataframe(
-                tabla_perf,
-                use_container_width=True,
-                hide_index=True,
-            )
-
-    with b2:
-        if COL_RANGO_INC in df_filtrado.columns:
-            st.markdown("**Rango incumplimiento TAT**")
-
-            tabla_rango = (
-                df_filtrado[COL_RANGO_INC]
-                .value_counts(dropna=False)
-                .reset_index()
-            )
-
-            tabla_rango.columns = [
-                "Rango",
-                "Cantidad",
-            ]
-
-            st.dataframe(
-                tabla_rango,
-                use_container_width=True,
-                hide_index=True,
-            )
-
-    with b3:
-        if COL_ESTADO_MATCH in df_filtrado.columns:
-            st.markdown("**Estado del match**")
-
-            tabla_estado = (
-                df_filtrado[COL_ESTADO_MATCH]
-                .value_counts(dropna=False)
-                .reset_index()
-            )
-
-            tabla_estado.columns = [
-                "Estado",
-                "Cantidad",
-            ]
-
-            st.dataframe(
-                tabla_estado,
-                use_container_width=True,
-                hide_index=True,
-            )
+        components.html(
+            html_estado_pedido(row),
+            height=230,
+            scrolling=False,
+        )
 
 
 # =========================================================
