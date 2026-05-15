@@ -163,18 +163,23 @@ st.markdown(
     """
     <style>
         .block-container {
-            padding-top: 1.25rem;
+            padding-top: 2rem;
             padding-bottom: 2rem;
             max-width: 1500px;
+            margin-left: auto;
+            margin-right: auto;
         }
+
         h1 {
             font-size: 1.9rem !important;
             margin-bottom: 0.1rem !important;
         }
+
         h3 {
             font-size: 1.05rem !important;
             margin-top: 1rem !important;
         }
+
         div[data-testid="stMetric"] {
             background: #ffffff;
             border: 1px solid #eef2f7;
@@ -182,6 +187,7 @@ st.markdown(
             padding: 12px 14px;
             box-shadow: 0 1px 4px rgba(15, 23, 42, 0.035);
         }
+
         .match-box {
             background: #f0f9ff;
             border: 1px solid #bae6fd;
@@ -189,17 +195,20 @@ st.markdown(
             padding: 14px 18px;
             margin: 0.5rem 0 0.9rem 0;
         }
+
         .match-number {
             font-size: 2rem;
             font-weight: 850;
             color: #0369a1;
             line-height: 1.05;
         }
+
         .match-label {
             color: #334155;
             font-size: 0.92rem;
             margin-top: 4px;
         }
+
         .order-head {
             background: #ffffff;
             border: 1px solid #e5e7eb;
@@ -208,18 +217,21 @@ st.markdown(
             margin: 0.75rem 0 0.85rem 0;
             box-shadow: 0 1px 5px rgba(15, 23, 42, 0.04);
         }
+
         .order-title {
             color: #0f172a;
             font-size: 1rem;
             font-weight: 850;
             margin-bottom: 12px;
         }
+
         .tat-summary {
             display: grid;
             grid-template-columns: 1.15fr 1fr 1fr;
             gap: 12px;
             margin: 0.75rem 0 0.75rem 0;
         }
+
         .tat-card {
             background: #ffffff;
             border: 1px solid #e5e7eb;
@@ -228,10 +240,12 @@ st.markdown(
             box-shadow: 0 1px 5px rgba(15, 23, 42, 0.04);
             min-height: 128px;
         }
+
         .tat-card-primary {
             background: #eff6ff;
             border-color: #bfdbfe;
         }
+
         .tat-label {
             color: #64748b;
             font-size: 0.78rem;
@@ -240,6 +254,7 @@ st.markdown(
             font-weight: 800;
             margin-bottom: 6px;
         }
+
         .tat-main {
             color: #0f172a;
             font-size: 2rem;
@@ -247,6 +262,7 @@ st.markdown(
             font-weight: 900;
             margin-bottom: 6px;
         }
+
         .tat-main-small {
             color: #0f172a;
             font-size: 1.35rem;
@@ -254,17 +270,20 @@ st.markdown(
             font-weight: 900;
             margin-bottom: 8px;
         }
+
         .tat-sub {
             color: #334155;
             font-size: 0.92rem;
             line-height: 1.35;
         }
+
         .tat-muted {
             color: #64748b;
             font-size: 0.82rem;
             line-height: 1.35;
             margin-top: 5px;
         }
+
         .avance-card {
             background: #ffffff;
             border: 1px solid #dbeafe;
@@ -274,6 +293,7 @@ st.markdown(
             margin: 0.75rem 0 0.9rem 0;
             box-shadow: 0 1px 5px rgba(15, 23, 42, 0.04);
         }
+
         .avance-title {
             color: #1e3a8a;
             font-size: 0.9rem;
@@ -282,17 +302,20 @@ st.markdown(
             letter-spacing: 0.04em;
             margin-bottom: 10px;
         }
+
         .avance-grid {
             display: grid;
             grid-template-columns: repeat(4, minmax(140px, 1fr));
             gap: 12px;
         }
+
         .avance-item {
             background: #f8fafc;
             border: 1px solid #e2e8f0;
             border-radius: 14px;
             padding: 11px 12px;
         }
+
         .avance-label {
             color: #64748b;
             font-size: 0.72rem;
@@ -301,18 +324,21 @@ st.markdown(
             letter-spacing: 0.04em;
             margin-bottom: 4px;
         }
+
         .avance-value {
             color: #0f172a;
             font-size: 1rem;
             font-weight: 900;
             overflow-wrap: anywhere;
         }
+
         .avance-note {
             color: #334155;
             font-size: 0.88rem;
             line-height: 1.35;
             margin-top: 10px;
         }
+
         .pedido-line-card {
             background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%);
             border: 1px solid #bbf7d0;
@@ -321,6 +347,7 @@ st.markdown(
             margin: 0.85rem 0 0.85rem 0;
             box-shadow: 0 1px 5px rgba(15, 23, 42, 0.04);
         }
+
         .pedido-line-title {
             font-size: 0.9rem;
             font-weight: 900;
@@ -329,16 +356,19 @@ st.markdown(
             text-transform: uppercase;
             letter-spacing: 0.04em;
         }
+
         .pedido-line {
             display: flex;
             align-items: flex-start;
             width: 100%;
         }
+
         .pedido-step {
             flex: 0 0 116px;
             text-align: center;
             min-width: 0;
         }
+
         .pedido-dot {
             width: 54px;
             height: 54px;
@@ -351,21 +381,25 @@ st.markdown(
             font-size: 1.65rem;
             box-sizing: border-box;
         }
+
         .pedido-dot-complete {
             background: #22c55e;
             color: #ffffff;
             border: 4px solid #22c55e;
         }
+
         .pedido-dot-active {
             background: #ffffff;
             color: #15803d;
             border: 6px solid #22c55e;
         }
+
         .pedido-dot-pending {
             background: #ffffff;
             color: #94a3b8;
             border: 5px solid #cbd5e1;
         }
+
         .pedido-label {
             font-size: 0.86rem;
             font-weight: 900;
@@ -373,6 +407,7 @@ st.markdown(
             line-height: 1.15;
             text-transform: uppercase;
         }
+
         .pedido-date {
             color: #64748b;
             font-size: 0.75rem;
@@ -380,6 +415,7 @@ st.markdown(
             margin-top: 4px;
             overflow-wrap: anywhere;
         }
+
         .pedido-connector {
             flex: 1 1 auto;
             height: 7px;
@@ -388,9 +424,11 @@ st.markdown(
             border-radius: 999px;
             background: #cbd5e1;
         }
+
         .pedido-connector-complete {
             background: #22c55e;
         }
+
         .pedido-connector-dashed {
             background: repeating-linear-gradient(
                 90deg,
@@ -399,17 +437,20 @@ st.markdown(
             );
             border: 0;
         }
+
         .pedido-line-note {
             color: #475569;
             font-size: 0.82rem;
             line-height: 1.35;
             margin-top: 14px;
         }
+
         .head-grid {
             display: grid;
             grid-template-columns: repeat(5, minmax(120px, 1fr));
             gap: 10px;
         }
+
         .head-label {
             color: #64748b;
             font-size: 0.74rem;
@@ -417,12 +458,14 @@ st.markdown(
             letter-spacing: 0.04em;
             margin-bottom: 3px;
         }
+
         .head-value {
             color: #0f172a;
             font-weight: 800;
             font-size: 1rem;
             overflow-wrap: anywhere;
         }
+
         .stage-wrap {
             display: grid;
             grid-template-columns: repeat(6, minmax(150px, 1fr));
@@ -430,6 +473,7 @@ st.markdown(
             align-items: stretch;
             margin-top: 0.55rem;
         }
+
         .stage-card {
             border-radius: 16px;
             padding: 13px 13px 12px 13px;
@@ -437,6 +481,7 @@ st.markdown(
             min-height: 150px;
             position: relative;
         }
+
         .stage-card::after {
             content: "→";
             position: absolute;
@@ -448,41 +493,50 @@ st.markdown(
             font-size: 1rem;
             z-index: 2;
         }
+
         .stage-card:last-child::after {
             content: "";
         }
+
         .stage-green {
             background: #f0fdf4;
             border-color: #bbf7d0;
         }
+
         .stage-red {
             background: #fef2f2;
             border-color: #fecaca;
         }
+
         .stage-yellow {
             background: #fefce8;
             border-color: #fde68a;
         }
+
         .stage-gray {
             background: #f8fafc;
             border-color: #e2e8f0;
         }
+
         .stage-blue {
             background: #eff6ff;
             border-color: #bfdbfe;
         }
+
         .stage-title {
             font-size: 0.82rem;
             font-weight: 850;
             color: #0f172a;
             margin-bottom: 6px;
         }
+
         .stage-date {
             font-size: 1.05rem;
             font-weight: 850;
             color: #111827;
             margin-bottom: 5px;
         }
+
         .stage-note {
             color: #64748b;
             font-size: 0.76rem;
@@ -490,11 +544,13 @@ st.markdown(
             min-height: 28px;
             margin-bottom: 9px;
         }
+
         .stage-days {
             font-size: 0.88rem;
             color: #334155;
             margin-bottom: 7px;
         }
+
         .pill {
             display: inline-block;
             border-radius: 999px;
@@ -504,47 +560,57 @@ st.markdown(
             border: 1px solid transparent;
             white-space: nowrap;
         }
+
         .pill-green {
             background: #dcfce7;
             color: #166534;
             border-color: #bbf7d0;
         }
+
         .pill-red {
             background: #fee2e2;
             color: #991b1b;
             border-color: #fecaca;
         }
+
         .pill-yellow {
             background: #fef9c3;
             color: #854d0e;
             border-color: #fde68a;
         }
+
         .pill-gray {
             background: #f1f5f9;
             color: #475569;
             border-color: #e2e8f0;
         }
+
         .pill-blue {
             background: #dbeafe;
             color: #1e40af;
             border-color: #bfdbfe;
         }
+
         .tiny-muted {
             color:#64748b;
             font-size:0.78rem;
         }
+
         @media (max-width: 1200px) {
             .stage-wrap {
                 grid-template-columns: repeat(3, minmax(150px, 1fr));
             }
+
             .head-grid {
                 grid-template-columns: repeat(3, minmax(120px, 1fr));
             }
         }
+
         @media (max-width: 760px) {
             .stage-wrap {
                 grid-template-columns: 1fr;
             }
+
             .stage-card::after {
                 content: "↓";
                 right: 50%;
@@ -552,30 +618,38 @@ st.markdown(
                 bottom: -14px;
                 transform: translateX(50%);
             }
+
             .stage-card:last-child::after {
                 content: "";
             }
+
             .head-grid {
                 grid-template-columns: 1fr;
             }
+
             .tat-summary {
                 grid-template-columns: 1fr;
             }
+
             .tat-main {
                 font-size: 1.65rem;
             }
+
             .pedido-line {
                 overflow-x: auto;
                 padding-bottom: 4px;
             }
+
             .pedido-step {
                 flex-basis: 104px;
             }
+
             .pedido-dot {
                 width: 48px;
                 height: 48px;
                 font-size: 1.45rem;
             }
+
             .pedido-connector {
                 min-width: 28px;
                 margin-top: 21px;
@@ -598,7 +672,7 @@ def encontrar_logo():
     return None
 
 
-def mostrar_logo(ancho: int = 220):
+def mostrar_logo(ancho: int = 260):
     logo_path = encontrar_logo()
 
     if logo_path is None:
@@ -873,25 +947,6 @@ def formato_id(valor: Any) -> str:
         texto = texto[:-2]
 
     return texto
-
-
-def formato_numero(valor: Any, decimales: int = 0) -> str:
-    if pd.isna(valor):
-        return "-"
-
-    try:
-        valor_float = float(valor)
-    except Exception:
-        return str(valor)
-
-    texto = f"{valor_float:,.{decimales}f}"
-
-    return (
-        texto
-        .replace(",", "X")
-        .replace(".", ",")
-        .replace("X", ".")
-    )
 
 
 def valor_numerico(valor: Any) -> float:
@@ -1526,6 +1581,7 @@ def html_estado_pedido(row: pd.Series) -> str:
                 background: transparent;
                 overflow: hidden;
             }}
+
             .stage-wrap {{
                 display: grid;
                 grid-template-columns: repeat(6, minmax(150px, 1fr));
@@ -1535,6 +1591,7 @@ def html_estado_pedido(row: pd.Series) -> str:
                 padding: 2px 0 18px 0;
                 box-sizing: border-box;
             }}
+
             .stage-card {{
                 border-radius: 16px;
                 padding: 13px 13px 12px 13px;
@@ -1543,6 +1600,7 @@ def html_estado_pedido(row: pd.Series) -> str:
                 position: relative;
                 box-sizing: border-box;
             }}
+
             .stage-card::after {{
                 content: "→";
                 position: absolute;
@@ -1554,41 +1612,50 @@ def html_estado_pedido(row: pd.Series) -> str:
                 font-size: 1rem;
                 z-index: 2;
             }}
+
             .stage-card:last-child::after {{
                 content: "";
             }}
+
             .stage-green {{
                 background: #f0fdf4;
                 border-color: #bbf7d0;
             }}
+
             .stage-red {{
                 background: #fef2f2;
                 border-color: #fecaca;
             }}
+
             .stage-yellow {{
                 background: #fefce8;
                 border-color: #fde68a;
             }}
+
             .stage-gray {{
                 background: #f8fafc;
                 border-color: #e2e8f0;
             }}
+
             .stage-blue {{
                 background: #eff6ff;
                 border-color: #bfdbfe;
             }}
+
             .stage-title {{
                 font-size: 0.82rem;
                 font-weight: 850;
                 color: #0f172a;
                 margin-bottom: 6px;
             }}
+
             .stage-date {{
                 font-size: 1.05rem;
                 font-weight: 850;
                 color: #111827;
                 margin-bottom: 5px;
             }}
+
             .stage-note {{
                 color: #64748b;
                 font-size: 0.76rem;
@@ -1596,11 +1663,13 @@ def html_estado_pedido(row: pd.Series) -> str:
                 min-height: 28px;
                 margin-bottom: 9px;
             }}
+
             .stage-days {{
                 font-size: 0.88rem;
                 color: #334155;
                 margin-bottom: 7px;
             }}
+
             .pill {{
                 display: inline-block;
                 border-radius: 999px;
@@ -1610,44 +1679,53 @@ def html_estado_pedido(row: pd.Series) -> str:
                 border: 1px solid transparent;
                 white-space: nowrap;
             }}
+
             .pill-green {{
                 background: #dcfce7;
                 color: #166534;
                 border-color: #bbf7d0;
             }}
+
             .pill-red {{
                 background: #fee2e2;
                 color: #991b1b;
                 border-color: #fecaca;
             }}
+
             .pill-yellow {{
                 background: #fef9c3;
                 color: #854d0e;
                 border-color: #fde68a;
             }}
+
             .pill-gray {{
                 background: #f1f5f9;
                 color: #475569;
                 border-color: #e2e8f0;
             }}
+
             .pill-blue {{
                 background: #dbeafe;
                 color: #1e40af;
                 border-color: #bfdbfe;
             }}
+
             @media (max-width: 1200px) {{
                 .stage-wrap {{
                     grid-template-columns: repeat(3, minmax(150px, 1fr));
                 }}
+
                 html, body {{
                     overflow: auto;
                 }}
             }}
+
             @media (max-width: 760px) {{
                 .stage-wrap {{
                     grid-template-columns: 1fr;
                     padding-bottom: 24px;
                 }}
+
                 .stage-card::after {{
                     content: "↓";
                     right: 50%;
@@ -1655,6 +1733,7 @@ def html_estado_pedido(row: pd.Series) -> str:
                     bottom: -14px;
                     transform: translateX(50%);
                 }}
+
                 .stage-card:last-child::after {{
                     content: "";
                 }}
@@ -1673,10 +1752,18 @@ def html_estado_pedido(row: pd.Series) -> str:
 # =========================================================
 mostrar_logo()
 
-st.title("Buscador SolPed / OC")
-st.caption(
-    "Usa el archivo cargado previamente en Análisis TAT > Cargar archivo. "
-    "La app solo filtra, visualiza y descarga resultados; no recalcula performance."
+st.markdown(
+    """
+    <div style="text-align:center; margin-bottom: 22px;">
+        <div style="font-size:42px; font-weight:850; color:#1F2937; line-height:1.12;">
+            Buscador SolPed / OC
+        </div>
+        <div style="font-size:14px; color:#6B7280; margin-top:10px;">
+            Filtro · Estado del pedido · Seguimiento TAT
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
 )
 
 with st.sidebar:
@@ -1699,7 +1786,10 @@ with st.sidebar:
 # =========================================================
 # Leer dataframe global
 # =========================================================
-st.subheader("Archivo")
+st.markdown(
+    "<h2 style='font-size:28px; font-weight:800; color:#1F2937;'>Archivo</h2>",
+    unsafe_allow_html=True,
+)
 
 if "df_tat" not in st.session_state:
     st.warning("Primero debes cargar el archivo base en Análisis TAT > Cargar archivo.")
