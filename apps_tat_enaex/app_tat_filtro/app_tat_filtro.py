@@ -2338,6 +2338,134 @@ else:
                     <div class="head-label">Centro</div>
                     <div class="head-value">{html_texto(row.get(COL_CENTRO, np.nan))}</div>
                 </div>
+
+                <div>
+                    <div class="head-label">Grupo compras</div>
+                    <div class="head-value">{html_texto(row.get(COL_GRUPO_COMPRAS, np.nan))}</div>
+                </div>
+                <div>
+                    <div class="head-label">Solicitante</div>
+                    <div class="head-value">{html_texto(row.get(COL_SOLICITANTE, np.nan))}</div>
+                </div>
+                <div>
+                    <div class="head-label">Autor</div>
+                    <div class="head-value">{html_texto(row.get(COL_AUTOR, np.nan))}</div>
+                </div>
+                <div>
+                    <div class="head-label">Cantidad</div>
+                    <div class="head-value">{html_texto(row.get("Cantidad solicitada - ME5A", np.nan))}</div>
+                </div>
+                <div>
+                    <div class="head-label">Unidad</div>
+                    <div class="head-value">{html_texto(row.get("Unidad de medida - ME5A", np.nan))}</div>
+                </div>
+
+                <div>
+                    <div class="head-label">Precio valoración</div>
+                    <div class="head-value">{html_texto(row.get("Precio de valoración", np.nan))}</div>
+                </div>
+                <div>
+                    <div class="head-label">Monto</div>
+                    <div class="head-value">{html_texto(row.get(COL_MONTO, np.nan))}</div>
+                </div>
+                <div>
+                    <div class="head-label">Moneda</div>
+                    <div class="head-value">{html_texto(row.get("Moneda - ME5A", np.nan))}</div>
+                </div>
+                <div>
+                    <div class="head-label">Tipo imputación</div>
+                    <div class="head-value">{html_texto(row.get(COL_TIPO_IMPUTACION, np.nan))}</div>
+                </div>
+                <div>
+                    <div class="head-label">Status tratamiento</div>
+                    <div class="head-value">{html_texto(row.get("Status tratamiento", np.nan))}</div>
+                </div>
+
+                <div>
+                    <div class="head-label">Fecha solicitud</div>
+                    <div class="head-value">{html_texto(row.get("Fecha de solicitud - ME5A", row.get("fecha_solicitud_final", np.nan)))}</div>
+                </div>
+                <div>
+                    <div class="head-label">Fecha modificación</div>
+                    <div class="head-value">{html_texto(row.get("Fecha modificación", np.nan))}</div>
+                </div>
+                <div>
+                    <div class="head-label">Fecha entrega</div>
+                    <div class="head-value">{html_texto(row.get("Fecha de entrega - ME5A", np.nan))}</div>
+                </div>
+                <div>
+                    <div class="head-label">Estado match</div>
+                    <div class="head-value">{html_texto(row.get(COL_ESTADO_MATCH, np.nan))}</div>
+                </div>
+                <div>
+                    <div class="head-label">Tipo OC</div>
+                    <div class="head-value">{html_id(row.get(COL_TIPO_OC, np.nan))}</div>
+                </div>
+            </div>
+
+            <div style="margin-top: 14px;">
+                <div class="head-label">Texto breve</div>
+                <div class="head-value">{html_texto(row.get(COL_TEXTO, np.nan))}</div>
+            </div>
+        </div>
+        """
+    ).strip()
+
+    match_head_html = dedent(
+        f"""
+        <div class="order-head">
+            <div class="order-title">Diagnóstico de match</div>
+            <div class="head-grid">
+                <div>
+                    <div class="head-label">Match ARIBA</div>
+                    <div class="head-value">{html_texto(row.get("Match encontrado - ARIBA", np.nan))}</div>
+                </div>
+                <div>
+                    <div class="head-label">Match NME80FN</div>
+                    <div class="head-value">{html_texto(row.get("Match encontrado - NME80FN", np.nan))}</div>
+                </div>
+                <div>
+                    <div class="head-label">Pedido ARIBA</div>
+                    <div class="head-value">{html_texto(row.get("Coincide pedido - ARIBA", np.nan))}</div>
+                </div>
+                <div>
+                    <div class="head-label">Documento NME80FN</div>
+                    <div class="head-value">{html_texto(row.get("Coincide pedido/documento - NME80FN", np.nan))}</div>
+                </div>
+                <div>
+                    <div class="head-label">Match estricto NME80FN</div>
+                    <div class="head-value">{html_texto(row.get("Match estricto - NME80FN", np.nan))}</div>
+                </div>
+
+                <div>
+                    <div class="head-label">Coincide línea ARIBA</div>
+                    <div class="head-value">{html_texto(row.get("Coincide línea - ARIBA", np.nan))}</div>
+                </div>
+                <div>
+                    <div class="head-label">Coincide posición NME80FN</div>
+                    <div class="head-value">{html_texto(row.get("Coincide posición - NME80FN", np.nan))}</div>
+                </div>
+                <div>
+                    <div class="head-label">Coincide material NME80FN</div>
+                    <div class="head-value">{html_texto(row.get("Coincide material - NME80FN", np.nan))}</div>
+                </div>
+                <div>
+                    <div class="head-label">Coincide centro NME80FN</div>
+                    <div class="head-value">{html_texto(row.get("Coincide centro - NME80FN", np.nan))}</div>
+                </div>
+                <div>
+                    <div class="head-label">Fechas inconsistentes</div>
+                    <div class="head-value">{html_texto(row.get(COL_FECHAS_INCONSISTENTES, np.nan))}</div>
+                </div>
+
+                <div>
+                    <div class="head-label">Fuente liberación</div>
+                    <div class="head-value">{html_texto(row.get("fuente_fecha_liberacion_final", np.nan))}</div>
+                </div>
+                <div>
+                    <div class="head-label">Criterio liberación</div>
+                    <div class="head-value">{html_texto(row.get("criterio_fecha_liberacion", np.nan))}</div>
+                </div>
             </div>
         </div>
         """
@@ -2360,6 +2488,11 @@ else:
 
     st.markdown(
         order_head_html,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        match_head_html,
         unsafe_allow_html=True,
     )
 
