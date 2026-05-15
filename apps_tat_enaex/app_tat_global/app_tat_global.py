@@ -25,23 +25,9 @@ APP_CREAR_FECHAS_CALCULOS_TAT = (
     / "app_crear_fechas_calculos_tat.py"
 )
 
-APP_TAT_ESTADO_PEDIDO = (
-    PROJECT_DIR
-    / "app_tat_estado_pedido"
-    / "app_tat_estado_pedido.py"
-)
-
-APP_TAT_FILTRO = (
-    PROJECT_DIR
-    / "app_tat_filtro"
-    / "app_tat_filtro.py"
-)
-
-APP_TAT_GRAFICOS = (
-    PROJECT_DIR
-    / "app_tat_graficos"
-    / "app_tat_graficos.py"
-)
+APP_TAT_ESTADO_PEDIDO = PROJECT_DIR / "app_tat_estado_pedido" / "app_tat_estado_pedido.py"
+APP_TAT_FILTRO = PROJECT_DIR / "app_tat_filtro" / "app_tat_filtro.py"
+APP_TAT_GRAFICOS = PROJECT_DIR / "app_tat_graficos" / "app_tat_graficos.py"
 
 APP_GRAPH_PERFORMANCE_PLANTAS = (
     PROJECT_DIR
@@ -49,29 +35,10 @@ APP_GRAPH_PERFORMANCE_PLANTAS = (
     / "app_graph_performance_plantas.py"
 )
 
-APP_TAT_LIMPIEZA_ARIBA = (
-    PROJECT_DIR
-    / "app_tat_limpieza_ariba"
-    / "app_tat_limpieza_ariba.py"
-)
-
-APP_TAT_LIMPIEZA_ME5A = (
-    PROJECT_DIR
-    / "app_tat_limpieza_me5a"
-    / "app_tat_limpieza_me5a.py"
-)
-
-APP_TAT_LIMPIEZA_ME80FN = (
-    PROJECT_DIR
-    / "app_tat_limpieza_me80fn"
-    / "app_tat_limpieza_me80fn.py"
-)
-
-APP_TAT_MATCH = (
-    PROJECT_DIR
-    / "app_tat_match"
-    / "app_tat_match.py"
-)
+APP_TAT_LIMPIEZA_ARIBA = PROJECT_DIR / "app_tat_limpieza_ariba" / "app_tat_limpieza_ariba.py"
+APP_TAT_LIMPIEZA_ME5A = PROJECT_DIR / "app_tat_limpieza_me5a" / "app_tat_limpieza_me5a.py"
+APP_TAT_LIMPIEZA_ME80FN = PROJECT_DIR / "app_tat_limpieza_me80fn" / "app_tat_limpieza_me80fn.py"
+APP_TAT_MATCH = PROJECT_DIR / "app_tat_match" / "app_tat_match.py"
 
 
 # =========================
@@ -150,61 +117,11 @@ def pagina_inicio():
             """
             **Cargar archivo**
 
-            Carga el archivo base una sola vez para reutilizarlo en las visualizaciones.
+            Carga el archivo base una sola vez para reutilizarlo en filtros y visualizaciones.
             """
         )
 
     with col2:
-        st.info(
-            """
-            **Limpieza Ariba**
-
-            Limpieza y preparación de datos provenientes de Ariba.
-            """
-        )
-
-    with col3:
-        st.info(
-            """
-            **Limpieza ME5A**
-
-            Limpieza y preparación de información desde ME5A.
-            """
-        )
-
-    col4, col5, col6 = st.columns(3)
-
-    with col4:
-        st.info(
-            """
-            **Limpieza ME80FN**
-
-            Limpieza y preparación de información desde ME80FN.
-            """
-        )
-
-    with col5:
-        st.info(
-            """
-            **Match TAT**
-
-            Cruce y validación de información para análisis TAT.
-            """
-        )
-
-    with col6:
-        st.info(
-            """
-            **Fechas + Cálculos TAT**
-
-            Reemplaza Consolidado TAT y Consolidado Final. Genera fechas finales
-            y calcula performance TAT en un solo flujo.
-            """
-        )
-
-    col7, col8, col9 = st.columns(3)
-
-    with col7:
         st.info(
             """
             **Filtro TAT**
@@ -213,7 +130,7 @@ def pagina_inicio():
             """
         )
 
-    with col8:
+    with col3:
         st.info(
             """
             **Gráficos TAT**
@@ -222,12 +139,62 @@ def pagina_inicio():
             """
         )
 
-    with col9:
+    col4, col5, col6 = st.columns(3)
+
+    with col4:
         st.info(
             """
             **Performance de Plantas**
 
             Visualización del performance TAT para Prillex, Rio Loa y Plantas de servicios.
+            """
+        )
+
+    with col5:
+        st.info(
+            """
+            **Limpieza Ariba**
+
+            Limpieza y preparación de datos provenientes de Ariba.
+            """
+        )
+
+    with col6:
+        st.info(
+            """
+            **Limpieza ME5A**
+
+            Limpieza y preparación de información desde ME5A.
+            """
+        )
+
+    col7, col8, col9 = st.columns(3)
+
+    with col7:
+        st.info(
+            """
+            **Limpieza ME80FN**
+
+            Limpieza y preparación de información desde ME80FN.
+            """
+        )
+
+    with col8:
+        st.info(
+            """
+            **Match TAT**
+
+            Cruce y validación de información para análisis TAT.
+            """
+        )
+
+    with col9:
+        st.info(
+            """
+            **Fechas + Cálculos TAT**
+
+            Reemplaza Consolidado TAT y Consolidado Final. Genera fechas finales
+            y calcula performance TAT en un solo flujo.
             """
         )
 
@@ -276,11 +243,26 @@ pagina = st.navigation(
                 icon="🏠"
             )
         ],
-        "Datos": [
+        "Análisis TAT": [
             st.Page(
                 APP_TAT_CARGAR_ARCHIVO,
                 title="Cargar archivo",
                 icon="📁"
+            ),
+            st.Page(
+                APP_TAT_FILTRO,
+                title="Filtro TAT",
+                icon="🔎"
+            ),
+            st.Page(
+                APP_TAT_GRAFICOS,
+                title="Gráficos TAT",
+                icon="📊"
+            ),
+            st.Page(
+                APP_GRAPH_PERFORMANCE_PLANTAS,
+                title="Performance de Plantas",
+                icon="🏭"
             ),
         ],
         "Limpieza": [
@@ -312,25 +294,6 @@ pagina = st.navigation(
                 APP_CREAR_FECHAS_CALCULOS_TAT,
                 title="Fechas + Cálculos TAT",
                 icon="📊"
-            ),
-        ],
-        "Filtro": [
-            st.Page(
-                APP_TAT_FILTRO,
-                title="Filtro TAT",
-                icon="🔎"
-            ),
-        ],
-        "Visualización": [
-            st.Page(
-                APP_TAT_GRAFICOS,
-                title="Gráficos TAT",
-                icon="📊"
-            ),
-            st.Page(
-                APP_GRAPH_PERFORMANCE_PLANTAS,
-                title="Performance de Plantas",
-                icon="🏭"
             ),
         ],
     }
