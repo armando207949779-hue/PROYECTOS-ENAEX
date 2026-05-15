@@ -19,10 +19,11 @@ st.set_page_config(
     layout="wide"
 )
 
-COLORES_ESTADO = {
-    "Cumple": "#5B5B5B",
-    "No cumple": "#D94555"
-}
+COLOR_CUMPLE = "#5B5B5B"
+COLOR_NO_CUMPLE = "#D94555"
+COLOR_OBJETIVO = "#006B4F"
+
+OBJETIVO_CUMPLIMIENTO = 65
 
 ESTADOS_GRAFICO = ["Cumple", "No cumple"]
 
@@ -160,7 +161,7 @@ def extraer_rango_fechas(rango_fechas):
 
 
 # =========================================================
-# PERFORMANCE TAT MENSUAL
+# RESUMEN MENSUAL TAT
 # =========================================================
 
 def crear_resumen_mensual(df: pd.DataFrame) -> pd.DataFrame:
@@ -290,83 +291,61 @@ def completar_meses(
 
 def crear_data_plot(
     tabla: pd.DataFrame,
-    modo_y: str
+    modo_y: str = "Porcentaje"
 ) -> pd.DataFrame:
     if tabla.empty:
         return pd.DataFrame()
 
-    data = []
+    df_plot = tabla.copy()
 
-    for _, row in tabla.iterrows():
-        total = float(row.get("Total", 0) or 0)
+    df_plot["Cumple"] = pd.to_numeric(
+        df_plot["Cumple"],
+        errors="coerce"
+    ).fillna(0)
 
-        cumple = float(row.get("Cumple", 0) or 0)
-        no_cumple = float(row.get("No cumple", 0) or 0)
+    df_plot["No cumple"] = pd.to_numeric(
+        df_plot["No cumple"],
+        errors="coerce"
+    ).fillna(0)
 
-        pct_cumple = cumple / total * 100 if total > 0 else 0
-        pct_no_cumple = no_cumple / total * 100 if total > 0 else 0
+    df_plot["Total"] = df_plot["Cumple"] + df_plot["No cumple"]
 
-        if modo_y == "Porcentaje":
-            valor_cumple = pct_cumple
-            valor_no_cumple = pct_no_cumple
-        else:
-            valor_cumple = cumple
-            valor_no_cumple = no_cumple
+    df_plot["pct_cumple"] = np.where(
+        df_plot["Total"] > 0,
+        df_plot["Cumple"] / df_plot["Total"] * 100,
+        0
+    )
 
-        data.append({
-            "periodo_fecha": row["periodo_fecha"],
-            "periodo_label": row["periodo_label"],
-            "estado": "Cumple",
-            "valor": valor_cumple,
-            "cantidad": cumple,
-            "porcentaje": pct_cumple,
-            "total": total,
-            "orden_estado": 1,
-            "texto_barra": (
-                f"{pct_cumple:.1f}%"
-                if modo_y == "Porcentaje" and pct_cumple > 0
-                else f"{cumple:,.0f}"
-                if cumple > 0
-                else ""
-            )
-        })
+    df_plot["pct_no_cumple"] = np.where(
+        df_plot["Total"] > 0,
+        df_plot["No cumple"] / df_plot["Total"] * 100,
+        0
+    )
 
-        data.append({
-            "periodo_fecha": row["periodo_fecha"],
-            "periodo_label": row["periodo_label"],
-            "estado": "No cumple",
-            "valor": valor_no_cumple,
-            "cantidad": no_cumple,
-            "porcentaje": pct_no_cumple,
-            "total": total,
-            "orden_estado": 2,
-            "texto_barra": (
-                f"{pct_no_cumple:.1f}%"
-                if modo_y == "Porcentaje" and pct_no_cumple > 0
-                else f"{no_cumple:,.0f}"
-                if no_cumple > 0
-                else ""
-            )
-        })
+    df_plot["cumple_objetivo"] = np.where(
+        df_plot["pct_cumple"] >= OBJETIVO_CUMPLIMIENTO,
+        "Sobre objetivo",
+        "Bajo objetivo"
+    )
 
-    df_plot = pd.DataFrame(data)
+    df_plot["texto_pct"] = df_plot["pct_cumple"].map(
+        lambda x: f"{x:.1f}%"
+    )
 
-    df_plot = df_plot.sort_values(
-        ["periodo_fecha", "orden_estado"]
-    ).reset_index(drop=True)
+    df_plot = df_plot.sort_values("periodo_fecha").reset_index(drop=True)
 
     return df_plot
 
 
 def grafico_performance_tat(
     df_plot: pd.DataFrame,
-    modo_y: str
+    modo_y: str = "Porcentaje"
 ):
     if df_plot.empty:
         st.warning("No hay datos evaluables para graficar.")
         return
 
-    if df_plot["cantidad"].sum() == 0:
+    if df_plot["Total"].sum() == 0:
         st.warning("No hay registros Cumple / No cumple para graficar.")
         return
 
@@ -377,49 +356,40 @@ def grafico_performance_tat(
         .tolist()
     )
 
-    titulo_y = "Porcentaje" if modo_y == "Porcentaje" else "Recuento"
-
-    base = alt.Chart(df_plot).encode(
-        x=alt.X(
-            "periodo_label:N",
-            sort=orden_periodos,
-            title="Mes recepción",
-            axis=alt.Axis(
-                labelAngle=-35,
-                labelOverlap=False,
-                labelFontSize=11,
-                titleFontSize=12
-            )
-        )
-    )
-
     barras = (
-        base
+        alt.Chart(df_plot)
         .mark_bar(
             size=34,
-            opacity=1
+            cornerRadiusTopLeft=5,
+            cornerRadiusTopRight=5
         )
         .encode(
-            y=alt.Y(
-                "sum(valor):Q",
-                stack="zero",
-                title=titulo_y,
-                scale=alt.Scale(domain=[0, 100])
-                if modo_y == "Porcentaje"
-                else alt.Undefined,
+            x=alt.X(
+                "periodo_label:N",
+                sort=orden_periodos,
+                title="Mes recepción",
                 axis=alt.Axis(
+                    labelAngle=-35,
+                    labelOverlap=False,
                     labelFontSize=11,
                     titleFontSize=12
                 )
             ),
+            y=alt.Y(
+                "pct_cumple:Q",
+                title="% Cumplimiento",
+                scale=alt.Scale(domain=[0, 100]),
+                axis=alt.Axis(
+                    labelFontSize=11,
+                    titleFontSize=12,
+                    format=".0f"
+                )
+            ),
             color=alt.Color(
-                "estado:N",
+                "cumple_objetivo:N",
                 scale=alt.Scale(
-                    domain=["Cumple", "No cumple"],
-                    range=[
-                        "#5B5B5B",
-                        "#D94555"
-                    ]
+                    domain=["Sobre objetivo", "Bajo objetivo"],
+                    range=[COLOR_CUMPLE, COLOR_NO_CUMPLE]
                 ),
                 legend=alt.Legend(
                     title="",
@@ -427,106 +397,79 @@ def grafico_performance_tat(
                     labelFontSize=12
                 )
             ),
-            order=alt.Order(
-                "orden_estado:Q",
-                sort="ascending"
-            ),
             tooltip=[
                 alt.Tooltip("periodo_label:N", title="Mes"),
-                alt.Tooltip("estado:N", title="Estado"),
-                alt.Tooltip("cantidad:Q", title="Cantidad", format=",.0f"),
-                alt.Tooltip("porcentaje:Q", title="Porcentaje", format=".2f"),
-                alt.Tooltip("total:Q", title="Total evaluable", format=",.0f")
+                alt.Tooltip("pct_cumple:Q", title="% Cumple", format=".2f"),
+                alt.Tooltip("pct_no_cumple:Q", title="% No cumple", format=".2f"),
+                alt.Tooltip("Cumple:Q", title="Cumple", format=",.0f"),
+                alt.Tooltip("No cumple:Q", title="No cumple", format=",.0f"),
+                alt.Tooltip("Total:Q", title="Total evaluable", format=",.0f")
             ]
         )
     )
 
     etiquetas = (
-        base
-        .transform_filter("datum.valor >= 8")
+        alt.Chart(df_plot)
         .mark_text(
-            color="white",
-            fontSize=10,
+            dy=-8,
+            fontSize=11,
             fontWeight="bold",
-            dy=4
+            color="#222222"
         )
         .encode(
-            y=alt.Y(
-                "sum(valor):Q",
-                stack="center"
+            x=alt.X(
+                "periodo_label:N",
+                sort=orden_periodos
             ),
-            detail="estado:N",
-            order=alt.Order(
-                "orden_estado:Q",
-                sort="ascending"
-            ),
-            text="texto_barra:N"
+            y=alt.Y("pct_cumple:Q"),
+            text="texto_pct:N"
         )
     )
 
-    if modo_y == "Porcentaje":
-        zona_objetivo = (
-            alt.Chart(pd.DataFrame({
-                "y1": [65],
-                "y2": [100]
-            }))
-            .mark_rect(
-                opacity=0.05,
-                color="#006B4F"
-            )
-            .encode(
-                y="y1:Q",
-                y2="y2:Q"
-            )
+    linea_objetivo = (
+        alt.Chart(pd.DataFrame({"objetivo": [OBJETIVO_CUMPLIMIENTO]}))
+        .mark_rule(
+            strokeDash=[10, 5],
+            color=COLOR_OBJETIVO,
+            size=4
         )
-
-        linea_objetivo = (
-            alt.Chart(pd.DataFrame({"objetivo": [65]}))
-            .mark_rule(
-                strokeDash=[10, 5],
-                color="#006B4F",
-                size=5
-            )
-            .encode(
-                y="objetivo:Q"
-            )
+        .encode(
+            y="objetivo:Q"
         )
+    )
 
-        texto_objetivo = (
-            alt.Chart(pd.DataFrame({
-                "periodo_label": [orden_periodos[0]],
-                "objetivo": [65],
-                "texto": ["Objetivo 65%"]
-            }))
-            .mark_text(
-                align="left",
-                baseline="bottom",
-                dx=8,
-                dy=-8,
-                color="#006B4F",
-                fontWeight="bold",
-                fontSize=14
-            )
-            .encode(
-                x=alt.X(
-                    "periodo_label:N",
-                    sort=orden_periodos
-                ),
-                y="objetivo:Q",
-                text="texto:N"
-            )
+    texto_objetivo = (
+        alt.Chart(pd.DataFrame({
+            "periodo_label": [orden_periodos[0]],
+            "objetivo": [OBJETIVO_CUMPLIMIENTO],
+            "texto": [f"Objetivo {OBJETIVO_CUMPLIMIENTO}%"]
+        }))
+        .mark_text(
+            align="left",
+            baseline="bottom",
+            dx=8,
+            dy=-8,
+            color=COLOR_OBJETIVO,
+            fontWeight="bold",
+            fontSize=14
         )
+        .encode(
+            x=alt.X(
+                "periodo_label:N",
+                sort=orden_periodos
+            ),
+            y="objetivo:Q",
+            text="texto:N"
+        )
+    )
 
-        chart = zona_objetivo + barras + etiquetas + linea_objetivo + texto_objetivo
-
-    else:
-        chart = barras + etiquetas
+    chart = barras + etiquetas + linea_objetivo + texto_objetivo
 
     chart = (
         chart
         .properties(
             title=alt.TitleParams(
-                text="Performance TAT mensual",
+                text="% Cumplimiento TAT mensual",
                 fontSize=18,
                 fontWeight="bold",
                 anchor="start"
@@ -657,8 +600,8 @@ def crear_figura_cumplimiento_etapas(
     etapas = detectar_columnas_etapas(df_base)
 
     colores = {
-        "Cumple": "#5B5B5B",
-        "No cumple": "#D94555"
+        "Cumple": COLOR_CUMPLE,
+        "No cumple": COLOR_NO_CUMPLE
     }
 
     fig, axes = plt.subplots(
@@ -956,12 +899,6 @@ rango_fechas = st.sidebar.date_input(
     max_value=fecha_max
 )
 
-modo_y = st.sidebar.radio(
-    "Métrica gráfico mensual",
-    options=["Porcentaje", "Recuento"],
-    index=0
-)
-
 mostrar_meses_sin_datos = st.sidebar.checkbox(
     "Mostrar meses sin datos",
     value=False
@@ -1121,12 +1058,12 @@ with tab_dashboard:
 
     df_plot = crear_data_plot(
         tabla=tabla_resumen,
-        modo_y=modo_y
+        modo_y="Porcentaje"
     )
 
     grafico_performance_tat(
         df_plot=df_plot,
-        modo_y=modo_y
+        modo_y="Porcentaje"
     )
 
     with st.expander("Ver resumen mensual", expanded=False):
