@@ -133,6 +133,14 @@ ETAPAS_PEDIDO = [
     },
 ]
 
+ETAPAS_LINEA_PEDIDO = [
+    ("Solicitud", "fecha_solicitud_final"),
+    ("Liberación", "fecha_liberacion_final"),
+    ("Pedido", "fecha_pedido_final"),
+    ("Facturación", "fecha_facturacion_final"),
+    ("Recepción", "fecha_recepcion_final"),
+]
+
 COLUMNAS_TABLA_PRINCIPAL = [
     COL_SOLPED,
     COL_OC_ME5A,
@@ -591,11 +599,6 @@ st.markdown(
             border-color: #bfdbfe;
         }
 
-        .tiny-muted {
-            color:#64748b;
-            font-size:0.78rem;
-        }
-
         @media (max-width: 1200px) {
             .stage-wrap {
                 grid-template-columns: repeat(3, minmax(150px, 1fr));
@@ -662,7 +665,7 @@ st.markdown(
 
 
 # =========================================================
-# Utilidades de preparación
+# Utilidades generales
 # =========================================================
 def encontrar_logo():
     for path in LOGO_CANDIDATOS:
@@ -711,6 +714,12 @@ def mostrar_logo(ancho: int = 260):
         """,
         unsafe_allow_html=True,
     )
+
+
+def limpiar_filtros_principales():
+    st.session_state["filtro_solped"] = ""
+    st.session_state["filtro_oc"] = ""
+    st.session_state["filtro_pos_solped"] = ""
 
 
 def limpiar_columnas(df: pd.DataFrame) -> pd.DataFrame:
@@ -925,10 +934,6 @@ def formato_valor(valor: Any) -> str:
 
 
 def formato_id(valor: Any) -> str:
-    """
-    Formatea identificadores como SolPed, OC, posición o material
-    sin separador de miles y sin .0 final.
-    """
     if pd.isna(valor):
         return "-"
 
@@ -959,6 +964,23 @@ def valor_numerico(valor: Any) -> float:
         )
     except Exception:
         return np.nan
+
+
+def obtener_umbral_tat(row: pd.Series) -> float:
+    umbral = valor_numerico(row.get(COL_UMBRAL_TAT, np.nan))
+
+    if pd.notna(umbral):
+        return umbral
+
+    tipo_oc = str(row.get(COL_TIPO_OC, "")).strip().replace(".0", "")
+
+    if tipo_oc in ["35", "45"]:
+        return 40
+
+    if tipo_oc == "47":
+        return 70
+
+    return np.nan
 
 
 def texto_dias_y_meses(dias: Any) -> str:
@@ -996,6 +1018,20 @@ def texto_dias_simple(dias: Any) -> str:
     dias_int = int(round(dias_num))
 
     return f"{dias_int:,} días".replace(",", ".")
+
+
+def texto_dias_restantes(dias_restantes: Any) -> str:
+    valor = valor_numerico(dias_restantes)
+
+    if pd.isna(valor):
+        return "Sin dato"
+
+    valor_int = int(round(valor))
+
+    if valor_int >= 0:
+        return f"{valor_int:,} días disponibles".replace(",", ".")
+
+    return f"{abs(valor_int):,} días sobre el umbral".replace(",", ".")
 
 
 def detalle_estado_tat(
@@ -1039,15 +1075,6 @@ def fecha_etapa_texto(row: pd.Series, columna: str) -> str:
         return valor.strftime("%d-%m-%Y")
 
     return formato_valor(valor)
-
-
-ETAPAS_LINEA_PEDIDO = [
-    ("Solicitud", "fecha_solicitud_final"),
-    ("Liberación", "fecha_liberacion_final"),
-    ("Pedido", "fecha_pedido_final"),
-    ("Facturación", "fecha_facturacion_final"),
-    ("Recepción", "fecha_recepcion_final"),
-]
 
 
 def fecha_valida(row: pd.Series, columna: str):
@@ -1094,18 +1121,26 @@ def obtener_avance_pedido(row: pd.Series) -> dict[str, Any]:
     )
 
     fecha_inicio = fecha_valida(row, "fecha_solicitud_final")
+
     fecha_ultima = (
         fecha_valida(row, ultima_columna)
         if ultima_columna
         else pd.NaT
     )
 
+    esta_cerrado = len(pendientes) == 0
+
+    fecha_referencia = fecha_ultima
+
+    if not esta_cerrado and pd.notna(fecha_inicio):
+        fecha_referencia = pd.Timestamp.today().normalize()
+
     dias_parcial = np.nan
 
-    if pd.notna(fecha_inicio) and pd.notna(fecha_ultima):
-        dias_parcial = (fecha_ultima - fecha_inicio).days
+    if pd.notna(fecha_inicio) and pd.notna(fecha_referencia):
+        dias_parcial = (fecha_referencia - fecha_inicio).days
 
-    umbral = valor_numerico(row.get(COL_UMBRAL_TAT, np.nan))
+    umbral = obtener_umbral_tat(row)
     dias_restantes = np.nan
 
     if pd.notna(dias_parcial) and pd.notna(umbral):
@@ -1122,7 +1157,8 @@ def obtener_avance_pedido(row: pd.Series) -> dict[str, Any]:
         "siguiente_columna": siguiente_columna,
         "dias_parcial": dias_parcial,
         "dias_restantes": dias_restantes,
-        "esta_cerrado": len(pendientes) == 0,
+        "umbral_tat": umbral,
+        "esta_cerrado": esta_cerrado,
     }
 
 
@@ -1155,41 +1191,39 @@ def texto_tat_total_usuario(performance: Any, dias_tat: Any) -> str:
     return texto_dias_y_meses(dias_tat)
 
 
-def texto_dias_restantes(dias_restantes: Any) -> str:
-    valor = valor_numerico(dias_restantes)
-
-    if pd.isna(valor):
-        return "Sin dato"
-
-    valor_int = int(round(valor))
-
-    if valor_int >= 0:
-        return f"{valor_int:,} días disponibles".replace(",", ".")
-
-    return f"{abs(valor_int):,} días sobre el umbral".replace(",", ".")
-
-
 def diagnostico_avance(row: pd.Series) -> str:
     avance = obtener_avance_pedido(row)
-    perf = str(row.get(COL_PERF_TAT, "")).strip().lower()
 
     if avance["esta_cerrado"]:
         return "El pedido ya tiene recepción registrada. El TAT total está cerrado."
 
     falta = nombre_fecha_faltante(avance["siguiente_columna"])
     dias_restantes = valor_numerico(avance["dias_restantes"])
+    umbral = valor_numerico(avance.get("umbral_tat", np.nan))
 
-    if perf == "en proceso":
-        if pd.notna(dias_restantes):
-            if dias_restantes < 0:
-                return f"Falta {falta}. El avance parcial ya supera el umbral TAT."
+    if pd.isna(umbral):
+        return (
+            f"Falta {falta}. No se pudo determinar el umbral TAT porque falta "
+            f"umbral_tat_total o tipo_oc válido."
+        )
 
-            if dias_restantes <= 5:
-                return f"Falta {falta}. El pedido está cerca del umbral TAT."
+    if pd.notna(dias_restantes):
+        if dias_restantes < 0:
+            return (
+                f"Falta {falta}. El pedido ya supera el umbral TAT "
+                f"de {int(umbral)} días."
+            )
 
-            return f"Falta {falta}. El pedido sigue dentro del plazo por ahora."
+        if dias_restantes <= 5:
+            return (
+                f"Falta {falta}. El pedido está cerca del umbral TAT "
+                f"de {int(umbral)} días."
+            )
 
-        return f"Falta {falta}. El TAT final se cerrará cuando exista recepción."
+        return (
+            f"Falta {falta}. Quedan {int(dias_restantes)} días disponibles "
+            f"contra el umbral TAT de {int(umbral)} días."
+        )
 
     return (
         f"Última etapa registrada: {avance['ultima_etapa']}. "
@@ -1201,11 +1235,19 @@ def html_avance_actual(row: pd.Series) -> str:
     avance = obtener_avance_pedido(row)
     dias_parcial = texto_dias_y_meses(avance["dias_parcial"])
     dias_restantes = texto_dias_restantes(avance["dias_restantes"])
+    umbral = avance.get("umbral_tat", np.nan)
 
     if avance["esta_cerrado"]:
         tat_total_estado = "Cerrado"
     else:
         tat_total_estado = "Pendiente hasta recepción"
+
+    if pd.notna(valor_numerico(umbral)):
+        contra_umbral = (
+            f"{dias_restantes} · umbral {int(valor_numerico(umbral))} días"
+        )
+    else:
+        contra_umbral = "Sin dato"
 
     return dedent(
         f"""
@@ -1226,7 +1268,7 @@ def html_avance_actual(row: pd.Series) -> str:
                 </div>
                 <div class="avance-item">
                     <div class="avance-label">Contra umbral TAT</div>
-                    <div class="avance-value">{escape(dias_restantes)}</div>
+                    <div class="avance-value">{escape(contra_umbral)}</div>
                 </div>
             </div>
             <div class="avance-note">{escape(diagnostico_avance(row))}</div>
@@ -1825,19 +1867,28 @@ with c1:
     txt_solped = st.text_input(
         "SolPed",
         placeholder="Ej: 1001973319",
+        key="filtro_solped",
     )
 
 with c2:
     txt_oc = st.text_input(
         "Orden de compra / Pedido",
         placeholder="Ej: 4502321875",
+        key="filtro_oc",
     )
 
 with c3:
     txt_pos_solped = st.text_input(
         "Posición SolPed",
         placeholder="Ej: 10",
+        key="filtro_pos_solped",
     )
+
+st.button(
+    "Limpiar filtros principales",
+    on_click=limpiar_filtros_principales,
+    use_container_width=False,
+)
 
 
 # =========================================================
@@ -2210,7 +2261,7 @@ else:
     rango_inc = row.get(COL_RANGO_INC, np.nan)
     dias_tat = row.get(COL_DIAS_TAT, np.nan)
     dias_inc = row.get(COL_DIAS_INC, np.nan)
-    umbral_tat = row.get(COL_UMBRAL_TAT, np.nan)
+    umbral_tat = obtener_umbral_tat(row)
 
     tat_total_txt = texto_tat_total_usuario(
         perf_tat,
