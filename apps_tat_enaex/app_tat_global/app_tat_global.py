@@ -21,6 +21,11 @@ APP_CREAR_FECHAS_CALCULOS_TAT = (
 APP_TAT_ESTADO_PEDIDO = PROJECT_DIR / "app_tat_estado_pedido" / "app_tat_estado_pedido.py"
 APP_TAT_FILTRO = PROJECT_DIR / "app_tat_filtro" / "app_tat_filtro.py"
 APP_TAT_GRAFICOS = PROJECT_DIR / "app_tat_graficos" / "app_tat_graficos.py"
+APP_GRAPH_PERFORMANCE_PLANTAS = (
+    PROJECT_DIR
+    / "app_tat_graficos"
+    / "app_graph_performance_plantas.py"
+)
 APP_TAT_LIMPIEZA_ARIBA = PROJECT_DIR / "app_tat_limpieza_ariba" / "app_tat_limpieza_ariba.py"
 APP_TAT_LIMPIEZA_ME5A = PROJECT_DIR / "app_tat_limpieza_me5a" / "app_tat_limpieza_me5a.py"
 APP_TAT_LIMPIEZA_ME80FN = PROJECT_DIR / "app_tat_limpieza_me80fn" / "app_tat_limpieza_me80fn.py"
@@ -185,6 +190,7 @@ apps_requeridas = {
     "Fechas + Cálculos TAT": APP_CREAR_FECHAS_CALCULOS_TAT,
     "Filtro TAT": APP_TAT_FILTRO,
     "Gráficos TAT": APP_TAT_GRAFICOS,
+    "Performance de Plantas": APP_GRAPH_PERFORMANCE_PLANTAS,
 }
 
 apps_faltantes = {
