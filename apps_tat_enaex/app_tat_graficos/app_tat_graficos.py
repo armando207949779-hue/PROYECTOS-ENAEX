@@ -1086,51 +1086,17 @@ def grafico_mensual_100(tabla: pd.DataFrame):
             strokeWidth=2,
         )
         .encode(
-            y=alt.Y("Meta:Q"),
-            tooltip=[
-                alt.Tooltip(
-                    "Meta:Q",
-                    title="Meta cumplimiento",
-                    format=".0f",
-                )
-            ],
-        )
-    )
-
-    etiqueta_meta = (
-        alt.Chart(
-            pd.DataFrame(
-                {
-                    "Meta": [META_CUMPLIMIENTO],
-                    "Texto": [f"Meta {META_CUMPLIMIENTO}%"],
-                }
-            )
-        )
-        .mark_text(
-            align="left",
-            baseline="bottom",
-            dx=6,
-            dy=-4,
-            color=COLOR_META,
-            fontSize=12,
-            fontWeight="bold",
-        )
-        .encode(
-            x=alt.value(5),
-            y=alt.Y("Meta:Q"),
-            text="Texto:N",
+            y=alt.Y("Meta:Q")
         )
     )
 
     chart = (
-        (barras + linea_meta + etiqueta_meta)
+        (barras + linea_meta)
         .properties(height=340)
         .configure_view(strokeWidth=0)
     )
 
     st.altair_chart(chart, use_container_width=True)
-
-
 def normalizar_estado_donut(valor) -> str:
     texto = str(valor).strip().lower()
 
