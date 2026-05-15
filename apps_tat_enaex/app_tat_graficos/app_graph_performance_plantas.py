@@ -637,13 +637,45 @@ def aplicar_logica_performance_plantas(df_original: pd.DataFrame) -> pd.DataFram
     return df
 
 
-def aplicar_filtro_powerbi(df: pd.DataFrame) -> pd.DataFrame:
-    return df[
-        (df[COL_FECHA_FACTURACION_FINAL] > FECHA_FILTRO_POWERBI)
+def aplicar_filtros_dashboard(
+    df: pd.DataFrame,
+    fecha_facturacion_desde,
+    estados_tat_sel,
+    grupos_sel,
+    rango_recepcion=None,
+) -> pd.DataFrame:
+    fecha_facturacion_desde = pd.Timestamp(fecha_facturacion_desde)
+
+    data = df[
+        (df[COL_FECHA_FACTURACION_FINAL] > fecha_facturacion_desde)
         & df[COL_FECHA_RECEPCION_FINAL].notna()
-        & df[COL_PERFORMANCE_TAT].isin(["Cumple", "No cumple"])
         & df["grupo_planta"].ne("Excluir")
     ].copy()
+
+    if estados_tat_sel:
+        data = data[data[COL_PERFORMANCE_TAT].isin(estados_tat_sel)].copy()
+    else:
+        return pd.DataFrame()
+
+    if grupos_sel:
+        data = data[data["grupo_planta"].isin(grupos_sel)].copy()
+    else:
+        return pd.DataFrame()
+
+    if rango_recepcion is not None:
+        if isinstance(rango_recepcion, (tuple, list)) and len(rango_recepcion) == 2:
+            fecha_inicio = pd.Timestamp(rango_recepcion[0])
+            fecha_fin = (
+                pd.Timestamp(rango_recepcion[1])
+                + pd.Timedelta(days=1)
+                - pd.Timedelta(microseconds=1)
+            )
+
+            data = data[
+                data[COL_FECHA_RECEPCION_FINAL].between(fecha_inicio, fecha_fin)
+            ].copy()
+
+    return data
 
 
 # =========================================================
@@ -726,7 +758,7 @@ def grafico_mensual_100_plantas(tabla: pd.DataFrame, titulo: str):
         """
         <div class='chart-caption'>
             Base evaluable: Performance TAT Cumple / No cumple ·
-            Fecha eje: recepción final · Filtro: facturación final posterior a 01-02-2024.
+            Fecha eje: recepción final.
         </div>
         """,
         unsafe_allow_html=True,
@@ -940,14 +972,6 @@ with st.sidebar:
         """
     )
 
-    st.caption(
-        """
-        **Filtro fijo**
-
-        fecha_facturacion_final > 01-02-2024
-        """
-    )
-
 # ---------------------------------------------------------
 # 3) Subir archivo
 # ---------------------------------------------------------
@@ -963,7 +987,7 @@ if uploaded_file is None:
     st.stop()
 
 # ---------------------------------------------------------
-# 4) Procesar archivo
+# 4) Procesar archivo y crear filtros modificables
 # ---------------------------------------------------------
 try:
     with st.spinner("Leyendo archivo..."):
@@ -975,13 +999,79 @@ try:
 
     with st.spinner("Aplicando lógica de performance y agrupación de plantas..."):
         df_final = aplicar_logica_performance_plantas(df_original)
-        df_dashboard = aplicar_filtro_powerbi(df_final)
+
+    # -----------------------------------------------------
+    # Filtros con valores por defecto, pero modificables
+    # -----------------------------------------------------
+    with st.sidebar:
+        st.markdown("---")
+        st.subheader("Filtros del gráfico")
+
+        fecha_facturacion_desde = st.date_input(
+            "Fecha facturación posterior a",
+            value=FECHA_FILTRO_POWERBI.date(),
+        )
+
+        estados_disponibles = [
+            estado
+            for estado in ["Cumple", "No cumple", "En proceso", "No aplica al análisis", "Sin datos"]
+            if estado in df_final[COL_PERFORMANCE_TAT].dropna().astype(str).unique().tolist()
+        ]
+
+        estados_default = [
+            estado
+            for estado in ["Cumple", "No cumple"]
+            if estado in estados_disponibles
+        ]
+
+        estados_tat_sel = st.multiselect(
+            "Performance TAT",
+            options=estados_disponibles,
+            default=estados_default,
+        )
+
+        grupos_disponibles = [
+            grupo
+            for grupo in ["Prillex", "Rio Loa", "Plantas de servicios"]
+            if grupo in df_final["grupo_planta"].dropna().astype(str).unique().tolist()
+        ]
+
+        grupos_todos = ["Prillex", "Rio Loa", "Plantas de servicios"]
+
+        grupos_sel = st.multiselect(
+            "Grupos a mostrar",
+            options=grupos_todos,
+            default=grupos_disponibles if grupos_disponibles else grupos_todos,
+        )
+
+        fechas_recepcion_validas = df_final[COL_FECHA_RECEPCION_FINAL].dropna()
+
+        if not fechas_recepcion_validas.empty:
+            fecha_recepcion_min = fechas_recepcion_validas.min().date()
+            fecha_recepcion_max = fechas_recepcion_validas.max().date()
+
+            rango_recepcion = st.date_input(
+                "Fecha recepción",
+                value=(fecha_recepcion_min, fecha_recepcion_max),
+                min_value=fecha_recepcion_min,
+                max_value=fecha_recepcion_max,
+            )
+        else:
+            rango_recepcion = None
+            st.warning("No hay fechas válidas de recepción.")
+
+    with st.spinner("Aplicando filtros del dashboard..."):
+        df_dashboard = aplicar_filtros_dashboard(
+            df=df_final,
+            fecha_facturacion_desde=fecha_facturacion_desde,
+            estados_tat_sel=estados_tat_sel,
+            grupos_sel=grupos_sel,
+            rango_recepcion=rango_recepcion,
+        )
 
     if df_dashboard.empty:
         st.warning(
-            "No hay datos después de aplicar filtros: "
-            "fecha_facturacion_final > 01-02-2024, fecha_recepcion_final válida, "
-            "Performance TAT Cumple / No cumple y agrupación de plantas."
+            "No hay datos después de aplicar los filtros seleccionados."
         )
         st.stop()
 
@@ -995,7 +1085,7 @@ try:
     with tab_dashboard:
         section_header(
             "Indicadores generales",
-            "Base evaluable: Performance TAT Cumple / No cumple.",
+            "Base según filtros seleccionados.",
         )
 
         total_filas = len(df_dashboard)
@@ -1029,20 +1119,18 @@ try:
 
         st.divider()
 
-        grafico_mensual_100_plantas(
-            crear_resumen_mensual_grupo(df_dashboard, "Prillex"),
-            "Performance TAT Prillex",
-        )
+        graficos_disponibles = {
+            "Prillex": "Performance TAT Prillex",
+            "Rio Loa": "Performance TAT Rio Loa",
+            "Plantas de servicios": "Performance TAT Plantas de servicios",
+        }
 
-        grafico_mensual_100_plantas(
-            crear_resumen_mensual_grupo(df_dashboard, "Rio Loa"),
-            "Performance TAT Rio Loa",
-        )
-
-        grafico_mensual_100_plantas(
-            crear_resumen_mensual_grupo(df_dashboard, "Plantas de servicios"),
-            "Performance TAT Plantas de servicios",
-        )
+        for grupo, titulo in graficos_disponibles.items():
+            if grupo in grupos_sel:
+                grafico_mensual_100_plantas(
+                    crear_resumen_mensual_grupo(df_dashboard, grupo),
+                    titulo,
+                )
 
         if mostrar_diagnostico_check:
             mostrar_diagnostico(df_dashboard)
