@@ -1267,7 +1267,31 @@ try:
             card_metric("TAT evaluable", f"{evaluables_tat:,}")
 
         with k4:
-            card_metric("Cumplimiento global", f"{pct_cumple_tat:.1f}%", f"Cumple: {cumple_tat:,}")
+            card_metric(
+                "Cumplimiento global",
+                f"{pct_cumple_tat:.1f}%",
+                f"Cumple: {cumple_tat:,} · No cumple: {no_cumple_tat:,}",
+            )
+
+        st.divider()
+
+        section_header(
+            "Gráficos de performance",
+            "Vista mensual por planta. Se muestran primero para que sean lo principal al abrir el dashboard.",
+        )
+
+        graficos_disponibles = {
+            "Prillex": "Performance TAT Prillex",
+            "Rio Loa": "Performance TAT Rio Loa",
+            "Plantas de servicios": "Performance TAT Plantas de servicios",
+        }
+
+        for grupo, titulo in graficos_disponibles.items():
+            if grupo in grupos_sel:
+                grafico_mensual_100_plantas(
+                    crear_resumen_mensual_grupo(df_dashboard, grupo),
+                    titulo,
+                )
 
         st.divider()
 
@@ -1276,7 +1300,7 @@ try:
             "Resumen automático de las preguntas principales del dashboard.",
         )
 
-        r1, r2, r3 = st.columns(3)
+        r1, r2 = st.columns(2)
 
         with r1:
             if mejor_planta is not None:
@@ -1305,13 +1329,6 @@ try:
             else:
                 card_metric("Mejor mes y planta", "Sin datos", "No hay registros evaluables.")
 
-        with r3:
-            card_metric(
-                "Cumplimiento global",
-                f"{pct_cumple_tat:.1f}%",
-                f"Cumple: {cumple_tat:,} · No cumple: {no_cumple_tat:,}",
-            )
-
         st.markdown("**Filtros aplicados**")
         st.dataframe(
             describir_filtros_aplicados(
@@ -1331,30 +1348,6 @@ try:
             use_container_width=True,
             hide_index=True,
         )
-
-        st.divider()
-
-        section_header(
-            "Resumen por planta",
-            "Porcentaje de cumplimiento TAT por grupo.",
-        )
-
-        mostrar_kpis_plantas(df_dashboard)
-
-        st.divider()
-
-        graficos_disponibles = {
-            "Prillex": "Performance TAT Prillex",
-            "Rio Loa": "Performance TAT Rio Loa",
-            "Plantas de servicios": "Performance TAT Plantas de servicios",
-        }
-
-        for grupo, titulo in graficos_disponibles.items():
-            if grupo in grupos_sel:
-                grafico_mensual_100_plantas(
-                    crear_resumen_mensual_grupo(df_dashboard, grupo),
-                    titulo,
-                )
 
         if mostrar_diagnostico_check:
             mostrar_diagnostico(df_dashboard)
