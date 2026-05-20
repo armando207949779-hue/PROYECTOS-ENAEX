@@ -217,6 +217,65 @@ st.markdown(
             margin-top: 4px;
         }
 
+
+        .kpi-wrap {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(160px, 1fr));
+            gap: 12px;
+            margin: 0.75rem 0 1rem 0;
+        }
+
+        .kpi-card {
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 18px;
+            padding: 16px 18px;
+            box-shadow: 0 1px 5px rgba(15, 23, 42, 0.04);
+        }
+
+        .kpi-label {
+            color: #64748b;
+            font-size: 0.74rem;
+            text-transform: uppercase;
+            letter-spacing: 0.045em;
+            font-weight: 850;
+            margin-bottom: 6px;
+        }
+
+        .kpi-value {
+            color: #0f172a;
+            font-size: 1.85rem;
+            line-height: 1.1;
+            font-weight: 950;
+            margin-bottom: 6px;
+        }
+
+        .kpi-note {
+            color: #64748b;
+            font-size: 0.82rem;
+            line-height: 1.3;
+        }
+
+        .kpi-blue {
+            background: #eff6ff;
+            border-color: #bfdbfe;
+        }
+
+        .kpi-slate {
+            background: #f8fafc;
+            border-color: #e2e8f0;
+        }
+
+        .kpi-green {
+            background: #f0fdf4;
+            border-color: #bbf7d0;
+        }
+
+        .kpi-red {
+            background: #fef2f2;
+            border-color: #fecaca;
+        }
+
         .order-head {
             background: #ffffff;
             border: 1px solid #e5e7eb;
@@ -483,11 +542,12 @@ st.markdown(
         }
 
         .stage-card {
-            border-radius: 16px;
-            padding: 13px 13px 12px 13px;
+            border-radius: 14px;
+            padding: 12px 12px 11px 12px;
             border: 1px solid #e5e7eb;
-            min-height: 150px;
+            min-height: 138px;
             position: relative;
+            box-shadow: none;
         }
 
         .stage-card::after {
@@ -532,38 +592,38 @@ st.markdown(
         }
 
         .stage-title {
-            font-size: 0.82rem;
+            font-size: 0.78rem;
             font-weight: 850;
             color: #0f172a;
-            margin-bottom: 6px;
+            margin-bottom: 5px;
         }
 
         .stage-date {
-            font-size: 1.05rem;
+            font-size: 0.98rem;
             font-weight: 850;
             color: #111827;
-            margin-bottom: 5px;
+            margin-bottom: 4px;
         }
 
         .stage-note {
             color: #64748b;
-            font-size: 0.76rem;
-            line-height: 1.25;
-            min-height: 28px;
-            margin-bottom: 9px;
+            font-size: 0.72rem;
+            line-height: 1.2;
+            min-height: 24px;
+            margin-bottom: 7px;
         }
 
         .stage-days {
-            font-size: 0.88rem;
+            font-size: 0.8rem;
             color: #334155;
-            margin-bottom: 7px;
+            margin-bottom: 6px;
         }
 
         .pill {
             display: inline-block;
             border-radius: 999px;
-            padding: 4px 9px;
-            font-size: 0.76rem;
+            padding: 3px 8px;
+            font-size: 0.7rem;
             font-weight: 800;
             border: 1px solid transparent;
             white-space: nowrap;
@@ -597,6 +657,18 @@ st.markdown(
             background: #dbeafe;
             color: #1e40af;
             border-color: #bfdbfe;
+        }
+
+        @media (max-width: 1000px) {
+            .kpi-wrap {
+                grid-template-columns: repeat(2, minmax(160px, 1fr));
+            }
+        }
+
+        @media (max-width: 640px) {
+            .kpi-wrap {
+                grid-template-columns: 1fr;
+            }
         }
 
         @media (max-width: 1200px) {
@@ -1635,12 +1707,13 @@ def html_estado_pedido(row: pd.Series) -> str:
             }}
 
             .stage-card {{
-                border-radius: 16px;
-                padding: 13px 13px 12px 13px;
+                border-radius: 14px;
+                padding: 12px 12px 11px 12px;
                 border: 1px solid #e5e7eb;
-                min-height: 150px;
+                min-height: 138px;
                 position: relative;
                 box-sizing: border-box;
+                box-shadow: none;
             }}
 
             .stage-card::after {{
@@ -1685,38 +1758,38 @@ def html_estado_pedido(row: pd.Series) -> str:
             }}
 
             .stage-title {{
-                font-size: 0.82rem;
+                font-size: 0.78rem;
                 font-weight: 850;
                 color: #0f172a;
-                margin-bottom: 6px;
+                margin-bottom: 5px;
             }}
 
             .stage-date {{
-                font-size: 1.05rem;
+                font-size: 0.98rem;
                 font-weight: 850;
                 color: #111827;
-                margin-bottom: 5px;
+                margin-bottom: 4px;
             }}
 
             .stage-note {{
                 color: #64748b;
-                font-size: 0.76rem;
-                line-height: 1.25;
-                min-height: 28px;
-                margin-bottom: 9px;
+                font-size: 0.72rem;
+                line-height: 1.2;
+                min-height: 24px;
+                margin-bottom: 7px;
             }}
 
             .stage-days {{
-                font-size: 0.88rem;
+                font-size: 0.8rem;
                 color: #334155;
-                margin-bottom: 7px;
+                margin-bottom: 6px;
             }}
 
             .pill {{
                 display: inline-block;
                 border-radius: 999px;
-                padding: 4px 9px;
-                font-size: 0.76rem;
+                padding: 3px 8px;
+                font-size: 0.7rem;
                 font-weight: 800;
                 border: 1px solid transparent;
                 white-space: nowrap;
@@ -2201,20 +2274,62 @@ df_filtrado = df.loc[mask].copy()
 
 
 # =========================================================
-# Coincidencias destacadas
+# Indicadores generales
 # =========================================================
-porcentaje = (
-    len(df_filtrado) / len(df) * 100
-    if len(df)
+total_inicial = len(df)
+total_filtrado = len(df_filtrado)
+
+porcentaje_filtrado = (
+    total_filtrado / total_inicial * 100
+    if total_inicial
     else 0
 )
 
+if COL_PERF_TAT in df_filtrado.columns and total_filtrado:
+    serie_perf = (
+        df_filtrado[COL_PERF_TAT]
+        .fillna("Sin dato")
+        .astype(str)
+        .str.strip()
+        .str.lower()
+    )
+
+    total_cumple = serie_perf.eq("cumple").sum()
+    total_no_cumple = serie_perf.eq("no cumple").sum()
+
+    pct_cumple = total_cumple / total_filtrado * 100
+    pct_no_cumple = total_no_cumple / total_filtrado * 100
+else:
+    total_cumple = 0
+    total_no_cumple = 0
+    pct_cumple = 0
+    pct_no_cumple = 0
+
 st.markdown(
     f"""
-    <div class="match-box">
-        <div class="match-number">{len(df_filtrado):,}</div>
-        <div class="match-label">
-            coincidencias encontradas de {len(df):,} registros cargados · {porcentaje:.1f}% del archivo
+    <div class="kpi-wrap">
+        <div class="kpi-card kpi-blue">
+            <div class="kpi-label">Registros iniciales</div>
+            <div class="kpi-value">{total_inicial:,}</div>
+            <div class="kpi-note">Total cargado en el archivo base</div>
+        </div>
+
+        <div class="kpi-card kpi-slate">
+            <div class="kpi-label">Registros filtrados</div>
+            <div class="kpi-value">{total_filtrado:,}</div>
+            <div class="kpi-note">{porcentaje_filtrado:.1f}% del archivo inicial</div>
+        </div>
+
+        <div class="kpi-card kpi-green">
+            <div class="kpi-label">% cumplimiento</div>
+            <div class="kpi-value">{pct_cumple:.1f}%</div>
+            <div class="kpi-note">Performance TAT = Cumple</div>
+        </div>
+
+        <div class="kpi-card kpi-red">
+            <div class="kpi-label">% incumplimiento</div>
+            <div class="kpi-value">{pct_no_cumple:.1f}%</div>
+            <div class="kpi-note">Performance TAT = No cumple</div>
         </div>
     </div>
     """.replace(",", "."),
@@ -2373,78 +2488,106 @@ else:
 
     components.html(
         html_estado_pedido(row),
-        height=230,
+        height=215,
         scrolling=False,
     )
 
 
 # =========================================================
-# Distribuciones simples
+# Distribuciones del resultado
 # =========================================================
 with st.expander("Distribuciones del resultado", expanded=False):
+    def tabla_distribucion(
+        df_base: pd.DataFrame,
+        columna: str,
+        nombre_columna: str,
+    ) -> pd.DataFrame:
+        if columna not in df_base.columns or df_base.empty:
+            return pd.DataFrame(
+                columns=[nombre_columna, "Cantidad", "Porcentaje"]
+            )
+
+        tabla = (
+            df_base[columna]
+            .fillna("Sin dato")
+            .astype(str)
+            .value_counts(dropna=False)
+            .reset_index()
+        )
+
+        tabla.columns = [nombre_columna, "Cantidad"]
+        total = tabla["Cantidad"].sum()
+
+        tabla["Porcentaje"] = np.where(
+            total > 0,
+            tabla["Cantidad"] / total * 100,
+            0,
+        )
+
+        tabla["Porcentaje"] = tabla["Porcentaje"].round(1)
+
+        return tabla
+
     b1, b2, b3 = st.columns(3)
 
     with b1:
-        if COL_PERF_TAT in df_filtrado.columns:
-            st.markdown("**Performance TAT**")
+        st.markdown("**Performance TAT**")
 
-            tabla_perf = (
-                df_filtrado[COL_PERF_TAT]
-                .value_counts(dropna=False)
-                .reset_index()
-            )
+        tabla_perf = tabla_distribucion(
+            df_filtrado,
+            COL_PERF_TAT,
+            "Performance TAT",
+        )
 
-            tabla_perf.columns = [
-                "Performance TAT",
-                "Cantidad",
-            ]
+        st.dataframe(
+            tabla_perf,
+            use_container_width=True,
+            hide_index=True,
+        )
 
-            st.dataframe(
-                tabla_perf,
-                use_container_width=True,
-                hide_index=True,
+        if not tabla_perf.empty:
+            st.bar_chart(
+                tabla_perf.set_index("Performance TAT")["Porcentaje"]
             )
 
     with b2:
-        if COL_RANGO_INC in df_filtrado.columns:
-            st.markdown("**Rango incumplimiento TAT**")
+        st.markdown("**Rango incumplimiento TAT**")
 
-            tabla_rango = (
-                df_filtrado[COL_RANGO_INC]
-                .value_counts(dropna=False)
-                .reset_index()
-            )
+        tabla_rango = tabla_distribucion(
+            df_filtrado,
+            COL_RANGO_INC,
+            "Rango",
+        )
 
-            tabla_rango.columns = [
-                "Rango",
-                "Cantidad",
-            ]
+        st.dataframe(
+            tabla_rango,
+            use_container_width=True,
+            hide_index=True,
+        )
 
-            st.dataframe(
-                tabla_rango,
-                use_container_width=True,
-                hide_index=True,
+        if not tabla_rango.empty:
+            st.bar_chart(
+                tabla_rango.set_index("Rango")["Porcentaje"]
             )
 
     with b3:
-        if COL_ESTADO_MATCH in df_filtrado.columns:
-            st.markdown("**Estado del match**")
+        st.markdown("**Estado del match**")
 
-            tabla_estado = (
-                df_filtrado[COL_ESTADO_MATCH]
-                .value_counts(dropna=False)
-                .reset_index()
-            )
+        tabla_estado = tabla_distribucion(
+            df_filtrado,
+            COL_ESTADO_MATCH,
+            "Estado",
+        )
 
-            tabla_estado.columns = [
-                "Estado",
-                "Cantidad",
-            ]
+        st.dataframe(
+            tabla_estado,
+            use_container_width=True,
+            hide_index=True,
+        )
 
-            st.dataframe(
-                tabla_estado,
-                use_container_width=True,
-                hide_index=True,
+        if not tabla_estado.empty:
+            st.bar_chart(
+                tabla_estado.set_index("Estado")["Porcentaje"]
             )
 
 
