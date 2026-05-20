@@ -2854,13 +2854,24 @@ def construir_conciliacion(df_base: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(columns=["Grupo", "Cantidad", "% del filtrado", "Explicación"])
 
     recepcion_col = COL_ESTADO_RECEPCION_ALERTA
-    estado_recepcion = df_base[recepcion_col].astype(str) if recepcion_col in df_base.columns else pd.Series("Sin recepción", index=df_base.index)
+    estado_recepcion = (
+        df_base[recepcion_col].astype(str)
+        if recepcion_col in df_base.columns
+        else pd.Series("Sin recepción", index=df_base.index)
+    )
+
     recepcionados = estado_recepcion.eq("Recepcionado")
     sin_recepcion = estado_recepcion.eq("Sin recepción")
-    con_dias = pd.to_numeric(df_base.get("dias_restantes_int", pd.Series(np.nan, index=df_base.index)), errors="coerce").notna()
-    vencidos = pd.to_numeric(df_base.get("dias_restantes_int", pd.Series(np.nan, index=df_base.index)), errors="coerce").lt(0)
-    proximos = pd.to_numeric(df_base.get("dias_restantes_int", pd.Series(np.nan, index=df_base.index)), errors="coerce").between(0, 30, inclusive="both")
-    mas_mes = pd.to_numeric(df_base.get("dias_restantes_int", pd.Series(np.nan, index=df_base.index)), errors="coerce").gt(30)
+
+    dias = pd.to_numeric(
+        df_base.get("dias_restantes_int", pd.Series(np.nan, index=df_base.index)),
+        errors="coerce",
+    )
+
+    con_dias = dias.notna()
+    vencidos = dias.lt(0)
+    proximos = dias.between(0, 30, inclusive="both")
+    mas_mes = dias.gt(30)
 
     filas = [
         {
@@ -2916,8 +2927,45 @@ def construir_conciliacion(df_base: pd.DataFrame) -> pd.DataFrame:
     salida["% del filtrado"] = salida["% del filtrado"].map(
         lambda x: f"{x:,.1f}%".replace(",", "X").replace(".", ",").replace("X", ".")
     )
+
+    total_fila = pd.DataFrame(
+        [
+            {
+                "Grupo": "TOTAL FILTRADO",
+                "Cantidad": int(salida["Cantidad"].sum()),
+                "% del filtrado": "100,0%" if total > 0 else "0,0%",
+                "Explicación": "Suma de todos los grupos de conciliación.",
+            }
+        ]
+    )
+    salida = pd.concat([salida, total_fila], ignore_index=True)
+
     return salida[["Grupo", "Cantidad", "% del filtrado", "Explicación"]]
 
+
+def aplicar_estilo_conciliacion(df_tabla: pd.DataFrame):
+    def estilo_fila(row: pd.Series) -> list[str]:
+        grupo = str(row.get("Grupo", "")).strip().lower()
+        base = [""] * len(row)
+
+        if grupo == "total filtrado":
+            return [
+                "background-color:#f1f5f9; color:#0f172a; font-weight:900; border-top:2px solid #94a3b8;"
+            ] * len(row)
+
+        if "vencidos" in grupo:
+            return [
+                "background-color:#fee2e2; color:#991b1b; font-weight:800;"
+            ] * len(row)
+
+        if "próximos a vencer sin recepción" in grupo or "proximos a vencer sin recepcion" in grupo:
+            return [
+                "background-color:#ffedd5; color:#9a3412; font-weight:800;"
+            ] * len(row)
+
+        return base
+
+    return df_tabla.style.apply(estilo_fila, axis=1)
 
 def construir_vencimientos_sin_recepcion(df_base: pd.DataFrame, hoy: pd.Timestamp) -> pd.DataFrame:
     if df_base.empty:
@@ -2985,18 +3033,20 @@ def tabla_resumen_filtrada(df_base: pd.DataFrame) -> pd.DataFrame:
     columnas = columnas_existentes(
         df_base,
         [
+            # Primeras columnas solicitadas.
+            COL_SOLPED,
+            COL_OC_ME5A,
+            COL_POS_OC,
             "clasificacion_vencimiento",
-            "fecha_vencimiento_texto",
             "dias_restantes_int",
+            # Columnas complementarias para gestión.
+            COL_OC_NME,
+            COL_POS_SOLPED,
+            "fecha_vencimiento_texto",
             COL_ESTADO_RECEPCION_ALERTA,
             "ultima_etapa_registrada",
             "ultima_fecha_registrada",
             "fecha_pendiente",
-            COL_SOLPED,
-            COL_OC_ME5A,
-            COL_OC_NME,
-            COL_POS_SOLPED,
-            COL_POS_OC,
             COL_MATERIAL,
             COL_TEXTO,
             COL_CENTRO,
@@ -3011,9 +3061,14 @@ def tabla_resumen_filtrada(df_base: pd.DataFrame) -> pd.DataFrame:
     tabla = df_base[columnas].copy()
     return tabla.rename(
         columns={
+            COL_SOLPED: "Solicitud de pedido",
+            COL_OC_ME5A: "Pedido",
+            COL_POS_OC: "Posición pedido",
             "clasificacion_vencimiento": "Días hasta vencimiento",
-            "fecha_vencimiento_texto": "Fecha de vencimiento",
             "dias_restantes_int": "Días restantes",
+            COL_OC_NME: "Documento compras NME",
+            COL_POS_SOLPED: "Posición solicitud de pedido",
+            "fecha_vencimiento_texto": "Fecha de vencimiento",
             COL_ESTADO_RECEPCION_ALERTA: "Recepción",
             "ultima_etapa_registrada": "Última etapa registrada",
             "ultima_fecha_registrada": "Fecha última registrada",
@@ -3023,6 +3078,7 @@ def tabla_resumen_filtrada(df_base: pd.DataFrame) -> pd.DataFrame:
             "umbral_tat_calculado": "Umbral TAT usado",
         }
     )
+
 
 
 # =========================================================
@@ -3218,9 +3274,22 @@ st.caption(
 )
 
 df_conciliacion = construir_conciliacion(df_filtrado)
-st.dataframe(df_conciliacion, use_container_width=True, hide_index=True)
+st.dataframe(
+    aplicar_estilo_conciliacion(df_conciliacion),
+    use_container_width=True,
+    hide_index=True,
+)
 
-suma_conciliacion = int(df_conciliacion["Cantidad"].sum()) if not df_conciliacion.empty else 0
+if not df_conciliacion.empty and "TOTAL FILTRADO" in df_conciliacion["Grupo"].astype(str).values:
+    suma_conciliacion = int(
+        df_conciliacion.loc[
+            df_conciliacion["Grupo"].astype(str).eq("TOTAL FILTRADO"),
+            "Cantidad",
+        ].iloc[0]
+    )
+else:
+    suma_conciliacion = int(df_conciliacion["Cantidad"].sum()) if not df_conciliacion.empty else 0
+
 if suma_conciliacion != filtrados:
     st.warning(
         f"La conciliación suma {suma_conciliacion:,} registros y el filtrado tiene {filtrados:,}. "
