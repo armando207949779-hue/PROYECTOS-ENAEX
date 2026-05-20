@@ -2559,53 +2559,28 @@ def crear_excel_multivista(df_base: pd.DataFrame) -> bytes:
     return output.getvalue()
 
 
+
 # =========================================================
-# Interfaz
+# Interfaz simplificada: una sola pestaña
 # =========================================================
 mostrar_logo()
 
 st.markdown(
     """
     <div style="text-align:center; margin-bottom: 18px;">
-        <div style="font-size:38px; font-weight:850; color:#111827; line-height:1.12;">
-            Centro de control TAT · SolPed / OC
+        <div style="font-size:36px; font-weight:850; color:#111827; line-height:1.12;">
+            Control TAT · SolPed / OC
         </div>
         <div style="font-size:14px; color:#6B7280; margin-top:8px;">
-            Priorización por días hasta vencimiento · pedidos críticos · fechas pendientes · descargas rápidas
+            Resumen único por filtros, vencimiento, recepción y expediente del pedido
         </div>
     </div>
     """,
     unsafe_allow_html=True,
 )
 
-with st.sidebar:
-    st.header("Configuración")
-
-    dias_alerta_temprana = st.slider(
-        "Ventana de alerta temprana",
-        min_value=1,
-        max_value=30,
-        value=7,
-        step=1,
-        help="Define cuántos días antes del umbral se clasifica una alerta como alta.",
-    )
-
-    limite_vista = st.number_input(
-        "Filas visibles por tabla",
-        min_value=25,
-        max_value=5000,
-        value=300,
-        step=25,
-    )
-
-    mostrar_todas_columnas = st.checkbox(
-        "Mostrar todas las columnas en análisis avanzado",
-        value=False,
-    )
-
-
 # =========================================================
-# Leer dataframe global
+# Lectura del dataframe global
 # =========================================================
 if "df_tat" not in st.session_state:
     st.warning("Primero debes cargar el archivo base en Análisis TAT > Cargar archivo.")
@@ -2618,579 +2593,385 @@ try:
     df = limpiar_columnas(df)
     df = convertir_fechas_visuales(df)
     opciones_filtros = construir_opciones_filtros(df)
-    df_alertas = construir_alertas(df, dias_alerta_temprana=dias_alerta_temprana)
+
+    # Se mantiene la lógica TAT existente y se agregan campos operativos mínimos.
+    df_alertas = construir_alertas(df, dias_alerta_temprana=7)
     df_alertas = preparar_alertas_operativas(df_alertas)
 except Exception as e:
     st.error("No se pudo preparar el archivo cargado.")
     st.exception(e)
     st.stop()
 
+hoy = pd.Timestamp.today().normalize()
+total_archivo = len(df)
+
+
+def fecha_vencimiento_tat(row: pd.Series):
+    inicio = fecha_inicio_tat_alerta(row)
+    umbral = obtener_umbral_tat(row)
+    if pd.isna(inicio) or pd.isna(umbral):
+        return pd.NaT
+    return pd.to_datetime(inicio, errors="coerce").normalize() + pd.Timedelta(days=int(round(float(umbral))))
+
+
+def dias_restantes_int(row: pd.Series):
+    valor = valor_numerico(row.get("dias_restantes_tat", np.nan))
+    if pd.isna(valor):
+        return np.nan
+    return int(round(valor))
+
+
+def clasificacion_vencimiento_detalle(row: pd.Series) -> str:
+    dias = dias_restantes_int(row)
+    if pd.isna(dias):
+        return "Sin datos"
+    if dias < 0:
+        return "Vencido"
+    if dias == 0:
+        return "Vence hoy"
+    if 1 <= dias <= 7:
+        return f"{dias} día" if dias == 1 else f"{dias} días"
+    if 8 <= dias <= 30:
+        return "7 a 30 días"
+    return "Más de 1 mes"
+
+
+def fecha_texto(valor: Any) -> str:
+    fecha = pd.to_datetime(valor, errors="coerce")
+    if pd.isna(fecha):
+        return "Sin fecha calculable"
+    return fecha.strftime("%d-%m-%Y")
+
+
+def lista_valores_corta(valores: list[str], max_items: int = 4) -> str:
+    valores = [str(v) for v in valores if str(v).strip()]
+    if not valores:
+        return "Todos"
+    if len(valores) <= max_items:
+        return ", ".join(valores)
+    return ", ".join(valores[:max_items]) + f" +{len(valores) - max_items} más"
+
+
+if "fecha_vencimiento_tat" not in df_alertas.columns:
+    df_alertas["fecha_vencimiento_tat"] = df_alertas.apply(fecha_vencimiento_tat, axis=1)
+
+df_alertas["dias_restantes_int"] = df_alertas.apply(dias_restantes_int, axis=1)
+df_alertas["clasificacion_vencimiento"] = df_alertas.apply(clasificacion_vencimiento_detalle, axis=1)
+df_alertas["fecha_vencimiento_texto"] = df_alertas["fecha_vencimiento_tat"].apply(fecha_texto)
+
 st.success(f"Archivo activo: {nombre_archivo}")
 
-
 # =========================================================
-# Filtros rápidos de gestión
+# Filtros únicos de la pantalla
 # =========================================================
-st.markdown("### Qué días hasta vencimiento quieres ver")
-st.caption("Elige si quieres revisar 1 día, 2 días, 7 días, +7 días, vencidos o casos sin datos. También puedes separar recepcionados y no recepcionados.")
+st.markdown("### Filtros")
+st.caption("Estos filtros determinan todas las respuestas del panel.")
 
-f1, f2, f3, f4 = st.columns([1, 1, 1.15, 1.15])
+f1, f2, f3, f4 = st.columns([1.1, 1.1, 1.4, 1.1])
 
 with f1:
     opciones_centro = opciones_filtros.get(COL_CENTRO, [])
     centro_default = [c for c in opciones_centro if str(c).strip().upper() == "E002"]
-    centro_sel = st.multiselect(
-        "Centro",
-        opciones_centro,
-        default=centro_default,
-        help="Por defecto queda E002 cuando existe en el archivo.",
-    )
+    centro_sel = st.multiselect("Filtro 1 · Centro", opciones_centro, default=centro_default)
 
 with f2:
-    estado_recepcion_sel = st.radio(
-        "Recepción",
-        ["Sin recepción", "Recepcionado", "Todos"],
+    estado_recepcion_sel = st.selectbox(
+        "Filtro 2 · Recepción",
+        ["Todos", "Sin recepción", "Recepcionado"],
         index=0,
-        horizontal=True,
-        key="filtro_estado_recepcion",
     )
 
 with f3:
-    dias_vencimiento_sel = st.multiselect(
-        "Días hasta vencimiento",
-        BUCKETS_DIAS_VENCIMIENTO,
-        default=["Vencido", "1 día", "2 días", "7 días", "Sin datos"],
-        help="Selecciona +7 días cuando quieras ver pedidos sin urgencia inmediata.",
+    opciones_vencimiento = [
+        "Vencido",
+        "Vence hoy",
+        "1 día",
+        "2 días",
+        "3 días",
+        "4 días",
+        "5 días",
+        "6 días",
+        "7 días",
+        "7 a 30 días",
+        "Más de 1 mes",
+        "Sin datos",
+    ]
+    vencimiento_sel = st.multiselect(
+        "Filtro 3 · Días hasta vencimiento",
+        opciones_vencimiento,
+        default=[],
+        help="Déjalo vacío para no filtrar por días hasta vencimiento.",
     )
 
 with f4:
-    grupo_sel = st.multiselect("Grupo compras", opciones_filtros.get(COL_GRUPO_COMPRAS, []))
+    grupo_sel = st.multiselect("Filtro 4 · Grupo compras", opciones_filtros.get(COL_GRUPO_COMPRAS, []))
 
-b1, b2, b3, b4 = st.columns([1, 1, 0.8, 1.1])
-with b1:
-    txt_solped = st.text_input("Buscar SolPed", placeholder="Ej: 1001973319", key="filtro_solped")
-with b2:
-    txt_oc = st.text_input("Buscar OC / Pedido", placeholder="Ej: 4502321875", key="filtro_oc")
-with b3:
-    txt_pos_solped = st.text_input("Posición", placeholder="Ej: 10", key="filtro_pos_solped")
-with b4:
-    nivel_alerta_sel = st.multiselect(
-        "Nivel de alerta",
-        sorted(df_alertas["nivel_alerta"].dropna().astype(str).unique().tolist())
-        if "nivel_alerta" in df_alertas.columns else [],
-    )
+f5, f6, f7, f8 = st.columns([1.1, 1.1, 1, 1])
 
-c1, c2 = st.columns(2)
-with c1:
-    ultima_etapa_sel = st.multiselect(
-        "Última fecha registrada",
+with f5:
+    ultima_fecha_sel = st.multiselect(
+        "Filtro 5 · Última fecha registrada",
         sorted(df_alertas["ultima_etapa_registrada"].dropna().astype(str).unique().tolist())
         if "ultima_etapa_registrada" in df_alertas.columns else [],
-        help="Ejemplo: Solicitud, Liberación, Pedido, Facturación o Recepción.",
     )
-with c2:
+
+with f6:
     fecha_pendiente_sel = st.multiselect(
-        "Fecha pendiente",
+        "Filtro 6 · Fecha pendiente",
         sorted(df_alertas["fecha_pendiente"].dropna().astype(str).unique().tolist())
         if "fecha_pendiente" in df_alertas.columns else [],
-        help="Primer hito que falta para cerrar la línea del pedido.",
     )
 
-st.button("Limpiar búsqueda puntual", on_click=limpiar_filtros_principales, use_container_width=False)
+with f7:
+    solped_txt = st.text_input("Filtro 7 · SolPed", placeholder="Buscar SolPed")
 
-
-# =========================================================
-# Filtros avanzados colapsados
-# =========================================================
-with st.expander("Filtros avanzados", expanded=False):
-    st.caption("Úsalos para auditoría o búsquedas específicas. No son necesarios para la gestión diaria.")
-
-    a1, a2, a3, a4 = st.columns(4)
-
-    with a1:
-        txt_pos_oc = st.text_input("Posición OC", placeholder="Ej: 10")
-        txt_material = st.text_input("Material", placeholder="Ej: 20012021")
-        txt_descripcion = st.text_input("Descripción / texto breve", placeholder="Ej: bloqueador")
-
-    with a2:
-        txt_solicitante = st.text_input("Solicitante", placeholder="Ej: c.silva")
-        txt_autor = st.text_input("Autor", placeholder="Ej: CL17330735")
-
-    with a3:
-        tipo_oc_sel = st.multiselect("Tipo OC", opciones_filtros.get(COL_TIPO_OC, []))
-        estado_match_sel = st.multiselect("Estado del match", opciones_filtros.get(COL_ESTADO_MATCH, []))
-        perf_tat_sel = st.multiselect("Estado TAT", opciones_filtros.get(COL_PERF_TAT, []))
-
-    with a4:
-        origen_sel = st.multiselect("Origen", opciones_filtros.get(COL_ORIGEN, []))
-        sistema_sel = st.multiselect("Sistema", opciones_filtros.get(COL_SISTEMA, []))
-        rango_inc_sel = st.multiselect("Rango incumplimiento TAT", opciones_filtros.get(COL_RANGO_INC, []))
-
-    st.markdown("#### Rango de días / monto")
-    r1, r2, r3, r4 = st.columns(4)
-
-    with r1:
-        usar_dias_tat_min = st.checkbox("TAT mínimo", value=False)
-        dias_tat_min = st.number_input("Valor mínimo TAT", value=0, step=1, disabled=not usar_dias_tat_min)
-
-    with r2:
-        usar_dias_tat_max = st.checkbox("TAT máximo", value=False)
-        dias_tat_max = st.number_input("Valor máximo TAT", value=9999, step=1, disabled=not usar_dias_tat_max)
-
-    with r3:
-        usar_monto_min = st.checkbox("Monto mínimo", value=False)
-        monto_min = st.number_input("Valor mínimo monto", value=0.0, step=1000.0, disabled=not usar_monto_min)
-
-    with r4:
-        usar_monto_max = st.checkbox("Monto máximo", value=False)
-        monto_max = st.number_input("Valor máximo monto", value=0.0, step=1000.0, disabled=not usar_monto_max)
-
-    c_inc, c_fechas = st.columns(2)
-    with c_inc:
-        solo_incumplimiento = st.checkbox("Solo incumplimiento TAT", value=False)
-    with c_fechas:
-        solo_fechas_inconsistentes = st.checkbox("Solo fechas inconsistentes", value=False)
-
-    st.markdown("#### Fecha")
-    fecha_col_disponibles = [
-        c for c in FECHAS_CANDIDATAS
-        if c in df.columns and pd.api.types.is_datetime64_any_dtype(df[c])
-    ]
-
-    if fecha_col_disponibles:
-        usar_filtro_fecha = st.checkbox("Aplicar filtro de fecha", value=False)
-        col_fecha_filtro = st.selectbox(
-            "Columna de fecha",
-            fecha_col_disponibles,
-            index=0,
-            disabled=not usar_filtro_fecha,
-        )
-        fecha_min_real = df[col_fecha_filtro].min()
-        fecha_max_real = df[col_fecha_filtro].max()
-
-        if pd.notna(fecha_min_real) and pd.notna(fecha_max_real):
-            fc1, fc2 = st.columns(2)
-            with fc1:
-                fecha_desde = st.date_input("Desde", value=fecha_min_real.date(), disabled=not usar_filtro_fecha)
-            with fc2:
-                fecha_hasta = st.date_input("Hasta", value=fecha_max_real.date(), disabled=not usar_filtro_fecha)
-        else:
-            usar_filtro_fecha = False
-            fecha_desde = None
-            fecha_hasta = None
-            st.warning("La columna seleccionada no tiene fechas válidas.")
-    else:
-        usar_filtro_fecha = False
-        fecha_desde = None
-        fecha_hasta = None
-        col_fecha_filtro = None
-        st.info("No se encontraron columnas de fecha convertibles para filtrar.")
-
-
-# Seguridad por si algún widget avanzado no existe.
-for nombre, default in {
-    "txt_pos_oc": "",
-    "txt_material": "",
-    "txt_descripcion": "",
-    "txt_solicitante": "",
-    "txt_autor": "",
-    "tipo_oc_sel": [],
-    "origen_sel": [],
-    "sistema_sel": [],
-    "estado_match_sel": [],
-    "perf_tat_sel": [],
-    "rango_inc_sel": [],
-    "usar_dias_tat_min": False,
-    "usar_dias_tat_max": False,
-    "dias_tat_min": 0,
-    "dias_tat_max": 9999,
-    "usar_monto_min": False,
-    "usar_monto_max": False,
-    "monto_min": 0.0,
-    "monto_max": 0.0,
-    "solo_incumplimiento": False,
-    "solo_fechas_inconsistentes": False,
-    "usar_filtro_fecha": False,
-}.items():
-    if nombre not in locals():
-        locals()[nombre] = default
-
+with f8:
+    oc_txt = st.text_input("Filtro 8 · OC / Pedido", placeholder="Buscar OC")
 
 # =========================================================
-# Aplicar filtros
+# Aplicación de filtros
 # =========================================================
-mask = pd.Series(True, index=df.index)
+mask = pd.Series(True, index=df_alertas.index)
 
-mask &= filtrar_por_ids(df, COL_SOLPED, txt_solped)
-mask &= filtrar_por_ids(df, COL_OC_ME5A, txt_oc) | filtrar_por_ids(df, COL_OC_NME, txt_oc)
-mask &= filtrar_por_ids(df, COL_POS_SOLPED, txt_pos_solped)
-mask &= filtrar_por_ids(df, COL_POS_OC, txt_pos_oc)
-mask &= filtrar_por_ids(df, COL_MATERIAL, txt_material)
-mask &= contiene_texto(df, COL_TEXTO, txt_descripcion)
-mask &= contiene_texto(df, COL_SOLICITANTE, txt_solicitante)
-mask &= contiene_texto(df, COL_AUTOR, txt_autor)
-
-if centro_sel and COL_CENTRO in df.columns:
-    mask &= df[COL_CENTRO].astype(str).isin(centro_sel)
+if centro_sel and COL_CENTRO in df_alertas.columns:
+    mask &= df_alertas[COL_CENTRO].astype(str).isin(centro_sel)
 
 if estado_recepcion_sel != "Todos" and COL_ESTADO_RECEPCION_ALERTA in df_alertas.columns:
     mask &= df_alertas[COL_ESTADO_RECEPCION_ALERTA].astype(str).eq(estado_recepcion_sel)
 
-if dias_vencimiento_sel and "dias_hasta_vencimiento" in df_alertas.columns:
-    mask &= df_alertas["dias_hasta_vencimiento"].astype(str).isin(dias_vencimiento_sel)
+if vencimiento_sel and "clasificacion_vencimiento" in df_alertas.columns:
+    mask &= df_alertas["clasificacion_vencimiento"].astype(str).isin(vencimiento_sel)
 
-if nivel_alerta_sel and "nivel_alerta" in df_alertas.columns:
-    mask &= df_alertas["nivel_alerta"].astype(str).isin(nivel_alerta_sel)
+if grupo_sel and COL_GRUPO_COMPRAS in df_alertas.columns:
+    mask &= df_alertas[COL_GRUPO_COMPRAS].astype(str).isin(grupo_sel)
 
-if ultima_etapa_sel and "ultima_etapa_registrada" in df_alertas.columns:
-    mask &= df_alertas["ultima_etapa_registrada"].astype(str).isin(ultima_etapa_sel)
+if ultima_fecha_sel and "ultima_etapa_registrada" in df_alertas.columns:
+    mask &= df_alertas["ultima_etapa_registrada"].astype(str).isin(ultima_fecha_sel)
 
 if fecha_pendiente_sel and "fecha_pendiente" in df_alertas.columns:
     mask &= df_alertas["fecha_pendiente"].astype(str).isin(fecha_pendiente_sel)
 
-if grupo_sel and COL_GRUPO_COMPRAS in df.columns:
-    mask &= df[COL_GRUPO_COMPRAS].astype(str).isin(grupo_sel)
+mask &= filtrar_por_ids(df_alertas, COL_SOLPED, solped_txt)
+mask &= filtrar_por_ids(df_alertas, COL_OC_ME5A, oc_txt) | filtrar_por_ids(df_alertas, COL_OC_NME, oc_txt)
 
-if tipo_oc_sel and COL_TIPO_OC in df.columns:
-    mask &= df[COL_TIPO_OC].astype(str).isin(tipo_oc_sel)
-
-if origen_sel and COL_ORIGEN in df.columns:
-    mask &= df[COL_ORIGEN].astype(str).isin(origen_sel)
-
-if sistema_sel and COL_SISTEMA in df.columns:
-    mask &= df[COL_SISTEMA].astype(str).isin(sistema_sel)
-
-if estado_match_sel and COL_ESTADO_MATCH in df.columns:
-    mask &= df[COL_ESTADO_MATCH].astype(str).isin(estado_match_sel)
-
-if perf_tat_sel and COL_PERF_TAT in df.columns:
-    mask &= df[COL_PERF_TAT].astype(str).isin(perf_tat_sel)
-
-if rango_inc_sel and COL_RANGO_INC in df.columns:
-    mask &= df[COL_RANGO_INC].astype(str).isin(rango_inc_sel)
-
-mask &= aplicar_rango_numerico(
-    df,
-    COL_DIAS_TAT,
-    dias_tat_min if usar_dias_tat_min else None,
-    dias_tat_max if usar_dias_tat_max else None,
-)
-
-mask &= aplicar_rango_numerico(
-    df,
-    COL_MONTO,
-    monto_min if usar_monto_min else None,
-    monto_max if usar_monto_max else None,
-)
-
-if solo_incumplimiento and COL_INC_TAT in df.columns:
-    mask &= df[COL_INC_TAT].eq(True)
-
-if solo_fechas_inconsistentes and COL_FECHAS_INCONSISTENTES in df.columns:
-    mask &= df[COL_FECHAS_INCONSISTENTES].eq(True)
-
-if usar_filtro_fecha and col_fecha_filtro and fecha_desde and fecha_hasta:
-    inicio = pd.Timestamp(fecha_desde)
-    fin = pd.Timestamp(fecha_hasta) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
-    mask &= df[col_fecha_filtro].between(inicio, fin, inclusive="both")
-
-df_filtrado = df.loc[mask].copy()
-df_alertas_filtrado = df_alertas.loc[mask].copy()
-
-porcentaje = len(df_filtrado) / len(df) * 100 if len(df) else 0
-st.caption(f"{len(df_filtrado):,} coincidencias de {len(df):,} registros cargados · {porcentaje:.1f}% del archivo".replace(",", "."))
-
-mostrar_metricas_accion(df_alertas_filtrado)
-mostrar_pareto_dias_vencimiento(df_alertas_filtrado)
-
+df_filtrado = df_alertas.loc[mask].copy()
+filtrados = len(df_filtrado)
+porcentaje_filtrado = filtrados / total_archivo * 100 if total_archivo else 0
 
 # =========================================================
-# Tabs operativas
+# Respuesta principal a las preguntas
 # =========================================================
-tab_accion, tab_semana, tab_detalle, tab_descargas, tab_avanzado = st.tabs(
+st.markdown("### Respuestas")
+
+k1, k2 = st.columns([1, 1])
+with k1:
+    st.metric("Datos totales en el archivo", f"{total_archivo:,}".replace(",", "."))
+with k2:
+    st.metric(
+        "Datos filtrados del total",
+        f"{filtrados:,}".replace(",", "."),
+        f"{porcentaje_filtrado:,.1f}%".replace(",", "X").replace(".", ",").replace("X", "."),
+    )
+
+filtros_resumen = [
+    ("Filtro 1", "Centro", lista_valores_corta(centro_sel)),
+    ("Filtro 2", "Recepción", estado_recepcion_sel),
+    ("Filtro 3", "Días hasta vencimiento", lista_valores_corta(vencimiento_sel)),
+    ("Filtro 4", "Grupo compras", lista_valores_corta(grupo_sel)),
+    ("Filtro 5", "Última fecha registrada", lista_valores_corta(ultima_fecha_sel)),
+    ("Filtro 6", "Fecha pendiente", lista_valores_corta(fecha_pendiente_sel)),
+    ("Filtro 7", "SolPed", solped_txt.strip() or "Todos"),
+    ("Filtro 8", "OC / Pedido", oc_txt.strip() or "Todos"),
+]
+
+st.markdown("#### Según estos filtros")
+st.dataframe(
+    pd.DataFrame(filtros_resumen, columns=["Filtro", "Campo", "Valor aplicado"]),
+    use_container_width=True,
+    hide_index=True,
+)
+
+st.info(
+    f"Según estos filtros hay **{filtrados:,} datos filtrados** de **{total_archivo:,} datos totales**."
+    .replace(",", ".")
+)
+
+# =========================================================
+# Vencidos por recepción
+# =========================================================
+recepcion_col = COL_ESTADO_RECEPCION_ALERTA
+vencidos_mask = df_filtrado["dias_restantes_int"].lt(0) if "dias_restantes_int" in df_filtrado.columns else pd.Series(False, index=df_filtrado.index)
+recepcionados_mask = df_filtrado[recepcion_col].astype(str).eq("Recepcionado") if recepcion_col in df_filtrado.columns else pd.Series(False, index=df_filtrado.index)
+sin_recepcion_mask = df_filtrado[recepcion_col].astype(str).eq("Sin recepción") if recepcion_col in df_filtrado.columns else pd.Series(False, index=df_filtrado.index)
+
+vencidos_recepcionados = int((vencidos_mask & recepcionados_mask).sum())
+vencidos_sin_recepcion = int((vencidos_mask & sin_recepcion_mask).sum())
+
+r1, r2 = st.columns(2)
+r1.metric("Vencidos y recepcionados", f"{vencidos_recepcionados:,}".replace(",", "."))
+r2.metric("Vencidos y sin recepcionar", f"{vencidos_sin_recepcion:,}".replace(",", "."))
+
+# =========================================================
+# Vencimientos próximos
+# =========================================================
+st.markdown("#### Vencimientos de pedidos sin recepción")
+st.caption("La fecha de vencimiento se calcula como fecha de solicitud + umbral TAT. Los pedidos recepcionados se consideran cerrados para esta sección.")
+
+base_abiertos = df_filtrado.copy()
+if recepcion_col in base_abiertos.columns:
+    base_abiertos = base_abiertos[base_abiertos[recepcion_col].astype(str).eq("Sin recepción")]
+
+filas_vencimiento = []
+
+# Se agrega 0 días para no ocultar casos que vencen hoy.
+for dias in range(0, 8):
+    subset = base_abiertos[base_abiertos["dias_restantes_int"].eq(dias)] if "dias_restantes_int" in base_abiertos.columns else base_abiertos.iloc[0:0]
+    fechas = sorted(subset["fecha_vencimiento_texto"].dropna().astype(str).unique().tolist()) if "fecha_vencimiento_texto" in subset.columns else []
+    if dias == 0:
+        etiqueta = "Vencen hoy"
+    elif dias == 1:
+        etiqueta = "Vencen en 1 día"
+    else:
+        etiqueta = f"Vencen en {dias} días"
+    filas_vencimiento.append(
+        {
+            "Pregunta": etiqueta,
+            "Cantidad": len(subset),
+            "Fecha de vencimiento": ", ".join(fechas) if fechas else fecha_texto(hoy + pd.Timedelta(days=dias)),
+        }
+    )
+
+subset_7_30 = base_abiertos[base_abiertos["dias_restantes_int"].between(8, 30, inclusive="both")] if "dias_restantes_int" in base_abiertos.columns else base_abiertos.iloc[0:0]
+subset_mas_mes = base_abiertos[base_abiertos["dias_restantes_int"].gt(30)] if "dias_restantes_int" in base_abiertos.columns else base_abiertos.iloc[0:0]
+
+filas_vencimiento.append(
+    {
+        "Pregunta": "Vencen en 7 a 30 días",
+        "Cantidad": len(subset_7_30),
+        "Fecha de vencimiento": (
+            f"{fecha_texto(subset_7_30['fecha_vencimiento_tat'].min())} a {fecha_texto(subset_7_30['fecha_vencimiento_tat'].max())}"
+            if not subset_7_30.empty else "Sin casos"
+        ),
+    }
+)
+filas_vencimiento.append(
+    {
+        "Pregunta": "Vencen en más de 1 mes",
+        "Cantidad": len(subset_mas_mes),
+        "Fecha de vencimiento": (
+            f"Desde {fecha_texto(subset_mas_mes['fecha_vencimiento_tat'].min())}"
+            if not subset_mas_mes.empty else "Sin casos"
+        ),
+    }
+)
+
+st.dataframe(pd.DataFrame(filas_vencimiento), use_container_width=True, hide_index=True)
+
+# =========================================================
+# Tabla mínima de los datos filtrados
+# =========================================================
+st.markdown("### Datos filtrados")
+
+columnas_resumen = columnas_existentes(
+    df_filtrado,
     [
-        "Acción inmediata",
-        "Próximos días",
-        "Detalle pedido",
-        "Descargas",
-        "Análisis avanzado",
-    ]
+        "clasificacion_vencimiento",
+        "fecha_vencimiento_texto",
+        "dias_restantes_int",
+        COL_ESTADO_RECEPCION_ALERTA,
+        "ultima_etapa_registrada",
+        "ultima_fecha_registrada",
+        "fecha_pendiente",
+        COL_SOLPED,
+        COL_OC_ME5A,
+        COL_OC_NME,
+        COL_POS_SOLPED,
+        COL_MATERIAL,
+        COL_TEXTO,
+        COL_CENTRO,
+        COL_GRUPO_COMPRAS,
+        COL_TIPO_OC,
+        COL_DIAS_TAT,
+        COL_UMBRAL_TAT,
+        COL_MONTO,
+    ],
 )
 
-with tab_accion:
-    st.markdown("### Lista de trabajo priorizada")
-    st.caption("Incluye vencidos, próximos a vencer y casos sin datos. La tabla evidencia última fecha registrada y primera fecha pendiente.")
+tabla_resumen = df_filtrado[columnas_resumen].copy()
+tabla_resumen = tabla_resumen.rename(
+    columns={
+        "clasificacion_vencimiento": "Días hasta vencimiento",
+        "fecha_vencimiento_texto": "Fecha de vencimiento",
+        "dias_restantes_int": "Días restantes",
+        COL_ESTADO_RECEPCION_ALERTA: "Recepción",
+        "ultima_etapa_registrada": "Última fecha registrada",
+        "ultima_fecha_registrada": "Fecha última registrada",
+        "fecha_pendiente": "Fecha pendiente",
+        COL_DIAS_TAT: "Días TAT total",
+        COL_UMBRAL_TAT: "Umbral TAT",
+    }
+)
 
-    df_accion = df_alertas_filtrado[
-        df_alertas_filtrado["dias_hasta_vencimiento"].isin(["Vencido", "1 día", "2 días", "Sin datos"])
-    ].copy()
+st.dataframe(
+    tabla_resumen.head(500),
+    use_container_width=True,
+    hide_index=True,
+)
 
-    if df_accion.empty:
-        st.info("No hay pedidos de acción inmediata con los filtros actuales.")
-    else:
-        tabla_accion = dataframe_operativo(df_accion).head(int(limite_vista))
-        st.dataframe(
-            aplicar_estilo_operativo(tabla_accion),
-            use_container_width=True,
-            hide_index=True,
-        )
+# =========================================================
+# Expediente del pedido
+# =========================================================
+st.markdown("### Expediente del pedido")
 
-        st.markdown("#### Top 5 casos para gestionar primero")
-        for _, row_alerta in df_accion.head(5).iterrows():
-            st.markdown(html_alerta(row_alerta), unsafe_allow_html=True)
+if df_filtrado.empty:
+    st.info("No hay pedidos disponibles con los filtros actuales.")
+else:
+    opciones_registro = df_filtrado.index.tolist()
+    labels = {idx: construir_label_registro(df_filtrado.loc[idx]) for idx in opciones_registro}
 
-    st.markdown("#### Carga por fecha pendiente")
-    if not df_alertas_filtrado.empty and "fecha_pendiente" in df_alertas_filtrado.columns:
-        resumen_pendiente = pd.pivot_table(
-            df_alertas_filtrado,
-            index="fecha_pendiente",
-            columns="dias_hasta_vencimiento",
-            values=COL_SOLPED if COL_SOLPED in df_alertas_filtrado.columns else "score_riesgo",
-            aggfunc="count",
-            fill_value=0,
-        ).reset_index()
+    seleccionado = st.selectbox(
+        "Selecciona un pedido para ver el expediente",
+        opciones_registro,
+        format_func=lambda idx: labels.get(idx, str(idx)),
+    )
 
-        for col in BUCKETS_DIAS_VENCIMIENTO:
-            if col not in resumen_pendiente.columns:
-                resumen_pendiente[col] = 0
+    row = df_filtrado.loc[seleccionado]
 
-        resumen_pendiente["Total"] = resumen_pendiente[BUCKETS_DIAS_VENCIMIENTO].sum(axis=1)
-        resumen_pendiente = resumen_pendiente.sort_values(["Vencido", "1 día", "2 días", "7 días", "Total"], ascending=False)
-        st.dataframe(resumen_pendiente, use_container_width=True, hide_index=True)
-
-with tab_semana:
-    st.markdown("### Pedidos por próximos días")
-    df_proximos = df_alertas_filtrado[df_alertas_filtrado["dias_hasta_vencimiento"].isin(["1 día", "2 días", "7 días", "+7 días"])].copy()
-
-    if df_proximos.empty:
-        st.info("No hay pedidos próximos con los filtros actuales.")
-    else:
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("1 día", f"{(df_proximos['dias_hasta_vencimiento'] == '1 día').sum():,}".replace(",", "."))
-        c2.metric("2 días", f"{(df_proximos['dias_hasta_vencimiento'] == '2 días').sum():,}".replace(",", "."))
-        c3.metric("7 días", f"{(df_proximos['dias_hasta_vencimiento'] == '7 días').sum():,}".replace(",", "."))
-        c4.metric("+7 días", f"{(df_proximos['dias_hasta_vencimiento'] == '+7 días').sum():,}".replace(",", "."))
-
-        st.dataframe(
-            aplicar_estilo_operativo(dataframe_operativo(df_proximos).head(int(limite_vista))),
-            use_container_width=True,
-            hide_index=True,
-        )
-
-        st.markdown("#### Cuello de botella por etapa")
-        if "etapa_actual" in df_proximos.columns:
-            resumen_etapa = pd.pivot_table(
-                df_proximos,
-                index="etapa_actual",
-                columns="dias_hasta_vencimiento",
-                values=COL_SOLPED if COL_SOLPED in df_proximos.columns else "score_riesgo",
-                aggfunc="count",
-                fill_value=0,
-            ).reset_index()
-            for col in ["1 día", "2 días", "7 días", "+7 días"]:
-                if col not in resumen_etapa.columns:
-                    resumen_etapa[col] = 0
-            resumen_etapa["Total"] = resumen_etapa[["1 día", "2 días", "7 días", "+7 días"]].sum(axis=1)
-            resumen_etapa = resumen_etapa.sort_values("Total", ascending=False)
-            st.dataframe(resumen_etapa, use_container_width=True, hide_index=True)
-
-with tab_detalle:
-    st.markdown("### Expediente del pedido")
-    idx_sel = None
-
-    if df_alertas_filtrado.empty:
-        st.warning("No hay resultados con los filtros aplicados.")
-    else:
-        opciones_detalle = []
-        for idx, row_iter in df_alertas_filtrado.head(5000).iterrows():
-            opciones_detalle.append((idx, construir_label_registro(row_iter)))
-
-        labels = [item[1] for item in opciones_detalle]
-        label_sel = st.selectbox("Registro", labels)
-        idx_sel = opciones_detalle[labels.index(label_sel)][0]
-        row = df_alertas_filtrado.loc[idx_sel]
-
-        st.markdown("#### Diagnóstico operativo")
-        d1, d2, d3, d4, d5 = st.columns(5)
-        d1.metric("Días hasta vencimiento", formato_valor(row.get("dias_hasta_vencimiento", np.nan)))
-        d2.metric("Nivel", formato_valor(row.get("nivel_alerta", np.nan)))
-        d3.metric("Última fecha", formato_valor(row.get("ultima_etapa_registrada", np.nan)))
-        d4.metric("Pendiente", formato_valor(row.get("fecha_pendiente", np.nan)))
-        d5.metric("Días restantes", formato_numero_corto(row.get("dias_restantes_tat", np.nan)))
-
-        st.info(
-            f"Última fecha registrada: {formato_valor(row.get('ultima_etapa_registrada', np.nan))} · "
-            f"{formato_valor(row.get('ultima_fecha_registrada', np.nan))} | "
-            f"Fecha pendiente: {formato_valor(row.get('fecha_pendiente', np.nan))} | "
-            f"Causa probable: {formato_valor(row.get('causa_probable', np.nan))} | "
-            f"Acción sugerida: {formato_valor(row.get('accion_sugerida', np.nan))}"
-        )
-
-        st.text_area(
-            "Resumen listo para copiar en correo o Teams",
-            value=resumen_caso_para_copiar(row),
-            height=230,
-        )
-
-        perf_tat = row.get(COL_PERF_TAT, np.nan)
-        perf_color = clase_performance(perf_tat)
-        rango_inc = row.get(COL_RANGO_INC, np.nan)
-        dias_tat = row.get(COL_DIAS_TAT, np.nan)
-        dias_inc = row.get(COL_DIAS_INC, np.nan)
-        umbral_tat = obtener_umbral_tat(row)
-
-        tat_total_txt = texto_tat_total_usuario(perf_tat, dias_tat)
-        dias_inc_txt = (
-            "Pendiente"
-            if str(perf_tat).strip().lower() == "en proceso"
-            and pd.isna(pd.to_numeric(pd.Series([dias_inc]), errors="coerce").iloc[0])
-            else texto_dias_y_meses(dias_inc)
-        )
-        detalle_tat = detalle_estado_tat(perf_tat, umbral_tat, dias_inc, rango_inc)
-
-        tat_html = dedent(
-            f"""
-            <div class="tat-summary">
-                <div class="tat-card tat-card-primary">
-                    <div class="tat-label">TAT total</div>
-                    <div class="tat-main">{escape(tat_total_txt)}</div>
-                    <div class="tat-sub">Duración desde la solicitud hasta la recepción.</div>
-                    <div class="tat-muted">Umbral aplicado: {escape(texto_dias_simple(umbral_tat))}</div>
-                </div>
-                <div class="tat-card">
-                    <div class="tat-label">Estado TAT</div>
-                    <div class="tat-main-small">{pill(perf_tat, perf_color)}</div>
-                    <div class="tat-sub">{escape(detalle_tat)}</div>
-                </div>
-                <div class="tat-card">
-                    <div class="tat-label">Incumplimiento TAT</div>
-                    <div class="tat-main-small">{escape(dias_inc_txt)}</div>
-                    <div class="tat-sub">Rango: {escape(formato_valor(rango_inc))}</div>
-                    <div class="tat-muted">Solo cuenta exceso sobre el umbral TAT.</div>
-                </div>
-            </div>
-            """
-        ).strip()
-
-        order_head_html = dedent(
+    st.markdown(
+        dedent(
             f"""
             <div class="order-head">
-                <div class="order-title">Datos principales del pedido</div>
+                <div class="order-title">Resumen del pedido</div>
                 <div class="head-grid">
                     <div><div class="head-label">SolPed</div><div class="head-value">{html_id(row.get(COL_SOLPED, np.nan))}</div></div>
-                    <div><div class="head-label">Orden de compra / Pedido</div><div class="head-value">{html_id(row.get(COL_OC_ME5A, row.get(COL_OC_NME, np.nan)))}</div></div>
-                    <div><div class="head-label">Posición SolPed</div><div class="head-value">{html_id(row.get(COL_POS_SOLPED, np.nan))}</div></div>
-                    <div><div class="head-label">Material</div><div class="head-value">{html_id(row.get(COL_MATERIAL, np.nan))}</div></div>
+                    <div><div class="head-label">OC ME5A</div><div class="head-value">{html_id(row.get(COL_OC_ME5A, np.nan))}</div></div>
+                    <div><div class="head-label">OC NME80FN</div><div class="head-value">{html_id(row.get(COL_OC_NME, np.nan))}</div></div>
                     <div><div class="head-label">Centro</div><div class="head-value">{html_texto(row.get(COL_CENTRO, np.nan))}</div></div>
+                    <div><div class="head-label">Grupo compras</div><div class="head-value">{html_texto(row.get(COL_GRUPO_COMPRAS, np.nan))}</div></div>
                 </div>
             </div>
             """
-        ).strip()
+        ).strip(),
+        unsafe_allow_html=True,
+    )
 
-        st.markdown(tat_html, unsafe_allow_html=True)
-        st.markdown(html_avance_actual(row), unsafe_allow_html=True)
-        st.markdown(dedent(html_linea_pedido(row)).strip(), unsafe_allow_html=True)
-        st.markdown(order_head_html, unsafe_allow_html=True)
-        components.html(html_estado_pedido(row), height=230, scrolling=False)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Días hasta vencimiento", formato_valor(row.get("clasificacion_vencimiento", np.nan)))
+    c2.metric("Fecha de vencimiento", formato_valor(row.get("fecha_vencimiento_texto", np.nan)))
+    c3.metric("Última fecha registrada", formato_valor(row.get("ultima_etapa_registrada", np.nan)))
+    c4.metric("Fecha pendiente", formato_valor(row.get("fecha_pendiente", np.nan)))
 
-        with st.expander("Registro completo transpuesto", expanded=False):
-            registro_t = df_alertas_filtrado.loc[[idx_sel]].T.reset_index()
-            registro_t.columns = ["Campo", "Valor"]
-            st.dataframe(registro_t, use_container_width=True, hide_index=True)
+    st.markdown(html_avance_actual(row), unsafe_allow_html=True)
+    st.markdown(html_linea_pedido(row), unsafe_allow_html=True)
 
-with tab_descargas:
-    st.markdown("### Descargas rápidas")
-    st.caption("Exporta exactamente el subconjunto que necesitas gestionar.")
+    st.markdown("#### Etapas TAT")
+    components.html(
+        html_estado_pedido(row),
+        height=230,
+        scrolling=True,
+    )
 
-    df_vencidos = df_alertas_filtrado[df_alertas_filtrado["dias_hasta_vencimiento"].eq("Vencido")].copy()
-    df_1d = df_alertas_filtrado[df_alertas_filtrado["dias_hasta_vencimiento"].eq("1 día")].copy()
-    df_2d = df_alertas_filtrado[df_alertas_filtrado["dias_hasta_vencimiento"].eq("2 días")].copy()
-    df_7d = df_alertas_filtrado[df_alertas_filtrado["dias_hasta_vencimiento"].eq("7 días")].copy()
-    df_mas_7d = df_alertas_filtrado[df_alertas_filtrado["dias_hasta_vencimiento"].eq("+7 días")].copy()
-    df_sin_datos = df_alertas_filtrado[df_alertas_filtrado["dias_hasta_vencimiento"].eq("Sin datos")].copy()
-
-    x1, x2, x3 = st.columns(3)
-    with x1:
-        st.download_button("Excel multivista", data=crear_excel_multivista(df_alertas_filtrado), file_name="gestion_tat_multivista.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-        st.download_button("CSV lista de trabajo", data=dataframe_a_csv(dataframe_operativo(df_alertas_filtrado)), file_name="lista_trabajo_tat.csv", mime="text/csv", use_container_width=True)
-    with x2:
-        st.download_button("CSV vencidos", data=dataframe_a_csv(df_vencidos), file_name="tat_vencidos.csv", mime="text/csv", use_container_width=True)
-        st.download_button("CSV 1 día", data=dataframe_a_csv(df_1d), file_name="tat_1_dia.csv", mime="text/csv", use_container_width=True)
-        st.download_button("CSV 2 días", data=dataframe_a_csv(df_2d), file_name="tat_2_dias.csv", mime="text/csv", use_container_width=True)
-    with x3:
-        st.download_button("CSV 7 días", data=dataframe_a_csv(df_7d), file_name="tat_7_dias.csv", mime="text/csv", use_container_width=True)
-        st.download_button("CSV +7 días", data=dataframe_a_csv(df_mas_7d), file_name="tat_mas_7_dias.csv", mime="text/csv", use_container_width=True)
-        st.download_button("CSV sin datos / revisar", data=dataframe_a_csv(df_sin_datos), file_name="tat_sin_datos_revisar.csv", mime="text/csv", use_container_width=True)
-
-    try:
-        st.download_button(
-            "Parquet filtrado completo",
-            data=dataframe_a_parquet(df_alertas_filtrado),
-            file_name="tat_filtrado_completo.parquet",
-            mime="application/octet-stream",
-            use_container_width=True,
-        )
-    except Exception:
-        st.button("Parquet no disponible", disabled=True, use_container_width=True)
-
-with tab_avanzado:
-    st.markdown("### Análisis avanzado")
-    st.markdown(html_criterio_alerta(dias_alerta_temprana), unsafe_allow_html=True)
-
-    with st.expander("Matriz completa de alertas", expanded=True):
-        columnas_relevantes_alerta = [
-            "dias_hasta_vencimiento",
-            "nivel_alerta",
-            "accion_sugerida",
-            "causa_probable",
-            "ultima_etapa_registrada",
-            "ultima_fecha_registrada",
-            "fecha_pendiente",
-            "criterio_alerta",
-            "estado_global",
-            COL_ESTADO_RECEPCION_ALERTA,
-            "etapa_actual",
-            "dias_restantes_tat",
-            "brecha_tat",
-            COL_SOLPED,
-            COL_OC_ME5A,
-            COL_OC_NME,
-            COL_POS_SOLPED,
-            COL_CENTRO,
-            COL_GRUPO_COMPRAS,
-            COL_MATERIAL,
-            COL_TEXTO,
-        ]
-        columnas_default_alerta = columnas_existentes(df_alertas_filtrado, columnas_relevantes_alerta)
-        columnas_alerta_visibles = st.multiselect(
-            "Columnas visibles de alerta",
-            options=df_alertas_filtrado.columns.tolist(),
-            default=(df_alertas_filtrado.columns.tolist() if mostrar_todas_columnas else columnas_default_alerta),
-        )
-
-        if columnas_alerta_visibles:
-            tabla_alertas = df_alertas_filtrado[columnas_alerta_visibles].head(int(limite_vista)).copy()
-            st.dataframe(aplicar_estilo_operativo(tabla_alertas), use_container_width=True, hide_index=True)
-        else:
-            st.info("Selecciona al menos una columna de alerta.")
-
-    with st.expander("Tabla base filtrada", expanded=False):
-        columnas_base = columnas_existentes(df_filtrado, COLUMNAS_TABLA_PRINCIPAL)
-        columnas_extra = []
-        for etapa in ETAPAS_PEDIDO:
-            for col in [etapa.get("fecha"), etapa.get("dias"), etapa.get("umbral"), etapa.get("performance")]:
-                if col and col in df_filtrado.columns and col not in columnas_base and col not in columnas_extra:
-                    columnas_extra.append(col)
-
-        columnas_base_visibles = columnas_base + columnas_extra
-        if mostrar_todas_columnas:
-            columnas_base_visibles = df_filtrado.columns.tolist()
-
-        if columnas_base_visibles:
-            tabla_base = df_filtrado[columnas_base_visibles].head(int(limite_vista)).copy()
-            st.dataframe(aplicar_estilo_tabla(tabla_base), use_container_width=True, hide_index=True)
-        else:
-            st.info("No hay columnas disponibles para mostrar.")
-
-    with st.expander("Columnas disponibles", expanded=False):
-        st.write(df_filtrado.columns.tolist())
+    with st.expander("Registro completo del pedido", expanded=False):
+        registro = row.to_frame(name="Valor").reset_index().rename(columns={"index": "Campo"})
+        registro["Valor"] = registro["Valor"].apply(formato_valor)
+        st.dataframe(registro, use_container_width=True, hide_index=True)
