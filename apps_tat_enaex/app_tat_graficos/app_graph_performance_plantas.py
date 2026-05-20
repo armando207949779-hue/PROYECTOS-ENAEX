@@ -968,6 +968,290 @@ def grafico_temporal_porcentual_performance(df: pd.DataFrame):
     st.markdown("</div>", unsafe_allow_html=True)
 
 
+
+def crear_resumen_mensual_centro(df: pd.DataFrame, centro: str) -> pd.DataFrame:
+    base = df[
+        df["centro_grafico"].astype(str).str.strip().eq(str(centro).strip())
+        & df[COL_PERFORMANCE_TAT].isin(["Cumple", "No cumple"])
+        & df["periodo_fecha"].notna()
+    ].copy()
+
+    if base.empty:
+        return pd.DataFrame()
+
+    resumen = (
+        base
+        .groupby(["periodo_fecha", "periodo_label", COL_PERFORMANCE_TAT])
+        .size()
+        .reset_index(name="cantidad")
+    )
+
+    tabla = resumen.pivot_table(
+        index=["periodo_fecha", "periodo_label"],
+        columns=COL_PERFORMANCE_TAT,
+        values="cantidad",
+        aggfunc="sum",
+        fill_value=0,
+    ).reset_index()
+
+    for col in ["Cumple", "No cumple"]:
+        if col not in tabla.columns:
+            tabla[col] = 0
+
+    tabla["Total"] = tabla["Cumple"] + tabla["No cumple"]
+    tabla["% Cumple"] = np.where(
+        tabla["Total"] > 0,
+        tabla["Cumple"] / tabla["Total"] * 100,
+        0,
+    )
+    tabla["% No cumple"] = np.where(
+        tabla["Total"] > 0,
+        tabla["No cumple"] / tabla["Total"] * 100,
+        0,
+    )
+
+    return tabla.sort_values("periodo_fecha").reset_index(drop=True)
+
+
+def grafico_mensual_100_centro(tabla: pd.DataFrame, titulo: str):
+    st.markdown("<div class='chart-card'>", unsafe_allow_html=True)
+    st.markdown(f"<div class='chart-title'>{titulo}</div>", unsafe_allow_html=True)
+    st.markdown(
+        """
+        <div class='chart-caption'>
+            Performance TAT mensual del centro seleccionado. Eje temporal: fecha_recepcion_final.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    if tabla.empty:
+        st.info("No hay datos evaluables para este centro con los filtros actuales.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    plot = tabla.melt(
+        id_vars=["periodo_fecha", "periodo_label", "Total"],
+        value_vars=["Cumple", "No cumple"],
+        var_name="Estado",
+        value_name="Cantidad",
+    )
+
+    plot["Estado"] = plot["Estado"].replace({"No cumple": "No Cumple"})
+    plot["Porcentaje"] = np.where(
+        plot["Total"] > 0,
+        plot["Cantidad"] / plot["Total"] * 100,
+        0,
+    )
+    plot["Orden"] = plot["Estado"].map({"Cumple": 1, "No Cumple": 2}).fillna(9)
+
+    order = tabla["periodo_label"].tolist()
+
+    barras = (
+        alt.Chart(plot)
+        .mark_bar(size=30, cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
+        .encode(
+            x=alt.X(
+                "periodo_label:N",
+                sort=order,
+                title=None,
+                axis=alt.Axis(labelAngle=0, labelFontSize=10),
+            ),
+            y=alt.Y(
+                "Porcentaje:Q",
+                stack="zero",
+                title="% Performance TAT",
+                scale=alt.Scale(domain=[0, 100]),
+                axis=alt.Axis(values=[0, 50, 100], labelExpr="datum.value + '%'", grid=True),
+            ),
+            color=alt.Color(
+                "Estado:N",
+                scale=alt.Scale(
+                    domain=["Cumple", "No Cumple"],
+                    range=[COLOR_CUMPLE, COLOR_NO_CUMPLE],
+                ),
+                legend=alt.Legend(title=None, orient="top", direction="horizontal"),
+            ),
+            order=alt.Order("Orden:Q", sort="ascending"),
+            tooltip=[
+                alt.Tooltip("periodo_label:N", title="Mes recepción"),
+                alt.Tooltip("Estado:N", title="Estado"),
+                alt.Tooltip("Cantidad:Q", title="Cantidad", format=",.0f"),
+                alt.Tooltip("Porcentaje:Q", title="Porcentaje", format=".1f"),
+                alt.Tooltip("Total:Q", title="Total evaluable", format=",.0f"),
+            ],
+        )
+    )
+
+    linea_meta = (
+        alt.Chart(pd.DataFrame({"Meta": [META_CUMPLIMIENTO]}))
+        .mark_rule(color=COLOR_META, strokeDash=[6, 4], strokeWidth=2)
+        .encode(y=alt.Y("Meta:Q"))
+    )
+
+    chart = ((barras + linea_meta).properties(height=230).configure_view(strokeWidth=0))
+    st.altair_chart(chart, use_container_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def grafico_temporal_porcentual_centros(df: pd.DataFrame, centros_sel: list[str], mapa_etiquetas: dict):
+    st.markdown("<div class='chart-card'>", unsafe_allow_html=True)
+    st.markdown("<div class='chart-title'>Performance temporal porcentual por centro</div>", unsafe_allow_html=True)
+    st.markdown(
+        """
+        <div class='chart-caption'>
+            Evolución mensual del porcentaje de cumplimiento para los centros seleccionados.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    registros = []
+
+    for centro in centros_sel:
+        tabla = crear_resumen_mensual_centro(df, centro)
+        if tabla.empty:
+            continue
+
+        tabla = tabla[tabla["Total"].gt(0)].copy()
+        if tabla.empty:
+            continue
+
+        tabla["Centro"] = etiqueta_centro(centro, mapa_etiquetas)
+        registros.append(tabla)
+
+    if not registros:
+        st.info("No hay datos evaluables para graficar los centros seleccionados.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    plot = pd.concat(registros, ignore_index=True)
+    plot = plot.sort_values(["periodo_fecha", "Centro"]).copy()
+
+    linea_performance = (
+        alt.Chart(plot)
+        .mark_line(point=True, strokeWidth=3)
+        .encode(
+            x=alt.X(
+                "periodo_fecha:T",
+                title="Mes recepción",
+                axis=alt.Axis(format="%b %Y", labelAngle=0),
+            ),
+            y=alt.Y(
+                "% Cumple:Q",
+                title="% Cumplimiento",
+                scale=alt.Scale(domain=[0, 100]),
+                axis=alt.Axis(labelExpr="datum.value + '%'"),
+            ),
+            color=alt.Color(
+                "Centro:N",
+                legend=alt.Legend(title=None, orient="top", direction="horizontal"),
+            ),
+            tooltip=[
+                alt.Tooltip("periodo_label:N", title="Mes recepción"),
+                alt.Tooltip("Centro:N", title="Centro"),
+                alt.Tooltip("% Cumple:Q", title="% Cumplimiento", format=".1f"),
+                alt.Tooltip("Cumple:Q", title="Cumple", format=",.0f"),
+                alt.Tooltip("No cumple:Q", title="No cumple", format=",.0f"),
+                alt.Tooltip("Total:Q", title="Total evaluable", format=",.0f"),
+            ],
+        )
+    )
+
+    linea_meta = (
+        alt.Chart(pd.DataFrame({"Meta": [META_CUMPLIMIENTO]}))
+        .mark_rule(color=COLOR_META, strokeDash=[6, 4], strokeWidth=2)
+        .encode(y=alt.Y("Meta:Q"))
+    )
+
+    chart = ((linea_performance + linea_meta).properties(height=300).configure_view(strokeWidth=0))
+    st.altair_chart(chart, use_container_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def mostrar_exploracion_centros_opcional(
+    df_final: pd.DataFrame,
+    fecha_facturacion_desde,
+    estados_tat_sel,
+    rango_recepcion,
+    centros_disponibles: list[str],
+    centros_opciones: list[str],
+    mapa_label_a_centro: dict,
+    mapa_etiquetas_centros: dict,
+):
+    with st.expander("Análisis opcional por centro específico", expanded=False):
+        st.caption(
+            "Esta sección no cambia los gráficos principales. Sirve para revisar uno o más centros puntuales con los mismos filtros generales de fecha y Performance TAT."
+        )
+
+        centros_labels_sel = st.multiselect(
+            "Centros específicos opcionales",
+            options=centros_opciones,
+            default=[],
+            help="Selecciona uno o más centros en formato código — nombre.",
+        )
+
+        centros_sel = [
+            mapa_label_a_centro[label]
+            for label in centros_labels_sel
+            if label in mapa_label_a_centro
+        ]
+
+        if not centros_sel:
+            st.info("Selecciona un centro para ver su performance particular.")
+            return
+
+        df_centros = aplicar_filtros_dashboard(
+            df=df_final,
+            fecha_facturacion_desde=fecha_facturacion_desde,
+            estados_tat_sel=estados_tat_sel,
+            grupos_sel=["Prillex", "Rio Loa", "Plantas de servicios"],
+            centros_sel=centros_sel,
+            rango_recepcion=rango_recepcion,
+        )
+
+        if df_centros.empty:
+            st.warning("No hay datos para los centros seleccionados con los filtros actuales.")
+            return
+
+        resumen = []
+        for centro in centros_sel:
+            data_centro = df_centros[df_centros["centro_grafico"].astype(str).str.strip().eq(str(centro).strip())]
+            cumple = int(data_centro[COL_PERFORMANCE_TAT].eq("Cumple").sum())
+            no_cumple = int(data_centro[COL_PERFORMANCE_TAT].eq("No cumple").sum())
+            total = cumple + no_cumple
+            pct = cumple / total * 100 if total else 0
+            resumen.append({
+                "Centro": etiqueta_centro(centro, mapa_etiquetas_centros),
+                "Cumple": cumple,
+                "No cumple": no_cumple,
+                "Total evaluable": total,
+                "% Cumple": pct,
+            })
+
+        resumen_df = pd.DataFrame(resumen)
+        st.dataframe(
+            resumen_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "% Cumple": st.column_config.NumberColumn("% Cumple", format="%.1f%%"),
+            },
+        )
+
+        grafico_temporal_porcentual_centros(
+            df_centros,
+            centros_sel,
+            mapa_etiquetas_centros,
+        )
+
+        for centro in centros_sel:
+            grafico_mensual_100_centro(
+                crear_resumen_mensual_centro(df_centros, centro),
+                f"Performance TAT {etiqueta_centro(centro, mapa_etiquetas_centros)}",
+            )
+
+
 def mostrar_kpis_plantas(df: pd.DataFrame):
     kpis = resumen_kpis_plantas(df)
 
@@ -1107,8 +1391,8 @@ def describir_filtros_aplicados(
             "Criterio aplicado": formatear_lista(estados_tat_sel),
         },
         {
-            "Filtro": "Plantas / centros a mostrar",
-            "Criterio aplicado": formatear_lista(list(grupos_sel or []) + list(centros_sel or [])),
+            "Filtro": "Grupos a mostrar",
+            "Criterio aplicado": formatear_lista(grupos_sel),
         },
         {
             "Filtro": "Fecha recepción",
@@ -1353,8 +1637,7 @@ try:
 
     fechas_recepcion_validas = df_final[COL_FECHA_RECEPCION_FINAL].dropna()
 
-    selector_opciones = grupos_todos + centros_opciones
-    selector_default = grupos_disponibles if grupos_disponibles else grupos_todos
+    grupos_default = grupos_disponibles if grupos_disponibles else grupos_todos
 
     f1, f2 = st.columns(2)
 
@@ -1372,35 +1655,15 @@ try:
             default=estados_default,
         )
 
-    seleccion_plantas_centros = st.multiselect(
-        "Plantas / centros a mostrar",
-        options=selector_opciones,
-        default=selector_default,
-        help=(
-            "Por defecto muestra Prillex, Rio Loa y Plantas de servicios. "
-            "También puedes seleccionar centros específicos en formato código — nombre."
-        ),
+    grupos_sel = st.multiselect(
+        "Grupos a mostrar",
+        options=grupos_todos,
+        default=grupos_default,
+        help="Por defecto muestra Prillex, Rio Loa y Plantas de servicios.",
     )
 
-    grupos_sel = [
-        item
-        for item in seleccion_plantas_centros
-        if item in grupos_todos
-    ]
-
-    centros_labels_sel = [
-        item
-        for item in seleccion_plantas_centros
-        if item in mapa_label_a_centro
-    ]
-
-    centros_sel = [
-        mapa_label_a_centro[label]
-        for label in centros_labels_sel
-        if label in mapa_label_a_centro
-    ]
-
-    centros_sel_descripcion = centros_labels_sel
+    centros_sel = None
+    centros_sel_descripcion = []
 
     if not fechas_recepcion_validas.empty:
         fecha_recepcion_min = fechas_recepcion_validas.min().date()
@@ -1506,6 +1769,17 @@ try:
                     crear_resumen_mensual_grupo(df_dashboard, grupo),
                     titulo,
                 )
+
+        mostrar_exploracion_centros_opcional(
+            df_final=df_final,
+            fecha_facturacion_desde=fecha_facturacion_desde,
+            estados_tat_sel=estados_tat_sel,
+            rango_recepcion=rango_recepcion,
+            centros_disponibles=centros_disponibles,
+            centros_opciones=centros_opciones,
+            mapa_label_a_centro=mapa_label_a_centro,
+            mapa_etiquetas_centros=mapa_etiquetas_centros,
+        )
 
         st.divider()
 
