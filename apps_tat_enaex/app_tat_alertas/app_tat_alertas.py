@@ -4319,36 +4319,172 @@ st.markdown("### Expediente del pedido")
 if df_filtrado.empty:
     st.info("No hay pedidos disponibles con los filtros actuales.")
 else:
-    total_expediente = len(df_filtrado)
-    max_selector = 5000
-    opciones_registro = df_filtrado.index.tolist()[:max_selector]
-    registros_selector = len(opciones_registro)
+    total_expediente_base = len(df_filtrado)
 
     st.caption(
         (
-            f"El selector contiene {registros_selector:,} registros del resultado filtrado actual "
-            f"de un total de {total_expediente:,} registros disponibles con los filtros aplicados."
+            f"El expediente parte desde los {total_expediente_base:,} registros que quedaron después de los filtros generales. "
+            "Puedes aplicar filtros locales para encontrar rápidamente una SolPed, pedido u posición específica sin cambiar el resumen superior."
         ).replace(",", ".")
     )
 
-    labels = {idx: construir_label_registro(df_filtrado.loc[idx]) for idx in opciones_registro}
+    with st.expander("Filtros del expediente", expanded=True):
+        st.caption("Estos filtros solo afectan el selector del expediente; no modifican las alertas ni las tablas superiores.")
 
-    seleccionado = st.selectbox(
-        "Selecciona un pedido para ver el expediente",
-        opciones_registro,
-        format_func=lambda idx: labels.get(idx, str(idx)),
+        with st.form("form_filtros_expediente"):
+            e1, e2, e3 = st.columns([1, 1, 0.85])
+
+            with e1:
+                exp_solped = st.text_input(
+                    "SolPed",
+                    placeholder="Ej: 1001973319",
+                    key="exp_filtro_solped",
+                )
+
+            with e2:
+                exp_oc = st.text_input(
+                    "Orden de compra / Pedido",
+                    placeholder="Ej: 4502321875",
+                    key="exp_filtro_oc",
+                )
+
+            with e3:
+                exp_pos_solped = st.text_input(
+                    "Posición solicitud de pedido",
+                    placeholder="Ej: 10",
+                    key="exp_filtro_pos_solped",
+                )
+
+            ae1, ae2, ae3, ae4 = st.columns(4)
+
+            with ae1:
+                exp_material = st.text_input(
+                    "Material",
+                    placeholder="Ej: 20012021",
+                    key="exp_filtro_material",
+                )
+
+            with ae2:
+                exp_descripcion = st.text_input(
+                    "Descripción / texto breve",
+                    placeholder="Ej: bloqueador",
+                    key="exp_filtro_descripcion",
+                )
+
+            with ae3:
+                exp_centro = st.multiselect(
+                    "Centro",
+                    sorted(df_filtrado[COL_CENTRO].dropna().astype(str).unique().tolist())
+                    if COL_CENTRO in df_filtrado.columns else [],
+                    key="exp_filtro_centro",
+                )
+
+            with ae4:
+                exp_grupo = st.multiselect(
+                    "Grupo de compras",
+                    sorted(df_filtrado[COL_GRUPO_COMPRAS].dropna().astype(str).unique().tolist())
+                    if COL_GRUPO_COMPRAS in df_filtrado.columns else [],
+                    key="exp_filtro_grupo",
+                )
+
+            be1, be2, be3 = st.columns(3)
+
+            with be1:
+                exp_estado_recepcion = st.multiselect(
+                    "Recepción",
+                    sorted(df_filtrado[COL_ESTADO_RECEPCION_ALERTA].dropna().astype(str).unique().tolist())
+                    if COL_ESTADO_RECEPCION_ALERTA in df_filtrado.columns else [],
+                    key="exp_filtro_recepcion",
+                )
+
+            with be2:
+                exp_urgencia = st.multiselect(
+                    "Estado pedido",
+                    sorted(df_filtrado["clasificacion_vencimiento"].dropna().astype(str).unique().tolist())
+                    if "clasificacion_vencimiento" in df_filtrado.columns else [],
+                    key="exp_filtro_urgencia",
+                )
+
+            with be3:
+                exp_fecha_pendiente = st.multiselect(
+                    "Fecha pendiente",
+                    sorted(df_filtrado["fecha_pendiente"].dropna().astype(str).unique().tolist())
+                    if "fecha_pendiente" in df_filtrado.columns else [],
+                    key="exp_filtro_fecha_pendiente",
+                )
+
+            aplicar_exp = st.form_submit_button("Aplicar filtros del expediente", use_container_width=True)
+
+    mask_exp = pd.Series(True, index=df_filtrado.index)
+
+    mask_exp &= filtrar_por_ids(df_filtrado, COL_SOLPED, exp_solped)
+    mask_exp &= (
+        filtrar_por_ids(df_filtrado, COL_OC_ME5A, exp_oc)
+        | filtrar_por_ids(df_filtrado, COL_OC_NME, exp_oc)
     )
+    mask_exp &= filtrar_por_ids(df_filtrado, COL_POS_SOLPED, exp_pos_solped)
+    mask_exp &= filtrar_por_ids(df_filtrado, COL_MATERIAL, exp_material)
+    mask_exp &= contiene_texto(df_filtrado, COL_TEXTO, exp_descripcion)
 
-    row = df_filtrado.loc[seleccionado]
+    if exp_centro and COL_CENTRO in df_filtrado.columns:
+        mask_exp &= df_filtrado[COL_CENTRO].astype(str).isin([str(v) for v in exp_centro])
 
-    st.markdown(html_resumen_pedido_expediente(row), unsafe_allow_html=True)
-    st.markdown(html_kpis_expediente(row), unsafe_allow_html=True)
+    if exp_grupo and COL_GRUPO_COMPRAS in df_filtrado.columns:
+        mask_exp &= df_filtrado[COL_GRUPO_COMPRAS].astype(str).isin([str(v) for v in exp_grupo])
 
-    st.markdown(html_avance_actual(row), unsafe_allow_html=True)
-    st.markdown(html_linea_pedido(row), unsafe_allow_html=True)
-    st.markdown(html_diagrama_tat_unificado(row), unsafe_allow_html=True)
+    if exp_estado_recepcion and COL_ESTADO_RECEPCION_ALERTA in df_filtrado.columns:
+        mask_exp &= df_filtrado[COL_ESTADO_RECEPCION_ALERTA].astype(str).isin([str(v) for v in exp_estado_recepcion])
 
-    with st.expander("Registro completo del pedido", expanded=False):
-        registro = row.to_frame(name="Valor").reset_index().rename(columns={"index": "Campo"})
-        registro["Valor"] = registro["Valor"].apply(formato_valor)
-        st.dataframe(registro, use_container_width=True, hide_index=True)
+    if exp_urgencia and "clasificacion_vencimiento" in df_filtrado.columns:
+        mask_exp &= df_filtrado["clasificacion_vencimiento"].astype(str).isin([str(v) for v in exp_urgencia])
+
+    if exp_fecha_pendiente and "fecha_pendiente" in df_filtrado.columns:
+        mask_exp &= df_filtrado["fecha_pendiente"].astype(str).isin([str(v) for v in exp_fecha_pendiente])
+
+    df_expediente = df_filtrado.loc[mask_exp].copy()
+
+    total_expediente_filtrado = len(df_expediente)
+    max_selector = 5000
+    opciones_registro = df_expediente.index.tolist()[:max_selector]
+    registros_selector = len(opciones_registro)
+
+    mexp1, mexp2, mexp3 = st.columns(3)
+    with mexp1:
+        st.metric("Registros del filtrado general", f"{total_expediente_base:,}".replace(",", "."))
+    with mexp2:
+        st.metric("Registros disponibles para expediente", f"{total_expediente_filtrado:,}".replace(",", "."))
+    with mexp3:
+        st.metric("Registros cargados en selector", f"{registros_selector:,}".replace(",", "."))
+
+    if total_expediente_filtrado > max_selector:
+        st.warning(
+            (
+                f"El selector muestra los primeros {max_selector:,} registros de {total_expediente_filtrado:,}. "
+                "Usa los filtros del expediente para acotar la búsqueda."
+            ).replace(",", ".")
+        )
+
+    if df_expediente.empty:
+        st.warning("No hay pedidos disponibles para el expediente con los filtros locales aplicados.")
+    else:
+        labels = {idx: construir_label_registro(df_expediente.loc[idx]) for idx in opciones_registro}
+
+        seleccionado = st.selectbox(
+            "Selecciona un pedido para ver el expediente",
+            opciones_registro,
+            format_func=lambda idx: labels.get(idx, str(idx)),
+        )
+
+        row = df_expediente.loc[seleccionado]
+
+        st.markdown(html_resumen_pedido_expediente(row), unsafe_allow_html=True)
+        st.markdown(html_kpis_expediente(row), unsafe_allow_html=True)
+
+        st.markdown(html_avance_actual(row), unsafe_allow_html=True)
+        st.markdown(html_linea_pedido(row), unsafe_allow_html=True)
+        st.markdown(html_diagrama_tat_unificado(row), unsafe_allow_html=True)
+
+        with st.expander("Registro completo del pedido", expanded=False):
+            registro = row.to_frame(name="Valor").reset_index().rename(columns={"index": "Campo"})
+            registro["Valor"] = registro["Valor"].apply(formato_valor)
+            st.dataframe(registro, use_container_width=True, hide_index=True)
