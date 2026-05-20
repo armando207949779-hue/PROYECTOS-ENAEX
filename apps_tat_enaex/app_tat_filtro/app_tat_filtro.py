@@ -493,6 +493,20 @@ st.markdown(
             border-color: #bfdbfe;
         }
 
+
+        div.stButton > button[kind="primary"] {
+            background-color: #22c55e !important;
+            border-color: #16a34a !important;
+            color: #ffffff !important;
+            font-weight: 850 !important;
+        }
+
+        div.stButton > button[kind="primary"]:hover {
+            background-color: #16a34a !important;
+            border-color: #15803d !important;
+            color: #ffffff !important;
+        }
+
         @media (max-width: 1000px) {
             .head-grid {
                 grid-template-columns: repeat(3, minmax(120px, 1fr));
@@ -1574,6 +1588,116 @@ def html_estado_pedido(row: pd.Series) -> str:
     """
 
 
+
+
+def columna_dias_estadistica(etapa_nombre: str, candidatos: list[str], df_base: pd.DataFrame) -> str | None:
+    for col in candidatos:
+        if col in df_base.columns:
+            return col
+
+    return None
+
+
+def construir_estadisticas_etapas(df_base: pd.DataFrame) -> pd.DataFrame:
+    etapas_estadisticas = [
+        (
+            "Solicitud",
+            [
+                "dias_solicitud",
+                "dias_solicitud_solped",
+                "dias_creacion_solicitud",
+            ],
+        ),
+        (
+            "Liberación SolPed",
+            [
+                "dias_liberacion_solped",
+            ],
+        ),
+        (
+            "Comprador",
+            [
+                "dias_comprador",
+            ],
+        ),
+        (
+            "Proveedor",
+            [
+                "dias_proveedor",
+            ],
+        ),
+        (
+            "Logística",
+            [
+                "dias_logistica",
+            ],
+        ),
+        (
+            "TAT Total",
+            [
+                "dias_tat_total",
+            ],
+        ),
+    ]
+
+    filas = []
+
+    for etapa, candidatos in etapas_estadisticas:
+        columna = columna_dias_estadistica(etapa, candidatos, df_base)
+
+        if columna is None:
+            filas.append(
+                {
+                    "Etapa": etapa,
+                    "Columna usada": "No disponible",
+                    "Registros": 0,
+                    "Min": np.nan,
+                    "Media": np.nan,
+                    "Mediana": np.nan,
+                    "Max": np.nan,
+                    "Desviación estándar": np.nan,
+                }
+            )
+            continue
+
+        serie = pd.to_numeric(
+            df_base[columna],
+            errors="coerce",
+        ).dropna()
+
+        if serie.empty:
+            filas.append(
+                {
+                    "Etapa": etapa,
+                    "Columna usada": columna,
+                    "Registros": 0,
+                    "Min": np.nan,
+                    "Media": np.nan,
+                    "Mediana": np.nan,
+                    "Max": np.nan,
+                    "Desviación estándar": np.nan,
+                }
+            )
+            continue
+
+        filas.append(
+            {
+                "Etapa": etapa,
+                "Columna usada": columna,
+                "Registros": int(serie.count()),
+                "Min": round(float(serie.min()), 2),
+                "Media": round(float(serie.mean()), 2),
+                "Mediana": round(float(serie.median()), 2),
+                "Max": round(float(serie.max()), 2),
+                "Desviación estándar": round(float(serie.std()), 2)
+                if serie.count() > 1
+                else np.nan,
+            }
+        )
+
+    return pd.DataFrame(filas)
+
+
 @st.cache_data(show_spinner=False)
 def dataframe_a_excel(df: pd.DataFrame) -> bytes:
     output = io.BytesIO()
@@ -1752,34 +1876,71 @@ except Exception as e:
 # =========================================================
 st.markdown("### Filtros principales")
 
+for key in [
+    "filtro_solped_confirmado",
+    "filtro_oc_confirmado",
+    "filtro_pos_solped_confirmado",
+]:
+    if key not in st.session_state:
+        st.session_state[key] = ""
+
 c1, c2, c3 = st.columns([1, 1, 0.8])
 
 with c1:
-    txt_solped = st.text_input(
+    st.text_input(
         "SolPed",
         placeholder="Ej: 1001973319",
-        key="filtro_solped",
+        key="filtro_solped_input",
     )
 
 with c2:
-    txt_oc = st.text_input(
+    st.text_input(
         "Orden de compra / Pedido",
         placeholder="Ej: 4502321875",
-        key="filtro_oc",
+        key="filtro_oc_input",
     )
 
 with c3:
-    txt_pos_solped = st.text_input(
+    st.text_input(
         "Posición SolPed",
         placeholder="Ej: 10",
-        key="filtro_pos_solped",
+        key="filtro_pos_solped_input",
     )
 
-st.button(
-    "Limpiar filtros principales",
-    on_click=limpiar_filtros_principales,
+confirmar_filtros_principales = st.button(
+    "Confirmar",
+    type="primary",
+    key="btn_confirmar_filtros_principales",
     use_container_width=False,
 )
+
+if confirmar_filtros_principales:
+    st.session_state["filtro_solped_confirmado"] = st.session_state.get(
+        "filtro_solped_input",
+        "",
+    )
+    st.session_state["filtro_oc_confirmado"] = st.session_state.get(
+        "filtro_oc_input",
+        "",
+    )
+    st.session_state["filtro_pos_solped_confirmado"] = st.session_state.get(
+        "filtro_pos_solped_input",
+        "",
+    )
+
+txt_solped = st.session_state.get("filtro_solped_confirmado", "")
+txt_oc = st.session_state.get("filtro_oc_confirmado", "")
+txt_pos_solped = st.session_state.get("filtro_pos_solped_confirmado", "")
+
+if txt_solped or txt_oc or txt_pos_solped:
+    st.caption(
+        "Filtros principales confirmados: "
+        f"SolPed={txt_solped or '-'} · "
+        f"OC/Pedido={txt_oc or '-'} · "
+        f"Posición={txt_pos_solped or '-'}"
+    )
+else:
+    st.caption("Sin filtros principales confirmados.")
 
 
 # =========================================================
@@ -2165,6 +2326,26 @@ with kpi4:
         value=formato_pct_es(pct_no_cumple),
         delta=f"{formato_entero_es(total_no_cumple)} de {formato_entero_es(total_evaluados)} evaluados",
     )
+
+
+
+# =========================================================
+# Estadísticas descriptivas por etapa
+# =========================================================
+st.markdown("### Detalle estadístico por etapa")
+
+tabla_estadisticas_etapas = construir_estadisticas_etapas(df_filtrado)
+
+st.dataframe(
+    tabla_estadisticas_etapas,
+    use_container_width=True,
+    hide_index=True,
+)
+
+st.caption(
+    "Las estadísticas se calculan sobre los días disponibles del resultado filtrado. "
+    "Si una etapa aparece como no disponible, el archivo no trae una columna de duración para esa etapa."
+)
 
 
 # =========================================================
@@ -2557,3 +2738,5 @@ with x3:
 # =========================================================
 with st.expander("Columnas disponibles", expanded=False):
     st.write(df.columns.tolist())
+
+
