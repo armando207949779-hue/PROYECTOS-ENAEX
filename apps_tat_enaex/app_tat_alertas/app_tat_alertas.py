@@ -3081,6 +3081,105 @@ def tabla_resumen_filtrada(df_base: pd.DataFrame) -> pd.DataFrame:
 
 
 
+def construir_zoom_sin_fecha_sin_recepcion(df_base: pd.DataFrame) -> pd.DataFrame:
+    """Detalle de registros sin fecha de vencimiento calculable y sin recepción.
+
+    Un registro cae aquí cuando está abierto y no se pudo calcular la fecha de
+    vencimiento TAT, normalmente porque falta fecha de solicitud, umbral TAT o
+    tipo OC válido para inferir el umbral.
+    """
+    if df_base.empty:
+        return pd.DataFrame()
+
+    estado_recepcion = (
+        df_base[COL_ESTADO_RECEPCION_ALERTA].astype(str)
+        if COL_ESTADO_RECEPCION_ALERTA in df_base.columns
+        else pd.Series("Sin recepción", index=df_base.index)
+    )
+
+    dias = pd.to_numeric(
+        df_base.get("dias_restantes_int", pd.Series(np.nan, index=df_base.index)),
+        errors="coerce",
+    )
+
+    mask = estado_recepcion.eq("Sin recepción") & dias.isna()
+    detalle = df_base.loc[mask].copy()
+
+    if detalle.empty:
+        return pd.DataFrame()
+
+    fecha_inicio = pd.to_datetime(
+        detalle.get("fecha_inicio_tat", pd.Series(pd.NaT, index=detalle.index)),
+        errors="coerce",
+    )
+    umbral = pd.to_numeric(
+        detalle.get("umbral_tat_calculado", pd.Series(np.nan, index=detalle.index)),
+        errors="coerce",
+    )
+
+    razones = []
+    for idx in detalle.index:
+        faltantes = []
+        if pd.isna(fecha_inicio.loc[idx]):
+            faltantes.append("falta fecha de solicitud")
+        if pd.isna(umbral.loc[idx]):
+            faltantes.append("falta umbral TAT o tipo OC válido")
+        if not faltantes:
+            faltantes.append("revisar datos de vencimiento")
+        razones.append("; ".join(faltantes))
+
+    detalle["motivo_sin_fecha_vencimiento"] = razones
+
+    columnas = columnas_existentes(
+        detalle,
+        [
+            COL_SOLPED,
+            COL_OC_ME5A,
+            COL_POS_OC,
+            "motivo_sin_fecha_vencimiento",
+            "ultima_etapa_registrada",
+            "ultima_fecha_registrada",
+            "fecha_pendiente",
+            "fecha_inicio_tat",
+            COL_UMBRAL_TAT,
+            "umbral_tat_calculado",
+            COL_TIPO_OC,
+            COL_CENTRO,
+            COL_GRUPO_COMPRAS,
+            COL_MATERIAL,
+            COL_TEXTO,
+            COL_SOLICITANTE,
+            COL_ORIGEN,
+            COL_SISTEMA,
+        ],
+    )
+
+    salida = detalle[columnas].copy()
+    return salida.rename(
+        columns={
+            COL_SOLPED: "Solicitud de pedido",
+            COL_OC_ME5A: "Pedido",
+            COL_POS_OC: "Posición pedido",
+            "motivo_sin_fecha_vencimiento": "Motivo sin fecha de vencimiento",
+            "ultima_etapa_registrada": "Última etapa registrada",
+            "ultima_fecha_registrada": "Fecha última registrada",
+            "fecha_pendiente": "Fecha pendiente",
+            "fecha_inicio_tat": "Fecha inicio TAT",
+            COL_UMBRAL_TAT: "Umbral TAT original",
+            "umbral_tat_calculado": "Umbral TAT usado",
+            COL_TIPO_OC: "Tipo OC",
+            COL_CENTRO: "Centro",
+            COL_GRUPO_COMPRAS: "Grupo compras",
+            COL_MATERIAL: "Material",
+            COL_TEXTO: "Descripción",
+            COL_SOLICITANTE: "Solicitante",
+            COL_ORIGEN: "Origen",
+            COL_SISTEMA: "Sistema",
+        }
+    )
+
+
+
 # =========================================================
 # Lectura del dataframe global
 # =========================================================
@@ -3309,6 +3408,52 @@ st.caption(
 
 df_vencimientos = construir_vencimientos_sin_recepcion(df_filtrado, hoy)
 st.dataframe(df_vencimientos, use_container_width=True, hide_index=True)
+
+
+# =========================================================
+# Zoom: sin fecha de vencimiento calculable y sin recepción
+# =========================================================
+st.markdown("#### Zoom · Sin fecha de vencimiento calculable y sin recepción")
+st.caption(
+    "Detalle de pedidos abiertos donde no fue posible calcular fecha de vencimiento. "
+    "Normalmente ocurre porque falta fecha de solicitud, falta umbral TAT o el tipo OC no permite inferir el umbral."
+)
+
+df_zoom_sin_fecha = construir_zoom_sin_fecha_sin_recepcion(df_filtrado)
+
+if df_zoom_sin_fecha.empty:
+    st.success("No hay pedidos sin fecha de vencimiento calculable y sin recepción con los filtros actuales.")
+else:
+    z1, z2 = st.columns([1, 3])
+    z1.metric(
+        "Casos sin fecha calculable",
+        f"{len(df_zoom_sin_fecha):,}".replace(",", "."),
+    )
+    z2.info(
+        "Estos casos no entran en vencidos ni próximos a vencer porque no tienen fecha de vencimiento TAT calculable. "
+        "Revise el motivo para corregir el dato de origen."
+    )
+
+    limite_zoom = st.number_input(
+        "Filas visibles en zoom sin fecha",
+        min_value=25,
+        max_value=2000,
+        value=min(300, max(25, len(df_zoom_sin_fecha))),
+        step=25,
+    )
+
+    st.dataframe(
+        df_zoom_sin_fecha.head(int(limite_zoom)),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.download_button(
+        "Descargar zoom sin fecha calculable CSV",
+        data=dataframe_a_csv(df_zoom_sin_fecha),
+        file_name="zoom_sin_fecha_vencimiento_sin_recepcion.csv",
+        mime="text/csv",
+    )
 
 
 # =========================================================
