@@ -669,13 +669,15 @@ def aplicar_filtros_dashboard(
     else:
         return pd.DataFrame()
 
-    if grupos_sel:
-        data = data[data["grupo_planta"].isin(grupos_sel)].copy()
+    grupos_sel = grupos_sel or []
+    centros_sel = centros_sel or []
+
+    if grupos_sel or centros_sel:
+        mask_grupo = data["grupo_planta"].isin(grupos_sel) if grupos_sel else False
+        mask_centro = data["centro_grafico"].isin(centros_sel) if centros_sel else False
+        data = data[mask_grupo | mask_centro].copy()
     else:
         return pd.DataFrame()
-
-    if centros_sel:
-        data = data[data["centro_grafico"].isin(centros_sel)].copy()
 
     # fecha_recepcion_final filtra rango visible y también define el eje temporal.
     if rango_recepcion is not None:
@@ -1105,12 +1107,8 @@ def describir_filtros_aplicados(
             "Criterio aplicado": formatear_lista(estados_tat_sel),
         },
         {
-            "Filtro": "Grupos de planta",
-            "Criterio aplicado": formatear_lista(grupos_sel),
-        },
-        {
-            "Filtro": "Centros específicos",
-            "Criterio aplicado": formatear_lista(centros_sel) if centros_sel else "Todos los centros visibles",
+            "Filtro": "Plantas / centros a mostrar",
+            "Criterio aplicado": formatear_lista(list(grupos_sel or []) + list(centros_sel or [])),
         },
         {
             "Filtro": "Fecha recepción",
@@ -1355,7 +1353,10 @@ try:
 
     fechas_recepcion_validas = df_final[COL_FECHA_RECEPCION_FINAL].dropna()
 
-    f1, f2, f3 = st.columns(3)
+    selector_opciones = grupos_todos + centros_opciones
+    selector_default = grupos_disponibles if grupos_disponibles else grupos_todos
+
+    f1, f2 = st.columns(2)
 
     with f1:
         fecha_facturacion_desde = st.date_input(
@@ -1371,39 +1372,35 @@ try:
             default=estados_default,
         )
 
-    with f3:
-        grupos_sel = st.multiselect(
-            "Grupos a mostrar",
-            options=grupos_todos,
-            default=grupos_disponibles if grupos_disponibles else grupos_todos,
-        )
+    seleccion_plantas_centros = st.multiselect(
+        "Plantas / centros a mostrar",
+        options=selector_opciones,
+        default=selector_default,
+        help=(
+            "Por defecto muestra Prillex, Rio Loa y Plantas de servicios. "
+            "También puedes seleccionar centros específicos en formato código — nombre."
+        ),
+    )
 
-    f4, f5 = st.columns([1, 2])
+    grupos_sel = [
+        item
+        for item in seleccion_plantas_centros
+        if item in grupos_todos
+    ]
 
-    with f4:
-        usar_filtro_centros = st.checkbox(
-            "Filtrar centros específicos",
-            value=False,
-        )
+    centros_labels_sel = [
+        item
+        for item in seleccion_plantas_centros
+        if item in mapa_label_a_centro
+    ]
 
-    with f5:
-        if usar_filtro_centros:
-            centros_labels_sel = st.multiselect(
-                "Centros",
-                options=centros_opciones,
-                default=centros_opciones,
-                help="Se muestra el código enlazado al nombre del centro.",
-            )
-            centros_sel = [
-                mapa_label_a_centro[label]
-                for label in centros_labels_sel
-                if label in mapa_label_a_centro
-            ]
-            centros_sel_descripcion = centros_labels_sel
-        else:
-            centros_sel = None
-            centros_sel_descripcion = None
-            st.caption("Centros: todos los centros visibles.")
+    centros_sel = [
+        mapa_label_a_centro[label]
+        for label in centros_labels_sel
+        if label in mapa_label_a_centro
+    ]
+
+    centros_sel_descripcion = centros_labels_sel
 
     if not fechas_recepcion_validas.empty:
         fecha_recepcion_min = fechas_recepcion_validas.min().date()
