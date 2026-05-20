@@ -875,6 +875,155 @@ def mostrar_diagnostico(df: pd.DataFrame):
         st.dataframe(grupos, use_container_width=True, hide_index=True)
 
 
+def formatear_fecha(valor) -> str:
+    if valor is None:
+        return "Sin definir"
+
+    try:
+        fecha = pd.Timestamp(valor)
+        if pd.isna(fecha):
+            return "Sin definir"
+        return fecha.strftime("%d-%m-%Y")
+    except Exception:
+        return str(valor)
+
+
+def formatear_lista(valores) -> str:
+    if valores is None:
+        return "Todos"
+
+    if isinstance(valores, (list, tuple, set)):
+        valores = list(valores)
+        return ", ".join([str(v) for v in valores]) if valores else "Ninguno"
+
+    return str(valores)
+
+
+def describir_filtros_aplicados(
+    fecha_facturacion_desde,
+    estados_tat_sel,
+    grupos_sel,
+    centros_sel,
+    rango_recepcion,
+) -> pd.DataFrame:
+    if isinstance(rango_recepcion, (tuple, list)) and len(rango_recepcion) == 2:
+        rango_texto = (
+            f"{formatear_fecha(rango_recepcion[0])} a "
+            f"{formatear_fecha(rango_recepcion[1])}"
+        )
+    else:
+        rango_texto = "Sin filtro de rango"
+
+    filtros = [
+        {
+            "Filtro": "Fecha facturación",
+            "Criterio aplicado": f"fecha_facturacion_final > {formatear_fecha(fecha_facturacion_desde)}",
+        },
+        {
+            "Filtro": "Performance TAT",
+            "Criterio aplicado": formatear_lista(estados_tat_sel),
+        },
+        {
+            "Filtro": "Grupos de planta",
+            "Criterio aplicado": formatear_lista(grupos_sel),
+        },
+        {
+            "Filtro": "Centros específicos",
+            "Criterio aplicado": formatear_lista(centros_sel) if centros_sel else "Todos los centros visibles",
+        },
+        {
+            "Filtro": "Fecha recepción",
+            "Criterio aplicado": rango_texto,
+        },
+        {
+            "Filtro": "Exclusión automática",
+            "Criterio aplicado": "Se excluye grupo_planta = Excluir",
+        },
+    ]
+
+    return pd.DataFrame(filtros)
+
+
+def calcular_mejor_planta(df: pd.DataFrame):
+    kpis = resumen_kpis_plantas(df)
+
+    if kpis.empty:
+        return None
+
+    kpis = kpis[kpis["Total evaluable"].gt(0)].copy()
+
+    if kpis.empty:
+        return None
+
+    return kpis.sort_values(
+        ["% Cumple", "Total evaluable"],
+        ascending=[False, False],
+    ).iloc[0]
+
+
+def resumen_cumplimiento_plantas(df: pd.DataFrame) -> pd.DataFrame:
+    kpis = resumen_kpis_plantas(df)
+
+    if kpis.empty:
+        return pd.DataFrame(
+            columns=[
+                "Planta",
+                "Cumple",
+                "No cumple",
+                "Total evaluable",
+                "% Cumplimiento",
+            ]
+        )
+
+    tabla = kpis.rename(
+        columns={
+            "grupo_planta": "Planta",
+            "% Cumple": "% Cumplimiento",
+        }
+    )
+
+    columnas = [
+        "Planta",
+        "Cumple",
+        "No cumple",
+        "Total evaluable",
+        "% Cumplimiento",
+    ]
+
+    tabla = tabla[columnas].copy()
+    tabla["% Cumplimiento"] = tabla["% Cumplimiento"].round(1)
+
+    return tabla.sort_values("% Cumplimiento", ascending=False).reset_index(drop=True)
+
+
+def calcular_mejor_mes_planta(df: pd.DataFrame):
+    registros = []
+
+    for grupo in ["Prillex", "Rio Loa", "Plantas de servicios"]:
+        tabla = crear_resumen_mensual_grupo(df, grupo)
+
+        if tabla.empty:
+            continue
+
+        tabla = tabla[tabla["Total"].gt(0)].copy()
+
+        if tabla.empty:
+            continue
+
+        tabla["grupo_planta"] = grupo
+        registros.append(tabla)
+
+    if not registros:
+        return None
+
+    mensual = pd.concat(registros, ignore_index=True)
+
+    return mensual.sort_values(
+        ["% Cumple", "Total", "periodo_fecha"],
+        ascending=[False, False, True],
+    ).iloc[0]
+
+
 # =========================================================
 # APP
 # =========================================================
@@ -946,79 +1095,93 @@ try:
 
     # -----------------------------------------------------
     # Filtros con valores por defecto, pero modificables
+    # Ahora se muestran arriba, dentro del dashboard.
     # -----------------------------------------------------
-    with st.sidebar:
-        st.markdown("---")
-        st.subheader("Filtros del gráfico")
+    st.markdown("<div class='section-card'>", unsafe_allow_html=True)
+    section_header(
+        "Filtros del dashboard",
+        "Los filtros se aplican antes de calcular indicadores, rankings y gráficos.",
+    )
 
+    estados_disponibles = [
+        estado
+        for estado in [
+            "Cumple",
+            "No cumple",
+            "En proceso",
+            "No aplica al análisis",
+            "Sin datos",
+        ]
+        if estado in df_final[COL_PERFORMANCE_TAT]
+        .dropna()
+        .astype(str)
+        .unique()
+        .tolist()
+    ]
+
+    estados_default = [
+        estado
+        for estado in ["Cumple", "No cumple"]
+        if estado in estados_disponibles
+    ]
+
+    grupos_todos = ["Prillex", "Rio Loa", "Plantas de servicios"]
+
+    grupos_disponibles = [
+        grupo
+        for grupo in grupos_todos
+        if grupo in df_final["grupo_planta"]
+        .dropna()
+        .astype(str)
+        .unique()
+        .tolist()
+    ]
+
+    centros_disponibles = sorted(
+        df_final[
+            df_final["grupo_planta"].ne("Excluir")
+        ]["centro_grafico"]
+        .dropna()
+        .astype(str)
+        .str.strip()
+        .unique()
+        .tolist()
+    )
+
+    fechas_recepcion_validas = df_final[COL_FECHA_RECEPCION_FINAL].dropna()
+
+    f1, f2, f3 = st.columns(3)
+
+    with f1:
         fecha_facturacion_desde = st.date_input(
             "Fecha facturación posterior a",
             value=FECHA_FILTRO_FACTURACION_DEFAULT.date(),
             help="Este filtro usa fecha_facturacion_final. No modifica el eje temporal.",
         )
 
-        estados_disponibles = [
-            estado
-            for estado in [
-                "Cumple",
-                "No cumple",
-                "En proceso",
-                "No aplica al análisis",
-                "Sin datos",
-            ]
-            if estado in df_final[COL_PERFORMANCE_TAT]
-            .dropna()
-            .astype(str)
-            .unique()
-            .tolist()
-        ]
-
-        estados_default = [
-            estado
-            for estado in ["Cumple", "No cumple"]
-            if estado in estados_disponibles
-        ]
-
+    with f2:
         estados_tat_sel = st.multiselect(
             "Performance TAT",
             options=estados_disponibles,
             default=estados_default,
         )
 
-        grupos_todos = ["Prillex", "Rio Loa", "Plantas de servicios"]
-
-        grupos_disponibles = [
-            grupo
-            for grupo in grupos_todos
-            if grupo in df_final["grupo_planta"]
-            .dropna()
-            .astype(str)
-            .unique()
-            .tolist()
-        ]
-
+    with f3:
         grupos_sel = st.multiselect(
             "Grupos a mostrar",
             options=grupos_todos,
             default=grupos_disponibles if grupos_disponibles else grupos_todos,
         )
 
-        centros_disponibles = sorted(
-            df_final[
-                df_final["grupo_planta"].ne("Excluir")
-            ]["centro_grafico"]
-            .dropna()
-            .astype(str)
-            .str.strip()
-            .unique()
-            .tolist()
-        )
+    f4, f5 = st.columns([1, 2])
 
+    with f4:
         usar_filtro_centros = st.checkbox(
             "Filtrar centros específicos",
             value=False,
         )
 
+    with f5:
         if usar_filtro_centros:
             centros_sel = st.multiselect(
                 "Centros",
@@ -1027,23 +1190,24 @@ try:
             )
         else:
             centros_sel = None
+            st.caption("Centros: todos los centros visibles.")
 
-        fechas_recepcion_validas = df_final[COL_FECHA_RECEPCION_FINAL].dropna()
+    if not fechas_recepcion_validas.empty:
+        fecha_recepcion_min = fechas_recepcion_validas.min().date()
+        fecha_recepcion_max = fechas_recepcion_validas.max().date()
 
-        if not fechas_recepcion_validas.empty:
-            fecha_recepcion_min = fechas_recepcion_validas.min().date()
-            fecha_recepcion_max = fechas_recepcion_validas.max().date()
+        rango_recepcion = st.date_input(
+            "Fecha recepción para eje temporal",
+            value=(fecha_recepcion_min, fecha_recepcion_max),
+            min_value=fecha_recepcion_min,
+            max_value=fecha_recepcion_max,
+            help="Este rango usa fecha_recepcion_final. También es la fecha del eje X.",
+        )
+    else:
+        rango_recepcion = None
+        st.warning("No hay fechas válidas de recepción.")
 
-            rango_recepcion = st.date_input(
-                "Fecha recepción para eje temporal",
-                value=(fecha_recepcion_min, fecha_recepcion_max),
-                min_value=fecha_recepcion_min,
-                max_value=fecha_recepcion_max,
-                help="Este rango usa fecha_recepcion_final. También es la fecha del eje X.",
-            )
-        else:
-            rango_recepcion = None
-            st.warning("No hay fechas válidas de recepción.")
+    st.markdown("</div>", unsafe_allow_html=True)
 
     with st.spinner("Aplicando filtros del dashboard..."):
         df_dashboard = aplicar_filtros_dashboard(
@@ -1072,25 +1236,101 @@ try:
             "Eje temporal de gráficos: fecha_recepcion_final. Filtro de facturación: fecha_facturacion_final.",
         )
 
+        total_original = len(df_original)
         total_filas = len(df_dashboard)
         cumple_tat = int(df_dashboard[COL_PERFORMANCE_TAT].eq("Cumple").sum())
         no_cumple_tat = int(df_dashboard[COL_PERFORMANCE_TAT].eq("No cumple").sum())
         evaluables_tat = cumple_tat + no_cumple_tat
         pct_cumple_tat = cumple_tat / evaluables_tat * 100 if evaluables_tat else 0
 
+        mejor_planta = calcular_mejor_planta(df_dashboard)
+        mejor_mes = calcular_mejor_mes_planta(df_dashboard)
+        tabla_cumplimiento_plantas = resumen_cumplimiento_plantas(df_dashboard)
+
         k1, k2, k3, k4 = st.columns(4)
 
         with k1:
-            card_metric("Filas filtradas", f"{total_filas:,}")
+            card_metric(
+                "Datos originales",
+                f"{total_original:,}",
+                "Registros antes de aplicar filtros.",
+            )
 
         with k2:
-            card_metric("TAT evaluable", f"{evaluables_tat:,}")
+            card_metric(
+                "Registros filtrados",
+                f"{total_filas:,}",
+                "Registros que quedan después de filtros.",
+            )
 
         with k3:
-            card_metric("Cumple TAT", f"{cumple_tat:,}", f"{pct_cumple_tat:.1f}%")
+            card_metric("TAT evaluable", f"{evaluables_tat:,}")
 
         with k4:
-            card_metric("No cumple TAT", f"{no_cumple_tat:,}")
+            card_metric("Cumplimiento global", f"{pct_cumple_tat:.1f}%", f"Cumple: {cumple_tat:,}")
+
+        st.divider()
+
+        section_header(
+            "Respuestas clave",
+            "Resumen automático de las preguntas principales del dashboard.",
+        )
+
+        r1, r2, r3 = st.columns(3)
+
+        with r1:
+            if mejor_planta is not None:
+                card_metric(
+                    "Mejor planta promedio",
+                    str(mejor_planta["grupo_planta"]),
+                    (
+                        f"{float(mejor_planta['% Cumple']):.1f}% cumplimiento · "
+                        f"Total evaluable: {int(mejor_planta['Total evaluable']):,}"
+                    ),
+                )
+            else:
+                card_metric("Mejor planta promedio", "Sin datos", "No hay registros evaluables.")
+
+        with r2:
+            if mejor_mes is not None:
+                card_metric(
+                    "Mejor mes y planta",
+                    str(mejor_mes["periodo_label"]),
+                    (
+                        f"{str(mejor_mes['grupo_planta'])} · "
+                        f"{float(mejor_mes['% Cumple']):.1f}% cumplimiento · "
+                        f"Total: {int(mejor_mes['Total']):,}"
+                    ),
+                )
+            else:
+                card_metric("Mejor mes y planta", "Sin datos", "No hay registros evaluables.")
+
+        with r3:
+            card_metric(
+                "Cumplimiento global",
+                f"{pct_cumple_tat:.1f}%",
+                f"Cumple: {cumple_tat:,} · No cumple: {no_cumple_tat:,}",
+            )
+
+        st.markdown("**Filtros aplicados**")
+        st.dataframe(
+            describir_filtros_aplicados(
+                fecha_facturacion_desde=fecha_facturacion_desde,
+                estados_tat_sel=estados_tat_sel,
+                grupos_sel=grupos_sel,
+                centros_sel=centros_sel,
+                rango_recepcion=rango_recepcion,
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        st.markdown("**Cumplimiento a nivel plantas**")
+        st.dataframe(
+            tabla_cumplimiento_plantas,
+            use_container_width=True,
+            hide_index=True,
+        )
 
         st.divider()
 
