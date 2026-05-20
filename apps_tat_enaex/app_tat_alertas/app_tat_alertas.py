@@ -1894,10 +1894,10 @@ def html_diagrama_tat_unificado(row: pd.Series) -> str:
     return dedent(
         f"""
         <div class="tat-flow-card">
-            <div class="tat-flow-title">Avance y etapas TAT</div>
+            <div class="tat-flow-title">Etapas TAT</div>
             <div class="tat-flow">{''.join(partes)}</div>
             <div class="tat-flow-note">
-                TAT total: <strong>{escape(dias_tat)}</strong> · Estado: <strong>{escape(estado_tat)}</strong>. Los hitos muestran fecha registrada, días de etapa, umbral y performance.
+                TAT total: <strong>{escape(dias_tat)}</strong> · Estado: <strong>{escape(estado_tat)}</strong>. Las etapas respetan el orden original: Solicitud, Liberación SolPed, Comprador, Proveedor, Logística y TAT Total.
             </div>
         </div>
         """
@@ -3744,6 +3744,23 @@ def detalle_proximos_sin_recepcion(df_base: pd.DataFrame) -> pd.DataFrame:
     return tabla_resumen_filtrada(detalle) if not detalle.empty else pd.DataFrame()
 
 
+def detalle_vencidos_sin_recepcion(df_base: pd.DataFrame) -> pd.DataFrame:
+    if df_base.empty:
+        return pd.DataFrame()
+
+    estado_recepcion = (
+        df_base[COL_ESTADO_RECEPCION_ALERTA].astype(str)
+        if COL_ESTADO_RECEPCION_ALERTA in df_base.columns
+        else pd.Series("Sin recepción", index=df_base.index)
+    )
+    dias = pd.to_numeric(
+        df_base.get("dias_restantes_int", pd.Series(np.nan, index=df_base.index)),
+        errors="coerce",
+    )
+    detalle = df_base.loc[estado_recepcion.eq("Sin recepción") & dias.lt(0)].copy()
+    return tabla_resumen_filtrada(detalle) if not detalle.empty else pd.DataFrame()
+
+
 
 # =========================================================
 # Lectura del dataframe global
@@ -4010,6 +4027,37 @@ with st.expander("Detalle anidado · Vencidos y próximos a vencer sin recepció
 
 
 # =========================================================
+# Alerta y descarga de vencidos sin recepción
+# =========================================================
+df_vencidos_sin_recepcion_detalle = detalle_vencidos_sin_recepcion(df_filtrado)
+cantidad_vencidos_sin_recepcion_alerta = len(df_vencidos_sin_recepcion_detalle)
+
+if cantidad_vencidos_sin_recepcion_alerta > 0:
+    st.error(
+        f"ALERTA: hay {cantidad_vencidos_sin_recepcion_alerta:,} registros vencidos sin recepción. "
+        "Estos casos ya superaron su fecha de vencimiento TAT y requieren gestión prioritaria."
+        .replace(",", ".")
+    )
+    v1, v2 = st.columns(2)
+    with v1:
+        st.download_button(
+            "Descargar vencidos sin recepción CSV",
+            data=dataframe_a_csv(df_vencidos_sin_recepcion_detalle),
+            file_name="vencidos_sin_recepcion.csv",
+            mime="text/csv",
+        )
+    with v2:
+        st.download_button(
+            "Descargar vencidos sin recepción Excel",
+            data=dataframe_a_excel(df_vencidos_sin_recepcion_detalle),
+            file_name="vencidos_sin_recepcion.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+else:
+    st.success("No hay registros vencidos sin recepción con los filtros actuales.")
+
+
+# =========================================================
 # Alerta y descarga de próximos a vencer sin recepción
 # =========================================================
 df_proximos_sin_recepcion_detalle = detalle_proximos_sin_recepcion(df_filtrado)
@@ -4161,6 +4209,7 @@ else:
     st.markdown(html_kpis_expediente(row), unsafe_allow_html=True)
 
     st.markdown(html_avance_actual(row), unsafe_allow_html=True)
+    st.markdown(html_linea_pedido(row), unsafe_allow_html=True)
     st.markdown(html_diagrama_tat_unificado(row), unsafe_allow_html=True)
 
     with st.expander("Registro completo del pedido", expanded=False):
