@@ -120,6 +120,73 @@ COLUMNAS_FECHA_PERFORMANCE = [
 
 CENTROS_EXCLUIR_PLANTAS_SERVICIOS = ["E001", "E002", "E009", "E024", "E021"]
 
+
+CENTROS_MAESTRO = [
+    {"Centro": "E002", "Sociedad": "EC01", "Nombre": "Prillex"},
+    {"Centro": "E021", "Sociedad": "EC06", "Nombre": "CM-Enaex Servicios"},
+    {"Centro": "E024", "Sociedad": "EC06", "Nombre": "Rio Loa"},
+    {"Centro": "E025", "Sociedad": "EC06", "Nombre": "Planta La Chimba"},
+    {"Centro": "E026", "Sociedad": "EC06", "Nombre": "Teatinos"},
+    {"Centro": "E029", "Sociedad": "EC06", "Nombre": "Chiquicamata"},
+    {"Centro": "E030", "Sociedad": "EC06", "Nombre": "El tesoro"},
+    {"Centro": "E031", "Sociedad": "EC06", "Nombre": "La escondida"},
+    {"Centro": "E032", "Sociedad": "EC06", "Nombre": "Loma Bayas"},
+    {"Centro": "E033", "Sociedad": "EC06", "Nombre": "Los Pelambres"},
+    {"Centro": "E034", "Sociedad": "EC06", "Nombre": "Los Sauces"},
+    {"Centro": "E035", "Sociedad": "EC06", "Nombre": "Mantos Blancos"},
+    {"Centro": "E036", "Sociedad": "EC06", "Nombre": "Michilla"},
+    {"Centro": "E037", "Sociedad": "EC06", "Nombre": "rt"},
+    {"Centro": "E038", "Sociedad": "EC06", "Nombre": "El soldado"},
+    {"Centro": "E039", "Sociedad": "EC06", "Nombre": "Polpaico"},
+    {"Centro": "E040", "Sociedad": "EC06", "Nombre": "Peldehue"},
+    {"Centro": "E041", "Sociedad": "EC06", "Nombre": "Esperanza"},
+    {"Centro": "E042", "Sociedad": "EC06", "Nombre": "Gaby"},
+    {"Centro": "E044", "Sociedad": "EC06", "Nombre": "Atacama Kozan"},
+    {"Centro": "E045", "Sociedad": "EC06", "Nombre": "Franke"},
+    {"Centro": "E046", "Sociedad": "EC06", "Nombre": "Manto verde"},
+    {"Centro": "E047", "Sociedad": "EC06", "Nombre": "Polvorin Copiapo"},
+    {"Centro": "E069", "Sociedad": "EC06", "Nombre": "Guanaco"},
+    {"Centro": "E071", "Sociedad": "EC06", "Nombre": "Teniente"},
+    {"Centro": "E076", "Sociedad": "EC06", "Nombre": "Mejillones"},
+    {"Centro": "E077", "Sociedad": "EC06", "Nombre": "Ministro Hales"},
+    {"Centro": "E078", "Sociedad": "EC06", "Nombre": "Sierra Gorda"},
+    {"Centro": "E079", "Sociedad": "EC06", "Nombre": "Planta Quebrada Blanca"},
+    {"Centro": "E081", "Sociedad": "EC06", "Nombre": "Chuqui Subte"},
+    {"Centro": "E086", "Sociedad": "EC06", "Nombre": "Antucoya"},
+    {"Centro": "E087", "Sociedad": "EC06", "Nombre": "Alto Maipo"},
+    {"Centro": "E088", "Sociedad": "EC06", "Nombre": "Encuentro"},
+    {"Centro": "E089", "Sociedad": "EC06", "Nombre": "Cerro Colorado"},
+    {"Centro": "E090", "Sociedad": "EC06", "Nombre": "Collahuasi"},
+    {"Centro": "E091", "Sociedad": "EC06", "Nombre": "Romeral"},
+    {"Centro": "E095", "Sociedad": "EC06", "Nombre": "Planta Andina"},
+    {"Centro": "E097", "Sociedad": "EC06", "Nombre": "Andina"},
+    {"Centro": "E099", "Sociedad": "EC06", "Nombre": "Salvador"},
+    {"Centro": "E103", "Sociedad": "EC06", "Nombre": "Zaldivar"},
+    {"Centro": "E104", "Sociedad": "EC06", "Nombre": "Salares Norte"},
+    {"Centro": "E105", "Sociedad": "EC06", "Nombre": "Los Colorados"},
+    {"Centro": "E106", "Sociedad": "EC06", "Nombre": "Cerro N.N"},
+    {"Centro": "E107", "Sociedad": "EC06", "Nombre": "Pleito"},
+    {"Centro": "E108", "Sociedad": "EC06", "Nombre": "Plasma Enaex Servicios"},
+    {"Centro": "E109", "Sociedad": "EC06", "Nombre": "Carola"},
+    {"Centro": "E110", "Sociedad": "EC06", "Nombre": "Alto Hospicio SKC Enaex Serv"},
+    {"Centro": "E113", "Sociedad": "EC06", "Nombre": "Copiapo SKC Enaex Serv"},
+    {"Centro": "E114", "Sociedad": "EC06", "Nombre": "FullRPM Nogales Enaex Servicio"},
+    {"Centro": "E082", "Sociedad": "EC07", "Nombre": "Nittra Casa Matriz"},
+    {"Centro": "E083", "Sociedad": "EC07", "Nombre": "Nittra Prillex"},
+    {"Centro": "E084", "Sociedad": "EC07", "Nombre": "Nittra Paine"},
+    {"Centro": "E101", "Sociedad": "EC10", "Nombre": "Plasma"},
+    {"Centro": "E003", "Sociedad": "EC01", "Nombre": "Planta Río Loa"},
+    {"Centro": "E009", "Sociedad": "EC01", "Nombre": "Planta Chuquicamata"},
+    {"Centro": "E020", "Sociedad": "EC01", "Nombre": "Planta Polpaico"},
+    {"Centro": "E057", "Sociedad": "EC01", "Nombre": "Esperanza"},
+    {"Centro": "E102", "Sociedad": "EC06", "Nombre": "SCL Bodega Arriendo"},
+    {"Centro": "E043", "Sociedad": "EC06", "Nombre": "El peñón subte"},
+    {"Centro": "E115", "Sociedad": "EC06", "Nombre": "Enaex SKC ING"},
+    {"Centro": "E027", "Sociedad": "EC06", "Nombre": "Faena Teniente Rajo"},
+    {"Centro": "E052", "Sociedad": "EC06", "Nombre": "Faena Spence"},
+]
+
+
 # Filtro por defecto, editable en sidebar.
 # Este filtro NO define el eje temporal. Solo filtra registros.
 FECHA_FILTRO_FACTURACION_DEFAULT = pd.Timestamp("2024-02-01")
@@ -962,6 +1029,33 @@ def mostrar_diagnostico(df: pd.DataFrame):
         st.dataframe(grupos, use_container_width=True, hide_index=True)
 
 
+
+def obtener_maestro_centros_df() -> pd.DataFrame:
+    maestro = pd.DataFrame(CENTROS_MAESTRO).copy()
+    maestro["Centro"] = maestro["Centro"].astype(str).str.strip()
+    maestro["Etiqueta"] = maestro["Centro"] + " — " + maestro["Nombre"]
+    return maestro
+
+
+def obtener_mapa_etiquetas_centros() -> dict:
+    maestro = obtener_maestro_centros_df()
+    return dict(zip(maestro["Centro"], maestro["Etiqueta"]))
+
+
+def etiqueta_centro(codigo: str, mapa_etiquetas: dict | None = None) -> str:
+    codigo = str(codigo).strip()
+    mapa = mapa_etiquetas if mapa_etiquetas is not None else obtener_mapa_etiquetas_centros()
+    return mapa.get(codigo, f"{codigo} — Sin nombre en maestro")
+
+
+def mostrar_maestro_centros_colapsable():
+    with st.expander("Ver maestro de centros", expanded=False):
+        st.dataframe(
+            obtener_maestro_centros_df()[["Centro", "Sociedad", "Nombre"]],
+            use_container_width=True,
+            hide_index=True,
+        )
+
 def formatear_fecha(valor) -> str:
     if valor is None:
         return "Sin definir"
@@ -1252,6 +1346,13 @@ try:
         .tolist()
     )
 
+    mapa_etiquetas_centros = obtener_mapa_etiquetas_centros()
+    centros_opciones = [
+        etiqueta_centro(centro, mapa_etiquetas_centros)
+        for centro in centros_disponibles
+    ]
+    mapa_label_a_centro = dict(zip(centros_opciones, centros_disponibles))
+
     fechas_recepcion_validas = df_final[COL_FECHA_RECEPCION_FINAL].dropna()
 
     f1, f2, f3 = st.columns(3)
@@ -1287,13 +1388,21 @@ try:
 
     with f5:
         if usar_filtro_centros:
-            centros_sel = st.multiselect(
+            centros_labels_sel = st.multiselect(
                 "Centros",
-                options=centros_disponibles,
-                default=centros_disponibles,
+                options=centros_opciones,
+                default=centros_opciones,
+                help="Se muestra el código enlazado al nombre del centro.",
             )
+            centros_sel = [
+                mapa_label_a_centro[label]
+                for label in centros_labels_sel
+                if label in mapa_label_a_centro
+            ]
+            centros_sel_descripcion = centros_labels_sel
         else:
             centros_sel = None
+            centros_sel_descripcion = None
             st.caption("Centros: todos los centros visibles.")
 
     if not fechas_recepcion_validas.empty:
@@ -1310,6 +1419,8 @@ try:
     else:
         rango_recepcion = None
         st.warning("No hay fechas válidas de recepción.")
+
+    mostrar_maestro_centros_colapsable()
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1390,14 +1501,14 @@ try:
             "Plantas de servicios": "Performance TAT Plantas de servicios",
         }
 
+        grafico_temporal_porcentual_performance(df_dashboard)
+
         for grupo, titulo in graficos_disponibles.items():
             if grupo in grupos_sel:
                 grafico_mensual_100_plantas(
                     crear_resumen_mensual_grupo(df_dashboard, grupo),
                     titulo,
                 )
-
-        grafico_temporal_porcentual_performance(df_dashboard)
 
         st.divider()
 
@@ -1454,7 +1565,7 @@ try:
                 fecha_facturacion_desde=fecha_facturacion_desde,
                 estados_tat_sel=estados_tat_sel,
                 grupos_sel=grupos_sel,
-                centros_sel=centros_sel,
+                centros_sel=centros_sel_descripcion,
                 rango_recepcion=rango_recepcion,
             ),
             use_container_width=True,
@@ -1478,9 +1589,15 @@ try:
 
         st.subheader("Vista previa final filtrada")
 
+        df_dashboard_vista = df_dashboard.copy()
+        df_dashboard_vista["centro_nombre"] = df_dashboard_vista["centro_grafico"].apply(
+            lambda centro: etiqueta_centro(centro, mapa_etiquetas_centros)
+        )
+
         columnas_preferidas = [
             "grupo_planta",
             "centro_grafico",
+            "centro_nombre",
             COL_FECHA_SOLICITUD_FINAL,
             COL_FECHA_FACTURACION_FINAL,
             COL_FECHA_RECEPCION_FINAL,
@@ -1493,11 +1610,11 @@ try:
 
         columnas_preferidas = [
             col for col in columnas_preferidas
-            if col in df_dashboard.columns
+            if col in df_dashboard_vista.columns
         ]
 
         st.dataframe(
-            df_dashboard[columnas_preferidas].head(300),
+            df_dashboard_vista[columnas_preferidas].head(300),
             use_container_width=True,
             hide_index=True,
         )
