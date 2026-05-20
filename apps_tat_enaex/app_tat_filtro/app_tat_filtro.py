@@ -196,28 +196,6 @@ st.markdown(
             box-shadow: 0 1px 4px rgba(15, 23, 42, 0.035);
         }
 
-        .match-box {
-            background: #f0f9ff;
-            border: 1px solid #bae6fd;
-            border-radius: 16px;
-            padding: 14px 18px;
-            margin: 0.5rem 0 0.9rem 0;
-        }
-
-        .match-number {
-            font-size: 2rem;
-            font-weight: 850;
-            color: #0369a1;
-            line-height: 1.05;
-        }
-
-        .match-label {
-            color: #334155;
-            font-size: 0.92rem;
-            margin-top: 4px;
-        }
-
-
         .kpi-wrap {
             display: grid;
             grid-template-columns: repeat(4, minmax(160px, 1fr));
@@ -290,6 +268,27 @@ st.markdown(
             font-size: 1rem;
             font-weight: 850;
             margin-bottom: 12px;
+        }
+
+        .head-grid {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(120px, 1fr));
+            gap: 10px;
+        }
+
+        .head-label {
+            color: #64748b;
+            font-size: 0.74rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: 3px;
+        }
+
+        .head-value {
+            color: #0f172a;
+            font-weight: 800;
+            font-size: 1rem;
+            overflow-wrap: anywhere;
         }
 
         .tat-summary {
@@ -512,113 +511,6 @@ st.markdown(
             margin-top: 14px;
         }
 
-        .head-grid {
-            display: grid;
-            grid-template-columns: repeat(5, minmax(120px, 1fr));
-            gap: 10px;
-        }
-
-        .head-label {
-            color: #64748b;
-            font-size: 0.74rem;
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
-            margin-bottom: 3px;
-        }
-
-        .head-value {
-            color: #0f172a;
-            font-weight: 800;
-            font-size: 1rem;
-            overflow-wrap: anywhere;
-        }
-
-        .stage-wrap {
-            display: grid;
-            grid-template-columns: repeat(6, minmax(150px, 1fr));
-            gap: 10px;
-            align-items: stretch;
-            margin-top: 0.55rem;
-        }
-
-        .stage-card {
-            border-radius: 14px;
-            padding: 12px 12px 11px 12px;
-            border: 1px solid #e5e7eb;
-            min-height: 138px;
-            position: relative;
-            box-shadow: none;
-        }
-
-        .stage-card::after {
-            content: "→";
-            position: absolute;
-            right: -9px;
-            top: 50%;
-            transform: translateY(-50%);
-            color: #94a3b8;
-            font-weight: 900;
-            font-size: 1rem;
-            z-index: 2;
-        }
-
-        .stage-card:last-child::after {
-            content: "";
-        }
-
-        .stage-green {
-            background: #f0fdf4;
-            border-color: #bbf7d0;
-        }
-
-        .stage-red {
-            background: #fef2f2;
-            border-color: #fecaca;
-        }
-
-        .stage-yellow {
-            background: #fefce8;
-            border-color: #fde68a;
-        }
-
-        .stage-gray {
-            background: #f8fafc;
-            border-color: #e2e8f0;
-        }
-
-        .stage-blue {
-            background: #eff6ff;
-            border-color: #bfdbfe;
-        }
-
-        .stage-title {
-            font-size: 0.78rem;
-            font-weight: 850;
-            color: #0f172a;
-            margin-bottom: 5px;
-        }
-
-        .stage-date {
-            font-size: 0.98rem;
-            font-weight: 850;
-            color: #111827;
-            margin-bottom: 4px;
-        }
-
-        .stage-note {
-            color: #64748b;
-            font-size: 0.72rem;
-            line-height: 1.2;
-            min-height: 24px;
-            margin-bottom: 7px;
-        }
-
-        .stage-days {
-            font-size: 0.8rem;
-            color: #334155;
-            margin-bottom: 6px;
-        }
-
         .pill {
             display: inline-block;
             border-radius: 999px;
@@ -663,51 +555,31 @@ st.markdown(
             .kpi-wrap {
                 grid-template-columns: repeat(2, minmax(160px, 1fr));
             }
-        }
-
-        @media (max-width: 640px) {
-            .kpi-wrap {
-                grid-template-columns: 1fr;
-            }
-        }
-
-        @media (max-width: 1200px) {
-            .stage-wrap {
-                grid-template-columns: repeat(3, minmax(150px, 1fr));
-            }
 
             .head-grid {
                 grid-template-columns: repeat(3, minmax(120px, 1fr));
-            }
-        }
-
-        @media (max-width: 760px) {
-            .stage-wrap {
-                grid-template-columns: 1fr;
-            }
-
-            .stage-card::after {
-                content: "↓";
-                right: 50%;
-                top: auto;
-                bottom: -14px;
-                transform: translateX(50%);
-            }
-
-            .stage-card:last-child::after {
-                content: "";
-            }
-
-            .head-grid {
-                grid-template-columns: 1fr;
             }
 
             .tat-summary {
                 grid-template-columns: 1fr;
             }
 
-            .tat-main {
-                font-size: 1.65rem;
+            .avance-grid {
+                grid-template-columns: repeat(2, minmax(140px, 1fr));
+            }
+        }
+
+        @media (max-width: 640px) {
+            .kpi-wrap {
+                grid-template-columns: 1fr;
+            }
+
+            .head-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .avance-grid {
+                grid-template-columns: 1fr;
             }
 
             .pedido-line {
@@ -857,6 +729,77 @@ def convertir_fechas_visuales(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def formato_entero_es(valor: Any) -> str:
+    try:
+        return f"{int(valor):,}".replace(",", ".")
+    except Exception:
+        return "0"
+
+
+def formato_pct_es(valor: Any) -> str:
+    try:
+        return f"{float(valor):.1f}".replace(".", ",") + "%"
+    except Exception:
+        return "0,0%"
+
+
+def formato_valor(valor: Any) -> str:
+    if pd.isna(valor):
+        return "-"
+
+    if isinstance(valor, pd.Timestamp):
+        return valor.strftime("%d-%m-%Y")
+
+    if isinstance(valor, float):
+        if np.isfinite(valor) and valor.is_integer():
+            return f"{int(valor):,}".replace(",", ".")
+
+        return (
+            f"{valor:,.1f}"
+            .replace(",", "X")
+            .replace(".", ",")
+            .replace("X", ".")
+        )
+
+    if isinstance(valor, int):
+        return f"{valor:,}".replace(",", ".")
+
+    return str(valor)
+
+
+def formato_id(valor: Any) -> str:
+    if pd.isna(valor):
+        return "-"
+
+    texto = str(valor).strip()
+
+    try:
+        numero = float(texto)
+
+        if np.isfinite(numero) and numero.is_integer():
+            return str(int(numero))
+
+    except Exception:
+        pass
+
+    if texto.endswith(".0"):
+        texto = texto[:-2]
+
+    return texto
+
+
+def valor_numerico(valor: Any) -> float:
+    try:
+        return float(
+            pd.to_numeric(
+                pd.Series([valor]),
+                errors="coerce",
+            ).iloc[0]
+        )
+    except Exception:
+        return np.nan
+
+
 def opciones_columna(
     df: pd.DataFrame,
     col: str,
@@ -981,63 +924,6 @@ def aplicar_rango_numerico(
     return mask
 
 
-def formato_valor(valor: Any) -> str:
-    if pd.isna(valor):
-        return "-"
-
-    if isinstance(valor, pd.Timestamp):
-        return valor.strftime("%d-%m-%Y")
-
-    if isinstance(valor, float):
-        if np.isfinite(valor) and valor.is_integer():
-            return f"{int(valor):,}".replace(",", ".")
-
-        return (
-            f"{valor:,.1f}"
-            .replace(",", "X")
-            .replace(".", ",")
-            .replace("X", ".")
-        )
-
-    if isinstance(valor, int):
-        return f"{valor:,}".replace(",", ".")
-
-    return str(valor)
-
-
-def formato_id(valor: Any) -> str:
-    if pd.isna(valor):
-        return "-"
-
-    texto = str(valor).strip()
-
-    try:
-        numero = float(texto)
-
-        if np.isfinite(numero) and numero.is_integer():
-            return str(int(numero))
-
-    except Exception:
-        pass
-
-    if texto.endswith(".0"):
-        texto = texto[:-2]
-
-    return texto
-
-
-def valor_numerico(valor: Any) -> float:
-    try:
-        return float(
-            pd.to_numeric(
-                pd.Series([valor]),
-                errors="coerce",
-            ).iloc[0]
-        )
-    except Exception:
-        return np.nan
-
-
 def obtener_umbral_tat(row: pd.Series) -> float:
     umbral = valor_numerico(row.get(COL_UMBRAL_TAT, np.nan))
 
@@ -1088,7 +974,6 @@ def texto_dias_simple(dias: Any) -> str:
         return "Sin dato"
 
     dias_int = int(round(dias_num))
-
     return f"{dias_int:,} días".replace(",", ".")
 
 
@@ -1158,6 +1043,35 @@ def fecha_valida(row: pd.Series, columna: str):
     return pd.to_datetime(valor, errors="coerce")
 
 
+def nombre_fecha_faltante(columna: str) -> str:
+    mapa = {
+        "fecha_solicitud_final": "fecha de solicitud",
+        "fecha_liberacion_final": "fecha de liberación",
+        "fecha_pedido_final": "fecha de pedido",
+        "fecha_facturacion_final": "fecha de facturación",
+        "fecha_recepcion_final": "fecha de recepción",
+    }
+
+    return mapa.get(columna, "fecha pendiente")
+
+
+def texto_tat_total_usuario(performance: Any, dias_tat: Any) -> str:
+    estado = str(performance).strip().lower()
+
+    if (
+        estado == "en proceso"
+        and pd.isna(
+            pd.to_numeric(
+                pd.Series([dias_tat]),
+                errors="coerce",
+            ).iloc[0]
+        )
+    ):
+        return "En proceso"
+
+    return texto_dias_y_meses(dias_tat)
+
+
 def obtener_avance_pedido(row: pd.Series) -> dict[str, Any]:
     completadas = []
 
@@ -1201,7 +1115,6 @@ def obtener_avance_pedido(row: pd.Series) -> dict[str, Any]:
     )
 
     esta_cerrado = len(pendientes) == 0
-
     fecha_referencia = fecha_ultima
 
     if not esta_cerrado and pd.notna(fecha_inicio):
@@ -1232,35 +1145,6 @@ def obtener_avance_pedido(row: pd.Series) -> dict[str, Any]:
         "umbral_tat": umbral,
         "esta_cerrado": esta_cerrado,
     }
-
-
-def nombre_fecha_faltante(columna: str) -> str:
-    mapa = {
-        "fecha_solicitud_final": "fecha de solicitud",
-        "fecha_liberacion_final": "fecha de liberación",
-        "fecha_pedido_final": "fecha de pedido",
-        "fecha_facturacion_final": "fecha de facturación",
-        "fecha_recepcion_final": "fecha de recepción",
-    }
-
-    return mapa.get(columna, "fecha pendiente")
-
-
-def texto_tat_total_usuario(performance: Any, dias_tat: Any) -> str:
-    estado = str(performance).strip().lower()
-
-    if (
-        estado == "en proceso"
-        and pd.isna(
-            pd.to_numeric(
-                pd.Series([dias_tat]),
-                errors="coerce",
-            ).iloc[0]
-        )
-    ):
-        return "En proceso"
-
-    return texto_dias_y_meses(dias_tat)
 
 
 def diagnostico_avance(row: pd.Series) -> str:
@@ -1511,112 +1395,6 @@ def etapa_color(row: pd.Series, etapa: dict) -> str:
     return "gray"
 
 
-@st.cache_data(show_spinner=False)
-def dataframe_a_excel(df: pd.DataFrame) -> bytes:
-    output = io.BytesIO()
-
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df.to_excel(
-            writer,
-            index=False,
-            sheet_name="Resultado",
-        )
-
-    return output.getvalue()
-
-
-@st.cache_data(show_spinner=False)
-def dataframe_a_parquet(df: pd.DataFrame) -> bytes:
-    output = io.BytesIO()
-
-    df.to_parquet(
-        output,
-        index=False,
-        engine="pyarrow",
-    )
-
-    return output.getvalue()
-
-
-@st.cache_data(show_spinner=False)
-def dataframe_a_csv(df: pd.DataFrame) -> bytes:
-    return (
-        df.to_csv(
-            index=False,
-            encoding="utf-8-sig",
-        )
-        .encode("utf-8-sig")
-    )
-
-
-def construir_label_registro(row: pd.Series) -> str:
-    solped = row.get(COL_SOLPED, "-")
-    oc = row.get(COL_OC_ME5A, row.get(COL_OC_NME, "-"))
-    pos = row.get(COL_POS_SOLPED, "-")
-    perf = row.get(COL_PERF_TAT, "-")
-    dias = row.get(COL_DIAS_TAT, "-")
-    texto = str(row.get(COL_TEXTO, ""))[:55]
-
-    return (
-        f"SolPed {formato_id(solped)} | "
-        f"OC {formato_id(oc)} | "
-        f"Pos {formato_id(pos)} | "
-        f"TAT {texto_dias_y_meses(dias)} | "
-        f"{perf} | "
-        f"{texto}"
-    )
-
-
-def aplicar_estilo_tabla(df_tabla: pd.DataFrame):
-    def color_performance(valor):
-        texto = str(valor).strip().lower()
-
-        if texto == "cumple":
-            return "background-color: #dcfce7; color: #166534; font-weight: 700;"
-
-        if texto == "no cumple":
-            return "background-color: #fee2e2; color: #991b1b; font-weight: 700;"
-
-        if texto in ["en proceso", "sin datos"]:
-            return "background-color: #fef9c3; color: #854d0e; font-weight: 700;"
-
-        if "no aplica" in texto:
-            return "background-color: #f1f5f9; color: #475569; font-weight: 700;"
-
-        return ""
-
-    def color_incumplimiento(valor):
-        texto = str(valor).strip().lower()
-
-        if texto == "sin incumplimiento":
-            return "background-color: #dcfce7; color: #166534; font-weight: 700;"
-
-        if texto in ["0-5 días", "1-5 días", "6-15 días"]:
-            return "background-color: #fef9c3; color: #854d0e; font-weight: 700;"
-
-        if texto in ["16-30 días", "mayor a un mes"]:
-            return "background-color: #fee2e2; color: #991b1b; font-weight: 700;"
-
-        return ""
-
-    styler = df_tabla.style
-
-    for col in df_tabla.columns:
-        if col.startswith("performance_") or col == COL_PERF_TAT:
-            styler = styler.map(
-                color_performance,
-                subset=[col],
-            )
-
-        if col == COL_RANGO_INC:
-            styler = styler.map(
-                color_incumplimiento,
-                subset=[col],
-            )
-
-    return styler
-
-
 def html_estado_pedido(row: pd.Series) -> str:
     cards = []
 
@@ -1860,6 +1638,112 @@ def html_estado_pedido(row: pd.Series) -> str:
     </body>
     </html>
     """
+
+
+@st.cache_data(show_spinner=False)
+def dataframe_a_excel(df: pd.DataFrame) -> bytes:
+    output = io.BytesIO()
+
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(
+            writer,
+            index=False,
+            sheet_name="Resultado",
+        )
+
+    return output.getvalue()
+
+
+@st.cache_data(show_spinner=False)
+def dataframe_a_parquet(df: pd.DataFrame) -> bytes:
+    output = io.BytesIO()
+
+    df.to_parquet(
+        output,
+        index=False,
+        engine="pyarrow",
+    )
+
+    return output.getvalue()
+
+
+@st.cache_data(show_spinner=False)
+def dataframe_a_csv(df: pd.DataFrame) -> bytes:
+    return (
+        df.to_csv(
+            index=False,
+            encoding="utf-8-sig",
+        )
+        .encode("utf-8-sig")
+    )
+
+
+def construir_label_registro(row: pd.Series) -> str:
+    solped = row.get(COL_SOLPED, "-")
+    oc = row.get(COL_OC_ME5A, row.get(COL_OC_NME, "-"))
+    pos = row.get(COL_POS_SOLPED, "-")
+    perf = row.get(COL_PERF_TAT, "-")
+    dias = row.get(COL_DIAS_TAT, "-")
+    texto = str(row.get(COL_TEXTO, ""))[:55]
+
+    return (
+        f"SolPed {formato_id(solped)} | "
+        f"OC {formato_id(oc)} | "
+        f"Pos {formato_id(pos)} | "
+        f"TAT {texto_dias_y_meses(dias)} | "
+        f"{perf} | "
+        f"{texto}"
+    )
+
+
+def aplicar_estilo_tabla(df_tabla: pd.DataFrame):
+    def color_performance(valor):
+        texto = str(valor).strip().lower()
+
+        if texto == "cumple":
+            return "background-color: #dcfce7; color: #166534; font-weight: 700;"
+
+        if texto == "no cumple":
+            return "background-color: #fee2e2; color: #991b1b; font-weight: 700;"
+
+        if texto in ["en proceso", "sin datos"]:
+            return "background-color: #fef9c3; color: #854d0e; font-weight: 700;"
+
+        if "no aplica" in texto:
+            return "background-color: #f1f5f9; color: #475569; font-weight: 700;"
+
+        return ""
+
+    def color_incumplimiento(valor):
+        texto = str(valor).strip().lower()
+
+        if texto == "sin incumplimiento":
+            return "background-color: #dcfce7; color: #166534; font-weight: 700;"
+
+        if texto in ["0-5 días", "1-5 días", "6-15 días"]:
+            return "background-color: #fef9c3; color: #854d0e; font-weight: 700;"
+
+        if texto in ["16-30 días", "mayor a un mes"]:
+            return "background-color: #fee2e2; color: #991b1b; font-weight: 700;"
+
+        return ""
+
+    styler = df_tabla.style
+
+    for col in df_tabla.columns:
+        if col.startswith("performance_") or col == COL_PERF_TAT:
+            styler = styler.map(
+                color_performance,
+                subset=[col],
+            )
+
+        if col == COL_RANGO_INC:
+            styler = styler.map(
+                color_incumplimiento,
+                subset=[col],
+            )
+
+    return styler
 
 
 # =========================================================
@@ -2274,7 +2158,7 @@ df_filtrado = df.loc[mask].copy()
 
 
 # =========================================================
-# Indicadores generales
+# Indicadores generales corregidos
 # =========================================================
 total_inicial = len(df)
 total_filtrado = len(df_filtrado)
@@ -2288,7 +2172,7 @@ porcentaje_filtrado = (
 if COL_PERF_TAT in df_filtrado.columns and total_filtrado:
     serie_perf = (
         df_filtrado[COL_PERF_TAT]
-        .fillna("Sin dato")
+        .fillna("")
         .astype(str)
         .str.strip()
         .str.lower()
@@ -2296,12 +2180,23 @@ if COL_PERF_TAT in df_filtrado.columns and total_filtrado:
 
     total_cumple = serie_perf.eq("cumple").sum()
     total_no_cumple = serie_perf.eq("no cumple").sum()
+    total_evaluados = total_cumple + total_no_cumple
 
-    pct_cumple = total_cumple / total_filtrado * 100
-    pct_no_cumple = total_no_cumple / total_filtrado * 100
+    pct_cumple = (
+        total_cumple / total_evaluados * 100
+        if total_evaluados
+        else 0
+    )
+
+    pct_no_cumple = (
+        total_no_cumple / total_evaluados * 100
+        if total_evaluados
+        else 0
+    )
 else:
     total_cumple = 0
     total_no_cumple = 0
+    total_evaluados = 0
     pct_cumple = 0
     pct_no_cumple = 0
 
@@ -2310,29 +2205,29 @@ st.markdown(
     <div class="kpi-wrap">
         <div class="kpi-card kpi-blue">
             <div class="kpi-label">Registros iniciales</div>
-            <div class="kpi-value">{total_inicial:,}</div>
+            <div class="kpi-value">{formato_entero_es(total_inicial)}</div>
             <div class="kpi-note">Total cargado en el archivo base</div>
         </div>
 
         <div class="kpi-card kpi-slate">
             <div class="kpi-label">Registros filtrados</div>
-            <div class="kpi-value">{total_filtrado:,}</div>
-            <div class="kpi-note">{porcentaje_filtrado:.1f}% del archivo inicial</div>
+            <div class="kpi-value">{formato_entero_es(total_filtrado)}</div>
+            <div class="kpi-note">{formato_pct_es(porcentaje_filtrado)} del archivo inicial</div>
         </div>
 
         <div class="kpi-card kpi-green">
             <div class="kpi-label">% cumplimiento</div>
-            <div class="kpi-value">{pct_cumple:.1f}%</div>
-            <div class="kpi-note">Performance TAT = Cumple</div>
+            <div class="kpi-value">{formato_pct_es(pct_cumple)}</div>
+            <div class="kpi-note">{formato_entero_es(total_cumple)} de {formato_entero_es(total_evaluados)} registros evaluados</div>
         </div>
 
         <div class="kpi-card kpi-red">
             <div class="kpi-label">% incumplimiento</div>
-            <div class="kpi-value">{pct_no_cumple:.1f}%</div>
-            <div class="kpi-note">Performance TAT = No cumple</div>
+            <div class="kpi-value">{formato_pct_es(pct_no_cumple)}</div>
+            <div class="kpi-note">{formato_entero_es(total_no_cumple)} de {formato_entero_es(total_evaluados)} registros evaluados</div>
         </div>
     </div>
-    """.replace(",", "."),
+    """,
     unsafe_allow_html=True,
 )
 
@@ -2458,14 +2353,6 @@ else:
         """
     ).strip()
 
-    # =====================================================
-    # NUEVO ORDEN VISUAL:
-    # 1. Línea de pedido
-    # 2. Datos principales
-    # 3. TAT
-    # 4. Avance actual
-    # 5. Estado por etapas
-    # =====================================================
     st.markdown(
         html_linea_pedido(row),
         unsafe_allow_html=True,
