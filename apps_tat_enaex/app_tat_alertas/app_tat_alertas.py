@@ -954,7 +954,8 @@ st.markdown(
             }
 
             .exp-main-grid,
-            .exp-kpi-grid {
+            .exp-kpi-grid,
+            .exp-kpi-grid-5 {
                 grid-template-columns: 1fr;
             }
 
@@ -1787,20 +1788,29 @@ def html_resumen_pedido_expediente(row: pd.Series) -> str:
 
 
 def html_kpis_expediente(row: pd.Series) -> str:
-    dias_restantes = row.get("dias_restantes_tat", np.nan)
+    estado_pedido = row.get("clasificacion_vencimiento", np.nan)
     fecha_vencimiento = row.get("fecha_vencimiento_texto", np.nan)
+    fuente_vencimiento = row.get("fuente_calculo_vencimiento", np.nan)
+    tiempo_transcurrido = row.get("tiempo_transcurrido_tat", np.nan)
+    exceso_umbral = row.get("tiempo_excedido_umbral_texto", np.nan)
+
     return dedent(
         f"""
-        <div class="exp-kpi-grid">
+        <div class="exp-kpi-grid exp-kpi-grid-5">
             <div class="exp-kpi-card exp-kpi-card-primary">
-                <div class="exp-kpi-label">Días hasta vencimiento</div>
-                <div class="exp-kpi-value">{html_texto(row.get('clasificacion_vencimiento', np.nan))}</div>
-                <div class="exp-kpi-note">Fecha vencimiento: {html_texto(fecha_vencimiento)}</div>
+                <div class="exp-kpi-label">Estado pedido</div>
+                <div class="exp-kpi-value">{html_texto(estado_pedido)}</div>
+                <div class="exp-kpi-note">Fecha vencimiento: {html_texto(fecha_vencimiento)} · {html_texto(fuente_vencimiento)}</div>
             </div>
             <div class="exp-kpi-card exp-kpi-card-primary">
-                <div class="exp-kpi-label">Días restantes</div>
-                <div class="exp-kpi-value">{escape(formato_dias_restantes_operativo(dias_restantes))}</div>
-                <div class="exp-kpi-note">Contra umbral TAT total</div>
+                <div class="exp-kpi-label">Tiempo desde inicio del pedido</div>
+                <div class="exp-kpi-value">{html_texto(tiempo_transcurrido)}</div>
+                <div class="exp-kpi-note">Desde la fecha de solicitud hasta recepción o hasta hoy</div>
+            </div>
+            <div class="exp-kpi-card exp-kpi-card-primary">
+                <div class="exp-kpi-label">Tiempo pasado del umbral</div>
+                <div class="exp-kpi-value">{html_texto(exceso_umbral)}</div>
+                <div class="exp-kpi-note">Exceso sobre el umbral TAT total</div>
             </div>
             <div class="exp-kpi-card">
                 <div class="exp-kpi-label">Última etapa registrada</div>
@@ -1815,7 +1825,6 @@ def html_kpis_expediente(row: pd.Series) -> str:
         </div>
         """
     ).strip()
-
 
 def _estado_visual_etapa_tat(row: pd.Series, etapa: dict, indice: int, indice_activo: int) -> tuple[str, str]:
     fecha_col = etapa.get("fecha")
@@ -1863,7 +1872,7 @@ def html_diagrama_tat_unificado(row: pd.Series) -> str:
                 f"""
                 <div class="tat-flow-step">
                     <div class="tat-flow-dot {dot_class}">{escape(icono)}</div>
-                    <div class="tat-flow-label">{escape(str(etapa.get('titulo', '')).split('. ', 1)[-1])}</div>
+                    <div class="tat-flow-label">{escape(str(etapa.get('titulo', '')))}</div>
                     <div class="tat-flow-date">{escape(fecha_txt)}</div>
                     <div class="tat-flow-detail">{escape(detalle)}</div>
                 </div>
@@ -3106,8 +3115,39 @@ def preparar_panel_tat_rapido(df_original: pd.DataFrame, hoy: pd.Timestamp) -> p
     umbral = umbral.mask(umbral.isna() & tipo_oc.eq("47"), 70)
     df_base["umbral_tat_calculado"] = umbral
 
-    df_base["fecha_vencimiento_tat"] = (
+    # Fecha de vencimiento TAT.
+    # Regla principal: fecha de solicitud + umbral TAT total.
+    # Regla paralela confirmada por negocio: si no existe fecha de solicitud,
+    # pero sí existe fecha_pedido_final, usar fecha_pedido_final + umbral TAT total.
+    # Para otras fechas intermedias no se aplica esta lógica.
+    fecha_pedido_base = _primera_columna_existente(
+        df_base,
+        ["fecha_pedido_final", "Fecha de pedido - ME5A"],
+    )
+    df_base["fecha_pedido_base_vencimiento"] = pd.to_datetime(fecha_pedido_base, errors="coerce")
+
+    fecha_vencimiento_solicitud = (
         df_base["fecha_inicio_tat"] + pd.to_timedelta(df_base["umbral_tat_calculado"], unit="D")
+    )
+    fecha_vencimiento_pedido = (
+        df_base["fecha_pedido_base_vencimiento"] + pd.to_timedelta(df_base["umbral_tat_calculado"], unit="D")
+    )
+
+    usar_vencimiento_desde_pedido = fecha_vencimiento_solicitud.isna() & fecha_vencimiento_pedido.notna()
+    df_base["fecha_vencimiento_tat"] = fecha_vencimiento_solicitud.where(
+        ~usar_vencimiento_desde_pedido,
+        fecha_vencimiento_pedido,
+    )
+    df_base["fuente_calculo_vencimiento"] = np.select(
+        [
+            fecha_vencimiento_solicitud.notna(),
+            usar_vencimiento_desde_pedido,
+        ],
+        [
+            "Calculado desde fecha de solicitud",
+            "Estimado desde fecha de pedido",
+        ],
+        default="Sin fecha calculable",
     )
     df_base["fecha_vencimiento_texto"] = _formatear_fecha_serie(df_base["fecha_vencimiento_tat"])
     df_base["dias_restantes_int"] = (
@@ -3120,6 +3160,16 @@ def preparar_panel_tat_rapido(df_original: pd.DataFrame, hoy: pd.Timestamp) -> p
         fecha_fin_referencia - df_base["fecha_inicio_tat"]
     ).dt.days.astype("Int64")
     df_base["tiempo_transcurrido_tat"] = df_base["tiempo_transcurrido_tat_dias"].apply(formato_tiempo_transcurrido)
+
+    exceso_umbral = (
+        df_base["tiempo_transcurrido_tat_dias"].astype("float64")
+        - df_base["umbral_tat_calculado"].astype("float64")
+    )
+    exceso_umbral = exceso_umbral.where(exceso_umbral.gt(0), 0)
+    df_base["tiempo_excedido_umbral_dias"] = exceso_umbral
+    df_base["tiempo_excedido_umbral_texto"] = exceso_umbral.apply(
+        lambda x: "Dentro del umbral" if pd.notna(x) and float(x) <= 0 else formato_tiempo_transcurrido(x)
+    )
 
     dias = df_base["dias_restantes_int"].astype("float64")
     condiciones = [
@@ -3878,6 +3928,24 @@ st.info(
     f"La diferencia entre los filtrados y los grupos principales se explica en la conciliación: "
     f"**{otros_casos:,} otros casos**."
     .replace(",", ".")
+)
+
+# Pregunta adicional: SolPed sin pedido.
+oc_me5a = _serie_texto(df_filtrado, COL_OC_ME5A).str.strip()
+oc_nme = _serie_texto(df_filtrado, COL_OC_NME).str.strip()
+valores_sin_pedido = {"", "-", "nan", "none", "nat", "0", "0.0"}
+sin_pedido_mask = oc_me5a.str.lower().isin(valores_sin_pedido) & oc_nme.str.lower().isin(valores_sin_pedido)
+sin_pedido_cantidad = int(sin_pedido_mask.sum())
+con_pedido_cantidad = int(filtrados - sin_pedido_cantidad)
+sin_pedido_pct = (sin_pedido_cantidad / filtrados * 100) if filtrados else 0
+
+sp1, sp2, sp3 = st.columns(3)
+sp1.metric("SolPed sin pedido", f"{sin_pedido_cantidad:,}".replace(",", "."))
+sp2.metric("% SolPed sin pedido", f"{sin_pedido_pct:,.1f}%".replace(",", "X").replace(".", ",").replace("X", "."))
+sp3.metric("SolPed con pedido", f"{con_pedido_cantidad:,}".replace(",", "."))
+st.caption(
+    "Esta respuesta considera como SolPed sin pedido aquellos registros filtrados sin valor en Pedido - ME5A y sin valor en Documento de compras - NME80FN. "
+    "En esos casos puede no existir tipo de OC asociado al pedido."
 )
 
 filtros_resumen = pd.DataFrame(
