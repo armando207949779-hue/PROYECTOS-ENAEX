@@ -849,7 +849,7 @@ def grafico_temporal_porcentual_performance(df: pd.DataFrame):
     plot = pd.concat(registros, ignore_index=True)
     plot = plot.sort_values(["periodo_fecha", "Planta"]).copy()
 
-    chart = (
+    linea_performance = (
         alt.Chart(plot)
         .mark_line(point=True, strokeWidth=3)
         .encode(
@@ -877,8 +877,6 @@ def grafico_temporal_porcentual_performance(df: pd.DataFrame):
                 alt.Tooltip("Total:Q", title="Total evaluable", format=",.0f"),
             ],
         )
-        .properties(height=300)
-        .configure_view(strokeWidth=0)
     )
 
     linea_meta = (
@@ -891,7 +889,13 @@ def grafico_temporal_porcentual_performance(df: pd.DataFrame):
         .encode(y=alt.Y("Meta:Q"))
     )
 
-    st.altair_chart(chart + linea_meta, use_container_width=True)
+    chart = (
+        (linea_performance + linea_meta)
+        .properties(height=300)
+        .configure_view(strokeWidth=0)
+    )
+
+    st.altair_chart(chart, use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
 
