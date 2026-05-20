@@ -812,6 +812,89 @@ def grafico_mensual_100_plantas(tabla: pd.DataFrame, titulo: str):
     st.markdown("</div>", unsafe_allow_html=True)
 
 
+def grafico_temporal_porcentual_performance(df: pd.DataFrame):
+    st.markdown("<div class='chart-card'>", unsafe_allow_html=True)
+    st.markdown("<div class='chart-title'>Performance temporal porcentual</div>", unsafe_allow_html=True)
+    st.markdown(
+        """
+        <div class='chart-caption'>
+            Evolución mensual del porcentaje de cumplimiento por planta.
+            Eje temporal: fecha_recepcion_final.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    registros = []
+
+    for grupo in ["Prillex", "Rio Loa", "Plantas de servicios"]:
+        tabla = crear_resumen_mensual_grupo(df, grupo)
+
+        if tabla.empty:
+            continue
+
+        tabla = tabla[tabla["Total"].gt(0)].copy()
+
+        if tabla.empty:
+            continue
+
+        tabla["Planta"] = grupo
+        registros.append(tabla)
+
+    if not registros:
+        st.info("No hay datos evaluables para visualizar la tendencia porcentual.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    plot = pd.concat(registros, ignore_index=True)
+    plot = plot.sort_values(["periodo_fecha", "Planta"]).copy()
+
+    chart = (
+        alt.Chart(plot)
+        .mark_line(point=True, strokeWidth=3)
+        .encode(
+            x=alt.X(
+                "periodo_fecha:T",
+                title="Mes recepción",
+                axis=alt.Axis(format="%b %Y", labelAngle=0),
+            ),
+            y=alt.Y(
+                "% Cumple:Q",
+                title="% Cumplimiento",
+                scale=alt.Scale(domain=[0, 100]),
+                axis=alt.Axis(labelExpr="datum.value + '%'"),
+            ),
+            color=alt.Color(
+                "Planta:N",
+                legend=alt.Legend(title=None, orient="top", direction="horizontal"),
+            ),
+            tooltip=[
+                alt.Tooltip("periodo_label:N", title="Mes recepción"),
+                alt.Tooltip("Planta:N", title="Planta"),
+                alt.Tooltip("% Cumple:Q", title="% Cumplimiento", format=".1f"),
+                alt.Tooltip("Cumple:Q", title="Cumple", format=",.0f"),
+                alt.Tooltip("No cumple:Q", title="No cumple", format=",.0f"),
+                alt.Tooltip("Total:Q", title="Total evaluable", format=",.0f"),
+            ],
+        )
+        .properties(height=300)
+        .configure_view(strokeWidth=0)
+    )
+
+    linea_meta = (
+        alt.Chart(pd.DataFrame({"Meta": [META_CUMPLIMIENTO]}))
+        .mark_rule(
+            color=COLOR_META,
+            strokeDash=[6, 4],
+            strokeWidth=2,
+        )
+        .encode(y=alt.Y("Meta:Q"))
+    )
+
+    st.altair_chart(chart + linea_meta, use_container_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
 def mostrar_kpis_plantas(df: pd.DataFrame):
     kpis = resumen_kpis_plantas(df)
 
@@ -958,6 +1041,23 @@ def calcular_mejor_planta(df: pd.DataFrame):
     return kpis.sort_values(
         ["% Cumple", "Total evaluable"],
         ascending=[False, False],
+    ).iloc[0]
+
+
+def calcular_peor_planta(df: pd.DataFrame):
+    kpis = resumen_kpis_plantas(df)
+
+    if kpis.empty:
+        return None
+
+    kpis = kpis[kpis["Total evaluable"].gt(0)].copy()
+
+    if kpis.empty:
+        return None
+
+    return kpis.sort_values(
+        ["% Cumple", "Total evaluable"],
+        ascending=[True, False],
     ).iloc[0]
 
 
@@ -1244,8 +1344,8 @@ try:
         pct_cumple_tat = cumple_tat / evaluables_tat * 100 if evaluables_tat else 0
 
         mejor_planta = calcular_mejor_planta(df_dashboard)
+        peor_planta = calcular_peor_planta(df_dashboard)
         mejor_mes = calcular_mejor_mes_planta(df_dashboard)
-        tabla_cumplimiento_plantas = resumen_cumplimiento_plantas(df_dashboard)
 
         k1, k2, k3, k4 = st.columns(4)
 
@@ -1293,6 +1393,8 @@ try:
                     titulo,
                 )
 
+        grafico_temporal_porcentual_performance(df_dashboard)
+
         st.divider()
 
         section_header(
@@ -1300,7 +1402,7 @@ try:
             "Resumen automático de las preguntas principales del dashboard.",
         )
 
-        r1, r2 = st.columns(2)
+        r1, r2, r3 = st.columns(3)
 
         with r1:
             if mejor_planta is not None:
@@ -1316,6 +1418,19 @@ try:
                 card_metric("Mejor planta promedio", "Sin datos", "No hay registros evaluables.")
 
         with r2:
+            if peor_planta is not None:
+                card_metric(
+                    "Peor planta promedio",
+                    str(peor_planta["grupo_planta"]),
+                    (
+                        f"{float(peor_planta['% Cumple']):.1f}% cumplimiento · "
+                        f"Total evaluable: {int(peor_planta['Total evaluable']):,}"
+                    ),
+                )
+            else:
+                card_metric("Peor planta promedio", "Sin datos", "No hay registros evaluables.")
+
+        with r3:
             if mejor_mes is not None:
                 card_metric(
                     "Mejor mes y planta",
@@ -1343,11 +1458,7 @@ try:
         )
 
         st.markdown("**Cumplimiento a nivel plantas**")
-        st.dataframe(
-            tabla_cumplimiento_plantas,
-            use_container_width=True,
-            hide_index=True,
-        )
+        mostrar_kpis_plantas(df_dashboard)
 
         if mostrar_diagnostico_check:
             mostrar_diagnostico(df_dashboard)
