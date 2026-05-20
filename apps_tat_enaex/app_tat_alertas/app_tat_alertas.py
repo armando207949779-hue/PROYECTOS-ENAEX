@@ -2383,6 +2383,53 @@ def formato_numero_corto(valor: Any, decimales: int = 0) -> str:
     return f"{numero:,.{decimales}f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+def formato_tiempo_transcurrido(dias: Any) -> str:
+    """Muestra días, meses o años según magnitud.
+
+    Reglas solicitadas:
+    - Hasta 30 días: días.
+    - Sobre 30 días: meses aproximados.
+    - Sobre 12 meses: años aproximados.
+    """
+    valor = valor_numerico(dias)
+    if pd.isna(valor):
+        return "Sin dato"
+
+    signo = "-" if valor < 0 else ""
+    abs_dias = abs(float(valor))
+
+    if abs_dias <= 30:
+        return f"{signo}{int(round(abs_dias)):,} días".replace(",", ".")
+
+    meses = abs_dias / 30.44
+    if meses <= 12:
+        return (
+            f"{signo}{meses:,.1f} meses"
+            .replace(",", "X")
+            .replace(".", ",")
+            .replace("X", ".")
+        )
+
+    anos = meses / 12
+    return (
+        f"{signo}{anos:,.1f} años"
+        .replace(",", "X")
+        .replace(".", ",")
+        .replace("X", ".")
+    )
+
+
+def formato_dias_restantes_operativo(dias: Any) -> str:
+    valor = valor_numerico(dias)
+    if pd.isna(valor):
+        return "Sin dato"
+    if valor < 0:
+        return f"Vencido hace {formato_tiempo_transcurrido(abs(valor))}"
+    if valor == 0:
+        return "Vence hoy"
+    return f"Vence en {formato_tiempo_transcurrido(valor)}"
+
+
 def resumen_caso_para_copiar(row: pd.Series) -> str:
     oc = row.get(COL_OC_ME5A, row.get(COL_OC_NME, np.nan))
     dias_restantes = valor_numerico(row.get("dias_restantes_tat", np.nan))
@@ -2653,6 +2700,13 @@ def preparar_panel_tat_rapido(df_original: pd.DataFrame, hoy: pd.Timestamp) -> p
     df_base["dias_restantes_int"] = (
         df_base["fecha_vencimiento_tat"] - hoy
     ).dt.days.astype("Int64")
+    df_base["dias_restantes_texto"] = df_base["dias_restantes_int"].apply(formato_dias_restantes_operativo)
+
+    fecha_fin_referencia = fecha_recepcion_dt.where(fecha_recepcion_dt.notna(), hoy)
+    df_base["tiempo_transcurrido_tat_dias"] = (
+        fecha_fin_referencia - df_base["fecha_inicio_tat"]
+    ).dt.days.astype("Int64")
+    df_base["tiempo_transcurrido_tat"] = df_base["tiempo_transcurrido_tat_dias"].apply(formato_tiempo_transcurrido)
 
     dias = df_base["dias_restantes_int"].astype("float64")
     condiciones = [
@@ -2953,7 +3007,7 @@ def aplicar_estilo_conciliacion(df_tabla: pd.DataFrame):
                 "background-color:#f1f5f9; color:#0f172a; font-weight:900; border-top:2px solid #94a3b8;"
             ] * len(row)
 
-        if "vencidos" in grupo:
+        if grupo.startswith("vencidos y"):
             return [
                 "background-color:#fee2e2; color:#991b1b; font-weight:800;"
             ] * len(row)
@@ -3038,6 +3092,8 @@ def tabla_resumen_filtrada(df_base: pd.DataFrame) -> pd.DataFrame:
             COL_OC_ME5A,
             COL_POS_OC,
             "clasificacion_vencimiento",
+            "dias_restantes_texto",
+            "tiempo_transcurrido_tat",
             "dias_restantes_int",
             # Columnas complementarias para gestión.
             COL_OC_NME,
@@ -3065,7 +3121,9 @@ def tabla_resumen_filtrada(df_base: pd.DataFrame) -> pd.DataFrame:
             COL_OC_ME5A: "Pedido",
             COL_POS_OC: "Posición pedido",
             "clasificacion_vencimiento": "Días hasta vencimiento",
-            "dias_restantes_int": "Días restantes",
+            "dias_restantes_texto": "Días restantes",
+            "tiempo_transcurrido_tat": "Tiempo transcurrido",
+            "dias_restantes_int": "Días restantes numérico",
             COL_OC_NME: "Documento compras NME",
             COL_POS_SOLPED: "Posición solicitud de pedido",
             "fecha_vencimiento_texto": "Fecha de vencimiento",
@@ -3140,6 +3198,7 @@ def construir_zoom_sin_fecha_sin_recepcion(df_base: pd.DataFrame) -> pd.DataFram
             "ultima_etapa_registrada",
             "ultima_fecha_registrada",
             "fecha_pendiente",
+            "tiempo_transcurrido_tat",
             "fecha_inicio_tat",
             COL_UMBRAL_TAT,
             "umbral_tat_calculado",
@@ -3164,6 +3223,7 @@ def construir_zoom_sin_fecha_sin_recepcion(df_base: pd.DataFrame) -> pd.DataFram
             "ultima_etapa_registrada": "Última etapa registrada",
             "ultima_fecha_registrada": "Fecha última registrada",
             "fecha_pendiente": "Fecha pendiente",
+            "tiempo_transcurrido_tat": "Tiempo transcurrido",
             "fecha_inicio_tat": "Fecha inicio TAT",
             COL_UMBRAL_TAT: "Umbral TAT original",
             "umbral_tat_calculado": "Umbral TAT usado",
@@ -3177,6 +3237,48 @@ def construir_zoom_sin_fecha_sin_recepcion(df_base: pd.DataFrame) -> pd.DataFram
             COL_SISTEMA: "Sistema",
         }
     )
+
+
+
+def construir_distribucion_porcentual(
+    df_base: pd.DataFrame,
+    columna: str,
+    nombre_columna: str,
+) -> pd.DataFrame:
+    if df_base.empty or columna not in df_base.columns:
+        return pd.DataFrame(columns=[nombre_columna, "Cantidad", "% del total"])
+
+    total = len(df_base)
+    conteo = (
+        df_base[columna]
+        .fillna("Sin dato")
+        .astype(str)
+        .value_counts(dropna=False)
+        .rename_axis(nombre_columna)
+        .reset_index(name="Cantidad")
+    )
+    conteo["% del total"] = np.where(total > 0, conteo["Cantidad"] / total * 100, 0)
+    conteo["% del total"] = conteo["% del total"].map(
+        lambda x: f"{x:,.1f}%".replace(",", "X").replace(".", ",").replace("X", ".")
+    )
+    return conteo
+
+
+def detalle_proximos_sin_recepcion(df_base: pd.DataFrame) -> pd.DataFrame:
+    if df_base.empty:
+        return pd.DataFrame()
+
+    estado_recepcion = (
+        df_base[COL_ESTADO_RECEPCION_ALERTA].astype(str)
+        if COL_ESTADO_RECEPCION_ALERTA in df_base.columns
+        else pd.Series("Sin recepción", index=df_base.index)
+    )
+    dias = pd.to_numeric(
+        df_base.get("dias_restantes_int", pd.Series(np.nan, index=df_base.index)),
+        errors="coerce",
+    )
+    detalle = df_base.loc[estado_recepcion.eq("Sin recepción") & dias.between(0, 30, inclusive="both")].copy()
+    return tabla_resumen_filtrada(detalle) if not detalle.empty else pd.DataFrame()
 
 
 
@@ -3204,6 +3306,27 @@ st.success(f"Archivo activo: {nombre_archivo}")
 
 
 # =========================================================
+# Preguntas sobre el total de datos
+# =========================================================
+st.markdown("### Radiografía del archivo completo")
+
+centros_dist = construir_distribucion_porcentual(df_panel, COL_CENTRO, "Centro")
+recepcion_dist_total = construir_distribucion_porcentual(df_panel, COL_ESTADO_RECEPCION_ALERTA, "Recepción")
+
+col_total_1, col_total_2 = st.columns(2)
+with col_total_1:
+    cantidad_centros = centros_dist["Centro"].nunique() if not centros_dist.empty else 0
+    st.metric("Centros en el archivo", f"{cantidad_centros:,}".replace(",", "."))
+    with st.expander("Distribución porcentual por centro · total de datos", expanded=False):
+        st.dataframe(centros_dist, use_container_width=True, hide_index=True)
+
+with col_total_2:
+    st.metric("Datos totales", f"{total_archivo:,}".replace(",", "."))
+    with st.expander("Distribución porcentual Recepción / Sin recepción · total de datos", expanded=False):
+        st.dataframe(recepcion_dist_total, use_container_width=True, hide_index=True)
+
+
+# =========================================================
 # Filtros en formulario para evitar recálculos por cada cambio
 # =========================================================
 st.markdown("### Filtros")
@@ -3221,7 +3344,7 @@ with st.form("form_filtros_panel_unico"):
         recepcion_sel = st.selectbox(
             "Filtro 2 · Recepción",
             ["Todos", "Sin recepción", "Recepcionado"],
-            index=0,
+            index=1,
         )
 
     with f3:
@@ -3364,12 +3487,12 @@ with st.expander("Ver filtros aplicados", expanded=False):
 
 
 # =========================================================
-# Conciliación del total filtrado
+# Resumen consolidado: conciliación + vencimientos
 # =========================================================
-st.markdown("#### Conciliación del total filtrado")
+st.markdown("#### Resumen consolidado del total filtrado")
 st.caption(
-    "Esta tabla explica a qué corresponde la diferencia entre el total filtrado y los grupos principales "
-    "de vencidos/recepcionados, vencidos/sin recepción y próximos a vencer."
+    "Unifica la conciliación del total filtrado con los vencidos sin recepción y los próximos a vencer. "
+    "Los casos próximos a vencer consideran pedidos sin recepción entre hoy y 30 días."
 )
 
 df_conciliacion = construir_conciliacion(df_filtrado)
@@ -3396,85 +3519,110 @@ if suma_conciliacion != filtrados:
         .replace(",", ".")
     )
 
-
-# =========================================================
-# Vencidos y próximos a vencer sin recepción
-# =========================================================
-st.markdown("#### Vencidos sin recepción y próximos a vencer")
-st.caption(
-    "Incluye solo pedidos sin recepción. La fecha de vencimiento se calcula como fecha de solicitud + umbral TAT. "
-    "Los pedidos recepcionados se consideran cerrados para esta sección."
-)
-
 df_vencimientos = construir_vencimientos_sin_recepcion(df_filtrado, hoy)
-st.dataframe(df_vencimientos, use_container_width=True, hide_index=True)
+with st.expander("Detalle anidado · Vencidos y próximos a vencer sin recepción", expanded=False):
+    st.caption(
+        "Incluye solo pedidos sin recepción. La fecha de vencimiento se calcula como fecha de solicitud + umbral TAT. "
+        "Los pedidos recepcionados se consideran cerrados para este detalle."
+    )
+    st.dataframe(df_vencimientos, use_container_width=True, hide_index=True)
+
+
+# =========================================================
+# Alerta y descarga de próximos a vencer sin recepción
+# =========================================================
+df_proximos_sin_recepcion_detalle = detalle_proximos_sin_recepcion(df_filtrado)
+cantidad_proximos_alerta = len(df_proximos_sin_recepcion_detalle)
+
+if cantidad_proximos_alerta > 0:
+    st.error(
+        f"ALERTA: hay {cantidad_proximos_alerta:,} registros próximos a vencer sin recepción entre hoy y 30 días."
+        .replace(",", ".")
+    )
+    a1, a2 = st.columns(2)
+    with a1:
+        st.download_button(
+            "Descargar próximos a vencer CSV",
+            data=dataframe_a_csv(df_proximos_sin_recepcion_detalle),
+            file_name="proximos_a_vencer_sin_recepcion.csv",
+            mime="text/csv",
+        )
+    with a2:
+        st.download_button(
+            "Descargar próximos a vencer Excel",
+            data=dataframe_a_excel(df_proximos_sin_recepcion_detalle),
+            file_name="proximos_a_vencer_sin_recepcion.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+else:
+    st.success("No hay registros próximos a vencer sin recepción entre hoy y 30 días con los filtros actuales.")
 
 
 # =========================================================
 # Zoom: sin fecha de vencimiento calculable y sin recepción
 # =========================================================
-st.markdown("#### Zoom · Sin fecha de vencimiento calculable y sin recepción")
-st.caption(
-    "Detalle de pedidos abiertos donde no fue posible calcular fecha de vencimiento. "
-    "Normalmente ocurre porque falta fecha de solicitud, falta umbral TAT o el tipo OC no permite inferir el umbral."
-)
-
 df_zoom_sin_fecha = construir_zoom_sin_fecha_sin_recepcion(df_filtrado)
 
-if df_zoom_sin_fecha.empty:
-    st.success("No hay pedidos sin fecha de vencimiento calculable y sin recepción con los filtros actuales.")
-else:
-    z1, z2 = st.columns([1, 3])
-    z1.metric(
-        "Casos sin fecha calculable",
-        f"{len(df_zoom_sin_fecha):,}".replace(",", "."),
-    )
-    z2.info(
-        "Estos casos no entran en vencidos ni próximos a vencer porque no tienen fecha de vencimiento TAT calculable. "
-        "Revise el motivo para corregir el dato de origen."
+with st.expander("Zoom · Sin fecha de vencimiento calculable y sin recepción", expanded=False):
+    st.caption(
+        "Detalle de pedidos abiertos donde no fue posible calcular fecha de vencimiento. "
+        "Normalmente ocurre porque falta fecha de solicitud, falta umbral TAT o el tipo OC no permite inferir el umbral."
     )
 
-    limite_zoom = st.number_input(
-        "Filas visibles en zoom sin fecha",
-        min_value=25,
-        max_value=2000,
-        value=min(300, max(25, len(df_zoom_sin_fecha))),
-        step=25,
-    )
+    if df_zoom_sin_fecha.empty:
+        st.success("No hay pedidos sin fecha de vencimiento calculable y sin recepción con los filtros actuales.")
+    else:
+        z1, z2 = st.columns([1, 3])
+        z1.metric(
+            "Casos sin fecha calculable",
+            f"{len(df_zoom_sin_fecha):,}".replace(",", "."),
+        )
+        z2.info(
+            "Estos casos no entran en vencidos ni próximos a vencer porque no tienen fecha de vencimiento TAT calculable. "
+            "Revise el motivo para corregir el dato de origen."
+        )
 
-    st.dataframe(
-        df_zoom_sin_fecha.head(int(limite_zoom)),
-        use_container_width=True,
-        hide_index=True,
-    )
+        limite_zoom = st.number_input(
+            "Filas visibles en zoom sin fecha",
+            min_value=25,
+            max_value=2000,
+            value=min(300, max(25, len(df_zoom_sin_fecha))),
+            step=25,
+        )
 
-    st.download_button(
-        "Descargar zoom sin fecha calculable CSV",
-        data=dataframe_a_csv(df_zoom_sin_fecha),
-        file_name="zoom_sin_fecha_vencimiento_sin_recepcion.csv",
-        mime="text/csv",
-    )
+        st.dataframe(
+            df_zoom_sin_fecha.head(int(limite_zoom)),
+            use_container_width=True,
+            hide_index=True,
+        )
 
+        st.download_button(
+            "Descargar zoom sin fecha calculable CSV",
+            data=dataframe_a_csv(df_zoom_sin_fecha),
+            file_name="zoom_sin_fecha_vencimiento_sin_recepcion.csv",
+            mime="text/csv",
+        )
 
 # =========================================================
 # Datos filtrados mínimos
 # =========================================================
-st.markdown("### Datos filtrados")
-st.caption(
-    f"Mostrando {min(int(limite_tabla), filtrados):,} de {filtrados:,} registros filtrados. "
-    "Reducir filas visibles mejora la velocidad."
-    .replace(",", ".")
-)
-
 tabla_resumen = tabla_resumen_filtrada(df_filtrado)
-st.dataframe(
-    tabla_resumen.head(int(limite_tabla)),
-    use_container_width=True,
-    hide_index=True,
-)
 
-with st.expander("Descargas", expanded=False):
-    st.caption("Las descargas se preparan solo cuando presionas el botón, para evitar lentitud al filtrar.")
+with st.expander("Datos filtrados", expanded=False):
+    st.caption(
+        f"Mostrando {min(int(limite_tabla), filtrados):,} de {filtrados:,} registros filtrados. "
+        "Reducir filas visibles mejora la velocidad."
+        .replace(",", ".")
+    )
+
+    st.dataframe(
+        tabla_resumen.head(int(limite_tabla)),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.markdown("#### Descargas del filtrado")
+    st.caption("Las descargas se preparan solo cuando se muestran estos controles, para evitar lentitud al filtrar.")
     col_csv, col_excel = st.columns(2)
 
     with col_csv:
@@ -3487,8 +3635,6 @@ with st.expander("Descargas", expanded=False):
         )
 
     with col_excel:
-        if st.form_submit_button if False else False:
-            pass
         preparar_excel = st.button("Preparar Excel filtrado")
         if preparar_excel:
             excel_bytes = dataframe_a_excel(tabla_resumen)
@@ -3539,7 +3685,7 @@ else:
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Días hasta vencimiento", formato_valor(row.get("clasificacion_vencimiento", np.nan)))
-    c2.metric("Fecha de vencimiento", formato_valor(row.get("fecha_vencimiento_texto", np.nan)))
+    c2.metric("Días restantes", formato_valor(row.get("dias_restantes_texto", np.nan)))
     c3.metric("Última etapa registrada", formato_valor(row.get("ultima_etapa_registrada", np.nan)))
     c4.metric("Fecha pendiente", formato_valor(row.get("fecha_pendiente", np.nan)))
 
