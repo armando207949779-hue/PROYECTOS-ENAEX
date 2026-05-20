@@ -1097,6 +1097,248 @@ def grafico_mensual_100(tabla: pd.DataFrame):
     )
 
     st.altair_chart(chart, use_container_width=True)
+
+
+def formatear_valor_filtro(valor) -> str:
+    if valor is None:
+        return "No aplicado"
+
+    if isinstance(valor, (list, tuple, set)):
+        valores = [str(x) for x in valor]
+        if not valores:
+            return "No aplicado"
+        if len(valores) <= 6:
+            return ", ".join(valores)
+        return ", ".join(valores[:6]) + f" + {len(valores) - 6} más"
+
+    return str(valor)
+
+
+def registrar_paso_filtro(
+    resumen: list,
+    paso: str,
+    filtro: str,
+    valor,
+    df_antes: pd.DataFrame,
+    df_despues: pd.DataFrame,
+):
+    registros_antes = len(df_antes)
+    registros_despues = len(df_despues)
+    diferencia = registros_antes - registros_despues
+
+    resumen.append(
+        {
+            "Paso": paso,
+            "Filtro aplicado": filtro,
+            "Valor": formatear_valor_filtro(valor),
+            "Registros antes": registros_antes,
+            "Registros después": registros_despues,
+            "Registros excluidos": diferencia,
+            "% retenido vs paso anterior": (
+                registros_despues / registros_antes * 100
+                if registros_antes > 0
+                else 0
+            ),
+        }
+    )
+
+
+def tabla_resumen_filtros(resumen_filtros: list) -> pd.DataFrame:
+    if not resumen_filtros:
+        return pd.DataFrame()
+
+    return pd.DataFrame(resumen_filtros)
+
+
+def grafico_serie_temporal_porcentual(tabla: pd.DataFrame):
+    if tabla.empty:
+        st.info("No hay datos evaluables para la serie temporal porcentual.")
+        return
+
+    plot = tabla.copy()
+    plot["% Cumple"] = pd.to_numeric(plot["% Cumple"], errors="coerce").fillna(0)
+    plot["% No cumple"] = pd.to_numeric(plot["% No cumple"], errors="coerce").fillna(0)
+
+    lineas = plot.melt(
+        id_vars=["periodo_fecha", "periodo_label", "Total"],
+        value_vars=["% Cumple", "% No cumple"],
+        var_name="Indicador",
+        value_name="Porcentaje",
+    )
+
+    lineas["Indicador"] = lineas["Indicador"].str.replace("% ", "", regex=False)
+    lineas["Indicador"] = lineas["Indicador"].replace({"No cumple": "No Cumple"})
+
+    chart = (
+        alt.Chart(lineas)
+        .mark_line(point=True, strokeWidth=3)
+        .encode(
+            x=alt.X(
+                "periodo_fecha:T",
+                title=None,
+                axis=alt.Axis(format="%b %Y", labelAngle=0),
+            ),
+            y=alt.Y(
+                "Porcentaje:Q",
+                title="% sobre evaluables",
+                scale=alt.Scale(domain=[0, 100]),
+                axis=alt.Axis(labelExpr="datum.value + '%'"),
+            ),
+            color=alt.Color(
+                "Indicador:N",
+                scale=alt.Scale(
+                    domain=["Cumple", "No Cumple"],
+                    range=[COLOR_CUMPLE, COLOR_NO_CUMPLE],
+                ),
+                legend=alt.Legend(title=None, orient="bottom"),
+            ),
+            tooltip=[
+                alt.Tooltip("periodo_label:N", title="Mes"),
+                alt.Tooltip("Indicador:N", title="Indicador"),
+                alt.Tooltip("Porcentaje:Q", title="Porcentaje", format=".1f"),
+                alt.Tooltip("Total:Q", title="Total evaluable", format=",.0f"),
+            ],
+        )
+    )
+
+    linea_meta = (
+        alt.Chart(pd.DataFrame({"Meta": [META_CUMPLIMIENTO]}))
+        .mark_rule(
+            color=COLOR_META,
+            strokeDash=[6, 4],
+            strokeWidth=2,
+        )
+        .encode(y="Meta:Q")
+    )
+
+    st.altair_chart(
+        (chart + linea_meta).properties(height=320).configure_view(strokeWidth=0),
+        use_container_width=True,
+    )
+
+
+def obtener_mejor_peor_mes(tabla: pd.DataFrame):
+    if tabla.empty or "% Cumple" not in tabla.columns:
+        return None, None
+
+    evaluables = tabla[tabla["Total"].gt(0)].copy()
+
+    if evaluables.empty:
+        return None, None
+
+    mejor = evaluables.sort_values(
+        ["% Cumple", "Total", "periodo_fecha"],
+        ascending=[False, False, True],
+    ).iloc[0]
+
+    peor = evaluables.sort_values(
+        ["% Cumple", "Total", "periodo_fecha"],
+        ascending=[True, False, True],
+    ).iloc[0]
+
+    return mejor, peor
+
+
+def obtener_mejor_peor_etapa(resumen_etapas: pd.DataFrame):
+    if resumen_etapas.empty or "% Cumple" not in resumen_etapas.columns:
+        return None, None
+
+    evaluables = resumen_etapas[resumen_etapas["Evaluables"].gt(0)].copy()
+
+    if evaluables.empty:
+        return None, None
+
+    mejor = evaluables.sort_values(
+        ["% Cumple", "Evaluables"],
+        ascending=[False, False],
+    ).iloc[0]
+
+    peor = evaluables.sort_values(
+        ["% Cumple", "Evaluables"],
+        ascending=[True, False],
+    ).iloc[0]
+
+    return mejor, peor
+
+
+def grafico_pareto_incumplimiento_tat(df: pd.DataFrame):
+    if "rango_incumplimiento_tat" not in df.columns:
+        st.info("No existe la columna rango_incumplimiento_tat.")
+        return
+
+    data = (
+        df[df["rango_incumplimiento_tat"].notna()]
+        .copy()
+    )
+
+    data = data[
+        ~data["rango_incumplimiento_tat"].isin(
+            ["Sin incumplimiento", "Sin datos"]
+        )
+    ].copy()
+
+    if data.empty:
+        st.info("No hay incumplimientos TAT para construir el Pareto.")
+        return
+
+    pareto = (
+        data["rango_incumplimiento_tat"]
+        .value_counts()
+        .reset_index()
+    )
+
+    pareto.columns = ["Rango", "Cantidad"]
+    pareto = pareto.sort_values("Cantidad", ascending=False).reset_index(drop=True)
+    pareto["Acumulado"] = pareto["Cantidad"].cumsum()
+    pareto["% Acumulado"] = pareto["Acumulado"] / pareto["Cantidad"].sum() * 100
+
+    orden = pareto["Rango"].tolist()
+
+    barras = (
+        alt.Chart(pareto)
+        .mark_bar(cornerRadius=5)
+        .encode(
+            x=alt.X("Rango:N", sort=orden, title=None, axis=alt.Axis(labelAngle=0)),
+            y=alt.Y("Cantidad:Q", title="Cantidad"),
+            color=alt.value(COLOR_NO_CUMPLE),
+            tooltip=[
+                alt.Tooltip("Rango:N", title="Rango"),
+                alt.Tooltip("Cantidad:Q", title="Cantidad", format=",.0f"),
+                alt.Tooltip("% Acumulado:Q", title="% acumulado", format=".1f"),
+            ],
+        )
+    )
+
+    texto = (
+        barras
+        .mark_text(dy=-6, color=COLOR_TEXTO, fontWeight="bold")
+        .encode(text=alt.Text("Cantidad:Q", format=",.0f"))
+    )
+
+    linea = (
+        alt.Chart(pareto)
+        .mark_line(point=True, strokeWidth=3, color=COLOR_META)
+        .encode(
+            x=alt.X("Rango:N", sort=orden, title=None),
+            y=alt.Y(
+                "% Acumulado:Q",
+                title="% acumulado",
+                scale=alt.Scale(domain=[0, 100]),
+                axis=alt.Axis(labelExpr="datum.value + '%'"),
+            ),
+            tooltip=[
+                alt.Tooltip("Rango:N", title="Rango"),
+                alt.Tooltip("% Acumulado:Q", title="% acumulado", format=".1f"),
+            ],
+        )
+    )
+
+    chart = alt.layer(barras, texto, linea).resolve_scale(y="independent")
+
+    st.altair_chart(
+        chart.properties(height=300).configure_view(strokeWidth=0),
+        use_container_width=True,
+    )
 def normalizar_estado_donut(valor) -> str:
     texto = str(valor).strip().lower()
 
@@ -1537,6 +1779,32 @@ try:
     st.subheader("Filtros del dashboard")
 
     df_dashboard = df_final.copy()
+    total_registros_inicial = len(df_original)
+    total_registros_procesados = len(df_final)
+    resumen_filtros = [
+        {
+            "Paso": "Base inicial",
+            "Filtro aplicado": "Archivo cargado",
+            "Valor": nombre_archivo,
+            "Registros antes": total_registros_inicial,
+            "Registros después": total_registros_inicial,
+            "Registros excluidos": 0,
+            "% retenido vs paso anterior": 100.0,
+        },
+        {
+            "Paso": "Base procesada",
+            "Filtro aplicado": "Lógica Performance TAT",
+            "Valor": "Columnas calculadas y registros conservados",
+            "Registros antes": total_registros_inicial,
+            "Registros después": total_registros_procesados,
+            "Registros excluidos": total_registros_inicial - total_registros_procesados,
+            "% retenido vs paso anterior": (
+                total_registros_procesados / total_registros_inicial * 100
+                if total_registros_inicial > 0
+                else 0
+            ),
+        },
+    ]
 
     col_centro = None
 
@@ -1631,10 +1899,12 @@ try:
         )
 
     # -----------------------------------------------------
-    # Aplicar filtros
+    # Aplicar filtros y registrar impacto
     # -----------------------------------------------------
     if rango_fechas is not None:
         if isinstance(rango_fechas, (tuple, list)) and len(rango_fechas) == 2:
+            df_antes = df_dashboard.copy()
+
             fecha_inicio = pd.Timestamp(rango_fechas[0])
             fecha_fin = (
                 pd.Timestamp(rango_fechas[1])
@@ -1650,12 +1920,34 @@ try:
                 )
             ].copy()
 
+            registrar_paso_filtro(
+                resumen_filtros,
+                "Filtro 1",
+                "Fecha recepción",
+                f"{rango_fechas[0]} a {rango_fechas[1]}",
+                df_antes,
+                df_dashboard,
+            )
+
     if "sistema" in df_dashboard.columns and sistemas_sel:
+        df_antes = df_dashboard.copy()
+
         df_dashboard = df_dashboard[
             df_dashboard["sistema"].astype(str).isin(sistemas_sel)
         ].copy()
 
+        registrar_paso_filtro(
+            resumen_filtros,
+            "Filtro 2",
+            "Sistema",
+            sistemas_sel,
+            df_antes,
+            df_dashboard,
+        )
+
     if col_centro is not None and centros_sel:
+        df_antes = df_dashboard.copy()
+
         df_dashboard = df_dashboard[
             df_dashboard[col_centro]
             .astype(str)
@@ -1663,12 +1955,34 @@ try:
             .isin([str(x).strip() for x in centros_sel])
         ].copy()
 
+        registrar_paso_filtro(
+            resumen_filtros,
+            "Filtro 3",
+            "Centro",
+            centros_sel,
+            df_antes,
+            df_dashboard,
+        )
+
     if "performance_tat_total" in df_dashboard.columns and perf_sel:
+        df_antes = df_dashboard.copy()
+
         df_dashboard = df_dashboard[
             df_dashboard["performance_tat_total"]
             .astype(str)
             .isin(perf_sel)
         ].copy()
+
+        registrar_paso_filtro(
+            resumen_filtros,
+            "Filtro 4",
+            "Performance TAT",
+            perf_sel,
+            df_antes,
+            df_dashboard,
+        )
+
+    resumen_filtros_df = tabla_resumen_filtros(resumen_filtros)
 
     # -----------------------------------------------------
     # 6) Tabs principales
@@ -1701,6 +2015,7 @@ try:
 
         evaluables_tat = cumple_tat + no_cumple_tat
         pct_cumple_tat = cumple_tat / evaluables_tat * 100 if evaluables_tat else 0
+        pct_no_cumple_tat = no_cumple_tat / evaluables_tat * 100 if evaluables_tat else 0
 
         incumplimientos_tat = (
             int(df_dashboard["incumplimiento_tat"].eq(True).sum())
@@ -1720,16 +2035,54 @@ try:
             card_metric("Cumple TAT", f"{cumple_tat:,}", f"{pct_cumple_tat:.1f}%")
 
         with k4:
-            card_metric("No cumple TAT", f"{no_cumple_tat:,}")
+            card_metric("No cumple TAT", f"{no_cumple_tat:,}", f"{pct_no_cumple_tat:.1f}%")
 
         with k5:
             card_metric("Incumplimiento TAT", f"{incumplimientos_tat:,}")
 
         st.divider()
 
+        st.subheader("Registros y filtros aplicados")
+
+        st.caption(
+            "Trazabilidad desde el archivo inicial hasta la base final usada por el dashboard."
+        )
+
+        st.dataframe(
+            resumen_filtros_df,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        st.divider()
+
         st.subheader("Performance TAT mensual")
         tabla_mensual = crear_resumen_mensual(df_dashboard)
         grafico_mensual_100(tabla_mensual)
+
+        st.subheader("Serie temporal porcentual TAT")
+        grafico_serie_temporal_porcentual(tabla_mensual)
+
+        mejor_mes, peor_mes = obtener_mejor_peor_mes(tabla_mensual)
+
+        if mejor_mes is not None and peor_mes is not None:
+            r1, r2 = st.columns(2)
+
+            with r1:
+                st.success(
+                    f"Mejor mes/año: {mejor_mes['periodo_label']} "
+                    f"con {mejor_mes['% Cumple']:.1f}% de cumplimiento "
+                    f"({int(mejor_mes['Cumple']):,} de {int(mejor_mes['Total']):,} evaluables)."
+                )
+
+            with r2:
+                st.error(
+                    f"Peor mes/año: {peor_mes['periodo_label']} "
+                    f"con {peor_mes['% Cumple']:.1f}% de cumplimiento "
+                    f"({int(peor_mes['Cumple']):,} de {int(peor_mes['Total']):,} evaluables)."
+                )
+        else:
+            st.info("No hay meses evaluables para determinar mejor y peor mes.")
 
         st.divider()
 
@@ -1795,6 +2148,27 @@ try:
 
         resumen_etapas_df = pd.DataFrame(resumen_etapas)
 
+        mejor_etapa, peor_etapa = obtener_mejor_peor_etapa(resumen_etapas_df)
+
+        if mejor_etapa is not None and peor_etapa is not None:
+            e1, e2 = st.columns(2)
+
+            with e1:
+                st.success(
+                    f"Etapa que más cumple: {mejor_etapa['Métrica']} "
+                    f"con {mejor_etapa['% Cumple']:.1f}% "
+                    f"({int(mejor_etapa['Cumple']):,} de {int(mejor_etapa['Evaluables']):,} evaluables)."
+                )
+
+            with e2:
+                st.error(
+                    f"Etapa que menos cumple: {peor_etapa['Métrica']} "
+                    f"con {peor_etapa['% Cumple']:.1f}% "
+                    f"({int(peor_etapa['Cumple']):,} de {int(peor_etapa['Evaluables']):,} evaluables)."
+                )
+        else:
+            st.info("No hay etapas evaluables para determinar mayor y menor cumplimiento.")
+
         c_rank, c_rangos = st.columns([1.1, 1])
 
         with c_rank:
@@ -1804,6 +2178,9 @@ try:
         with c_rangos:
             st.subheader("Rango de incumplimiento TAT")
             grafico_rangos(df_dashboard)
+
+        st.subheader("Pareto de incumplimiento TAT")
+        grafico_pareto_incumplimiento_tat(df_dashboard)
 
         with st.expander("Ver tabla resumen por etapa", expanded=False):
             st.dataframe(
