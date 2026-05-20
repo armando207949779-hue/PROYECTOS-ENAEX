@@ -4064,9 +4064,27 @@ df_proximos_sin_recepcion_detalle = detalle_proximos_sin_recepcion(df_filtrado)
 cantidad_proximos_alerta = len(df_proximos_sin_recepcion_detalle)
 
 if cantidad_proximos_alerta > 0:
-    st.error(
+    mensaje_proximos = (
         f"ALERTA: hay {cantidad_proximos_alerta:,} registros próximos a vencer sin recepción entre hoy y 30 días."
         .replace(",", ".")
+    )
+    st.markdown(
+        f"""
+        <div style="
+            background:#ffedd5;
+            border:1px solid #fdba74;
+            border-left:7px solid #f97316;
+            color:#7c2d12;
+            border-radius:16px;
+            padding:16px 18px;
+            margin:14px 0 12px 0;
+            font-weight:850;
+            box-shadow:0 1px 5px rgba(15, 23, 42, 0.06);
+        ">
+            {escape(mensaje_proximos)}
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
     a1, a2 = st.columns(2)
     with a1:
