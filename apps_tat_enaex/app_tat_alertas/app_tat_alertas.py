@@ -4125,10 +4125,27 @@ df_vencidos_sin_recepcion_detalle = detalle_vencidos_sin_recepcion(df_filtrado)
 cantidad_vencidos_sin_recepcion_alerta = len(df_vencidos_sin_recepcion_detalle)
 
 if cantidad_vencidos_sin_recepcion_alerta > 0:
-    st.error(
+    mensaje_vencidos = (
         f"ALERTA: hay {cantidad_vencidos_sin_recepcion_alerta:,} registros vencidos sin recepción. "
         "Estos casos ya superaron su fecha de vencimiento TAT y requieren gestión prioritaria."
-        .replace(",", ".")
+    ).replace(",", ".")
+    st.markdown(
+        f"""
+        <div style="
+            background:#fee2e2;
+            border:1px solid #fca5a5;
+            border-left:7px solid #dc2626;
+            color:#7f1d1d;
+            border-radius:16px;
+            padding:16px 18px;
+            margin:14px 0 12px 0;
+            font-weight:850;
+            box-shadow:0 1px 5px rgba(15, 23, 42, 0.06);
+        ">
+            {escape(mensaje_vencidos)}
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
     v1, v2 = st.columns(2)
     with v1:
@@ -4235,12 +4252,21 @@ with st.expander("Zoom · Sin fecha de vencimiento calculable y sin recepción",
             hide_index=True,
         )
 
-        st.download_button(
-            "Descargar zoom sin fecha calculable CSV",
-            data=dataframe_a_csv(df_zoom_sin_fecha),
-            file_name="zoom_sin_fecha_vencimiento_sin_recepcion.csv",
-            mime="text/csv",
-        )
+        zcsv, zexcel = st.columns(2)
+        with zcsv:
+            st.download_button(
+                "Descargar zoom sin fecha calculable CSV",
+                data=dataframe_a_csv(df_zoom_sin_fecha),
+                file_name="zoom_sin_fecha_vencimiento_sin_recepcion.csv",
+                mime="text/csv",
+            )
+        with zexcel:
+            st.download_button(
+                "Descargar zoom sin fecha calculable Excel",
+                data=dataframe_a_excel(df_zoom_sin_fecha),
+                file_name="zoom_sin_fecha_vencimiento_sin_recepcion.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
 
 # =========================================================
 # Datos filtrados mínimos
