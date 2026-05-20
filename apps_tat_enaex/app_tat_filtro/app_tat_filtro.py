@@ -196,64 +196,6 @@ st.markdown(
             box-shadow: 0 1px 4px rgba(15, 23, 42, 0.035);
         }
 
-        .kpi-wrap {
-            display: grid;
-            grid-template-columns: repeat(4, minmax(160px, 1fr));
-            gap: 12px;
-            margin: 0.75rem 0 1rem 0;
-        }
-
-        .kpi-card {
-            background: #ffffff;
-            border: 1px solid #e5e7eb;
-            border-radius: 18px;
-            padding: 16px 18px;
-            box-shadow: 0 1px 5px rgba(15, 23, 42, 0.04);
-        }
-
-        .kpi-label {
-            color: #64748b;
-            font-size: 0.74rem;
-            text-transform: uppercase;
-            letter-spacing: 0.045em;
-            font-weight: 850;
-            margin-bottom: 6px;
-        }
-
-        .kpi-value {
-            color: #0f172a;
-            font-size: 1.85rem;
-            line-height: 1.1;
-            font-weight: 950;
-            margin-bottom: 6px;
-        }
-
-        .kpi-note {
-            color: #64748b;
-            font-size: 0.82rem;
-            line-height: 1.3;
-        }
-
-        .kpi-blue {
-            background: #eff6ff;
-            border-color: #bfdbfe;
-        }
-
-        .kpi-slate {
-            background: #f8fafc;
-            border-color: #e2e8f0;
-        }
-
-        .kpi-green {
-            background: #f0fdf4;
-            border-color: #bbf7d0;
-        }
-
-        .kpi-red {
-            background: #fef2f2;
-            border-color: #fecaca;
-        }
-
         .order-head {
             background: #ffffff;
             border: 1px solid #e5e7eb;
@@ -552,10 +494,6 @@ st.markdown(
         }
 
         @media (max-width: 1000px) {
-            .kpi-wrap {
-                grid-template-columns: repeat(2, minmax(160px, 1fr));
-            }
-
             .head-grid {
                 grid-template-columns: repeat(3, minmax(120px, 1fr));
             }
@@ -570,10 +508,6 @@ st.markdown(
         }
 
         @media (max-width: 640px) {
-            .kpi-wrap {
-                grid-template-columns: 1fr;
-            }
-
             .head-grid {
                 grid-template-columns: 1fr;
             }
@@ -2158,7 +2092,7 @@ df_filtrado = df.loc[mask].copy()
 
 
 # =========================================================
-# Indicadores generales corregidos
+# Indicadores generales SIN HTML
 # =========================================================
 total_inicial = len(df)
 total_filtrado = len(df_filtrado)
@@ -2200,36 +2134,37 @@ else:
     pct_cumple = 0
     pct_no_cumple = 0
 
-st.markdown(
-    f"""
-    <div class="kpi-wrap">
-        <div class="kpi-card kpi-blue">
-            <div class="kpi-label">Registros iniciales</div>
-            <div class="kpi-value">{formato_entero_es(total_inicial)}</div>
-            <div class="kpi-note">Total cargado en el archivo base</div>
-        </div>
+st.markdown("### Indicadores generales")
 
-        <div class="kpi-card kpi-slate">
-            <div class="kpi-label">Registros filtrados</div>
-            <div class="kpi-value">{formato_entero_es(total_filtrado)}</div>
-            <div class="kpi-note">{formato_pct_es(porcentaje_filtrado)} del archivo inicial</div>
-        </div>
+kpi1, kpi2, kpi3, kpi4 = st.columns(4)
 
-        <div class="kpi-card kpi-green">
-            <div class="kpi-label">% cumplimiento</div>
-            <div class="kpi-value">{formato_pct_es(pct_cumple)}</div>
-            <div class="kpi-note">{formato_entero_es(total_cumple)} de {formato_entero_es(total_evaluados)} registros evaluados</div>
-        </div>
+with kpi1:
+    st.metric(
+        label="Registros iniciales",
+        value=formato_entero_es(total_inicial),
+        help="Total cargado en el archivo base",
+    )
 
-        <div class="kpi-card kpi-red">
-            <div class="kpi-label">% incumplimiento</div>
-            <div class="kpi-value">{formato_pct_es(pct_no_cumple)}</div>
-            <div class="kpi-note">{formato_entero_es(total_no_cumple)} de {formato_entero_es(total_evaluados)} registros evaluados</div>
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+with kpi2:
+    st.metric(
+        label="Registros filtrados",
+        value=formato_entero_es(total_filtrado),
+        delta=f"{formato_pct_es(porcentaje_filtrado)} del archivo inicial",
+    )
+
+with kpi3:
+    st.metric(
+        label="% cumplimiento",
+        value=formato_pct_es(pct_cumple),
+        delta=f"{formato_entero_es(total_cumple)} de {formato_entero_es(total_evaluados)} evaluados",
+    )
+
+with kpi4:
+    st.metric(
+        label="% incumplimiento",
+        value=formato_pct_es(pct_no_cumple),
+        delta=f"{formato_entero_es(total_no_cumple)} de {formato_entero_es(total_evaluados)} evaluados",
+    )
 
 
 # =========================================================
