@@ -994,6 +994,46 @@ st.markdown(
         }
 
 
+        .exp-filter-hero {
+            background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+            border: 1px solid #93c5fd;
+            border-left: 7px solid #2563eb;
+            border-radius: 22px;
+            padding: 18px 20px;
+            margin: 0.8rem 0 0.9rem 0;
+            box-shadow: 0 2px 10px rgba(37, 99, 235, 0.08);
+        }
+
+        .exp-filter-hero-title {
+            color: #1e3a8a;
+            font-size: 1.05rem;
+            line-height: 1.25;
+            font-weight: 950;
+            text-transform: uppercase;
+            letter-spacing: 0.035em;
+            margin-bottom: 6px;
+        }
+
+        .exp-filter-hero-text {
+            color: #334155;
+            font-size: 0.93rem;
+            line-height: 1.45;
+        }
+
+        .exp-filter-help {
+            background: #fff7ed;
+            border: 1px solid #fed7aa;
+            border-left: 6px solid #f97316;
+            border-radius: 18px;
+            padding: 13px 15px;
+            margin: 0.45rem 0 0.8rem 0;
+            color: #7c2d12;
+            font-size: 0.9rem;
+            line-height: 1.4;
+            font-weight: 750;
+        }
+
+
         .alert-box {
             border-radius: 14px;
             padding: 11px 13px;
@@ -3533,12 +3573,26 @@ def construir_detalle_filtro_3(df_base: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(
             columns=["Grupo", "Selección Filtro 3", "Cantidad", "% de la base"]
         )
+
+    total_fila = pd.DataFrame(
+        [
+            {
+                "Grupo": "TOTAL DISPONIBLE",
+                "Selección Filtro 3": "Todas las opciones visibles",
+                "Cantidad": int(salida["Cantidad"].sum()),
+                "% de la base": "100,0%" if total > 0 else "0,0%",
+            }
+        ]
+    )
+    salida = pd.concat([salida, total_fila], ignore_index=True)
     return salida
 
 
 def aplicar_estilo_detalle_filtro_3(df_tabla: pd.DataFrame):
     def estilo_fila(row: pd.Series) -> list[str]:
         grupo = str(row.get("Grupo", "")).strip().lower()
+        if grupo == "total disponible":
+            return ["background-color:#f1f5f9; color:#0f172a; font-weight:900; border-top:2px solid #94a3b8;"] * len(row)
         if "vencida" in grupo:
             return ["background-color:#fee2e2; color:#991b1b; font-weight:850;"] * len(row)
         if "próxima" in grupo or "proxima" in grupo or "semana" in grupo or "30" in grupo:
@@ -4323,14 +4377,30 @@ if df_filtrado.empty:
 else:
     total_expediente_base = len(df_filtrado)
 
+    st.markdown("#### Selecciona un pedido para ver el expediente")
     st.caption(
         (
             f"El expediente parte desde los {total_expediente_base:,} registros que quedaron después de los filtros generales. "
-            "Puedes aplicar filtros locales para encontrar rápidamente una SolPed, pedido una posición de solicitud de pedido específica sin cambiar el resumen superior."
+            "Primero acota la búsqueda con los filtros del expediente y luego selecciona el pedido específico que quieres revisar."
         ).replace(",", ".")
     )
 
-    with st.expander("Filtros del expediente", expanded=True):
+    st.markdown(
+        """
+        <div class="exp-filter-hero">
+            <div class="exp-filter-hero-title">Paso recomendado: filtra el expediente antes de seleccionar</div>
+            <div class="exp-filter-hero-text">
+                Usa SolPed, Pedido, Posición solicitud de pedido, Centro, Grupo de compras, Recepción, Estado pedido o Fecha pendiente para reducir la lista del selector.
+            </div>
+        </div>
+        <div class="exp-filter-help">
+            Ayuda: puedes descargar alguno de los Excel anteriores para apoyarte con los datos exactos y filtrar mejor el expediente.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    with st.expander("🔎 Filtros del expediente · acota la búsqueda del pedido", expanded=True):
         st.caption("Estos filtros solo afectan el selector del expediente; no modifican las alertas ni las tablas superiores.")
 
         with st.form("form_filtros_expediente"):
@@ -4472,19 +4542,18 @@ else:
         labels = {idx: construir_label_registro(df_expediente.loc[idx]) for idx in opciones_registro}
 
         seleccionado = st.selectbox(
-            "Selecciona un pedido para ver el expediente",
+            "Pedido disponible según filtros del expediente",
             opciones_registro,
             format_func=lambda idx: labels.get(idx, str(idx)),
         )
 
         row = df_expediente.loc[seleccionado]
 
-        st.markdown(html_resumen_pedido_expediente(row), unsafe_allow_html=True)
-        st.markdown(html_kpis_expediente(row), unsafe_allow_html=True)
-
-        st.markdown(html_avance_actual(row), unsafe_allow_html=True)
         st.markdown(html_linea_pedido(row), unsafe_allow_html=True)
         st.markdown(html_diagrama_tat_unificado(row), unsafe_allow_html=True)
+        st.markdown(html_resumen_pedido_expediente(row), unsafe_allow_html=True)
+        st.markdown(html_kpis_expediente(row), unsafe_allow_html=True)
+        st.markdown(html_avance_actual(row), unsafe_allow_html=True)
 
         with st.expander("Registro completo del pedido", expanded=False):
             registro = row.to_frame(name="Valor").reset_index().rename(columns={"index": "Campo"})
