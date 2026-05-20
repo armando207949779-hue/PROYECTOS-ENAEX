@@ -1747,7 +1747,7 @@ def html_linea_pedido(row: pd.Series) -> str:
 
 def html_resumen_pedido_expediente(row: pd.Series) -> str:
     oc_principal = row.get(COL_OC_ME5A, row.get(COL_OC_NME, np.nan))
-    pos_principal = row.get(COL_POS_OC, row.get(COL_POS_SOLPED, np.nan))
+    pos_principal = row.get(COL_POS_SOLPED, np.nan)
     estado_recepcion = row.get("estado_recepcion_simple", row.get(COL_ESTADO_RECEPCION_ALERTA, np.nan))
 
     return dedent(
@@ -1756,7 +1756,7 @@ def html_resumen_pedido_expediente(row: pd.Series) -> str:
             <div class="exp-title-row">
                 <div>
                     <div class="exp-title">Resumen del pedido · SolPed {html_id(row.get(COL_SOLPED, np.nan))}</div>
-                    <div class="exp-subtitle">Pedido {html_id(oc_principal)} · Posición {html_id(pos_principal)} · Centro {html_texto(row.get(COL_CENTRO, np.nan))}</div>
+                    <div class="exp-subtitle">Pedido {html_id(oc_principal)} · Posición solicitud de pedido {html_id(pos_principal)} · Centro {html_texto(row.get(COL_CENTRO, np.nan))}</div>
                 </div>
                 <div class="exp-status-pill">{html_texto(estado_recepcion)}</div>
             </div>
@@ -1770,7 +1770,7 @@ def html_resumen_pedido_expediente(row: pd.Series) -> str:
                     <div class="exp-field-value">{html_id(oc_principal)}</div>
                 </div>
                 <div class="exp-field">
-                    <div class="exp-field-label">Posición pedido</div>
+                    <div class="exp-field-label">Posición solicitud de pedido</div>
                     <div class="exp-field-value">{html_id(pos_principal)}</div>
                 </div>
                 <div class="exp-field">
@@ -3721,6 +3721,7 @@ def construir_zoom_sin_fecha_sin_recepcion(df_base: pd.DataFrame) -> pd.DataFram
         [
             COL_SOLPED,
             COL_OC_ME5A,
+            COL_POS_SOLPED,
             COL_POS_OC,
             "motivo_sin_fecha_vencimiento",
             "ultima_etapa_registrada",
@@ -3746,6 +3747,7 @@ def construir_zoom_sin_fecha_sin_recepcion(df_base: pd.DataFrame) -> pd.DataFram
         columns={
             COL_SOLPED: "Solicitud de pedido",
             COL_OC_ME5A: "Pedido",
+            COL_POS_SOLPED: "Posición solicitud de pedido",
             COL_POS_OC: "Posición pedido",
             "motivo_sin_fecha_vencimiento": "Motivo sin fecha de vencimiento",
             "ultima_etapa_registrada": "Última etapa registrada",
@@ -4324,7 +4326,7 @@ else:
     st.caption(
         (
             f"El expediente parte desde los {total_expediente_base:,} registros que quedaron después de los filtros generales. "
-            "Puedes aplicar filtros locales para encontrar rápidamente una SolPed, pedido u posición específica sin cambiar el resumen superior."
+            "Puedes aplicar filtros locales para encontrar rápidamente una SolPed, pedido una posición de solicitud de pedido específica sin cambiar el resumen superior."
         ).replace(",", ".")
     )
 
