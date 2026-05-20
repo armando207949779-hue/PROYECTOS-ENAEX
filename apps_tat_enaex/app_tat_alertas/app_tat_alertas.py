@@ -3484,6 +3484,71 @@ def aplicar_estilo_conciliacion(df_tabla: pd.DataFrame):
 
     return df_tabla.style.apply(estilo_fila, axis=1)
 
+
+
+def construir_detalle_filtro_3(df_base: pd.DataFrame) -> pd.DataFrame:
+    """Detalle anidado para que el usuario entienda qué selecciona en Filtro 3."""
+    if df_base.empty:
+        return pd.DataFrame(
+            columns=["Grupo", "Selección Filtro 3", "Cantidad", "% de la base"]
+        )
+
+    dias = pd.to_numeric(
+        df_base.get("dias_restantes_int", pd.Series(np.nan, index=df_base.index)),
+        errors="coerce",
+    )
+    total = len(df_base)
+
+    definiciones = [
+        ("Urgencia vencida", "Vencido", dias.lt(0)),
+        ("Urgencia próxima", "Vence hoy", dias.eq(0)),
+        ("Urgencia próxima", "1 día", dias.eq(1)),
+        ("Urgencia próxima", "2 días", dias.eq(2)),
+        ("Semana actual", "3 días", dias.eq(3)),
+        ("Semana actual", "4 días", dias.eq(4)),
+        ("Semana actual", "5 días", dias.eq(5)),
+        ("Semana actual", "6 días", dias.eq(6)),
+        ("Semana actual", "7 días", dias.eq(7)),
+        ("Próximos 30 días", "7 a 30 días", dias.between(8, 30, inclusive="both")),
+        ("Sin urgencia próxima", "Más de 1 mes", dias.gt(30)),
+        ("No calculable", "Sin datos", dias.isna()),
+    ]
+
+    filas = []
+    for grupo, seleccion, mask in definiciones:
+        cantidad = int(mask.sum())
+        porcentaje = cantidad / total * 100 if total else 0
+        filas.append(
+            {
+                "Grupo": grupo,
+                "Selección Filtro 3": seleccion,
+                "Cantidad": cantidad,
+                "% de la base": f"{porcentaje:,.1f}%".replace(",", "X").replace(".", ",").replace("X", "."),
+            }
+        )
+
+    salida = pd.DataFrame(filas)
+    salida = salida[salida["Cantidad"].gt(0)].copy()
+    if salida.empty:
+        return pd.DataFrame(
+            columns=["Grupo", "Selección Filtro 3", "Cantidad", "% de la base"]
+        )
+    return salida
+
+
+def aplicar_estilo_detalle_filtro_3(df_tabla: pd.DataFrame):
+    def estilo_fila(row: pd.Series) -> list[str]:
+        grupo = str(row.get("Grupo", "")).strip().lower()
+        if "vencida" in grupo:
+            return ["background-color:#fee2e2; color:#991b1b; font-weight:850;"] * len(row)
+        if "próxima" in grupo or "proxima" in grupo or "semana" in grupo or "30" in grupo:
+            return ["background-color:#ffedd5; color:#9a3412; font-weight:800;"] * len(row)
+        if "no calculable" in grupo:
+            return ["background-color:#f1f5f9; color:#475569; font-weight:800;"] * len(row)
+        return [""] * len(row)
+
+    return df_tabla.style.apply(estilo_fila, axis=1)
+
 def construir_vencimientos_sin_recepcion(df_base: pd.DataFrame, hoy: pd.Timestamp) -> pd.DataFrame:
     if df_base.empty:
         base_abiertos = df_base.copy()
@@ -3843,11 +3908,15 @@ with st.form("form_filtros_panel_unico"):
             "Sin datos",
         ]
         vencimiento_sel = st.multiselect(
-            "Filtro 3 · Días hasta vencimiento",
+            "Filtro 3 · Urgencia / días hasta vencimiento",
             opciones_vencimiento,
             default=[],
-            help="Déjalo vacío para no filtrar por días hasta vencimiento.",
+            help=(
+                "Puedes seleccionar una o varias urgencias. "
+                "Déjalo vacío para no filtrar por días hasta vencimiento."
+            ),
         )
+        st.caption("Selecciona una o varias urgencias y confirma con Aplicar filtros.")
 
     with f4:
         grupo_sel = st.multiselect("Filtro 4 · Grupo compras", opciones_filtros.get(COL_GRUPO_COMPRAS, []))
@@ -3886,6 +3955,29 @@ with st.form("form_filtros_panel_unico"):
         oc_txt = st.text_input("Filtro 9 · OC / Pedido", placeholder="Buscar OC")
     with f11:
         texto_txt = st.text_input("Filtro 10 · Material / descripción / solicitante", placeholder="Buscar texto")
+
+    # Detalle anidado del Filtro 3 para elegir rápidamente según urgencia.
+    base_detalle_filtro_3 = df_panel.copy()
+    if centro_sel and COL_CENTRO in base_detalle_filtro_3.columns:
+        base_detalle_filtro_3 = base_detalle_filtro_3[
+            base_detalle_filtro_3[COL_CENTRO].astype(str).isin([str(v) for v in centro_sel])
+        ]
+    if recepcion_sel != "Todos" and COL_ESTADO_RECEPCION_ALERTA in base_detalle_filtro_3.columns:
+        base_detalle_filtro_3 = base_detalle_filtro_3[
+            base_detalle_filtro_3[COL_ESTADO_RECEPCION_ALERTA].astype(str).eq(recepcion_sel)
+        ]
+
+    with st.expander("Detalle anidado del Filtro 3 · urgencia disponible", expanded=False):
+        st.caption(
+            "Este detalle muestra cuántos registros existen por cada opción del Filtro 3, "
+            "considerando Filtro 1 Centro y Filtro 2 Recepción. Puedes seleccionar varias opciones arriba."
+        )
+        detalle_filtro_3 = construir_detalle_filtro_3(base_detalle_filtro_3)
+        st.dataframe(
+            aplicar_estilo_detalle_filtro_3(detalle_filtro_3),
+            use_container_width=True,
+            hide_index=True,
+        )
 
     aplicar = st.form_submit_button("Aplicar filtros", type="primary")
 
@@ -4064,27 +4156,10 @@ df_proximos_sin_recepcion_detalle = detalle_proximos_sin_recepcion(df_filtrado)
 cantidad_proximos_alerta = len(df_proximos_sin_recepcion_detalle)
 
 if cantidad_proximos_alerta > 0:
-    mensaje_proximos = (
-        f"ALERTA: hay {cantidad_proximos_alerta:,} registros próximos a vencer sin recepción entre hoy y 30 días."
+    st.error(
+        f"ALERTA: hay {cantidad_proximos_alerta:,} registros próximos a vencer sin recepción entre hoy y 30 días. "
+        "Estos casos aún no vencen, pero están dentro de la ventana crítica de gestión y requieren seguimiento preventivo."
         .replace(",", ".")
-    )
-    st.markdown(
-        f"""
-        <div style="
-            background:#ffedd5;
-            border:1px solid #fdba74;
-            border-left:7px solid #f97316;
-            color:#7c2d12;
-            border-radius:16px;
-            padding:16px 18px;
-            margin:14px 0 12px 0;
-            font-weight:850;
-            box-shadow:0 1px 5px rgba(15, 23, 42, 0.06);
-        ">
-            {escape(mensaje_proximos)}
-        </div>
-        """,
-        unsafe_allow_html=True,
     )
     a1, a2 = st.columns(2)
     with a1:
