@@ -217,136 +217,6 @@ st.markdown(
             margin-top: 4px;
         }
 
-        .order-head {
-            background: #ffffff;
-            border: 1px solid #e5e7eb;
-            border-radius: 18px;
-            padding: 16px 18px;
-            margin: 0.75rem 0 0.85rem 0;
-            box-shadow: 0 1px 5px rgba(15, 23, 42, 0.04);
-        }
-
-        .order-title {
-            color: #0f172a;
-            font-size: 1rem;
-            font-weight: 850;
-            margin-bottom: 12px;
-        }
-
-        .tat-summary {
-            display: grid;
-            grid-template-columns: 1.15fr 1fr 1fr;
-            gap: 12px;
-            margin: 0.75rem 0 0.75rem 0;
-        }
-
-        .tat-card {
-            background: #ffffff;
-            border: 1px solid #e5e7eb;
-            border-radius: 18px;
-            padding: 16px 18px;
-            box-shadow: 0 1px 5px rgba(15, 23, 42, 0.04);
-            min-height: 128px;
-        }
-
-        .tat-card-primary {
-            background: #eff6ff;
-            border-color: #bfdbfe;
-        }
-
-        .tat-label {
-            color: #64748b;
-            font-size: 0.78rem;
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
-            font-weight: 800;
-            margin-bottom: 6px;
-        }
-
-        .tat-main {
-            color: #0f172a;
-            font-size: 2rem;
-            line-height: 1.05;
-            font-weight: 900;
-            margin-bottom: 6px;
-        }
-
-        .tat-main-small {
-            color: #0f172a;
-            font-size: 1.35rem;
-            line-height: 1.1;
-            font-weight: 900;
-            margin-bottom: 8px;
-        }
-
-        .tat-sub {
-            color: #334155;
-            font-size: 0.92rem;
-            line-height: 1.35;
-        }
-
-        .tat-muted {
-            color: #64748b;
-            font-size: 0.82rem;
-            line-height: 1.35;
-            margin-top: 5px;
-        }
-
-        .avance-card {
-            background: #ffffff;
-            border: 1px solid #dbeafe;
-            border-left: 5px solid #2563eb;
-            border-radius: 18px;
-            padding: 16px 18px;
-            margin: 0.75rem 0 0.9rem 0;
-            box-shadow: 0 1px 5px rgba(15, 23, 42, 0.04);
-        }
-
-        .avance-title {
-            color: #1e3a8a;
-            font-size: 0.9rem;
-            font-weight: 900;
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
-            margin-bottom: 10px;
-        }
-
-        .avance-grid {
-            display: grid;
-            grid-template-columns: repeat(4, minmax(140px, 1fr));
-            gap: 12px;
-        }
-
-        .avance-item {
-            background: #f8fafc;
-            border: 1px solid #e2e8f0;
-            border-radius: 14px;
-            padding: 11px 12px;
-        }
-
-        .avance-label {
-            color: #64748b;
-            font-size: 0.72rem;
-            font-weight: 850;
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
-            margin-bottom: 4px;
-        }
-
-        .avance-value {
-            color: #0f172a;
-            font-size: 1rem;
-            font-weight: 900;
-            overflow-wrap: anywhere;
-        }
-
-        .avance-note {
-            color: #334155;
-            font-size: 0.88rem;
-            line-height: 1.35;
-            margin-top: 10px;
-        }
-
         .pedido-line-card {
             background: linear-gradient(180deg, #ecfdf5 0%, #ffffff 100%);
             border: 2px solid #86efac;
@@ -488,6 +358,22 @@ st.markdown(
             padding: 11px 13px;
         }
 
+        .order-head {
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 18px;
+            padding: 16px 18px;
+            margin: 0.75rem 0 0.85rem 0;
+            box-shadow: 0 1px 5px rgba(15, 23, 42, 0.04);
+        }
+
+        .order-title {
+            color: #0f172a;
+            font-size: 1rem;
+            font-weight: 850;
+            margin-bottom: 12px;
+        }
+
         .head-grid {
             display: grid;
             grid-template-columns: repeat(5, minmax(120px, 1fr));
@@ -507,6 +393,120 @@ st.markdown(
             font-weight: 800;
             font-size: 1rem;
             overflow-wrap: anywhere;
+        }
+
+        .tat-summary {
+            display: grid;
+            grid-template-columns: 1.15fr 1fr 1fr;
+            gap: 12px;
+            margin: 0.75rem 0 0.75rem 0;
+        }
+
+        .tat-card {
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 18px;
+            padding: 16px 18px;
+            box-shadow: 0 1px 5px rgba(15, 23, 42, 0.04);
+            min-height: 128px;
+        }
+
+        .tat-card-primary {
+            background: #eff6ff;
+            border-color: #bfdbfe;
+        }
+
+        .tat-label {
+            color: #64748b;
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            font-weight: 800;
+            margin-bottom: 6px;
+        }
+
+        .tat-main {
+            color: #0f172a;
+            font-size: 2rem;
+            line-height: 1.05;
+            font-weight: 900;
+            margin-bottom: 6px;
+        }
+
+        .tat-main-small {
+            color: #0f172a;
+            font-size: 1.35rem;
+            line-height: 1.1;
+            font-weight: 900;
+            margin-bottom: 8px;
+        }
+
+        .tat-sub {
+            color: #334155;
+            font-size: 0.92rem;
+            line-height: 1.35;
+        }
+
+        .tat-muted {
+            color: #64748b;
+            font-size: 0.82rem;
+            line-height: 1.35;
+            margin-top: 5px;
+        }
+
+        .avance-card {
+            background: #ffffff;
+            border: 1px solid #dbeafe;
+            border-left: 5px solid #2563eb;
+            border-radius: 18px;
+            padding: 16px 18px;
+            margin: 0.75rem 0 0.9rem 0;
+            box-shadow: 0 1px 5px rgba(15, 23, 42, 0.04);
+        }
+
+        .avance-title {
+            color: #1e3a8a;
+            font-size: 0.9rem;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: 10px;
+        }
+
+        .avance-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(140px, 1fr));
+            gap: 12px;
+        }
+
+        .avance-item {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 14px;
+            padding: 11px 12px;
+        }
+
+        .avance-label {
+            color: #64748b;
+            font-size: 0.72rem;
+            font-weight: 850;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: 4px;
+        }
+
+        .avance-value {
+            color: #0f172a;
+            font-size: 1rem;
+            font-weight: 900;
+            overflow-wrap: anywhere;
+        }
+
+        .avance-note {
+            color: #334155;
+            font-size: 0.88rem;
+            line-height: 1.35;
+            margin-top: 10px;
         }
 
         .stage-wrap {
@@ -671,6 +671,10 @@ st.markdown(
 
             .tat-main {
                 font-size: 1.65rem;
+            }
+
+            .avance-grid {
+                grid-template-columns: 1fr;
             }
 
             .pedido-line-title {
@@ -1354,17 +1358,17 @@ def html_linea_pedido(row: pd.Series) -> str:
             dot_class = "pedido-dot-pending"
             icono = str(i + 1)
 
-        partes.append(
-            dedent(
-                f"""
-                <div class="pedido-step">
-                    <div class="pedido-dot {dot_class}">{escape(icono)}</div>
-                    <div class="pedido-label">{escape(label)}</div>
-                    <div class="pedido-date">{escape(fecha_etapa_texto(row, col_fecha))}</div>
-                </div>
-                """
-            ).strip()
-        )
+        paso_html = dedent(
+            f"""
+            <div class="pedido-step">
+                <div class="pedido-dot {dot_class}">{escape(icono)}</div>
+                <div class="pedido-label">{escape(label)}</div>
+                <div class="pedido-date">{escape(fecha_etapa_texto(row, col_fecha))}</div>
+            </div>
+            """
+        ).strip()
+
+        partes.append(paso_html)
 
         if i < len(etapas) - 1:
             if completadas[i] and completadas[i + 1]:
@@ -1374,9 +1378,8 @@ def html_linea_pedido(row: pd.Series) -> str:
             else:
                 connector_class = ""
 
-            partes.append(
-                f'<div class="pedido-connector {connector_class}"></div>'
-            )
+            conector_html = f'<div class="pedido-connector {connector_class}"></div>'
+            partes.append(conector_html)
 
     estado_tat = formato_valor(row.get(COL_PERF_TAT, np.nan))
 
@@ -1386,6 +1389,7 @@ def html_linea_pedido(row: pd.Series) -> str:
     )
 
     diagnostico = diagnostico_avance(row)
+    linea_html = "".join(partes)
 
     return dedent(
         f"""
@@ -1400,7 +1404,9 @@ def html_linea_pedido(row: pd.Series) -> str:
                 <div class="pedido-line-badge">{escape(estado_visual)}</div>
             </div>
 
-            <div class="pedido-line">{''.join(partes)}</div>
+            <div class="pedido-line">
+                {linea_html}
+            </div>
 
             <div class="pedido-line-note">
                 <strong>TAT total:</strong> {escape(dias_tat)}
@@ -2407,7 +2413,7 @@ else:
     ).strip()
 
     st.markdown(
-        dedent(html_linea_pedido(row)).strip(),
+        html_linea_pedido(row),
         unsafe_allow_html=True,
     )
 
