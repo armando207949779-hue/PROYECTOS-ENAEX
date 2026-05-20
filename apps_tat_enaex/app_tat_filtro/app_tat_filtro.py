@@ -217,147 +217,6 @@ st.markdown(
             margin-top: 4px;
         }
 
-        .pedido-line-card {
-            background: linear-gradient(180deg, #ecfdf5 0%, #ffffff 100%);
-            border: 2px solid #86efac;
-            border-radius: 24px;
-            padding: 22px 24px 20px 24px;
-            margin: 0.35rem 0 1rem 0;
-            box-shadow: 0 8px 24px rgba(22, 101, 52, 0.10);
-        }
-
-        .pedido-line-title {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 14px;
-            font-size: 1.05rem;
-            font-weight: 950;
-            color: #14532d;
-            margin-bottom: 18px;
-            text-transform: uppercase;
-            letter-spacing: 0.045em;
-        }
-
-        .pedido-line-title-main {
-            display: flex;
-            flex-direction: column;
-            gap: 3px;
-        }
-
-        .pedido-line-title-small {
-            font-size: 0.78rem;
-            font-weight: 750;
-            color: #166534;
-            text-transform: none;
-            letter-spacing: 0;
-        }
-
-        .pedido-line-badge {
-            background: #dcfce7;
-            border: 1px solid #86efac;
-            color: #166534;
-            border-radius: 999px;
-            padding: 7px 12px;
-            font-size: 0.78rem;
-            font-weight: 900;
-            white-space: nowrap;
-        }
-
-        .pedido-line {
-            display: flex;
-            align-items: flex-start;
-            width: 100%;
-        }
-
-        .pedido-step {
-            flex: 0 0 128px;
-            text-align: center;
-            min-width: 0;
-        }
-
-        .pedido-dot {
-            width: 64px;
-            height: 64px;
-            border-radius: 999px;
-            margin: 0 auto 11px auto;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 950;
-            font-size: 1.8rem;
-            box-sizing: border-box;
-        }
-
-        .pedido-dot-complete {
-            background: #16a34a;
-            color: #ffffff;
-            border: 4px solid #16a34a;
-            box-shadow: 0 7px 16px rgba(22, 163, 74, 0.22);
-        }
-
-        .pedido-dot-active {
-            background: #ffffff;
-            color: #15803d;
-            border: 7px solid #22c55e;
-            box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.16);
-        }
-
-        .pedido-dot-pending {
-            background: #ffffff;
-            color: #94a3b8;
-            border: 5px solid #cbd5e1;
-        }
-
-        .pedido-label {
-            font-size: 0.9rem;
-            font-weight: 950;
-            color: #111827;
-            line-height: 1.15;
-            text-transform: uppercase;
-        }
-
-        .pedido-date {
-            color: #64748b;
-            font-size: 0.78rem;
-            line-height: 1.2;
-            margin-top: 5px;
-            overflow-wrap: anywhere;
-        }
-
-        .pedido-connector {
-            flex: 1 1 auto;
-            height: 8px;
-            min-width: 34px;
-            margin-top: 29px;
-            border-radius: 999px;
-            background: #cbd5e1;
-        }
-
-        .pedido-connector-complete {
-            background: #16a34a;
-        }
-
-        .pedido-connector-dashed {
-            background: repeating-linear-gradient(
-                90deg,
-                #16a34a 0 18px,
-                transparent 18px 30px
-            );
-            border: 0;
-        }
-
-        .pedido-line-note {
-            color: #334155;
-            font-size: 0.9rem;
-            line-height: 1.4;
-            margin-top: 16px;
-            background: #f8fafc;
-            border: 1px solid #e2e8f0;
-            border-radius: 14px;
-            padding: 11px 13px;
-        }
-
         .order-head {
             background: #ffffff;
             border: 1px solid #e5e7eb;
@@ -372,27 +231,6 @@ st.markdown(
             font-size: 1rem;
             font-weight: 850;
             margin-bottom: 12px;
-        }
-
-        .head-grid {
-            display: grid;
-            grid-template-columns: repeat(5, minmax(120px, 1fr));
-            gap: 10px;
-        }
-
-        .head-label {
-            color: #64748b;
-            font-size: 0.74rem;
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
-            margin-bottom: 3px;
-        }
-
-        .head-value {
-            color: #0f172a;
-            font-weight: 800;
-            font-size: 1rem;
-            overflow-wrap: anywhere;
         }
 
         .tat-summary {
@@ -507,6 +345,133 @@ st.markdown(
             font-size: 0.88rem;
             line-height: 1.35;
             margin-top: 10px;
+        }
+
+        .pedido-line-card {
+            background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%);
+            border: 1px solid #bbf7d0;
+            border-radius: 20px;
+            padding: 18px 20px 16px 20px;
+            margin: 0.85rem 0 0.85rem 0;
+            box-shadow: 0 1px 5px rgba(15, 23, 42, 0.04);
+        }
+
+        .pedido-line-title {
+            font-size: 0.9rem;
+            font-weight: 900;
+            color: #14532d;
+            margin-bottom: 16px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .pedido-line {
+            display: flex;
+            align-items: flex-start;
+            width: 100%;
+        }
+
+        .pedido-step {
+            flex: 0 0 116px;
+            text-align: center;
+            min-width: 0;
+        }
+
+        .pedido-dot {
+            width: 54px;
+            height: 54px;
+            border-radius: 999px;
+            margin: 0 auto 10px auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 950;
+            font-size: 1.65rem;
+            box-sizing: border-box;
+        }
+
+        .pedido-dot-complete {
+            background: #22c55e;
+            color: #ffffff;
+            border: 4px solid #22c55e;
+        }
+
+        .pedido-dot-active {
+            background: #ffffff;
+            color: #15803d;
+            border: 6px solid #22c55e;
+        }
+
+        .pedido-dot-pending {
+            background: #ffffff;
+            color: #94a3b8;
+            border: 5px solid #cbd5e1;
+        }
+
+        .pedido-label {
+            font-size: 0.86rem;
+            font-weight: 900;
+            color: #1f2937;
+            line-height: 1.15;
+            text-transform: uppercase;
+        }
+
+        .pedido-date {
+            color: #64748b;
+            font-size: 0.75rem;
+            line-height: 1.2;
+            margin-top: 4px;
+            overflow-wrap: anywhere;
+        }
+
+        .pedido-connector {
+            flex: 1 1 auto;
+            height: 7px;
+            min-width: 32px;
+            margin-top: 24px;
+            border-radius: 999px;
+            background: #cbd5e1;
+        }
+
+        .pedido-connector-complete {
+            background: #22c55e;
+        }
+
+        .pedido-connector-dashed {
+            background: repeating-linear-gradient(
+                90deg,
+                #22c55e 0 18px,
+                transparent 18px 30px
+            );
+            border: 0;
+        }
+
+        .pedido-line-note {
+            color: #475569;
+            font-size: 0.82rem;
+            line-height: 1.35;
+            margin-top: 14px;
+        }
+
+        .head-grid {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(120px, 1fr));
+            gap: 10px;
+        }
+
+        .head-label {
+            color: #64748b;
+            font-size: 0.74rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: 3px;
+        }
+
+        .head-value {
+            color: #0f172a;
+            font-weight: 800;
+            font-size: 1rem;
+            overflow-wrap: anywhere;
         }
 
         .stage-wrap {
@@ -673,33 +638,24 @@ st.markdown(
                 font-size: 1.65rem;
             }
 
-            .avance-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .pedido-line-title {
-                align-items: flex-start;
-                flex-direction: column;
-            }
-
             .pedido-line {
                 overflow-x: auto;
                 padding-bottom: 4px;
             }
 
             .pedido-step {
-                flex-basis: 112px;
+                flex-basis: 104px;
             }
 
             .pedido-dot {
-                width: 54px;
-                height: 54px;
-                font-size: 1.55rem;
+                width: 48px;
+                height: 48px;
+                font-size: 1.45rem;
             }
 
             .pedido-connector {
                 min-width: 28px;
-                margin-top: 25px;
+                margin-top: 21px;
             }
         }
     </style>
@@ -1336,14 +1292,6 @@ def html_linea_pedido(row: pd.Series) -> str:
 
     partes = []
 
-    total_etapas = len(etapas)
-    etapas_completadas = sum(completadas)
-
-    if etapas_completadas == total_etapas:
-        estado_visual = "Pedido cerrado"
-    else:
-        estado_visual = f"Etapa {etapas_completadas + 1} de {total_etapas}"
-
     for i, (label, col_fecha) in enumerate(etapas):
         esta_completa = completadas[i]
         es_activa = i == indice_activo and not esta_completa
@@ -1353,22 +1301,22 @@ def html_linea_pedido(row: pd.Series) -> str:
             icono = "✓"
         elif es_activa:
             dot_class = "pedido-dot-active"
-            icono = str(i + 1)
+            icono = ""
         else:
             dot_class = "pedido-dot-pending"
-            icono = str(i + 1)
+            icono = ""
 
-        paso_html = dedent(
-            f"""
-            <div class="pedido-step">
-                <div class="pedido-dot {dot_class}">{escape(icono)}</div>
-                <div class="pedido-label">{escape(label)}</div>
-                <div class="pedido-date">{escape(fecha_etapa_texto(row, col_fecha))}</div>
-            </div>
-            """
-        ).strip()
-
-        partes.append(paso_html)
+        partes.append(
+            dedent(
+                f"""
+                <div class="pedido-step">
+                    <div class="pedido-dot {dot_class}">{icono}</div>
+                    <div class="pedido-label">{escape(label)}</div>
+                    <div class="pedido-date">{escape(fecha_etapa_texto(row, col_fecha))}</div>
+                </div>
+                """
+            ).strip()
+        )
 
         if i < len(etapas) - 1:
             if completadas[i] and completadas[i + 1]:
@@ -1378,8 +1326,9 @@ def html_linea_pedido(row: pd.Series) -> str:
             else:
                 connector_class = ""
 
-            conector_html = f'<div class="pedido-connector {connector_class}"></div>'
-            partes.append(conector_html)
+            partes.append(
+                f'<div class="pedido-connector {connector_class}"></div>'
+            )
 
     estado_tat = formato_valor(row.get(COL_PERF_TAT, np.nan))
 
@@ -1388,31 +1337,13 @@ def html_linea_pedido(row: pd.Series) -> str:
         row.get(COL_DIAS_TAT, np.nan),
     )
 
-    diagnostico = diagnostico_avance(row)
-    linea_html = "".join(partes)
-
     return dedent(
         f"""
         <div class="pedido-line-card">
-            <div class="pedido-line-title">
-                <div class="pedido-line-title-main">
-                    <div>Línea de pedido</div>
-                    <div class="pedido-line-title-small">
-                        Visualización rápida del estado actual del flujo
-                    </div>
-                </div>
-                <div class="pedido-line-badge">{escape(estado_visual)}</div>
-            </div>
-
-            <div class="pedido-line">
-                {linea_html}
-            </div>
-
+            <div class="pedido-line-title">Línea de pedido</div>
+            <div class="pedido-line">{''.join(partes)}</div>
             <div class="pedido-line-note">
-                <strong>TAT total:</strong> {escape(dias_tat)}
-                · <strong>Estado:</strong> {escape(estado_tat)}
-                <br>
-                {escape(diagnostico)}
+                TAT total: <strong>{escape(dias_tat)}</strong> · Estado: <strong>{escape(estado_tat)}</strong>
             </div>
         </div>
         """
@@ -2412,6 +2343,14 @@ else:
         """
     ).strip()
 
+    # =====================================================
+    # NUEVO ORDEN VISUAL:
+    # 1. Línea de pedido
+    # 2. Datos principales
+    # 3. TAT
+    # 4. Avance actual
+    # 5. Estado por etapas
+    # =====================================================
     st.markdown(
         html_linea_pedido(row),
         unsafe_allow_html=True,
