@@ -507,6 +507,28 @@ st.markdown(
             color: #ffffff !important;
         }
 
+
+        div[data-testid="stButton"] > button[kind="primary"],
+        div.stButton > button[kind="primary"] {
+            background-color: #22c55e !important;
+            border-color: #16a34a !important;
+            color: #ffffff !important;
+            font-weight: 850 !important;
+        }
+
+        div[data-testid="stButton"] > button[kind="primary"]:hover,
+        div.stButton > button[kind="primary"]:hover {
+            background-color: #16a34a !important;
+            border-color: #15803d !important;
+            color: #ffffff !important;
+        }
+
+        div[data-testid="stButton"] > button[kind="primary"]:focus,
+        div.stButton > button[kind="primary"]:focus {
+            box-shadow: 0 0 0 0.2rem rgba(34, 197, 94, 0.35) !important;
+            color: #ffffff !important;
+        }
+
         @media (max-width: 1000px) {
             .head-grid {
                 grid-template-columns: repeat(3, minmax(120px, 1fr));
@@ -910,7 +932,7 @@ def texto_dias_y_meses(dias: Any) -> str:
             .replace("X", ".")
         )
 
-        return f"{texto_dias} días · {texto_meses} meses aprox."
+        return f"{texto_dias} días · {texto_meses} meses"
 
     return f"{texto_dias} días"
 
@@ -1650,12 +1672,14 @@ def construir_estadisticas_etapas(df_base: pd.DataFrame) -> pd.DataFrame:
                 {
                     "Etapa": etapa,
                     "Columna usada": "No disponible",
-                    "Registros": 0,
-                    "Min": np.nan,
-                    "Media": np.nan,
-                    "Mediana": np.nan,
-                    "Max": np.nan,
-                    "Desviación estándar": np.nan,
+                    "Total valores válidos": 0,
+                    "Min": "-",
+                    "Media": "-",
+                    "Mediana": "-",
+                    "Max": "-",
+                    "Desviación estándar": "-",
+                    "Valores negativos": 0,
+                    "% valores negativos": "0,0%",
                 }
             )
             continue
@@ -1665,33 +1689,44 @@ def construir_estadisticas_etapas(df_base: pd.DataFrame) -> pd.DataFrame:
             errors="coerce",
         ).dropna()
 
-        if serie.empty:
+        total_validos = int(serie.count())
+
+        if total_validos == 0:
             filas.append(
                 {
                     "Etapa": etapa,
                     "Columna usada": columna,
-                    "Registros": 0,
-                    "Min": np.nan,
-                    "Media": np.nan,
-                    "Mediana": np.nan,
-                    "Max": np.nan,
-                    "Desviación estándar": np.nan,
+                    "Total valores válidos": 0,
+                    "Min": "-",
+                    "Media": "-",
+                    "Mediana": "-",
+                    "Max": "-",
+                    "Desviación estándar": "-",
+                    "Valores negativos": 0,
+                    "% valores negativos": "0,0%",
                 }
             )
             continue
+
+        valores_negativos = int((serie < 0).sum())
+        porcentaje_negativos = valores_negativos / total_validos * 100
 
         filas.append(
             {
                 "Etapa": etapa,
                 "Columna usada": columna,
-                "Registros": int(serie.count()),
+                "Total valores válidos": total_validos,
                 "Min": round(float(serie.min()), 2),
                 "Media": round(float(serie.mean()), 2),
                 "Mediana": round(float(serie.median()), 2),
                 "Max": round(float(serie.max()), 2),
-                "Desviación estándar": round(float(serie.std()), 2)
-                if serie.count() > 1
-                else np.nan,
+                "Desviación estándar": (
+                    round(float(serie.std()), 2)
+                    if total_validos > 1
+                    else "-"
+                ),
+                "Valores negativos": valores_negativos,
+                "% valores negativos": formato_pct_es(porcentaje_negativos),
             }
         )
 
@@ -2344,6 +2379,7 @@ st.dataframe(
 
 st.caption(
     "Las estadísticas se calculan sobre los días disponibles del resultado filtrado. "
+    "El porcentaje de valores negativos se calcula respecto al total de valores válidos de cada etapa. "
     "Si una etapa aparece como no disponible, el archivo no trae una columna de duración para esa etapa."
 )
 
