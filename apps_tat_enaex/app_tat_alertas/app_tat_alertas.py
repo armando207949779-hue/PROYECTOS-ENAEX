@@ -2797,25 +2797,119 @@ st.info(
 )
 
 # =========================================================
-# Vencidos por recepción
+# Vencidos, próximos a vencer y conciliación del total filtrado
 # =========================================================
 recepcion_col = COL_ESTADO_RECEPCION_ALERTA
-vencidos_mask = df_filtrado["dias_restantes_int"].lt(0) if "dias_restantes_int" in df_filtrado.columns else pd.Series(False, index=df_filtrado.index)
-recepcionados_mask = df_filtrado[recepcion_col].astype(str).eq("Recepcionado") if recepcion_col in df_filtrado.columns else pd.Series(False, index=df_filtrado.index)
-sin_recepcion_mask = df_filtrado[recepcion_col].astype(str).eq("Sin recepción") if recepcion_col in df_filtrado.columns else pd.Series(False, index=df_filtrado.index)
+
+if "dias_restantes_int" in df_filtrado.columns:
+    dias_restantes = pd.to_numeric(df_filtrado["dias_restantes_int"], errors="coerce")
+else:
+    dias_restantes = pd.Series(np.nan, index=df_filtrado.index)
+
+recepcion = (
+    df_filtrado[recepcion_col].astype(str)
+    if recepcion_col in df_filtrado.columns
+    else pd.Series("Sin clasificar", index=df_filtrado.index)
+)
+
+recepcionados_mask = recepcion.eq("Recepcionado")
+sin_recepcion_mask = recepcion.eq("Sin recepción")
+otros_estado_recepcion_mask = ~(recepcionados_mask | sin_recepcion_mask)
+
+con_dias_mask = dias_restantes.notna()
+vencidos_mask = con_dias_mask & dias_restantes.lt(0)
+no_vencidos_mask = con_dias_mask & dias_restantes.ge(0)
 
 vencidos_recepcionados = int((vencidos_mask & recepcionados_mask).sum())
 vencidos_sin_recepcion = int((vencidos_mask & sin_recepcion_mask).sum())
+proximos_sin_recepcion = int((no_vencidos_mask & sin_recepcion_mask).sum())
+otros_casos_total = int(filtrados - vencidos_recepcionados - vencidos_sin_recepcion)
 
-r1, r2 = st.columns(2)
+r1, r2, r3, r4 = st.columns(4)
 r1.metric("Vencidos y recepcionados", f"{vencidos_recepcionados:,}".replace(",", "."))
 r2.metric("Vencidos y sin recepcionar", f"{vencidos_sin_recepcion:,}".replace(",", "."))
+r3.metric("Próximos a vencer sin recepción", f"{proximos_sin_recepcion:,}".replace(",", "."))
+r4.metric("Otros casos del filtrado", f"{otros_casos_total:,}".replace(",", "."))
 
 # =========================================================
-# Vencimientos próximos
+# Explicación de la diferencia del total filtrado
 # =========================================================
-st.markdown("#### Vencimientos de pedidos sin recepción")
-st.caption("La fecha de vencimiento se calcula como fecha de solicitud + umbral TAT. Los pedidos recepcionados se consideran cerrados para esta sección.")
+st.markdown("#### ¿A qué corresponde el resto de los casos filtrados?")
+st.caption(
+    "Esta tabla concilia el total filtrado. La diferencia contra los vencidos corresponde a pedidos no vencidos, "
+    "pedidos sin dato suficiente para calcular vencimiento, u otros estados de recepción si existieran."
+)
+
+filas_conciliacion = [
+    {
+        "Grupo": "Vencidos y recepcionados",
+        "Cantidad": vencidos_recepcionados,
+        "Explicación": "Ya superaron la fecha de vencimiento TAT, pero tienen recepción registrada.",
+    },
+    {
+        "Grupo": "Vencidos y sin recepcionar",
+        "Cantidad": vencidos_sin_recepcion,
+        "Explicación": "Ya superaron la fecha de vencimiento TAT y todavía no tienen recepción registrada.",
+    },
+    {
+        "Grupo": "No vencidos y recepcionados",
+        "Cantidad": int((no_vencidos_mask & recepcionados_mask).sum()),
+        "Explicación": "Tienen recepción registrada y no superaron la fecha de vencimiento calculada.",
+    },
+    {
+        "Grupo": "No vencidos y sin recepción",
+        "Cantidad": int((no_vencidos_mask & sin_recepcion_mask).sum()),
+        "Explicación": "Aún no tienen recepción, pero todavía están dentro del plazo calculado.",
+    },
+    {
+        "Grupo": "Sin fecha de vencimiento calculable y recepcionados",
+        "Cantidad": int((~con_dias_mask & recepcionados_mask).sum()),
+        "Explicación": "Tienen recepción, pero falta fecha de solicitud, umbral TAT u otro dato necesario para calcular vencimiento.",
+    },
+    {
+        "Grupo": "Sin fecha de vencimiento calculable y sin recepción",
+        "Cantidad": int((~con_dias_mask & sin_recepcion_mask).sum()),
+        "Explicación": "No tienen recepción y falta información para calcular si están vencidos o próximos a vencer.",
+    },
+]
+
+otros_estado_count = int(otros_estado_recepcion_mask.sum())
+if otros_estado_count:
+    filas_conciliacion.append(
+        {
+            "Grupo": "Otros estados de recepción",
+            "Cantidad": otros_estado_count,
+            "Explicación": "Registros cuyo estado de recepción no está clasificado como Recepcionado ni Sin recepción.",
+        }
+    )
+
+df_conciliacion = pd.DataFrame(filas_conciliacion)
+df_conciliacion["% del filtrado"] = np.where(
+    filtrados > 0,
+    df_conciliacion["Cantidad"] / filtrados * 100,
+    0,
+)
+df_conciliacion["% del filtrado"] = df_conciliacion["% del filtrado"].map(
+    lambda x: f"{x:,.1f}%".replace(",", "X").replace(".", ",").replace("X", ".")
+)
+st.dataframe(df_conciliacion, use_container_width=True, hide_index=True)
+
+suma_conciliacion = int(df_conciliacion["Cantidad"].sum())
+if suma_conciliacion != filtrados:
+    st.warning(
+        f"La conciliación suma {suma_conciliacion:,} registros y el filtrado tiene {filtrados:,}. "
+        "Revisa estados de recepción o valores no clasificados."
+        .replace(",", ".")
+    )
+
+# =========================================================
+# Vencidos sin recepción y próximos a vencer
+# =========================================================
+st.markdown("#### Vencidos sin recepción y próximos a vencer")
+st.caption(
+    "Incluye solo pedidos sin recepción. La fecha de vencimiento se calcula como fecha de solicitud + umbral TAT. "
+    "Los pedidos recepcionados se consideran cerrados para esta sección."
+)
 
 base_abiertos = df_filtrado.copy()
 if recepcion_col in base_abiertos.columns:
@@ -2823,10 +2917,43 @@ if recepcion_col in base_abiertos.columns:
 
 filas_vencimiento = []
 
+subset_vencidos = (
+    base_abiertos[pd.to_numeric(base_abiertos["dias_restantes_int"], errors="coerce").lt(0)]
+    if "dias_restantes_int" in base_abiertos.columns
+    else base_abiertos.iloc[0:0]
+)
+
+if not subset_vencidos.empty and "fecha_vencimiento_tat" in subset_vencidos.columns:
+    fecha_min_vencidos = fecha_texto(subset_vencidos["fecha_vencimiento_tat"].min())
+    fecha_max_vencidos = fecha_texto(subset_vencidos["fecha_vencimiento_tat"].max())
+    rango_vencidos = (
+        fecha_min_vencidos
+        if fecha_min_vencidos == fecha_max_vencidos
+        else f"{fecha_min_vencidos} a {fecha_max_vencidos}"
+    )
+else:
+    rango_vencidos = "Sin casos"
+
+filas_vencimiento.append(
+    {
+        "Pregunta": "Vencidos y sin recepcionar",
+        "Cantidad": len(subset_vencidos),
+        "Fecha de vencimiento": rango_vencidos,
+    }
+)
+
 # Se agrega 0 días para no ocultar casos que vencen hoy.
 for dias in range(0, 8):
-    subset = base_abiertos[base_abiertos["dias_restantes_int"].eq(dias)] if "dias_restantes_int" in base_abiertos.columns else base_abiertos.iloc[0:0]
-    fechas = sorted(subset["fecha_vencimiento_texto"].dropna().astype(str).unique().tolist()) if "fecha_vencimiento_texto" in subset.columns else []
+    subset = (
+        base_abiertos[pd.to_numeric(base_abiertos["dias_restantes_int"], errors="coerce").eq(dias)]
+        if "dias_restantes_int" in base_abiertos.columns
+        else base_abiertos.iloc[0:0]
+    )
+    fechas = (
+        sorted(subset["fecha_vencimiento_texto"].dropna().astype(str).unique().tolist())
+        if "fecha_vencimiento_texto" in subset.columns
+        else []
+    )
     if dias == 0:
         etiqueta = "Vencen hoy"
     elif dias == 1:
@@ -2841,8 +2968,21 @@ for dias in range(0, 8):
         }
     )
 
-subset_7_30 = base_abiertos[base_abiertos["dias_restantes_int"].between(8, 30, inclusive="both")] if "dias_restantes_int" in base_abiertos.columns else base_abiertos.iloc[0:0]
-subset_mas_mes = base_abiertos[base_abiertos["dias_restantes_int"].gt(30)] if "dias_restantes_int" in base_abiertos.columns else base_abiertos.iloc[0:0]
+subset_7_30 = (
+    base_abiertos[pd.to_numeric(base_abiertos["dias_restantes_int"], errors="coerce").between(8, 30, inclusive="both")]
+    if "dias_restantes_int" in base_abiertos.columns
+    else base_abiertos.iloc[0:0]
+)
+subset_mas_mes = (
+    base_abiertos[pd.to_numeric(base_abiertos["dias_restantes_int"], errors="coerce").gt(30)]
+    if "dias_restantes_int" in base_abiertos.columns
+    else base_abiertos.iloc[0:0]
+)
+subset_sin_datos_abiertos = (
+    base_abiertos[pd.to_numeric(base_abiertos["dias_restantes_int"], errors="coerce").isna()]
+    if "dias_restantes_int" in base_abiertos.columns
+    else base_abiertos.iloc[0:0]
+)
 
 filas_vencimiento.append(
     {
@@ -2850,7 +2990,7 @@ filas_vencimiento.append(
         "Cantidad": len(subset_7_30),
         "Fecha de vencimiento": (
             f"{fecha_texto(subset_7_30['fecha_vencimiento_tat'].min())} a {fecha_texto(subset_7_30['fecha_vencimiento_tat'].max())}"
-            if not subset_7_30.empty else "Sin casos"
+            if not subset_7_30.empty and "fecha_vencimiento_tat" in subset_7_30.columns else "Sin casos"
         ),
     }
 )
@@ -2860,8 +3000,15 @@ filas_vencimiento.append(
         "Cantidad": len(subset_mas_mes),
         "Fecha de vencimiento": (
             f"Desde {fecha_texto(subset_mas_mes['fecha_vencimiento_tat'].min())}"
-            if not subset_mas_mes.empty else "Sin casos"
+            if not subset_mas_mes.empty and "fecha_vencimiento_tat" in subset_mas_mes.columns else "Sin casos"
         ),
+    }
+)
+filas_vencimiento.append(
+    {
+        "Pregunta": "Sin fecha de vencimiento calculable y sin recepción",
+        "Cantidad": len(subset_sin_datos_abiertos),
+        "Fecha de vencimiento": "Sin dato calculable",
     }
 )
 
