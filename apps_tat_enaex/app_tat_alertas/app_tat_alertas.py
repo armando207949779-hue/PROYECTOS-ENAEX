@@ -525,6 +525,247 @@ st.markdown(
             margin-top: 14px;
         }
 
+        .exp-card {
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 22px;
+            padding: 18px 20px;
+            margin: 0.75rem 0 0.9rem 0;
+            box-shadow: 0 1px 6px rgba(15, 23, 42, 0.045);
+        }
+
+        .exp-title-row {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 14px;
+        }
+
+        .exp-title {
+            color: #0f172a;
+            font-size: 1.12rem;
+            line-height: 1.15;
+            font-weight: 950;
+        }
+
+        .exp-subtitle {
+            color: #64748b;
+            font-size: 0.86rem;
+            line-height: 1.35;
+            margin-top: 4px;
+        }
+
+        .exp-status-pill {
+            display: inline-block;
+            background: #eff6ff;
+            color: #1e40af;
+            border: 1px solid #bfdbfe;
+            border-radius: 999px;
+            padding: 6px 11px;
+            font-size: 0.8rem;
+            font-weight: 900;
+            white-space: nowrap;
+        }
+
+        .exp-main-grid {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(120px, 1fr));
+            gap: 10px;
+        }
+
+        .exp-field {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 16px;
+            padding: 11px 12px;
+            min-height: 68px;
+        }
+
+        .exp-field-label {
+            color: #64748b;
+            font-size: 0.7rem;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 0.045em;
+            margin-bottom: 5px;
+        }
+
+        .exp-field-value {
+            color: #0f172a;
+            font-size: 0.98rem;
+            font-weight: 900;
+            line-height: 1.2;
+            overflow-wrap: anywhere;
+        }
+
+        .exp-kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(160px, 1fr));
+            gap: 12px;
+            margin: 0.7rem 0 0.9rem 0;
+        }
+
+        .exp-kpi-card {
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 18px;
+            padding: 14px 15px;
+            box-shadow: 0 1px 5px rgba(15, 23, 42, 0.04);
+            min-height: 96px;
+        }
+
+        .exp-kpi-card-primary {
+            background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+            border-color: #bfdbfe;
+        }
+
+        .exp-kpi-label {
+            color: #64748b;
+            font-size: 0.72rem;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 0.045em;
+            margin-bottom: 7px;
+        }
+
+        .exp-kpi-value {
+            color: #0f172a;
+            font-size: 1.15rem;
+            line-height: 1.18;
+            font-weight: 950;
+            overflow-wrap: anywhere;
+        }
+
+        .exp-kpi-note {
+            color: #64748b;
+            font-size: 0.78rem;
+            line-height: 1.3;
+            margin-top: 5px;
+        }
+
+        .tat-flow-card {
+            background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+            border: 1px solid #dbeafe;
+            border-radius: 22px;
+            padding: 18px 20px 16px 20px;
+            margin: 0.85rem 0 0.95rem 0;
+            box-shadow: 0 1px 6px rgba(15, 23, 42, 0.045);
+        }
+
+        .tat-flow-title {
+            font-size: 0.9rem;
+            font-weight: 950;
+            color: #1e3a8a;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 0.045em;
+        }
+
+        .tat-flow {
+            display: flex;
+            align-items: stretch;
+            width: 100%;
+            overflow-x: auto;
+            padding-bottom: 4px;
+        }
+
+        .tat-flow-step {
+            flex: 0 0 154px;
+            text-align: center;
+            min-width: 0;
+        }
+
+        .tat-flow-dot {
+            width: 54px;
+            height: 54px;
+            border-radius: 999px;
+            margin: 0 auto 10px auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 950;
+            font-size: 1.1rem;
+            box-sizing: border-box;
+        }
+
+        .tat-flow-dot-ok {
+            background: #22c55e;
+            color: #ffffff;
+            border: 4px solid #22c55e;
+        }
+
+        .tat-flow-dot-risk {
+            background: #fff7ed;
+            color: #c2410c;
+            border: 5px solid #fb923c;
+        }
+
+        .tat-flow-dot-bad {
+            background: #fef2f2;
+            color: #991b1b;
+            border: 5px solid #ef4444;
+        }
+
+        .tat-flow-dot-active {
+            background: #ffffff;
+            color: #1d4ed8;
+            border: 6px solid #3b82f6;
+        }
+
+        .tat-flow-dot-pending {
+            background: #ffffff;
+            color: #94a3b8;
+            border: 5px solid #cbd5e1;
+        }
+
+        .tat-flow-label {
+            font-size: 0.82rem;
+            font-weight: 950;
+            color: #1f2937;
+            line-height: 1.15;
+            text-transform: uppercase;
+        }
+
+        .tat-flow-date {
+            color: #475569;
+            font-size: 0.76rem;
+            line-height: 1.22;
+            margin-top: 4px;
+            overflow-wrap: anywhere;
+        }
+
+        .tat-flow-detail {
+            color: #334155;
+            font-size: 0.76rem;
+            line-height: 1.25;
+            margin-top: 6px;
+        }
+
+        .tat-flow-connector {
+            flex: 1 1 auto;
+            height: 7px;
+            min-width: 34px;
+            margin-top: 24px;
+            border-radius: 999px;
+            background: #cbd5e1;
+        }
+
+        .tat-flow-connector-ok {
+            background: #22c55e;
+        }
+
+        .tat-flow-connector-active {
+            background: repeating-linear-gradient(90deg, #3b82f6 0 18px, transparent 18px 30px);
+        }
+
+        .tat-flow-note {
+            color: #475569;
+            font-size: 0.84rem;
+            line-height: 1.35;
+            margin-top: 14px;
+        }
+
         .head-grid {
             display: grid;
             grid-template-columns: repeat(5, minmax(120px, 1fr));
@@ -681,6 +922,16 @@ st.markdown(
             }
         }
 
+        @media (max-width: 1200px) {
+            .exp-main-grid {
+                grid-template-columns: repeat(3, minmax(120px, 1fr));
+            }
+
+            .exp-kpi-grid {
+                grid-template-columns: repeat(2, minmax(160px, 1fr));
+            }
+        }
+
         @media (max-width: 760px) {
             .stage-wrap {
                 grid-template-columns: 1fr;
@@ -700,6 +951,16 @@ st.markdown(
 
             .head-grid {
                 grid-template-columns: 1fr;
+            }
+
+            .exp-main-grid,
+            .exp-kpi-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .exp-title-row {
+                flex-direction: column;
+                align-items: flex-start;
             }
 
             .tat-summary {
@@ -1364,7 +1625,7 @@ def diagnostico_avance(row: pd.Series) -> str:
 
 def html_avance_actual(row: pd.Series) -> str:
     avance = obtener_avance_pedido(row)
-    dias_parcial = texto_dias_y_meses(avance["dias_parcial"])
+    dias_parcial = formato_tiempo_transcurrido(avance["dias_parcial"])
     dias_restantes = texto_dias_restantes(avance["dias_restantes"])
     umbral = avance.get("umbral_tat", np.nan)
 
@@ -1480,6 +1741,158 @@ def html_linea_pedido(row: pd.Series) -> str:
         """
     ).strip()
 
+
+
+
+def html_resumen_pedido_expediente(row: pd.Series) -> str:
+    oc_principal = row.get(COL_OC_ME5A, row.get(COL_OC_NME, np.nan))
+    pos_principal = row.get(COL_POS_OC, row.get(COL_POS_SOLPED, np.nan))
+    estado_recepcion = row.get("estado_recepcion_simple", row.get(COL_ESTADO_RECEPCION_ALERTA, np.nan))
+
+    return dedent(
+        f"""
+        <div class="exp-card">
+            <div class="exp-title-row">
+                <div>
+                    <div class="exp-title">Resumen del pedido · SolPed {html_id(row.get(COL_SOLPED, np.nan))}</div>
+                    <div class="exp-subtitle">Pedido {html_id(oc_principal)} · Posición {html_id(pos_principal)} · Centro {html_texto(row.get(COL_CENTRO, np.nan))}</div>
+                </div>
+                <div class="exp-status-pill">{html_texto(estado_recepcion)}</div>
+            </div>
+            <div class="exp-main-grid">
+                <div class="exp-field">
+                    <div class="exp-field-label">Solicitud de pedido</div>
+                    <div class="exp-field-value">{html_id(row.get(COL_SOLPED, np.nan))}</div>
+                </div>
+                <div class="exp-field">
+                    <div class="exp-field-label">Pedido</div>
+                    <div class="exp-field-value">{html_id(oc_principal)}</div>
+                </div>
+                <div class="exp-field">
+                    <div class="exp-field-label">Posición pedido</div>
+                    <div class="exp-field-value">{html_id(pos_principal)}</div>
+                </div>
+                <div class="exp-field">
+                    <div class="exp-field-label">Centro</div>
+                    <div class="exp-field-value">{html_texto(row.get(COL_CENTRO, np.nan))}</div>
+                </div>
+                <div class="exp-field">
+                    <div class="exp-field-label">Grupo compras</div>
+                    <div class="exp-field-value">{html_texto(row.get(COL_GRUPO_COMPRAS, np.nan))}</div>
+                </div>
+            </div>
+        </div>
+        """
+    ).strip()
+
+
+def html_kpis_expediente(row: pd.Series) -> str:
+    dias_restantes = row.get("dias_restantes_tat", np.nan)
+    fecha_vencimiento = row.get("fecha_vencimiento_texto", np.nan)
+    return dedent(
+        f"""
+        <div class="exp-kpi-grid">
+            <div class="exp-kpi-card exp-kpi-card-primary">
+                <div class="exp-kpi-label">Días hasta vencimiento</div>
+                <div class="exp-kpi-value">{html_texto(row.get('clasificacion_vencimiento', np.nan))}</div>
+                <div class="exp-kpi-note">Fecha vencimiento: {html_texto(fecha_vencimiento)}</div>
+            </div>
+            <div class="exp-kpi-card exp-kpi-card-primary">
+                <div class="exp-kpi-label">Días restantes</div>
+                <div class="exp-kpi-value">{escape(formato_dias_restantes_operativo(dias_restantes))}</div>
+                <div class="exp-kpi-note">Contra umbral TAT total</div>
+            </div>
+            <div class="exp-kpi-card">
+                <div class="exp-kpi-label">Última etapa registrada</div>
+                <div class="exp-kpi-value">{html_texto(row.get('ultima_etapa_registrada', np.nan))}</div>
+                <div class="exp-kpi-note">Última fecha: {html_texto(row.get('ultima_fecha_registrada_texto', np.nan))}</div>
+            </div>
+            <div class="exp-kpi-card">
+                <div class="exp-kpi-label">Fecha pendiente</div>
+                <div class="exp-kpi-value">{html_texto(row.get('fecha_pendiente', np.nan))}</div>
+                <div class="exp-kpi-note">Siguiente hito requerido</div>
+            </div>
+        </div>
+        """
+    ).strip()
+
+
+def _estado_visual_etapa_tat(row: pd.Series, etapa: dict, indice: int, indice_activo: int) -> tuple[str, str]:
+    fecha_col = etapa.get("fecha")
+    completada = bool(fecha_col and pd.notna(row.get(fecha_col, np.nan)))
+    perf_col = etapa.get("performance")
+    perf = str(row.get(perf_col, "")).strip().lower() if perf_col else ""
+
+    if completada and perf == "no cumple":
+        return "tat-flow-dot-bad", "!"
+    if completada and perf in ["en proceso", "sin datos"]:
+        return "tat-flow-dot-risk", "…"
+    if completada:
+        return "tat-flow-dot-ok", "✓"
+    if indice == indice_activo:
+        return "tat-flow-dot-active", ""
+    return "tat-flow-dot-pending", ""
+
+
+def html_diagrama_tat_unificado(row: pd.Series) -> str:
+    etapas = ETAPAS_PEDIDO
+    completadas = [pd.notna(row.get(etapa.get("fecha"), np.nan)) for etapa in etapas]
+    try:
+        indice_activo = completadas.index(False)
+    except ValueError:
+        indice_activo = len(etapas) - 1
+
+    partes = []
+    for i, etapa in enumerate(etapas):
+        dot_class, icono = _estado_visual_etapa_tat(row, etapa, i, indice_activo)
+        fecha_txt = fecha_etapa_texto(row, etapa.get("fecha")) if etapa.get("fecha") else "-"
+        dias_col = etapa.get("dias")
+        umbral_col = etapa.get("umbral")
+        perf_col = etapa.get("performance")
+
+        if dias_col:
+            dias_txt = formato_tiempo_transcurrido(row.get(dias_col, np.nan))
+            umbral_txt = formato_valor(row.get(umbral_col, np.nan)) if umbral_col else "-"
+            perf_txt = formato_valor(row.get(perf_col, np.nan)) if perf_col else "Registrado"
+            detalle = f"{dias_txt} · umbral {umbral_txt} días · {perf_txt}"
+        else:
+            detalle = "Punto de inicio"
+
+        partes.append(
+            dedent(
+                f"""
+                <div class="tat-flow-step">
+                    <div class="tat-flow-dot {dot_class}">{escape(icono)}</div>
+                    <div class="tat-flow-label">{escape(str(etapa.get('titulo', '')).split('. ', 1)[-1])}</div>
+                    <div class="tat-flow-date">{escape(fecha_txt)}</div>
+                    <div class="tat-flow-detail">{escape(detalle)}</div>
+                </div>
+                """
+            ).strip()
+        )
+
+        if i < len(etapas) - 1:
+            if completadas[i] and completadas[i + 1]:
+                connector_class = "tat-flow-connector-ok"
+            elif completadas[i] and not completadas[i + 1]:
+                connector_class = "tat-flow-connector-active"
+            else:
+                connector_class = ""
+            partes.append(f'<div class="tat-flow-connector {connector_class}"></div>')
+
+    estado_tat = formato_valor(row.get(COL_PERF_TAT, np.nan))
+    dias_tat = texto_tat_total_usuario(row.get(COL_PERF_TAT, np.nan), row.get(COL_DIAS_TAT, np.nan))
+    return dedent(
+        f"""
+        <div class="tat-flow-card">
+            <div class="tat-flow-title">Avance y etapas TAT</div>
+            <div class="tat-flow">{''.join(partes)}</div>
+            <div class="tat-flow-note">
+                TAT total: <strong>{escape(dias_tat)}</strong> · Estado: <strong>{escape(estado_tat)}</strong>. Los hitos muestran fecha registrada, días de etapa, umbral y performance.
+            </div>
+        </div>
+        """
+    ).strip()
 
 def clase_performance(valor: Any) -> str:
     texto = str(valor).strip().lower()
@@ -3654,8 +4067,19 @@ st.markdown("### Expediente del pedido")
 if df_filtrado.empty:
     st.info("No hay pedidos disponibles con los filtros actuales.")
 else:
-    opciones_registro = df_filtrado.index.tolist()
-    labels = {idx: construir_label_registro(df_filtrado.loc[idx]) for idx in opciones_registro[:5000]}
+    total_expediente = len(df_filtrado)
+    max_selector = 5000
+    opciones_registro = df_filtrado.index.tolist()[:max_selector]
+    registros_selector = len(opciones_registro)
+
+    st.caption(
+        (
+            f"El selector contiene {registros_selector:,} registros del resultado filtrado actual "
+            f"de un total de {total_expediente:,} registros disponibles con los filtros aplicados."
+        ).replace(",", ".")
+    )
+
+    labels = {idx: construir_label_registro(df_filtrado.loc[idx]) for idx in opciones_registro}
 
     seleccionado = st.selectbox(
         "Selecciona un pedido para ver el expediente",
@@ -3665,39 +4089,11 @@ else:
 
     row = df_filtrado.loc[seleccionado]
 
-    st.markdown(
-        dedent(
-            f"""
-            <div class="order-head">
-                <div class="order-title">Resumen del pedido</div>
-                <div class="head-grid">
-                    <div><div class="head-label">SolPed</div><div class="head-value">{html_id(row.get(COL_SOLPED, np.nan))}</div></div>
-                    <div><div class="head-label">OC ME5A</div><div class="head-value">{html_id(row.get(COL_OC_ME5A, np.nan))}</div></div>
-                    <div><div class="head-label">OC NME80FN</div><div class="head-value">{html_id(row.get(COL_OC_NME, np.nan))}</div></div>
-                    <div><div class="head-label">Centro</div><div class="head-value">{html_texto(row.get(COL_CENTRO, np.nan))}</div></div>
-                    <div><div class="head-label">Grupo compras</div><div class="head-value">{html_texto(row.get(COL_GRUPO_COMPRAS, np.nan))}</div></div>
-                </div>
-            </div>
-            """
-        ).strip(),
-        unsafe_allow_html=True,
-    )
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Días hasta vencimiento", formato_valor(row.get("clasificacion_vencimiento", np.nan)))
-    c2.metric("Días restantes", formato_valor(row.get("dias_restantes_texto", np.nan)))
-    c3.metric("Última etapa registrada", formato_valor(row.get("ultima_etapa_registrada", np.nan)))
-    c4.metric("Fecha pendiente", formato_valor(row.get("fecha_pendiente", np.nan)))
+    st.markdown(html_resumen_pedido_expediente(row), unsafe_allow_html=True)
+    st.markdown(html_kpis_expediente(row), unsafe_allow_html=True)
 
     st.markdown(html_avance_actual(row), unsafe_allow_html=True)
-    st.markdown(html_linea_pedido(row), unsafe_allow_html=True)
-
-    st.markdown("#### Etapas TAT")
-    components.html(
-        html_estado_pedido(row),
-        height=230,
-        scrolling=True,
-    )
+    st.markdown(html_diagrama_tat_unificado(row), unsafe_allow_html=True)
 
     with st.expander("Registro completo del pedido", expanded=False):
         registro = row.to_frame(name="Valor").reset_index().rename(columns={"index": "Campo"})
