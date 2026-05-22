@@ -1266,10 +1266,7 @@ def grafico_pareto_incumplimiento_tat(df: pd.DataFrame):
         st.info("No existe la columna rango_incumplimiento_tat.")
         return
 
-    data = (
-        df[df["rango_incumplimiento_tat"].notna()]
-        .copy()
-    )
+    data = df[df["rango_incumplimiento_tat"].notna()].copy()
 
     data = data[
         ~data["rango_incumplimiento_tat"].isin(
@@ -1290,41 +1287,77 @@ def grafico_pareto_incumplimiento_tat(df: pd.DataFrame):
     pareto.columns = ["Rango", "Cantidad"]
     pareto = pareto.sort_values("Cantidad", ascending=False).reset_index(drop=True)
     pareto["Acumulado"] = pareto["Cantidad"].cumsum()
+    pareto["% del total"] = pareto["Cantidad"] / pareto["Cantidad"].sum() * 100
     pareto["% Acumulado"] = pareto["Acumulado"] / pareto["Cantidad"].sum() * 100
+    pareto["Etiqueta cantidad"] = pareto["Cantidad"].map(lambda x: f"{x:,.0f}")
+    pareto["Etiqueta acumulado"] = pareto["% Acumulado"].map(lambda x: f"{x:.0f}%")
 
     orden = pareto["Rango"].tolist()
+    alto = max(320, 70 * len(pareto))
 
     barras = (
         alt.Chart(pareto)
-        .mark_bar(cornerRadius=5)
+        .mark_bar(
+            cornerRadiusTopLeft=7,
+            cornerRadiusTopRight=7,
+            opacity=0.92,
+        )
         .encode(
-            x=alt.X("Rango:N", sort=orden, title=None, axis=alt.Axis(labelAngle=0)),
-            y=alt.Y("Cantidad:Q", title="Cantidad"),
-            color=alt.value(COLOR_NO_CUMPLE),
+            x=alt.X(
+                "Rango:N",
+                sort=orden,
+                title=None,
+                axis=alt.Axis(labelAngle=0, labelFontSize=11, labelLimit=130),
+            ),
+            y=alt.Y(
+                "Cantidad:Q",
+                title="Cantidad de incumplimientos",
+                axis=alt.Axis(grid=True, tickMinStep=1),
+            ),
+            color=alt.Color(
+                "% del total:Q",
+                title="% del total",
+                scale=alt.Scale(range=["#FCA5A5", COLOR_NO_CUMPLE]),
+                legend=alt.Legend(orient="bottom", format=".0f"),
+            ),
             tooltip=[
                 alt.Tooltip("Rango:N", title="Rango"),
                 alt.Tooltip("Cantidad:Q", title="Cantidad", format=",.0f"),
+                alt.Tooltip("% del total:Q", title="% del total", format=".1f"),
                 alt.Tooltip("% Acumulado:Q", title="% acumulado", format=".1f"),
             ],
         )
     )
 
-    texto = (
-        barras
-        .mark_text(dy=-6, color=COLOR_TEXTO, fontWeight="bold")
-        .encode(text=alt.Text("Cantidad:Q", format=",.0f"))
+    etiquetas_barras = (
+        alt.Chart(pareto)
+        .mark_text(
+            dy=-8,
+            color=COLOR_TEXTO,
+            fontWeight="bold",
+            fontSize=12,
+        )
+        .encode(
+            x=alt.X("Rango:N", sort=orden, title=None),
+            y=alt.Y("Cantidad:Q"),
+            text="Etiqueta cantidad:N",
+        )
     )
 
-    linea = (
+    linea_acumulada = (
         alt.Chart(pareto)
-        .mark_line(point=True, strokeWidth=3, color=COLOR_META)
+        .mark_line(
+            point=alt.OverlayMarkDef(filled=True, size=75),
+            strokeWidth=3,
+            color=COLOR_META,
+        )
         .encode(
             x=alt.X("Rango:N", sort=orden, title=None),
             y=alt.Y(
                 "% Acumulado:Q",
                 title="% acumulado",
                 scale=alt.Scale(domain=[0, 100]),
-                axis=alt.Axis(labelExpr="datum.value + '%'"),
+                axis=alt.Axis(labelExpr="datum.value + '%'", grid=False),
             ),
             tooltip=[
                 alt.Tooltip("Rango:N", title="Rango"),
@@ -1333,12 +1366,42 @@ def grafico_pareto_incumplimiento_tat(df: pd.DataFrame):
         )
     )
 
-    chart = alt.layer(barras, texto, linea).resolve_scale(y="independent")
-
-    st.altair_chart(
-        chart.properties(height=300).configure_view(strokeWidth=0),
-        use_container_width=True,
+    etiquetas_linea = (
+        alt.Chart(pareto)
+        .mark_text(
+            dy=-14,
+            color=COLOR_META,
+            fontWeight="bold",
+            fontSize=11,
+        )
+        .encode(
+            x=alt.X("Rango:N", sort=orden, title=None),
+            y=alt.Y("% Acumulado:Q"),
+            text="Etiqueta acumulado:N",
+        )
     )
+
+    regla_80 = (
+        alt.Chart(pd.DataFrame({"Meta Pareto": [80]}))
+        .mark_rule(
+            color=COLOR_MUTED,
+            strokeDash=[5, 5],
+            strokeWidth=1.5,
+        )
+        .encode(y=alt.Y("Meta Pareto:Q"))
+    )
+
+    chart = (
+        alt.layer(barras, etiquetas_barras, linea_acumulada, etiquetas_linea, regla_80)
+        .resolve_scale(y="independent")
+        .properties(height=alto)
+        .configure_view(strokeWidth=0)
+        .configure_axis(labelColor=COLOR_MUTED, titleColor=COLOR_TEXTO)
+        .configure_legend(labelColor=COLOR_MUTED, titleColor=COLOR_TEXTO)
+    )
+
+    st.altair_chart(chart, use_container_width=True)
+
 def normalizar_estado_donut(valor) -> str:
     texto = str(valor).strip().lower()
 
@@ -2016,29 +2079,41 @@ try:
         evaluables_tat = cumple_tat + no_cumple_tat
         pct_cumple_tat = cumple_tat / evaluables_tat * 100 if evaluables_tat else 0
         pct_no_cumple_tat = no_cumple_tat / evaluables_tat * 100 if evaluables_tat else 0
-
-        incumplimientos_tat = (
-            int(df_dashboard["incumplimiento_tat"].eq(True).sum())
-            if "incumplimiento_tat" in df_dashboard.columns
+        pct_filtrado = (
+            total_filas / total_registros_inicial * 100
+            if total_registros_inicial > 0
             else 0
         )
 
-        k1, k2, k3, k4, k5 = st.columns(5)
+        k1, k2, k3, k4 = st.columns(4)
 
         with k1:
-            card_metric("Filas filtradas", f"{total_filas:,}")
+            card_metric(
+                "Cantidad inicial de datos",
+                f"{total_registros_inicial:,}",
+                "Registros del archivo cargado",
+            )
 
         with k2:
-            card_metric("TAT evaluable", f"{evaluables_tat:,}")
+            card_metric(
+                "Cantidad de datos filtrados",
+                f"{total_filas:,}",
+                f"{pct_filtrado:.1f}% de la base inicial",
+            )
 
         with k3:
-            card_metric("Cumple TAT", f"{cumple_tat:,}", f"{pct_cumple_tat:.1f}%")
+            card_metric(
+                "% que cumple",
+                f"{pct_cumple_tat:.1f}%",
+                f"{cumple_tat:,} de {evaluables_tat:,} TAT evaluables",
+            )
 
         with k4:
-            card_metric("No cumple TAT", f"{no_cumple_tat:,}", f"{pct_no_cumple_tat:.1f}%")
-
-        with k5:
-            card_metric("Incumplimiento TAT", f"{incumplimientos_tat:,}")
+            card_metric(
+                "% que no cumple",
+                f"{pct_no_cumple_tat:.1f}%",
+                f"{no_cumple_tat:,} de {evaluables_tat:,} TAT evaluables",
+            )
 
         st.divider()
 
