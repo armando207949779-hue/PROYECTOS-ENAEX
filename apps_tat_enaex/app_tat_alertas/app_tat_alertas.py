@@ -4549,11 +4549,11 @@ else:
 
         row = df_expediente.loc[seleccionado]
 
+        st.markdown(html_resumen_pedido_expediente(row), unsafe_allow_html=True)
+        st.markdown(html_avance_actual(row), unsafe_allow_html=True)
         st.markdown(html_linea_pedido(row), unsafe_allow_html=True)
         st.markdown(html_diagrama_tat_unificado(row), unsafe_allow_html=True)
-        st.markdown(html_resumen_pedido_expediente(row), unsafe_allow_html=True)
         st.markdown(html_kpis_expediente(row), unsafe_allow_html=True)
-        st.markdown(html_avance_actual(row), unsafe_allow_html=True)
 
         with st.expander("Registro completo del pedido", expanded=False):
             registro = row.to_frame(name="Valor").reset_index().rename(columns={"index": "Campo"})
