@@ -165,6 +165,75 @@ COLUMNAS_TABLA_PRINCIPAL = [
 
 
 # =========================================================
+# Catálogo de centros
+# =========================================================
+CENTROS_CATALOGO = {
+    "E002": {"sociedad": "EC01", "nombre": "Prillex"},
+    "E021": {"sociedad": "EC06", "nombre": "CM-Enaex Servicios"},
+    "E024": {"sociedad": "EC06", "nombre": "Río Loa"},
+    "E025": {"sociedad": "EC06", "nombre": "Planta La Chimba"},
+    "E026": {"sociedad": "EC06", "nombre": "Teatinos"},
+    "E029": {"sociedad": "EC06", "nombre": "Chuquicamata"},
+    "E030": {"sociedad": "EC06", "nombre": "El Tesoro"},
+    "E031": {"sociedad": "EC06", "nombre": "La Escondida"},
+    "E032": {"sociedad": "EC06", "nombre": "Loma Bayas"},
+    "E033": {"sociedad": "EC06", "nombre": "Los Pelambres"},
+    "E034": {"sociedad": "EC06", "nombre": "Los Sauces"},
+    "E035": {"sociedad": "EC06", "nombre": "Mantos Blancos"},
+    "E036": {"sociedad": "EC06", "nombre": "Michilla"},
+    "E037": {"sociedad": "EC06", "nombre": "RT"},
+    "E038": {"sociedad": "EC06", "nombre": "El Soldado"},
+    "E039": {"sociedad": "EC06", "nombre": "Polpaico"},
+    "E040": {"sociedad": "EC06", "nombre": "Peldehue"},
+    "E041": {"sociedad": "EC06", "nombre": "Esperanza"},
+    "E042": {"sociedad": "EC06", "nombre": "Gaby"},
+    "E044": {"sociedad": "EC06", "nombre": "Atacama Kozan"},
+    "E045": {"sociedad": "EC06", "nombre": "Franke"},
+    "E046": {"sociedad": "EC06", "nombre": "Manto Verde"},
+    "E047": {"sociedad": "EC06", "nombre": "Polvorín Copiapó"},
+    "E069": {"sociedad": "EC06", "nombre": "Guanaco"},
+    "E071": {"sociedad": "EC06", "nombre": "Teniente"},
+    "E076": {"sociedad": "EC06", "nombre": "Mejillones"},
+    "E077": {"sociedad": "EC06", "nombre": "Ministro Hales"},
+    "E078": {"sociedad": "EC06", "nombre": "Sierra Gorda"},
+    "E079": {"sociedad": "EC06", "nombre": "Planta Quebrada Blanca"},
+    "E081": {"sociedad": "EC06", "nombre": "Chuqui Subte"},
+    "E086": {"sociedad": "EC06", "nombre": "Antucoya"},
+    "E087": {"sociedad": "EC06", "nombre": "Alto Maipo"},
+    "E088": {"sociedad": "EC06", "nombre": "Encuentro"},
+    "E089": {"sociedad": "EC06", "nombre": "Cerro Colorado"},
+    "E090": {"sociedad": "EC06", "nombre": "Collahuasi"},
+    "E091": {"sociedad": "EC06", "nombre": "Romeral"},
+    "E095": {"sociedad": "EC06", "nombre": "Planta Andina"},
+    "E097": {"sociedad": "EC06", "nombre": "Andina"},
+    "E099": {"sociedad": "EC06", "nombre": "Salvador"},
+    "E103": {"sociedad": "EC06", "nombre": "Zaldívar"},
+    "E104": {"sociedad": "EC06", "nombre": "Salares Norte"},
+    "E105": {"sociedad": "EC06", "nombre": "Los Colorados"},
+    "E106": {"sociedad": "EC06", "nombre": "Cerro N.N."},
+    "E107": {"sociedad": "EC06", "nombre": "Pleito"},
+    "E108": {"sociedad": "EC06", "nombre": "Plasma Enaex Servicios"},
+    "E109": {"sociedad": "EC06", "nombre": "Carola"},
+    "E110": {"sociedad": "EC06", "nombre": "Alto Hospicio SKC Enaex Servicios"},
+    "E113": {"sociedad": "EC06", "nombre": "Copiapó SKC Enaex Servicios"},
+    "E114": {"sociedad": "EC06", "nombre": "FullRPM Nogales Enaex Servicios"},
+    "E082": {"sociedad": "EC07", "nombre": "Nittra Casa Matriz"},
+    "E083": {"sociedad": "EC07", "nombre": "Nittra Prillex"},
+    "E084": {"sociedad": "EC07", "nombre": "Nittra Paine"},
+    "E101": {"sociedad": "EC10", "nombre": "Plasma"},
+    "E003": {"sociedad": "EC01", "nombre": "Planta Río Loa"},
+    "E009": {"sociedad": "EC01", "nombre": "Planta Chuquicamata"},
+    "E020": {"sociedad": "EC01", "nombre": "Planta Polpaico"},
+    "E057": {"sociedad": "EC01", "nombre": "Esperanza"},
+    "E102": {"sociedad": "EC06", "nombre": "SCL Bodega Arriendo"},
+    "E043": {"sociedad": "EC06", "nombre": "El Peñón Subte"},
+    "E115": {"sociedad": "EC06", "nombre": "Enaex SKC ING"},
+    "E027": {"sociedad": "EC06", "nombre": "Faena Teniente Rajo"},
+    "E052": {"sociedad": "EC06", "nombre": "Faena Spence"},
+}
+
+
+# =========================================================
 # Estilos visuales
 # =========================================================
 st.markdown(
@@ -491,6 +560,181 @@ st.markdown(
             background: #dbeafe;
             color: #1e40af;
             border-color: #bfdbfe;
+        }
+
+
+        .app-hero {
+            background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+            border: 1px solid #bfdbfe;
+            border-left: 8px solid #2563eb;
+            border-radius: 24px;
+            padding: 22px 24px;
+            margin: 0.5rem 0 1.2rem 0;
+            box-shadow: 0 2px 12px rgba(37, 99, 235, 0.08);
+        }
+
+        .app-hero-eyebrow {
+            color: #1e40af;
+            font-size: 0.8rem;
+            font-weight: 950;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: 8px;
+        }
+
+        .app-hero-title {
+            color: #0f172a;
+            font-size: 2rem;
+            line-height: 1.08;
+            font-weight: 950;
+            margin-bottom: 8px;
+        }
+
+        .app-hero-subtitle {
+            color: #334155;
+            font-size: 0.98rem;
+            line-height: 1.45;
+            max-width: 980px;
+        }
+
+        .search-panel {
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 24px;
+            padding: 18px 20px 20px 20px;
+            margin: 0.85rem 0 1rem 0;
+            box-shadow: 0 1px 8px rgba(15, 23, 42, 0.045);
+        }
+
+        .search-panel-title {
+            color: #0f172a;
+            font-size: 1.08rem;
+            line-height: 1.2;
+            font-weight: 950;
+            margin-bottom: 4px;
+        }
+
+        .search-panel-text {
+            color: #64748b;
+            font-size: 0.9rem;
+            line-height: 1.4;
+            margin-bottom: 12px;
+        }
+
+        .search-confirmed {
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            border-left: 6px solid #22c55e;
+            border-radius: 18px;
+            padding: 12px 14px;
+            margin: 0.7rem 0 0.35rem 0;
+            color: #14532d;
+            font-size: 0.9rem;
+            line-height: 1.35;
+            font-weight: 750;
+        }
+
+        .search-empty {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-left: 6px solid #94a3b8;
+            border-radius: 18px;
+            padding: 12px 14px;
+            margin: 0.7rem 0 0.35rem 0;
+            color: #475569;
+            font-size: 0.9rem;
+            line-height: 1.35;
+            font-weight: 750;
+        }
+
+        .exp-card {
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 22px;
+            padding: 18px 20px;
+            margin: 0.75rem 0 0.9rem 0;
+            box-shadow: 0 1px 6px rgba(15, 23, 42, 0.045);
+        }
+
+        .exp-title-row {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 14px;
+        }
+
+        .exp-title {
+            color: #0f172a;
+            font-size: 1.12rem;
+            line-height: 1.15;
+            font-weight: 950;
+        }
+
+        .exp-subtitle {
+            color: #64748b;
+            font-size: 0.86rem;
+            line-height: 1.35;
+            margin-top: 4px;
+        }
+
+        .exp-status-pill {
+            display: inline-block;
+            background: #eff6ff;
+            color: #1e40af;
+            border: 1px solid #bfdbfe;
+            border-radius: 999px;
+            padding: 6px 11px;
+            font-size: 0.8rem;
+            font-weight: 900;
+            white-space: nowrap;
+        }
+
+        .exp-main-grid {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(120px, 1fr));
+            gap: 10px;
+        }
+
+        .exp-field {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 16px;
+            padding: 11px 12px;
+            min-height: 68px;
+        }
+
+        .exp-field-label {
+            color: #64748b;
+            font-size: 0.7rem;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 0.045em;
+            margin-bottom: 5px;
+        }
+
+        .exp-field-value {
+            color: #0f172a;
+            font-size: 0.98rem;
+            font-weight: 900;
+            line-height: 1.2;
+            overflow-wrap: anywhere;
+        }
+
+        .section-title {
+            color: #0f172a;
+            font-size: 1.16rem;
+            line-height: 1.2;
+            font-weight: 950;
+            margin: 1rem 0 0.55rem 0;
+        }
+
+        .section-caption {
+            color: #64748b;
+            font-size: 0.88rem;
+            line-height: 1.4;
+            margin-top: -0.25rem;
+            margin-bottom: 0.6rem;
         }
 
 
@@ -1343,6 +1587,159 @@ def html_id(valor: Any) -> str:
     return escape(formato_id(valor))
 
 
+def codigo_centro(valor: Any) -> str:
+    texto = formato_id(valor).strip()
+    if texto == "-":
+        return "-"
+    return texto.upper()
+
+
+def nombre_centro(valor: Any) -> str:
+    codigo = codigo_centro(valor)
+    return CENTROS_CATALOGO.get(codigo, {}).get("nombre", "")
+
+
+def sociedad_centro(valor: Any) -> str:
+    codigo = codigo_centro(valor)
+    return CENTROS_CATALOGO.get(codigo, {}).get("sociedad", "")
+
+
+def etiqueta_centro(valor: Any, incluir_sociedad: bool = False) -> str:
+    codigo = codigo_centro(valor)
+    if codigo == "-":
+        return "-"
+
+    info = CENTROS_CATALOGO.get(codigo)
+    if not info:
+        return codigo
+
+    if incluir_sociedad:
+        return f"{codigo} · {info['nombre']} · {info['sociedad']}"
+
+    return f"{codigo} · {info['nombre']}"
+
+
+def html_centro(valor: Any, incluir_sociedad: bool = False) -> str:
+    return escape(etiqueta_centro(valor, incluir_sociedad=incluir_sociedad))
+
+
+def opciones_centro_con_nombre(df: pd.DataFrame) -> list[str]:
+    codigos = opciones_columna(df, COL_CENTRO)
+    return [etiqueta_centro(codigo) for codigo in codigos]
+
+
+def codigos_desde_etiquetas_centro(etiquetas: list[str]) -> list[str]:
+    codigos = []
+    for etiqueta in etiquetas or []:
+        codigo = str(etiqueta).split("·", 1)[0].strip()
+        if codigo:
+            codigos.append(codigo)
+    return codigos
+
+
+def preparar_tabla_visual(df_base: pd.DataFrame) -> pd.DataFrame:
+    df_vis = df_base.copy()
+    if COL_CENTRO in df_vis.columns:
+        df_vis[COL_CENTRO] = df_vis[COL_CENTRO].apply(etiqueta_centro)
+    return df_vis
+
+
+def estado_recepcion_simple(row: pd.Series) -> str:
+    for col in ["fecha_recepcion_final", "Fecha recepción mercancía - NME80FN"]:
+        if col in row.index and pd.notna(row.get(col, pd.NaT)):
+            return "Recepcionado"
+    return "Sin recepción"
+
+
+def html_resumen_expediente_buscador(row: pd.Series) -> str:
+    oc_principal = obtener_oc_principal(row)
+
+    pos_principal = row.get(COL_POS_SOLPED, np.nan)
+    estado = estado_recepcion_simple(row)
+
+    return dedent(
+        f"""
+        <div class="exp-card">
+            <div class="exp-title-row">
+                <div>
+                    <div class="exp-title">Expediente encontrado · SolPed {html_id(row.get(COL_SOLPED, np.nan))}</div>
+                    <div class="exp-subtitle">Pedido {html_id(oc_principal)} · Posición solicitud {html_id(pos_principal)} · Centro {html_centro(row.get(COL_CENTRO, np.nan))}</div>
+                </div>
+                <div class="exp-status-pill">{escape(estado)}</div>
+            </div>
+            <div class="exp-main-grid">
+                <div class="exp-field">
+                    <div class="exp-field-label">Solicitud de pedido</div>
+                    <div class="exp-field-value">{html_id(row.get(COL_SOLPED, np.nan))}</div>
+                </div>
+                <div class="exp-field">
+                    <div class="exp-field-label">Pedido / OC</div>
+                    <div class="exp-field-value">{html_id(oc_principal)}</div>
+                </div>
+                <div class="exp-field">
+                    <div class="exp-field-label">Posición SolPed</div>
+                    <div class="exp-field-value">{html_id(pos_principal)}</div>
+                </div>
+                <div class="exp-field">
+                    <div class="exp-field-label">Centro</div>
+                    <div class="exp-field-value">{html_centro(row.get(COL_CENTRO, np.nan))}</div>
+                </div>
+                <div class="exp-field">
+                    <div class="exp-field-label">Grupo compras</div>
+                    <div class="exp-field-value">{html_texto(row.get(COL_GRUPO_COMPRAS, np.nan))}</div>
+                </div>
+            </div>
+        </div>
+        """
+    ).strip()
+
+
+def render_hero_buscador() -> None:
+    st.markdown(
+        """
+        <div class="app-hero">
+            <div class="app-hero-eyebrow">Buscador operativo</div>
+            <div class="app-hero-title">Buscador SolPed / OC</div>
+            <div class="app-hero-subtitle">Busca expedientes por solicitud de pedido, orden de compra o posición. La vista prioriza encontrar un registro rápido y luego mostrar su trazabilidad TAT con la misma estética del panel de alertas.</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def abrir_panel_busqueda() -> None:
+    st.markdown(
+        """
+        <div class="search-panel">
+            <div class="search-panel-title">Búsqueda principal del expediente</div>
+            <div class="search-panel-text">Ingresa una SolPed, una OC o una posición. Puedes combinar criterios para llegar al expediente exacto.</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def mensaje_filtros_confirmados(txt_solped: str, txt_oc: str, txt_pos_solped: str) -> None:
+    if txt_solped or txt_oc or txt_pos_solped:
+        st.markdown(
+            f"""
+            <div class="search-confirmed">
+                Filtros principales confirmados: SolPed <strong>{escape(txt_solped or '-')}</strong> · OC/Pedido <strong>{escape(txt_oc or '-')}</strong> · Posición <strong>{escape(txt_pos_solped or '-')}</strong>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            """
+            <div class="search-empty">
+                Sin filtros principales confirmados. Usa la búsqueda principal para ubicar un expediente específico.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
 def etapa_color(row: pd.Series, etapa: dict) -> str:
     perf_col = etapa.get("performance")
     dias_col = etapa.get("dias")
@@ -1771,18 +2168,30 @@ def dataframe_a_csv(df: pd.DataFrame) -> bytes:
     )
 
 
+def obtener_oc_principal(row: pd.Series) -> Any:
+    oc_me5a = row.get(COL_OC_ME5A, np.nan)
+    oc_nme = row.get(COL_OC_NME, np.nan)
+
+    if formato_id(oc_me5a) not in ["-", "", "nan", "None"]:
+        return oc_me5a
+
+    return oc_nme
+
+
 def construir_label_registro(row: pd.Series) -> str:
     solped = row.get(COL_SOLPED, "-")
-    oc = row.get(COL_OC_ME5A, row.get(COL_OC_NME, "-"))
+    oc = obtener_oc_principal(row)
     pos = row.get(COL_POS_SOLPED, "-")
     perf = row.get(COL_PERF_TAT, "-")
     dias = row.get(COL_DIAS_TAT, "-")
+    centro = etiqueta_centro(row.get(COL_CENTRO, "-"))
     texto = str(row.get(COL_TEXTO, ""))[:55]
 
     return (
         f"SolPed {formato_id(solped)} | "
         f"OC {formato_id(oc)} | "
         f"Pos {formato_id(pos)} | "
+        f"Centro {centro} | "
         f"TAT {texto_dias_y_meses(dias)} | "
         f"{perf} | "
         f"{texto}"
@@ -1843,20 +2252,7 @@ def aplicar_estilo_tabla(df_tabla: pd.DataFrame):
 # Interfaz
 # =========================================================
 mostrar_logo()
-
-st.markdown(
-    """
-    <div style="text-align:center; margin-bottom: 22px;">
-        <div style="font-size:42px; font-weight:850; color:#1F2937; line-height:1.12;">
-            Buscador SolPed / OC
-        </div>
-        <div style="font-size:14px; color:#6B7280; margin-top:10px;">
-            Filtro · Estado del pedido · Seguimiento TAT
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+render_hero_buscador()
 
 with st.sidebar:
     st.header("Configuración")
@@ -1878,10 +2274,7 @@ with st.sidebar:
 # =========================================================
 # Leer dataframe global
 # =========================================================
-st.markdown(
-    "<h2 style='font-size:28px; font-weight:800; color:#1F2937;'>Archivo</h2>",
-    unsafe_allow_html=True,
-)
+st.markdown('<div class="section-title">Archivo activo</div>', unsafe_allow_html=True)
 
 if "df_tat" not in st.session_state:
     st.warning("Primero debes cargar el archivo base en Análisis TAT > Cargar archivo.")
@@ -1909,7 +2302,7 @@ except Exception as e:
 # =========================================================
 # Filtros principales visibles
 # =========================================================
-st.markdown("### Filtros principales")
+abrir_panel_busqueda()
 
 for key in [
     "filtro_solped_confirmado",
@@ -1967,15 +2360,7 @@ txt_solped = st.session_state.get("filtro_solped_confirmado", "")
 txt_oc = st.session_state.get("filtro_oc_confirmado", "")
 txt_pos_solped = st.session_state.get("filtro_pos_solped_confirmado", "")
 
-if txt_solped or txt_oc or txt_pos_solped:
-    st.caption(
-        "Filtros principales confirmados: "
-        f"SolPed={txt_solped or '-'} · "
-        f"OC/Pedido={txt_oc or '-'} · "
-        f"Posición={txt_pos_solped or '-'}"
-    )
-else:
-    st.caption("Sin filtros principales confirmados.")
+mensaje_filtros_confirmados(txt_solped, txt_oc, txt_pos_solped)
 
 
 # =========================================================
@@ -2013,10 +2398,13 @@ with st.expander("Filtros avanzados", expanded=False):
             placeholder="Ej: CL17330735",
         )
 
-        centro_sel = st.multiselect(
+        centro_sel_etiquetas = st.multiselect(
             "Centro",
-            opciones_filtros.get(COL_CENTRO, []),
+            opciones_centro_con_nombre(df),
+            help="Se muestra como código · nombre, pero el filtro usa el código original del archivo.",
         )
+
+        centro_sel = codigos_desde_etiquetas_centro(centro_sel_etiquetas)
 
     with a3:
         tipo_oc_sel = st.multiselect(
@@ -2186,6 +2574,7 @@ for nombre, default in {
     "txt_solicitante": "",
     "txt_autor": "",
     "centro_sel": [],
+    "centro_sel_etiquetas": [],
     "tipo_oc_sel": [],
     "origen_sel": [],
     "sistema_sel": [],
@@ -2330,7 +2719,8 @@ else:
     pct_cumple = 0
     pct_no_cumple = 0
 
-st.markdown("### Indicadores generales")
+st.markdown('<div class="section-title">Resumen de búsqueda</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-caption">Indicadores calculados sobre el resultado filtrado actual.</div>', unsafe_allow_html=True)
 
 kpi1, kpi2, kpi3, kpi4 = st.columns(4)
 
@@ -2367,7 +2757,7 @@ with kpi4:
 # =========================================================
 # Estadísticas descriptivas por etapa
 # =========================================================
-st.markdown("### Detalle estadístico por etapa")
+st.markdown('<div class="section-title">Detalle estadístico por etapa</div>', unsafe_allow_html=True)
 
 tabla_estadisticas_etapas = construir_estadisticas_etapas(df_filtrado)
 
@@ -2486,7 +2876,7 @@ else:
                 </div>
                 <div>
                     <div class="head-label">Orden de compra / Pedido</div>
-                    <div class="head-value">{html_id(row.get(COL_OC_ME5A, row.get(COL_OC_NME, np.nan)))}</div>
+                    <div class="head-value">{html_id(obtener_oc_principal(row))}</div>
                 </div>
                 <div>
                     <div class="head-label">Posición SolPed</div>
@@ -2498,12 +2888,17 @@ else:
                 </div>
                 <div>
                     <div class="head-label">Centro</div>
-                    <div class="head-value">{html_texto(row.get(COL_CENTRO, np.nan))}</div>
+                    <div class="head-value">{html_centro(row.get(COL_CENTRO, np.nan))}</div>
                 </div>
             </div>
         </div>
         """
     ).strip()
+
+    st.markdown(
+        html_resumen_expediente_buscador(row),
+        unsafe_allow_html=True,
+    )
 
     st.markdown(
         html_linea_pedido(row),
@@ -2555,6 +2950,10 @@ with st.expander("Distribuciones del resultado", expanded=False):
         )
 
         tabla.columns = [nombre_columna, "Cantidad"]
+
+        if columna == COL_CENTRO:
+            tabla[nombre_columna] = tabla[nombre_columna].apply(etiqueta_centro)
+
         total = tabla["Cantidad"].sum()
 
         tabla["Porcentaje"] = np.where(
@@ -2567,7 +2966,7 @@ with st.expander("Distribuciones del resultado", expanded=False):
 
         return tabla
 
-    b1, b2, b3 = st.columns(3)
+    b1, b2, b3, b4 = st.columns(4)
 
     with b1:
         st.markdown("**Performance TAT**")
@@ -2629,6 +3028,26 @@ with st.expander("Distribuciones del resultado", expanded=False):
                 tabla_estado.set_index("Estado")["Porcentaje"]
             )
 
+    with b4:
+        st.markdown("**Centro**")
+
+        tabla_centro = tabla_distribucion(
+            df_filtrado,
+            COL_CENTRO,
+            "Centro",
+        )
+
+        st.dataframe(
+            tabla_centro,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        if not tabla_centro.empty:
+            st.bar_chart(
+                tabla_centro.set_index("Centro")["Porcentaje"]
+            )
+
 
 # =========================================================
 # Tabla de resultado filtrado
@@ -2674,9 +3093,10 @@ with st.expander("Tabla de resultado filtrado", expanded=False):
             .head(int(limite_vista))
             .copy()
         )
+        tabla_visual = preparar_tabla_visual(tabla)
 
         st.dataframe(
-            aplicar_estilo_tabla(tabla),
+            aplicar_estilo_tabla(tabla_visual),
             use_container_width=True,
             hide_index=True,
         )
@@ -2703,6 +3123,11 @@ with st.expander("Registro completo transpuesto", expanded=False):
             "Valor",
         ]
 
+        registro_t.loc[registro_t["Campo"].eq(COL_CENTRO), "Valor"] = registro_t.loc[
+            registro_t["Campo"].eq(COL_CENTRO),
+            "Valor",
+        ].apply(etiqueta_centro)
+
         st.dataframe(
             registro_t,
             use_container_width=True,
@@ -2713,7 +3138,7 @@ with st.expander("Registro completo transpuesto", expanded=False):
 # =========================================================
 # Descargas
 # =========================================================
-st.markdown("### Descarga")
+st.markdown('<div class="section-title">Descarga</div>', unsafe_allow_html=True)
 
 csv_bytes = dataframe_a_csv(df_filtrado)
 
@@ -2774,5 +3199,3 @@ with x3:
 # =========================================================
 with st.expander("Columnas disponibles", expanded=False):
     st.write(df.columns.tolist())
-
-
