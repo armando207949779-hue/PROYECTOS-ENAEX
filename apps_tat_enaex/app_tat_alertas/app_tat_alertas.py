@@ -3603,6 +3603,339 @@ def aplicar_estilo_detalle_filtro_3(df_tabla: pd.DataFrame):
 
     return df_tabla.style.apply(estilo_fila, axis=1)
 
+
+
+# =========================================================
+# Panel resumen ejecutivo
+# =========================================================
+def _porcentaje_texto(valor: float) -> str:
+    return f"{valor:,.1f}%".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _entero_texto(valor: Any) -> str:
+    try:
+        return f"{int(valor):,}".replace(",", ".")
+    except Exception:
+        return "0"
+
+
+def _top_valor(df_base: pd.DataFrame, columna: str, default: str = "-") -> str:
+    if df_base.empty or columna not in df_base.columns:
+        return default
+
+    serie = (
+        df_base[columna]
+        .dropna()
+        .astype(str)
+        .str.strip()
+    )
+    serie = serie[~serie.str.lower().isin(["", "-", "nan", "none", "nat"])]
+
+    if serie.empty:
+        return default
+
+    return serie.value_counts().index[0]
+
+
+def construir_resumen_ejecutivo(
+    df_total: pd.DataFrame,
+    df_filtrado: pd.DataFrame,
+    hoy: pd.Timestamp,
+) -> dict[str, Any]:
+    """Construye una lectura ejecutiva desde lo general a lo accionable.
+
+    Usa únicamente columnas ya preparadas por preparar_panel_tat_rapido para no
+    recalcular fechas ni alertas pesadas en cada interacción.
+    """
+    total_archivo = int(len(df_total))
+    total_filtrado = int(len(df_filtrado))
+    pct_filtrado = total_filtrado / total_archivo * 100 if total_archivo else 0.0
+
+    base_vacia = {
+        "total_archivo": total_archivo,
+        "total_filtrado": total_filtrado,
+        "pct_filtrado": pct_filtrado,
+        "recepcionados": 0,
+        "sin_recepcion": 0,
+        "vencidos_recepcionados": 0,
+        "vencidos_sin_recepcion": 0,
+        "proximos_sin_recepcion": 0,
+        "sin_fecha_calculable": 0,
+        "solped_sin_pedido": 0,
+        "con_pedido": 0,
+        "pct_sin_pedido": 0.0,
+        "etapa_critica": "-",
+        "grupo_critico": "-",
+        "centro_critico": "-",
+        "solicitante_critico": "-",
+        "semaforo": "Sin datos",
+        "mensaje": "No hay registros con los filtros actuales.",
+        "accion_sugerida": "Amplía o ajusta los filtros para revisar el universo de pedidos.",
+    }
+
+    if df_filtrado.empty:
+        return base_vacia
+
+    estado_recepcion = (
+        df_filtrado[COL_ESTADO_RECEPCION_ALERTA].astype(str)
+        if COL_ESTADO_RECEPCION_ALERTA in df_filtrado.columns
+        else pd.Series("Sin recepción", index=df_filtrado.index)
+    )
+    dias_restantes = pd.to_numeric(
+        df_filtrado.get("dias_restantes_int", pd.Series(np.nan, index=df_filtrado.index)),
+        errors="coerce",
+    )
+
+    recepcionados_mask = estado_recepcion.eq("Recepcionado")
+    sin_recepcion_mask = estado_recepcion.eq("Sin recepción")
+    vencidos_mask = dias_restantes.lt(0)
+    proximos_mask = dias_restantes.between(0, 30, inclusive="both") & sin_recepcion_mask
+    sin_fecha_mask = dias_restantes.isna() & sin_recepcion_mask
+
+    oc_me5a = _serie_texto(df_filtrado, COL_OC_ME5A).str.strip()
+    oc_nme = _serie_texto(df_filtrado, COL_OC_NME).str.strip()
+    valores_sin_pedido = {"", "-", "nan", "none", "nat", "0", "0.0"}
+    sin_pedido_mask = (
+        oc_me5a.str.lower().isin(valores_sin_pedido)
+        & oc_nme.str.lower().isin(valores_sin_pedido)
+    )
+
+    base_riesgo = df_filtrado.loc[
+        sin_recepcion_mask & (vencidos_mask | proximos_mask | sin_fecha_mask)
+    ].copy()
+
+    recepcionados = int(recepcionados_mask.sum())
+    sin_recepcion = int(sin_recepcion_mask.sum())
+    vencidos_recepcionados = int((vencidos_mask & recepcionados_mask).sum())
+    vencidos_sin_recepcion = int((vencidos_mask & sin_recepcion_mask).sum())
+    proximos_sin_recepcion = int(proximos_mask.sum())
+    sin_fecha_calculable = int(sin_fecha_mask.sum())
+    solped_sin_pedido = int(sin_pedido_mask.sum())
+    con_pedido = int(total_filtrado - solped_sin_pedido)
+    pct_sin_pedido = solped_sin_pedido / total_filtrado * 100 if total_filtrado else 0.0
+
+    etapa_critica = _top_valor(base_riesgo, "fecha_pendiente")
+    grupo_critico = _top_valor(base_riesgo, COL_GRUPO_COMPRAS)
+    centro_critico = _top_valor(base_riesgo, COL_CENTRO)
+    solicitante_critico = _top_valor(base_riesgo, COL_SOLICITANTE)
+
+    if vencidos_sin_recepcion > 0:
+        semaforo = "Crítico"
+        mensaje = (
+            f"Hay {_entero_texto(vencidos_sin_recepcion)} registros vencidos sin recepción. "
+            "La prioridad es gestionar esos casos antes de revisar próximos vencimientos."
+        )
+        accion_sugerida = (
+            "Priorizar pedidos vencidos sin recepción, comenzando por el grupo y centro con mayor concentración de riesgo."
+        )
+    elif proximos_sin_recepcion > 0:
+        semaforo = "Atención"
+        mensaje = (
+            f"Hay {_entero_texto(proximos_sin_recepcion)} registros próximos a vencer sin recepción. "
+            "El foco debe estar en prevenir que pasen a estado vencido."
+        )
+        accion_sugerida = "Gestionar vencimientos de 0 a 30 días y confirmar recepción o avance de etapa pendiente."
+    elif sin_fecha_calculable > 0:
+        semaforo = "Datos incompletos"
+        mensaje = (
+            f"Hay {_entero_texto(sin_fecha_calculable)} registros sin fecha de vencimiento calculable. "
+            "La gestión depende de corregir fecha de solicitud, umbral TAT o tipo OC."
+        )
+        accion_sugerida = "Corregir datos maestros o fechas faltantes para que el pedido entre al seguimiento TAT."
+    else:
+        semaforo = "Controlado"
+        mensaje = "No se observan vencidos ni próximos a vencer sin recepción con los filtros actuales."
+        accion_sugerida = "Mantener seguimiento preventivo y revisar SolPed sin pedido o datos incompletos si existen."
+
+    return {
+        "total_archivo": total_archivo,
+        "total_filtrado": total_filtrado,
+        "pct_filtrado": pct_filtrado,
+        "recepcionados": recepcionados,
+        "sin_recepcion": sin_recepcion,
+        "vencidos_recepcionados": vencidos_recepcionados,
+        "vencidos_sin_recepcion": vencidos_sin_recepcion,
+        "proximos_sin_recepcion": proximos_sin_recepcion,
+        "sin_fecha_calculable": sin_fecha_calculable,
+        "solped_sin_pedido": solped_sin_pedido,
+        "con_pedido": con_pedido,
+        "pct_sin_pedido": pct_sin_pedido,
+        "etapa_critica": etapa_critica,
+        "grupo_critico": grupo_critico,
+        "centro_critico": centro_critico,
+        "solicitante_critico": solicitante_critico,
+        "semaforo": semaforo,
+        "mensaje": mensaje,
+        "accion_sugerida": accion_sugerida,
+    }
+
+
+def construir_top_prioridades_ejecutivas(df_filtrado: pd.DataFrame, limite: int = 20) -> pd.DataFrame:
+    """Lista corta para acción ejecutiva: primero vencidos, luego próximos y luego sin datos."""
+    if df_filtrado.empty:
+        return pd.DataFrame()
+
+    df = df_filtrado.copy()
+    estado_recepcion = (
+        df[COL_ESTADO_RECEPCION_ALERTA].astype(str)
+        if COL_ESTADO_RECEPCION_ALERTA in df.columns
+        else pd.Series("Sin recepción", index=df.index)
+    )
+    dias = pd.to_numeric(
+        df.get("dias_restantes_int", pd.Series(np.nan, index=df.index)),
+        errors="coerce",
+    )
+
+    df["_orden_prioridad_ejecutiva"] = np.select(
+        [
+            estado_recepcion.eq("Sin recepción") & dias.lt(0),
+            estado_recepcion.eq("Sin recepción") & dias.between(0, 7, inclusive="both"),
+            estado_recepcion.eq("Sin recepción") & dias.between(8, 30, inclusive="both"),
+            estado_recepcion.eq("Sin recepción") & dias.isna(),
+        ],
+        [1, 2, 3, 4],
+        default=9,
+    )
+    df["_dias_orden"] = dias.fillna(999999)
+
+    columnas = columnas_existentes(
+        df,
+        [
+            COL_SOLPED,
+            COL_OC_ME5A,
+            COL_OC_NME,
+            COL_POS_SOLPED,
+            COL_CENTRO,
+            COL_GRUPO_COMPRAS,
+            COL_SOLICITANTE,
+            "clasificacion_vencimiento",
+            "dias_restantes_texto",
+            "fecha_vencimiento_texto",
+            COL_ESTADO_RECEPCION_ALERTA,
+            "ultima_etapa_registrada",
+            "fecha_pendiente",
+            "causa_raiz_probable",
+            "accion_sugerida",
+        ],
+    )
+
+    salida = (
+        df.sort_values(["_orden_prioridad_ejecutiva", "_dias_orden"], ascending=[True, True])
+        .head(limite)
+        [columnas]
+        .copy()
+    )
+
+    return salida.rename(
+        columns={
+            COL_SOLPED: "Solicitud de pedido",
+            COL_OC_ME5A: "Pedido ME5A",
+            COL_OC_NME: "Pedido NME80FN",
+            COL_POS_SOLPED: "Posición SolPed",
+            COL_CENTRO: "Centro",
+            COL_GRUPO_COMPRAS: "Grupo compras",
+            COL_SOLICITANTE: "Solicitante",
+            "clasificacion_vencimiento": "Urgencia",
+            "dias_restantes_texto": "Días restantes",
+            "fecha_vencimiento_texto": "Fecha vencimiento",
+            COL_ESTADO_RECEPCION_ALERTA: "Recepción",
+            "ultima_etapa_registrada": "Última etapa",
+            "fecha_pendiente": "Fecha pendiente",
+            "causa_raiz_probable": "Causa probable",
+            "accion_sugerida": "Acción sugerida",
+        }
+    )
+
+
+def mostrar_panel_resumen_ejecutivo(resumen: dict[str, Any], df_filtrado: pd.DataFrame) -> None:
+    color = {
+        "Crítico": "#dc2626",
+        "Atención": "#f97316",
+        "Datos incompletos": "#ca8a04",
+        "Controlado": "#16a34a",
+        "Sin datos": "#64748b",
+    }.get(str(resumen.get("semaforo", "")), "#2563eb")
+
+    st.markdown("### Resumen ejecutivo")
+    st.markdown(
+        f"""
+        <div style="
+            background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+            border: 1px solid #e2e8f0;
+            border-left: 8px solid {color};
+            border-radius: 22px;
+            padding: 18px 20px;
+            margin: 0.8rem 0 1rem 0;
+            box-shadow: 0 2px 10px rgba(15, 23, 42, 0.06);
+        ">
+            <div style="
+                font-size: 0.82rem;
+                font-weight: 900;
+                color: #64748b;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+                margin-bottom: 6px;
+            ">
+                Lectura ejecutiva del filtrado actual
+            </div>
+            <div style="
+                font-size: 1.35rem;
+                font-weight: 950;
+                color: #0f172a;
+                margin-bottom: 6px;
+            ">
+                Estado general: {escape(str(resumen.get("semaforo", "Sin datos")))}
+            </div>
+            <div style="
+                font-size: 0.98rem;
+                color: #334155;
+                line-height: 1.45;
+            ">
+                {escape(str(resumen.get("mensaje", "")))}
+            </div>
+            <div style="
+                margin-top: 10px;
+                font-size: 0.92rem;
+                color: #0f172a;
+                line-height: 1.45;
+                font-weight: 800;
+            ">
+                Acción sugerida: {escape(str(resumen.get("accion_sugerida", "")))}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    g1, g2, g3, g4 = st.columns(4)
+    g1.metric("Universo total", _entero_texto(resumen.get("total_archivo", 0)))
+    g2.metric(
+        "Registros filtrados",
+        _entero_texto(resumen.get("total_filtrado", 0)),
+        _porcentaje_texto(float(resumen.get("pct_filtrado", 0))),
+    )
+    g3.metric("Recepcionados", _entero_texto(resumen.get("recepcionados", 0)))
+    g4.metric("Sin recepción", _entero_texto(resumen.get("sin_recepcion", 0)))
+
+    r1, r2, r3, r4 = st.columns(4)
+    r1.metric("Vencidos sin recepción", _entero_texto(resumen.get("vencidos_sin_recepcion", 0)))
+    r2.metric("Próximos 0 a 30 días", _entero_texto(resumen.get("proximos_sin_recepcion", 0)))
+    r3.metric("Sin fecha calculable", _entero_texto(resumen.get("sin_fecha_calculable", 0)))
+    r4.metric("SolPed sin pedido", _entero_texto(resumen.get("solped_sin_pedido", 0)), _porcentaje_texto(float(resumen.get("pct_sin_pedido", 0))))
+
+    e1, e2, e3, e4 = st.columns(4)
+    e1.info(f"**Etapa pendiente dominante:** {resumen.get('etapa_critica', '-')}")
+    e2.info(f"**Grupo compras con más riesgo:** {resumen.get('grupo_critico', '-')}")
+    e3.info(f"**Centro con más riesgo:** {resumen.get('centro_critico', '-')}")
+    e4.info(f"**Solicitante con más riesgo:** {resumen.get('solicitante_critico', '-')}")
+
+    with st.expander("Top 20 prioridades ejecutivas", expanded=False):
+        tabla_prioridad = construir_top_prioridades_ejecutivas(df_filtrado, limite=20)
+        if tabla_prioridad.empty:
+            st.info("No hay prioridades para mostrar con los filtros actuales.")
+        else:
+            st.dataframe(tabla_prioridad, use_container_width=True, hide_index=True)
+
 def construir_vencimientos_sin_recepcion(df_base: pd.DataFrame, hoy: pd.Timestamp) -> pd.DataFrame:
     if df_base.empty:
         base_abiertos = df_base.copy()
@@ -4057,6 +4390,17 @@ df_filtrado = aplicar_filtros_panel(
 
 filtrados = len(df_filtrado)
 porcentaje_filtrado = filtrados / total_archivo * 100 if total_archivo else 0
+
+
+# =========================================================
+# Resumen ejecutivo
+# =========================================================
+resumen_ejecutivo = construir_resumen_ejecutivo(
+    df_total=df_panel,
+    df_filtrado=df_filtrado,
+    hoy=hoy,
+)
+mostrar_panel_resumen_ejecutivo(resumen_ejecutivo, df_filtrado)
 
 
 # =========================================================
