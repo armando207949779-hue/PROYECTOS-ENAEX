@@ -2482,12 +2482,11 @@ try:
 
     st.success("Proceso integrado completado.")
 
-    tab_match, tab_perf, tab_auditoria, tab_descarga = st.tabs(
+    tab_match, tab_perf, tab_auditoria = st.tabs(
         [
             "Match integrado",
             "Performance TAT",
-            "Auditoría",
-            "Descarga"
+            "Auditoría"
         ]
     )
 
@@ -2511,6 +2510,55 @@ try:
             resultado_final=resultado_match
         )
         mostrar_resumen_cambios_match(resumen_cambios_match)
+
+        st.markdown("---")
+        st.subheader("Descarga")
+
+        st.markdown("### Descarga principal")
+        st.caption("Formato recomendado por defecto: Parquet.")
+
+        parquet_bytes = convertir_a_parquet_cache(resultado_performance)
+
+        st.download_button(
+            label="Descargar Parquet Performance TAT",
+            data=parquet_bytes,
+            file_name="performance_tat_integrado.parquet",
+            mime="application/octet-stream",
+            use_container_width=True
+        )
+
+        st.markdown("### Opciones secundarias")
+
+        col_csv, col_excel = st.columns(2)
+
+        with col_csv:
+            csv_bytes = convertir_a_csv_cache(resultado_performance)
+
+            st.download_button(
+                label="Descargar CSV Performance TAT",
+                data=csv_bytes,
+                file_name="performance_tat_integrado.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+
+        with col_excel:
+            excel_bytes = convertir_resultado_integrado_a_excel_cache(
+                df_match=resultado_match_export,
+                resumen_match=resumen_match,
+                df_performance=resultado_performance,
+                resumen_perf=resumen_perf,
+                resumen_cols=resumen_cols,
+                tabla_formulas_df=tabla_inputs_formulas()
+            )
+
+            st.download_button(
+                label="Descargar Excel integrado",
+                data=excel_bytes,
+                file_name="nueva_app_match_performance_tat.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
 
     with tab_perf:
         st.subheader("3. Resultado Performance TAT")
@@ -2571,54 +2619,6 @@ try:
                     hide_index=True
                 )
 
-    with tab_descarga:
-        st.subheader("5. Descarga")
-
-        st.markdown("### Descarga principal")
-        st.caption("Formato recomendado por defecto: Parquet.")
-
-        parquet_bytes = convertir_a_parquet_cache(resultado_performance)
-
-        st.download_button(
-            label="Descargar Parquet Performance TAT",
-            data=parquet_bytes,
-            file_name="performance_tat_integrado.parquet",
-            mime="application/octet-stream",
-            use_container_width=True
-        )
-
-        st.markdown("### Opciones secundarias")
-
-        col_csv, col_excel = st.columns(2)
-
-        with col_csv:
-            csv_bytes = convertir_a_csv_cache(resultado_performance)
-
-            st.download_button(
-                label="Descargar CSV Performance TAT",
-                data=csv_bytes,
-                file_name="performance_tat_integrado.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
-
-        with col_excel:
-            excel_bytes = convertir_resultado_integrado_a_excel_cache(
-                df_match=resultado_match_export,
-                resumen_match=resumen_match,
-                df_performance=resultado_performance,
-                resumen_perf=resumen_perf,
-                resumen_cols=resumen_cols,
-                tabla_formulas_df=tabla_inputs_formulas()
-            )
-
-            st.download_button(
-                label="Descargar Excel integrado",
-                data=excel_bytes,
-                file_name="nueva_app_match_performance_tat.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
-            )
 
 except Exception as e:
     st.error("No se pudo ejecutar la app integrada.")
