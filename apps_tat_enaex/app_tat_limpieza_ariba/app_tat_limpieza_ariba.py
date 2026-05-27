@@ -203,7 +203,10 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def aplicar_filtros_y_categoria(df: pd.DataFrame) -> pd.DataFrame:
+def aplicar_filtros_y_categoria(
+    df: pd.DataFrame,
+    aplicar_filtro_cen1: bool = True
+) -> pd.DataFrame:
     df = df.copy()
 
     columnas_requeridas = [
@@ -222,13 +225,14 @@ def aplicar_filtros_y_categoria(df: pd.DataFrame) -> pd.DataFrame:
     # Excluir nulos en Tipo de Compra
     df = df[df["Tipo de Compra"].notna()].copy()
 
-    # Dejar solo unidad de negocio CEN1
-    df = df[
-        df["ID de unidad de negocio"]
-        .astype("string")
-        .str.strip()
-        .eq("CEN1")
-    ].copy()
+    # Filtro opcional por unidad de negocio CEN1
+    if aplicar_filtro_cen1:
+        df = df[
+            df["ID de unidad de negocio"]
+            .astype("string")
+            .str.strip()
+            .eq("CEN1")
+        ].copy()
 
     # Crear categoría de compra
     mapa_tipo_compra = {
@@ -252,8 +256,14 @@ def limpiar_cache(df: pd.DataFrame) -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False)
-def filtrar_cache(df: pd.DataFrame) -> pd.DataFrame:
-    return aplicar_filtros_y_categoria(df)
+def filtrar_cache(
+    df: pd.DataFrame,
+    aplicar_filtro_cen1: bool
+) -> pd.DataFrame:
+    return aplicar_filtros_y_categoria(
+        df,
+        aplicar_filtro_cen1=aplicar_filtro_cen1
+    )
 
 
 # =========================================================
@@ -381,7 +391,8 @@ def diagnostico_cache(df: pd.DataFrame):
 def generar_resumen_cambios(
     df_input: pd.DataFrame,
     df_input_limpio: pd.DataFrame,
-    df_output: pd.DataFrame
+    df_output: pd.DataFrame,
+    aplicar_filtro_cen1: bool
 ) -> dict:
 
     columnas_originales = set(df_input.columns.astype(str))
@@ -403,7 +414,7 @@ def generar_resumen_cambios(
         else 0
     )
 
-    if "ID de unidad de negocio" in df_input_limpio.columns:
+    if aplicar_filtro_cen1 and "ID de unidad de negocio" in df_input_limpio.columns:
         filas_no_cen1 = int(
             df_input_limpio[
                 df_input_limpio["Tipo de Compra"].notna()
@@ -432,13 +443,15 @@ def generar_resumen_cambios(
         "filas_sin_tipo_compra": filas_sin_tipo_compra,
         "filas_no_cen1": filas_no_cen1,
         "columnas_eliminadas": columnas_eliminadas,
-        "columnas_agregadas": columnas_agregadas
+        "columnas_agregadas": columnas_agregadas,
+        "aplicar_filtro_cen1": aplicar_filtro_cen1
     }
 
 
 def mostrar_resumen_cambios(resumen: dict):
     columnas_eliminadas = resumen["columnas_eliminadas"]
     columnas_agregadas = resumen["columnas_agregadas"]
+    aplicar_filtro_cen1 = resumen["aplicar_filtro_cen1"]
 
     texto_columnas_eliminadas = (
         ", ".join(columnas_eliminadas)
@@ -452,6 +465,12 @@ def mostrar_resumen_cambios(resumen: dict):
         else "No se agregaron columnas nuevas."
     )
 
+    texto_filtro_cen1 = (
+        "- Se conservaron solo registros con **ID de unidad de negocio = CEN1**."
+        if aplicar_filtro_cen1
+        else "- No se aplicó filtro por **ID de unidad de negocio = CEN1**."
+    )
+
     st.info(
         f"""
         **Cambios realizados al archivo cargado**
@@ -460,7 +479,7 @@ def mostrar_resumen_cambios(resumen: dict):
         - Después de limpiar nombres de columnas, textos, fechas, números y columnas vacías, quedaron **{resumen['filas_limpias']:,} filas** y **{resumen['columnas_limpias']:,} columnas**.
         - Se filtraron **{resumen['filas_filtradas']:,} filas**.
         - Se quitaron registros sin **Tipo de Compra** válido: **{resumen['filas_sin_tipo_compra']:,}**.
-        - Se conservaron solo registros con **ID de unidad de negocio = CEN1**.
+        {texto_filtro_cen1}
         - Se creó la columna **Categoria Tipo de Compra**.
         - El output final tiene **{resumen['filas_output']:,} filas** y **{resumen['columnas_output']:,} columnas**.
         - Columnas eliminadas: **{texto_columnas_eliminadas}**
@@ -822,8 +841,8 @@ st.markdown(
 
 st.info(
     "La aplicación lee archivos ARIBA, limpia textos, fechas y números, "
-    "filtra registros con Tipo de Compra válido, conserva solo la unidad de negocio CEN1 "
-    "y crea la columna Categoria Tipo de Compra."
+    "filtra registros con Tipo de Compra válido, permite filtrar opcionalmente "
+    "por la unidad de negocio CEN1 y crea la columna Categoria Tipo de Compra."
 )
 
 st.divider()
@@ -839,6 +858,11 @@ with st.sidebar:
     mostrar_analisis = st.checkbox(
         "Mostrar análisis",
         value=False
+    )
+
+    aplicar_filtro_cen1 = st.checkbox(
+        "Filtrar solo unidad de negocio CEN1",
+        value=True
     )
 
     st.divider()
@@ -885,7 +909,11 @@ try:
         )
 
         df_input_limpio = limpiar_cache(df_input)
-        df_output = filtrar_cache(df_input_limpio)
+
+        df_output = filtrar_cache(
+            df_input_limpio,
+            aplicar_filtro_cen1=aplicar_filtro_cen1
+        )
 
         diagnostico_columnas, resumen_general, resumen_fechas, resumen_num = diagnostico_cache(
             df_input_limpio
@@ -901,7 +929,8 @@ try:
         resumen_cambios = generar_resumen_cambios(
             df_input=df_input,
             df_input_limpio=df_input_limpio,
-            df_output=df_output
+            df_output=df_output,
+            aplicar_filtro_cen1=aplicar_filtro_cen1
         )
 
     st.success("Archivo procesado correctamente.")
@@ -940,7 +969,8 @@ col4.metric("Filas filtradas", f"{filas_filtradas:,}")
 
 st.caption(
     f"Nulos en Tipo de Compra: {nulos_tipo_compra:,}. "
-    "El output corresponde a registros con Tipo de Compra válido y unidad de negocio CEN1."
+    "El output corresponde a registros con Tipo de Compra válido"
+    + (" y unidad de negocio CEN1." if aplicar_filtro_cen1 else ".")
 )
 
 st.divider()
@@ -961,7 +991,8 @@ with tab_input:
     st.markdown("#### Input cargado")
     st.caption(
         "Vista previa del archivo después de la lectura inicial. "
-        "En Excel ARIBA se lee la hoja Data desde el encabezado configurado y se omite la primera columna útil según la estructura original."
+        "En Excel ARIBA se lee la hoja Data desde el encabezado configurado "
+        "y se omite la primera columna útil según la estructura original."
     )
 
     st.dataframe(
@@ -971,10 +1002,19 @@ with tab_input:
 
 with tab_output:
     st.markdown("#### Output final")
-    st.caption(
-        "Vista previa del dataframe final que se descarga: limpio, filtrado por CEN1, "
-        "con Tipo de Compra válido y con Categoria Tipo de Compra."
-    )
+
+    if aplicar_filtro_cen1:
+        texto_output = (
+            "Vista previa del dataframe final que se descarga: limpio, filtrado por CEN1, "
+            "con Tipo de Compra válido y con Categoria Tipo de Compra."
+        )
+    else:
+        texto_output = (
+            "Vista previa del dataframe final que se descarga: limpio, "
+            "sin filtro por CEN1, con Tipo de Compra válido y con Categoria Tipo de Compra."
+        )
+
+    st.caption(texto_output)
 
     st.dataframe(
         df_output.head(100),
