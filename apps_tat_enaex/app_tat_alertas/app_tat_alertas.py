@@ -3178,11 +3178,12 @@ def preparar_panel_tat_rapido(df_original: pd.DataFrame, hoy: pd.Timestamp) -> p
         ~usar_vencimiento_desde_pedido,
         fecha_vencimiento_pedido,
     )
+    condiciones_fuente_vencimiento = [
+        fecha_vencimiento_solicitud.notna().fillna(False).to_numpy(dtype=bool),
+        usar_vencimiento_desde_pedido.fillna(False).to_numpy(dtype=bool),
+    ]
     df_base["fuente_calculo_vencimiento"] = np.select(
-        [
-            fecha_vencimiento_solicitud.notna(),
-            usar_vencimiento_desde_pedido,
-        ],
+        condiciones_fuente_vencimiento,
         [
             "Calculado desde fecha de solicitud",
             "Estimado desde fecha de pedido",
@@ -3213,17 +3214,17 @@ def preparar_panel_tat_rapido(df_original: pd.DataFrame, hoy: pd.Timestamp) -> p
 
     dias = df_base["dias_restantes_int"].astype("float64")
     condiciones = [
-        dias.lt(0),
-        dias.eq(0),
-        dias.eq(1),
-        dias.eq(2),
-        dias.eq(3),
-        dias.eq(4),
-        dias.eq(5),
-        dias.eq(6),
-        dias.eq(7),
-        dias.between(8, 30, inclusive="both"),
-        dias.gt(30),
+        dias.lt(0).fillna(False).to_numpy(dtype=bool),
+        dias.eq(0).fillna(False).to_numpy(dtype=bool),
+        dias.eq(1).fillna(False).to_numpy(dtype=bool),
+        dias.eq(2).fillna(False).to_numpy(dtype=bool),
+        dias.eq(3).fillna(False).to_numpy(dtype=bool),
+        dias.eq(4).fillna(False).to_numpy(dtype=bool),
+        dias.eq(5).fillna(False).to_numpy(dtype=bool),
+        dias.eq(6).fillna(False).to_numpy(dtype=bool),
+        dias.eq(7).fillna(False).to_numpy(dtype=bool),
+        dias.between(8, 30, inclusive="both").fillna(False).to_numpy(dtype=bool),
+        dias.gt(30).fillna(False).to_numpy(dtype=bool),
     ]
     etiquetas = [
         "Vencido",
@@ -3786,13 +3787,19 @@ def construir_top_prioridades_ejecutivas(df_filtrado: pd.DataFrame, limite: int 
         errors="coerce",
     )
 
+    # np.select necesita arreglos booleanos puros. En algunas combinaciones
+    # pandas/numpy, las Series booleanas con valores NA o dtype de extensión
+    # pueden levantar TypeError: should be boolean ndarray.
+    sin_recepcion = estado_recepcion.eq("Sin recepción").fillna(False)
+    condiciones_prioridad = [
+        (sin_recepcion & dias.lt(0).fillna(False)).to_numpy(dtype=bool),
+        (sin_recepcion & dias.between(0, 7, inclusive="both").fillna(False)).to_numpy(dtype=bool),
+        (sin_recepcion & dias.between(8, 30, inclusive="both").fillna(False)).to_numpy(dtype=bool),
+        (sin_recepcion & dias.isna().fillna(False)).to_numpy(dtype=bool),
+    ]
+
     df["_orden_prioridad_ejecutiva"] = np.select(
-        [
-            estado_recepcion.eq("Sin recepción") & dias.lt(0),
-            estado_recepcion.eq("Sin recepción") & dias.between(0, 7, inclusive="both"),
-            estado_recepcion.eq("Sin recepción") & dias.between(8, 30, inclusive="both"),
-            estado_recepcion.eq("Sin recepción") & dias.isna(),
-        ],
+        condiciones_prioridad,
         [1, 2, 3, 4],
         default=9,
     )
@@ -3876,7 +3883,7 @@ def mostrar_panel_resumen_ejecutivo(resumen: dict[str, Any], df_filtrado: pd.Dat
                 letter-spacing: 0.05em;
                 margin-bottom: 6px;
             ">
-                Lectura ejecutiva del filtrado actual
+                Lectura ejecutiva del universo analizado
             </div>
             <div style="
                 font-size: 1.35rem;
@@ -3910,7 +3917,7 @@ def mostrar_panel_resumen_ejecutivo(resumen: dict[str, Any], df_filtrado: pd.Dat
     g1, g2, g3, g4 = st.columns(4)
     g1.metric("Universo total", _entero_texto(resumen.get("total_archivo", 0)))
     g2.metric(
-        "Registros filtrados",
+        "Registros analizados",
         _entero_texto(resumen.get("total_filtrado", 0)),
         _porcentaje_texto(float(resumen.get("pct_filtrado", 0))),
     )
@@ -4240,6 +4247,17 @@ st.success(f"Archivo activo: {nombre_archivo}")
 
 
 # =========================================================
+# Resumen ejecutivo inicial · antes de filtros
+# =========================================================
+resumen_ejecutivo_global = construir_resumen_ejecutivo(
+    df_total=df_panel,
+    df_filtrado=df_panel,
+    hoy=hoy,
+)
+mostrar_panel_resumen_ejecutivo(resumen_ejecutivo_global, df_panel)
+
+
+# =========================================================
 # Preguntas sobre el total de datos
 # =========================================================
 st.markdown("### Radiografía del archivo completo")
@@ -4393,20 +4411,9 @@ porcentaje_filtrado = filtrados / total_archivo * 100 if total_archivo else 0
 
 
 # =========================================================
-# Resumen ejecutivo
-# =========================================================
-resumen_ejecutivo = construir_resumen_ejecutivo(
-    df_total=df_panel,
-    df_filtrado=df_filtrado,
-    hoy=hoy,
-)
-mostrar_panel_resumen_ejecutivo(resumen_ejecutivo, df_filtrado)
-
-
-# =========================================================
 # Respuestas principales
 # =========================================================
-st.markdown("### Respuestas")
+st.markdown("### Respuestas del filtrado actual")
 
 k1, k2, k3, k4, k5 = st.columns([1, 1, 1, 1, 1])
 
