@@ -3466,7 +3466,7 @@ st.markdown(
             Control TAT · SolPed / OC
         </div>
         <div style="font-size:14px; color:#6B7280; margin-top:8px;">
-            Panel único optimizado: filtros, vencidos, próximos a vencer y expediente del pedido
+            Panel único optimizado: portada visual, filtros, vencidos, próximos a vencer, expediente y estadística por material
         </div>
     </div>
     """,
@@ -4884,6 +4884,54 @@ porcentaje_filtrado = filtrados / total_archivo * 100 if total_archivo else 0
 
 
 # =========================================================
+# Vista estética inicial del pedido prioritario
+# =========================================================
+st.markdown("### Vista rápida del pedido prioritario")
+st.caption(
+    "Esta copia estética muestra el resumen, la línea de pedido y las etapas TAT del pedido más crítico dentro del filtrado actual. "
+    "Puedes cambiar el pedido destacado y el expediente inferior quedará alineado con esta selección."
+)
+
+df_inicio_dashboard = ordenar_expediente_critico(df_filtrado.copy())
+
+if df_inicio_dashboard.empty:
+    st.info("No hay pedidos disponibles para mostrar en la vista rápida inicial con los filtros actuales.")
+else:
+    max_inicio = 1000
+    opciones_inicio = df_inicio_dashboard.index.tolist()[:max_inicio]
+    sugerido_inicio = st.session_state.get("expediente_idx_sugerido")
+
+    if sugerido_inicio in df_inicio_dashboard.index and sugerido_inicio not in opciones_inicio:
+        opciones_inicio = [sugerido_inicio] + opciones_inicio[:-1]
+    elif sugerido_inicio in opciones_inicio:
+        opciones_inicio = [sugerido_inicio] + [idx for idx in opciones_inicio if idx != sugerido_inicio]
+
+    labels_inicio = {
+        idx: construir_label_registro_critico(df_inicio_dashboard.loc[idx])
+        for idx in opciones_inicio
+    }
+
+    with st.expander("Elegir pedido destacado de la portada", expanded=False):
+        st.caption(
+            "El selector está ordenado por criticidad operativa: vencidos, próximos a vencer, mayor score de riesgo, mayor brecha TAT y mayor tiempo transcurrido."
+        )
+        seleccionado_inicio = st.selectbox(
+            "Pedido destacado al inicio del dashboard",
+            opciones_inicio,
+            index=0,
+            format_func=lambda idx: labels_inicio.get(idx, str(idx)),
+            key="selector_pedido_destacado_inicio_dashboard",
+        )
+
+    st.session_state["expediente_idx_sugerido"] = seleccionado_inicio
+    row_inicio = df_inicio_dashboard.loc[seleccionado_inicio]
+
+    st.markdown(html_resumen_pedido_expediente(row_inicio), unsafe_allow_html=True)
+    st.markdown(html_linea_pedido(row_inicio), unsafe_allow_html=True)
+    st.markdown(html_diagrama_tat_unificado(row_inicio), unsafe_allow_html=True)
+
+
+# =========================================================
 # Respuestas principales
 # =========================================================
 st.markdown("### Respuestas del filtrado actual")
@@ -5576,3 +5624,118 @@ else:
             registro = row.to_frame(name="Valor").reset_index().rename(columns={"index": "Campo"})
             registro["Valor"] = registro["Valor"].apply(formato_valor)
             st.dataframe(registro, use_container_width=True, hide_index=True)
+
+
+
+# =========================================================
+# Detalle estadístico por material
+# =========================================================
+st.markdown("### Detalle por Material - ME5A · tiempo desde el inicio del pedido")
+st.caption(
+    "Estadística calculada sobre los registros del filtrado actual. El tiempo desde el inicio del pedido se mide en días desde la fecha de solicitud hasta la recepción; si no existe recepción, se calcula hasta hoy."
+)
+
+if COL_MATERIAL not in df_filtrado.columns:
+    st.warning("No existe la columna Material - ME5A en el archivo cargado, por lo que no se puede construir el detalle por material.")
+elif "tiempo_transcurrido_tat_dias" not in df_filtrado.columns:
+    st.warning("No existe la columna calculada tiempo_transcurrido_tat_dias, por lo que no se puede calcular la estadística por material.")
+else:
+    df_material_stats_base = df_filtrado.copy()
+    df_material_stats_base["_material_estadistica"] = df_material_stats_base[COL_MATERIAL].apply(formato_id)
+    df_material_stats_base["_tiempo_inicio_pedido_dias"] = pd.to_numeric(
+        df_material_stats_base["tiempo_transcurrido_tat_dias"],
+        errors="coerce",
+    )
+
+    df_material_stats_base = df_material_stats_base[
+        df_material_stats_base["_tiempo_inicio_pedido_dias"].notna()
+        & df_material_stats_base["_material_estadistica"].astype(str).str.strip().ne("")
+        & ~df_material_stats_base["_material_estadistica"].astype(str).str.lower().isin(["-", "nan", "none", "nat"])
+    ].copy()
+
+    if df_material_stats_base.empty:
+        st.info("No hay datos suficientes para calcular MIN, MEDIA, MEDIANA, MAX y desviación estándar por material con los filtros actuales.")
+    else:
+        estadistica_material = (
+            df_material_stats_base
+            .groupby("_material_estadistica", dropna=False)["_tiempo_inicio_pedido_dias"]
+            .agg(
+                Registros="count",
+                Min="min",
+                Media="mean",
+                Mediana="median",
+                Max="max",
+                Desviacion_estandar="std",
+            )
+            .reset_index()
+            .rename(columns={"_material_estadistica": "Material - ME5A"})
+        )
+
+        estadistica_material["Desviacion_estandar"] = estadistica_material["Desviacion_estandar"].fillna(0)
+
+        if COL_TEXTO in df_material_stats_base.columns:
+            descripcion_material = (
+                df_material_stats_base
+                .sort_values("_tiempo_inicio_pedido_dias", ascending=False)
+                .groupby("_material_estadistica")[COL_TEXTO]
+                .first()
+                .reset_index()
+                .rename(columns={"_material_estadistica": "Material - ME5A", COL_TEXTO: "Descripción muestra"})
+            )
+            estadistica_material = estadistica_material.merge(
+                descripcion_material,
+                on="Material - ME5A",
+                how="left",
+            )
+
+        columnas_ordenadas_material = [
+            "Material - ME5A",
+            "Descripción muestra",
+            "Registros",
+            "Min",
+            "Media",
+            "Mediana",
+            "Max",
+            "Desviacion_estandar",
+        ]
+        columnas_ordenadas_material = [c for c in columnas_ordenadas_material if c in estadistica_material.columns]
+        estadistica_material = estadistica_material[columnas_ordenadas_material].copy()
+        estadistica_material = estadistica_material.sort_values(
+            ["Media", "Max", "Registros"],
+            ascending=[False, False, False],
+        )
+
+        for col in ["Min", "Media", "Mediana", "Max", "Desviacion_estandar"]:
+            if col in estadistica_material.columns:
+                estadistica_material[col] = estadistica_material[col].round(1)
+
+        tiempo_global = df_material_stats_base["_tiempo_inicio_pedido_dias"]
+        g1, g2, g3, g4, g5, g6 = st.columns(6)
+        g1.metric("Materiales", f"{len(estadistica_material):,}".replace(",", "."))
+        g2.metric("Registros", f"{len(df_material_stats_base):,}".replace(",", "."))
+        g3.metric("MIN días", formato_numero_corto(tiempo_global.min(), 1))
+        g4.metric("MEDIA días", formato_numero_corto(tiempo_global.mean(), 1))
+        g5.metric("MEDIANA días", formato_numero_corto(tiempo_global.median(), 1))
+        g6.metric("MAX días", formato_numero_corto(tiempo_global.max(), 1))
+
+        st.dataframe(
+            estadistica_material,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        cmat1, cmat2 = st.columns(2)
+        with cmat1:
+            st.download_button(
+                "Descargar estadística por material CSV",
+                data=dataframe_a_csv(estadistica_material),
+                file_name="estadistica_material_tiempo_inicio_pedido.csv",
+                mime="text/csv",
+            )
+        with cmat2:
+            st.download_button(
+                "Descargar estadística por material Excel",
+                data=dataframe_a_excel(estadistica_material),
+                file_name="estadistica_material_tiempo_inicio_pedido.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
