@@ -2574,13 +2574,35 @@ try:
     with tab_descarga:
         st.subheader("5. Descarga")
 
-        formato = st.radio(
-            "Formato de descarga principal",
-            options=["Excel completo", "CSV performance", "Parquet performance"],
-            horizontal=True
+        st.markdown("### Descarga principal")
+        st.caption("Formato recomendado por defecto: Parquet.")
+
+        parquet_bytes = convertir_a_parquet_cache(resultado_performance)
+
+        st.download_button(
+            label="Descargar Parquet Performance TAT",
+            data=parquet_bytes,
+            file_name="performance_tat_integrado.parquet",
+            mime="application/octet-stream",
+            use_container_width=True
         )
 
-        if formato == "Excel completo":
+        st.markdown("### Opciones secundarias")
+
+        col_csv, col_excel = st.columns(2)
+
+        with col_csv:
+            csv_bytes = convertir_a_csv_cache(resultado_performance)
+
+            st.download_button(
+                label="Descargar CSV Performance TAT",
+                data=csv_bytes,
+                file_name="performance_tat_integrado.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+
+        with col_excel:
             excel_bytes = convertir_resultado_integrado_a_excel_cache(
                 df_match=resultado_match_export,
                 resumen_match=resumen_match,
@@ -2595,28 +2617,6 @@ try:
                 data=excel_bytes,
                 file_name="nueva_app_match_performance_tat.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
-            )
-
-        elif formato == "CSV performance":
-            csv_bytes = convertir_a_csv_cache(resultado_performance)
-
-            st.download_button(
-                label="Descargar CSV Performance TAT",
-                data=csv_bytes,
-                file_name="performance_tat_integrado.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
-
-        else:
-            parquet_bytes = convertir_a_parquet_cache(resultado_performance)
-
-            st.download_button(
-                label="Descargar Parquet Performance TAT",
-                data=parquet_bytes,
-                file_name="performance_tat_integrado.parquet",
-                mime="application/octet-stream",
                 use_container_width=True
             )
 
