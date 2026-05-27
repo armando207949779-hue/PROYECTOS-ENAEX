@@ -1,4 +1,5 @@
 import base64
+from datetime import date
 from pathlib import Path
 
 import altair as alt
@@ -186,8 +187,7 @@ CENTROS_MAESTRO = [
     {"Centro": "E052", "Sociedad": "EC06", "Nombre": "Faena Spence"},
 ]
 
-
-# Filtro por defecto, editable en sidebar.
+# Filtro por defecto, editable en dashboard.
 # Este filtro NO define el eje temporal. Solo filtra registros.
 FECHA_FILTRO_FACTURACION_DEFAULT = pd.Timestamp("2024-02-01")
 
@@ -309,64 +309,6 @@ def aplicar_css():
                 border: 1px solid #E5E7EB;
                 padding-left: 18px;
                 padding-right: 18px;
-            }}
-
-            .summary-table-wrap {{
-                background: #FFFFFF;
-                border: 1px solid #E5E7EB;
-                border-radius: 16px;
-                padding: 10px 12px;
-                box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
-                overflow-x: auto;
-            }}
-
-            .summary-table {{
-                width: 100%;
-                border-collapse: collapse;
-                font-size: 14px;
-            }}
-
-            .summary-table th {{
-                text-align: center;
-                font-weight: 850;
-                color: #111827;
-                padding: 9px 10px;
-                border-bottom: 1px solid #E5E7EB;
-                white-space: nowrap;
-            }}
-
-            .summary-table td {{
-                padding: 9px 10px;
-                border-bottom: 1px solid #EEF0F3;
-                text-align: center;
-                color: #111827;
-            }}
-
-            .summary-table td:first-child {{
-                text-align: left;
-                font-weight: 800;
-                color: #111827;
-            }}
-
-            .summary-table tr:last-child td {{
-                border-bottom: none;
-                font-weight: 900;
-                background: #F9FAFB;
-            }}
-
-            .pct-ok {{
-                color: #008060 !important;
-                font-weight: 900;
-            }}
-
-            .pct-mid {{
-                color: #D97706 !important;
-                font-weight: 900;
-            }}
-
-            .pct-low {{
-                color: #EF3E52 !important;
-                font-weight: 900;
             }}
         </style>
         """,
@@ -680,11 +622,25 @@ def aplicar_logica_performance_plantas(df_original: pd.DataFrame) -> pd.DataFram
     else:
         df[COL_PERFORMANCE_TAT] = df[COL_PERFORMANCE_TAT].apply(normalizar_estado_tat)
 
-    # Eje temporal SIEMPRE basado en fecha_recepcion_final
+    # Eje temporal mensual basado en fecha_recepcion_final
     df["periodo_fecha"] = df[COL_FECHA_RECEPCION_FINAL].dt.to_period("M").dt.to_timestamp()
     df["anio"] = df[COL_FECHA_RECEPCION_FINAL].dt.year
     df["mes_num"] = df[COL_FECHA_RECEPCION_FINAL].dt.month
     df["mes_nombre"] = df["mes_num"].map(MESES_NOMBRE)
+
+    # Semana ISO basada en fecha_recepcion_final
+    calendario_iso = df[COL_FECHA_RECEPCION_FINAL].dt.isocalendar()
+    df["anio_iso_recepcion"] = calendario_iso["year"].astype("Int64")
+    df["semana_iso_recepcion"] = calendario_iso["week"].astype("Int64")
+
+    df["semana_iso_label"] = np.where(
+        df["anio_iso_recepcion"].notna() & df["semana_iso_recepcion"].notna(),
+        "Año "
+        + df["anio_iso_recepcion"].astype(str)
+        + " · Semana "
+        + df["semana_iso_recepcion"].astype(str).str.zfill(2),
+        pd.NA,
+    )
 
     df["periodo_label"] = np.where(
         df["anio"].notna() & df["mes_nombre"].notna(),
@@ -713,7 +669,6 @@ def aplicar_filtros_dashboard(
     centros_sel=None,
     rango_recepcion=None,
 ) -> pd.DataFrame:
-    # fecha_facturacion_final se usa SOLO como filtro.
     fecha_facturacion_desde = pd.Timestamp(fecha_facturacion_desde)
 
     data = df[
@@ -737,7 +692,6 @@ def aplicar_filtros_dashboard(
     else:
         return pd.DataFrame()
 
-    # fecha_recepcion_final filtra rango visible y también define el eje temporal.
     if rango_recepcion is not None:
         if isinstance(rango_recepcion, (tuple, list)) and len(rango_recepcion) == 2:
             fecha_inicio = pd.Timestamp(rango_recepcion[0])
@@ -1119,7 +1073,11 @@ def grafico_mensual_100_centro(tabla: pd.DataFrame, titulo: str):
                 stack="zero",
                 title="% Performance TAT",
                 scale=alt.Scale(domain=[0, 100]),
-                axis=alt.Axis(values=[0, 50, 100], labelExpr="datum.value + '%'", grid=True),
+                axis=alt.Axis(
+                    values=[0, 50, 100],
+                    labelExpr="datum.value + '%'",
+                    grid=True,
+                ),
             ),
             color=alt.Color(
                 "Estado:N",
@@ -1146,12 +1104,21 @@ def grafico_mensual_100_centro(tabla: pd.DataFrame, titulo: str):
         .encode(y=alt.Y("Meta:Q"))
     )
 
-    chart = ((barras + linea_meta).properties(height=230).configure_view(strokeWidth=0))
+    chart = (
+        (barras + linea_meta)
+        .properties(height=230)
+        .configure_view(strokeWidth=0)
+    )
+
     st.altair_chart(chart, use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
 
-def grafico_temporal_porcentual_centros(df: pd.DataFrame, centros_sel: list[str], mapa_etiquetas: dict):
+def grafico_temporal_porcentual_centros(
+    df: pd.DataFrame,
+    centros_sel: list[str],
+    mapa_etiquetas: dict,
+):
     st.markdown("<div class='chart-card'>", unsafe_allow_html=True)
     st.markdown("<div class='chart-title'>Performance temporal porcentual por centro</div>", unsafe_allow_html=True)
     st.markdown(
@@ -1167,10 +1134,12 @@ def grafico_temporal_porcentual_centros(df: pd.DataFrame, centros_sel: list[str]
 
     for centro in centros_sel:
         tabla = crear_resumen_mensual_centro(df, centro)
+
         if tabla.empty:
             continue
 
         tabla = tabla[tabla["Total"].gt(0)].copy()
+
         if tabla.empty:
             continue
 
@@ -1221,10 +1190,325 @@ def grafico_temporal_porcentual_centros(df: pd.DataFrame, centros_sel: list[str]
         .encode(y=alt.Y("Meta:Q"))
     )
 
-    chart = ((linea_performance + linea_meta).properties(height=300).configure_view(strokeWidth=0))
+    chart = (
+        (linea_performance + linea_meta)
+        .properties(height=300)
+        .configure_view(strokeWidth=0)
+    )
+
     st.altair_chart(chart, use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
+
+# =========================================================
+# TABLA DE CUMPLIMIENTO Y FILTRO SEMANAL
+# =========================================================
+
+def crear_tabla_cumplimiento_visual(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Crea tabla resumen:
+    Planta | Cumple | No Cumple | % Cumple
+
+    Incluye fila Total.
+    Solo considera estados evaluables: Cumple y No cumple.
+    """
+    tabla = resumen_kpis_plantas(df)
+
+    columnas_salida = ["Planta", "Cumple", "No Cumple", "% Cumple"]
+
+    if tabla.empty:
+        return pd.DataFrame(columns=columnas_salida)
+
+    tabla = tabla.rename(
+        columns={
+            "grupo_planta": "Planta",
+            "No cumple": "No Cumple",
+        }
+    )
+
+    for col in ["Cumple", "No Cumple", "Total evaluable", "% Cumple"]:
+        if col not in tabla.columns:
+            tabla[col] = 0
+
+    tabla = tabla[
+        ["Planta", "Cumple", "No Cumple", "Total evaluable", "% Cumple"]
+    ].copy()
+
+    orden_plantas = {
+        "Prillex": 1,
+        "Rio Loa": 2,
+        "Plantas de servicios": 3,
+    }
+
+    tabla["orden"] = tabla["Planta"].map(orden_plantas).fillna(99)
+    tabla = tabla.sort_values("orden").drop(columns="orden")
+
+    total_cumple = int(tabla["Cumple"].sum())
+    total_no_cumple = int(tabla["No Cumple"].sum())
+    total_evaluable = total_cumple + total_no_cumple
+
+    pct_total = (
+        total_cumple / total_evaluable * 100
+        if total_evaluable > 0
+        else 0
+    )
+
+    fila_total = pd.DataFrame(
+        [
+            {
+                "Planta": "Total",
+                "Cumple": total_cumple,
+                "No Cumple": total_no_cumple,
+                "Total evaluable": total_evaluable,
+                "% Cumple": pct_total,
+            }
+        ]
+    )
+
+    tabla = pd.concat([tabla, fila_total], ignore_index=True)
+
+    tabla["Cumple"] = tabla["Cumple"].astype(int)
+    tabla["No Cumple"] = tabla["No Cumple"].astype(int)
+    tabla["% Cumple"] = tabla["% Cumple"].round(0)
+
+    return tabla[["Planta", "Cumple", "No Cumple", "% Cumple"]]
+
+
+def mostrar_tabla_cumplimiento_visual(df: pd.DataFrame):
+    """
+    Muestra tabla nativa de Streamlit, sin HTML para la tabla.
+    """
+    tabla = crear_tabla_cumplimiento_visual(df)
+
+    if tabla.empty:
+        st.info("No hay datos evaluables para construir la tabla de cumplimiento.")
+        return
+
+    st.dataframe(
+        tabla,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Planta": st.column_config.TextColumn(
+                "Planta",
+                width="medium",
+            ),
+            "Cumple": st.column_config.NumberColumn(
+                "Cumple",
+                format="%d",
+                width="small",
+            ),
+            "No Cumple": st.column_config.NumberColumn(
+                "No Cumple",
+                format="%d",
+                width="small",
+            ),
+            "% Cumple": st.column_config.ProgressColumn(
+                "% Cumple",
+                format="%.0f%%",
+                min_value=0,
+                max_value=100,
+                width="medium",
+            ),
+        },
+    )
+
+
+def obtener_rango_fechas_semana_iso(anio_iso: int, semana_iso: int):
+    """
+    Devuelve lunes y domingo de una semana ISO.
+    """
+    inicio = pd.Timestamp(date.fromisocalendar(int(anio_iso), int(semana_iso), 1))
+    fin = pd.Timestamp(date.fromisocalendar(int(anio_iso), int(semana_iso), 7))
+    return inicio, fin
+
+
+def crear_catalogo_semanas_disponibles(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Crea una tabla auxiliar para mostrar qué semanas ISO existen
+    en los datos filtrados actuales.
+    """
+    columnas_requeridas = [
+        "anio_iso_recepcion",
+        "semana_iso_recepcion",
+        COL_FECHA_RECEPCION_FINAL,
+    ]
+
+    if df.empty or any(col not in df.columns for col in columnas_requeridas):
+        return pd.DataFrame(
+            columns=[
+                "Año",
+                "Semana",
+                "Desde",
+                "Hasta",
+                "Registros",
+            ]
+        )
+
+    base = df[
+        df["anio_iso_recepcion"].notna()
+        & df["semana_iso_recepcion"].notna()
+        & df[COL_FECHA_RECEPCION_FINAL].notna()
+    ].copy()
+
+    if base.empty:
+        return pd.DataFrame(
+            columns=[
+                "Año",
+                "Semana",
+                "Desde",
+                "Hasta",
+                "Registros",
+            ]
+        )
+
+    catalogo = (
+        base
+        .groupby(["anio_iso_recepcion", "semana_iso_recepcion"])
+        .agg(
+            Desde=(COL_FECHA_RECEPCION_FINAL, "min"),
+            Hasta=(COL_FECHA_RECEPCION_FINAL, "max"),
+            Registros=(COL_FECHA_RECEPCION_FINAL, "size"),
+        )
+        .reset_index()
+        .rename(
+            columns={
+                "anio_iso_recepcion": "Año",
+                "semana_iso_recepcion": "Semana",
+            }
+        )
+    )
+
+    catalogo["Año"] = catalogo["Año"].astype(int)
+    catalogo["Semana"] = catalogo["Semana"].astype(int)
+    catalogo["Desde"] = catalogo["Desde"].dt.strftime("%d-%m-%Y")
+    catalogo["Hasta"] = catalogo["Hasta"].dt.strftime("%d-%m-%Y")
+
+    return catalogo.sort_values(["Año", "Semana"]).reset_index(drop=True)
+
+
+def filtrar_por_anio_y_semana_iso(
+    df: pd.DataFrame,
+    anio_iso: int | None,
+    rango_semanas: tuple[int, int] | list[int] | None,
+) -> pd.DataFrame:
+    """
+    Filtra un dataframe por año ISO y rango de semanas ISO.
+    """
+    if df.empty:
+        return df.copy()
+
+    if anio_iso is None or rango_semanas is None:
+        return df.copy()
+
+    if "anio_iso_recepcion" not in df.columns or "semana_iso_recepcion" not in df.columns:
+        return df.copy()
+
+    semana_inicio = int(rango_semanas[0])
+    semana_fin = int(rango_semanas[1])
+
+    data = df[
+        df["anio_iso_recepcion"].eq(int(anio_iso))
+        & df["semana_iso_recepcion"].between(semana_inicio, semana_fin)
+    ].copy()
+
+    return data
+
+
+def selector_filtro_semanal_tabla(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Selector específico para filtrar solo la tabla de cumplimiento por plantas.
+    No afecta los demás gráficos del dashboard.
+    """
+    if df.empty:
+        return df.copy()
+
+    if "anio_iso_recepcion" not in df.columns or "semana_iso_recepcion" not in df.columns:
+        st.warning("No existen columnas de año/semana ISO para aplicar este filtro.")
+        return df.copy()
+
+    usar_filtro = st.checkbox(
+        "Filtrar esta tabla por año y semana ISO",
+        value=False,
+        key="usar_filtro_semana_tabla_plantas",
+    )
+
+    if not usar_filtro:
+        return df.copy()
+
+    catalogo = crear_catalogo_semanas_disponibles(df)
+
+    if catalogo.empty:
+        st.info("No hay semanas disponibles con los filtros actuales.")
+        return df.copy()
+
+    anios_disponibles = sorted(
+        catalogo["Año"].dropna().astype(int).unique().tolist()
+    )
+
+    anio_sel = st.selectbox(
+        "Año ISO",
+        options=anios_disponibles,
+        index=len(anios_disponibles) - 1,
+        key="anio_iso_tabla_plantas",
+    )
+
+    catalogo_anio = catalogo[catalogo["Año"].eq(int(anio_sel))].copy()
+
+    semanas_disponibles = sorted(
+        catalogo_anio["Semana"].dropna().astype(int).unique().tolist()
+    )
+
+    semana_min = min(semanas_disponibles)
+    semana_max = max(semanas_disponibles)
+
+    rango_semanas = st.slider(
+        "Rango de semanas ISO",
+        min_value=semana_min,
+        max_value=semana_max,
+        value=(semana_min, semana_max),
+        step=1,
+        key="rango_semanas_tabla_plantas",
+    )
+
+    fecha_inicio_semana, _ = obtener_rango_fechas_semana_iso(
+        anio_sel,
+        rango_semanas[0],
+    )
+    _, fecha_fin_semana = obtener_rango_fechas_semana_iso(
+        anio_sel,
+        rango_semanas[1],
+    )
+
+    st.caption(
+        f"Rango seleccionado: Año {anio_sel}, semana {rango_semanas[0]} "
+        f"a semana {rango_semanas[1]} · "
+        f"{fecha_inicio_semana.strftime('%d-%m-%Y')} a "
+        f"{fecha_fin_semana.strftime('%d-%m-%Y')}"
+    )
+
+    with st.expander("Ver semanas disponibles en los datos filtrados", expanded=False):
+        st.dataframe(
+            catalogo_anio,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Año": st.column_config.NumberColumn("Año", format="%d"),
+                "Semana": st.column_config.NumberColumn("Semana", format="%d"),
+                "Registros": st.column_config.NumberColumn("Registros", format="%d"),
+            },
+        )
+
+    return filtrar_por_anio_y_semana_iso(
+        df=df,
+        anio_iso=anio_sel,
+        rango_semanas=rango_semanas,
+    )
+
+
+# =========================================================
+# FUNCIONES COMPLEMENTARIAS
+# =========================================================
 
 def obtener_maestro_centros_df() -> pd.DataFrame:
     maestro = pd.DataFrame(CENTROS_MAESTRO).copy()
@@ -1290,14 +1574,17 @@ def mostrar_exploracion_centros_opcional(
             return
 
         resumen = []
+
         for centro in centros_sel:
             data_centro = df_centros[
                 df_centros["centro_grafico"].astype(str).str.strip().eq(str(centro).strip())
             ]
+
             cumple = int(data_centro[COL_PERFORMANCE_TAT].eq("Cumple").sum())
             no_cumple = int(data_centro[COL_PERFORMANCE_TAT].eq("No cumple").sum())
             total = cumple + no_cumple
             pct = cumple / total * 100 if total else 0
+
             resumen.append({
                 "Centro": etiqueta_centro(centro, mapa_etiquetas_centros),
                 "Cumple": cumple,
@@ -1307,6 +1594,7 @@ def mostrar_exploracion_centros_opcional(
             })
 
         resumen_df = pd.DataFrame(resumen)
+
         st.dataframe(
             resumen_df,
             use_container_width=True,
@@ -1543,114 +1831,6 @@ def resumen_cumplimiento_plantas(df: pd.DataFrame) -> pd.DataFrame:
     return tabla.sort_values("% Cumplimiento", ascending=False).reset_index(drop=True)
 
 
-def crear_tabla_cumplimiento_visual(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Crea tabla resumen tipo:
-    Planta | Cumple | No Cumple | % Cumple
-
-    Incluye fila Total.
-    Solo considera estados evaluables: Cumple y No cumple.
-    """
-    tabla = resumen_kpis_plantas(df)
-
-    columnas_salida = ["Planta", "Cumple", "No Cumple", "% Cumple"]
-
-    if tabla.empty:
-        return pd.DataFrame(columns=columnas_salida)
-
-    tabla = tabla.rename(
-        columns={
-            "grupo_planta": "Planta",
-            "No cumple": "No Cumple",
-        }
-    )
-
-    for col in ["Cumple", "No Cumple", "Total evaluable", "% Cumple"]:
-        if col not in tabla.columns:
-            tabla[col] = 0
-
-    tabla = tabla[
-        ["Planta", "Cumple", "No Cumple", "Total evaluable", "% Cumple"]
-    ].copy()
-
-    orden_plantas = {
-        "Prillex": 1,
-        "Rio Loa": 2,
-        "Plantas de servicios": 3,
-    }
-
-    tabla["orden"] = tabla["Planta"].map(orden_plantas).fillna(99)
-    tabla = tabla.sort_values("orden").drop(columns="orden")
-
-    total_cumple = int(tabla["Cumple"].sum())
-    total_no_cumple = int(tabla["No Cumple"].sum())
-    total_evaluable = total_cumple + total_no_cumple
-
-    pct_total = (
-        total_cumple / total_evaluable * 100
-        if total_evaluable > 0
-        else 0
-    )
-
-    fila_total = pd.DataFrame(
-        [
-            {
-                "Planta": "Total",
-                "Cumple": total_cumple,
-                "No Cumple": total_no_cumple,
-                "Total evaluable": total_evaluable,
-                "% Cumple": pct_total,
-            }
-        ]
-    )
-
-    tabla = pd.concat([tabla, fila_total], ignore_index=True)
-
-    return tabla[["Planta", "Cumple", "No Cumple", "% Cumple"]]
-
-
-
-
-def mostrar_tabla_cumplimiento_visual(df: pd.DataFrame):
-    """
-    Muestra tabla nativa de Streamlit, sin HTML.
-    """
-    tabla = crear_tabla_cumplimiento_visual(df)
-
-    if tabla.empty:
-        st.info("No hay datos evaluables para construir la tabla de cumplimiento.")
-        return
-
-    st.dataframe(
-        tabla,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Planta": st.column_config.TextColumn(
-                "Planta",
-                width="medium",
-            ),
-            "Cumple": st.column_config.NumberColumn(
-                "Cumple",
-                format="%d",
-                width="small",
-            ),
-            "No Cumple": st.column_config.NumberColumn(
-                "No Cumple",
-                format="%d",
-                width="small",
-            ),
-            "% Cumple": st.column_config.ProgressColumn(
-                "% Cumple",
-                format="%.0f%%",
-                min_value=0,
-                max_value=100,
-                width="medium",
-            ),
-        },
-    )
-
-
 def calcular_mejor_mes_planta(df: pd.DataFrame):
     registros = []
 
@@ -1748,9 +1928,6 @@ try:
     with st.spinner("Aplicando lógica de performance y agrupación de plantas..."):
         df_final = aplicar_logica_performance_plantas(df_original)
 
-    # -----------------------------------------------------
-    # Filtros con valores por defecto, pero modificables
-    # -----------------------------------------------------
     st.markdown("<div class='section-card'>", unsafe_allow_html=True)
     section_header(
         "Filtros del dashboard",
@@ -1989,10 +2166,12 @@ try:
         # =================================================
         section_header(
             "Cumplimiento a nivel de plantas",
-            "Resumen evaluable por planta: Cumple, No Cumple y porcentaje de cumplimiento.",
+            "Resumen evaluable por planta. Puedes filtrar esta visualización por año y semana ISO.",
         )
 
-        mostrar_tabla_cumplimiento_visual(df_dashboard)
+        df_tabla_cumplimiento = selector_filtro_semanal_tabla(df_dashboard)
+
+        mostrar_tabla_cumplimiento_visual(df_tabla_cumplimiento)
 
         st.caption(
             f"Meta referencial de cumplimiento: {META_CUMPLIMIENTO}%."
@@ -2105,6 +2284,7 @@ try:
     with tab_datos:
         st.subheader("Vista previa original")
         st.caption(f"Mostrando hasta 300 registros de {len(df_original):,} originales.")
+
         st.dataframe(
             df_original.head(300),
             use_container_width=True,
@@ -2125,6 +2305,9 @@ try:
             COL_FECHA_SOLICITUD_FINAL,
             COL_FECHA_FACTURACION_FINAL,
             COL_FECHA_RECEPCION_FINAL,
+            "anio_iso_recepcion",
+            "semana_iso_recepcion",
+            "semana_iso_label",
             "tipo_oc",
             "dias_tat_total",
             COL_PERFORMANCE_TAT,
