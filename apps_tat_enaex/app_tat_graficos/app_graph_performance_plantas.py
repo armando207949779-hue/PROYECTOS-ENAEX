@@ -310,6 +310,64 @@ def aplicar_css():
                 padding-left: 18px;
                 padding-right: 18px;
             }}
+
+            .summary-table-wrap {{
+                background: #FFFFFF;
+                border: 1px solid #E5E7EB;
+                border-radius: 16px;
+                padding: 10px 12px;
+                box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
+                overflow-x: auto;
+            }}
+
+            .summary-table {{
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 14px;
+            }}
+
+            .summary-table th {{
+                text-align: center;
+                font-weight: 850;
+                color: #111827;
+                padding: 9px 10px;
+                border-bottom: 1px solid #E5E7EB;
+                white-space: nowrap;
+            }}
+
+            .summary-table td {{
+                padding: 9px 10px;
+                border-bottom: 1px solid #EEF0F3;
+                text-align: center;
+                color: #111827;
+            }}
+
+            .summary-table td:first-child {{
+                text-align: left;
+                font-weight: 800;
+                color: #111827;
+            }}
+
+            .summary-table tr:last-child td {{
+                border-bottom: none;
+                font-weight: 900;
+                background: #F9FAFB;
+            }}
+
+            .pct-ok {{
+                color: #008060 !important;
+                font-weight: 900;
+            }}
+
+            .pct-mid {{
+                color: #D97706 !important;
+                font-weight: 900;
+            }}
+
+            .pct-low {{
+                color: #EF3E52 !important;
+                font-weight: 900;
+            }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -968,7 +1026,6 @@ def grafico_temporal_porcentual_performance(df: pd.DataFrame):
     st.markdown("</div>", unsafe_allow_html=True)
 
 
-
 def crear_resumen_mensual_centro(df: pd.DataFrame, centro: str) -> pd.DataFrame:
     base = df[
         df["centro_grafico"].astype(str).str.strip().eq(str(centro).strip())
@@ -1169,6 +1226,24 @@ def grafico_temporal_porcentual_centros(df: pd.DataFrame, centros_sel: list[str]
     st.markdown("</div>", unsafe_allow_html=True)
 
 
+def obtener_maestro_centros_df() -> pd.DataFrame:
+    maestro = pd.DataFrame(CENTROS_MAESTRO).copy()
+    maestro["Centro"] = maestro["Centro"].astype(str).str.strip()
+    maestro["Etiqueta"] = maestro["Centro"] + " — " + maestro["Nombre"]
+    return maestro
+
+
+def obtener_mapa_etiquetas_centros() -> dict:
+    maestro = obtener_maestro_centros_df()
+    return dict(zip(maestro["Centro"], maestro["Etiqueta"]))
+
+
+def etiqueta_centro(codigo: str, mapa_etiquetas: dict | None = None) -> str:
+    codigo = str(codigo).strip()
+    mapa = mapa_etiquetas if mapa_etiquetas is not None else obtener_mapa_etiquetas_centros()
+    return mapa.get(codigo, f"{codigo} — Sin nombre en maestro")
+
+
 def mostrar_exploracion_centros_opcional(
     df_final: pd.DataFrame,
     fecha_facturacion_desde,
@@ -1205,7 +1280,7 @@ def mostrar_exploracion_centros_opcional(
             df=df_final,
             fecha_facturacion_desde=fecha_facturacion_desde,
             estados_tat_sel=estados_tat_sel,
-            grupos_sel=["Prillex", "Rio Loa", "Plantas de servicios"],
+            grupos_sel=[],
             centros_sel=centros_sel,
             rango_recepcion=rango_recepcion,
         )
@@ -1216,7 +1291,9 @@ def mostrar_exploracion_centros_opcional(
 
         resumen = []
         for centro in centros_sel:
-            data_centro = df_centros[df_centros["centro_grafico"].astype(str).str.strip().eq(str(centro).strip())]
+            data_centro = df_centros[
+                df_centros["centro_grafico"].astype(str).str.strip().eq(str(centro).strip())
+            ]
             cumple = int(data_centro[COL_PERFORMANCE_TAT].eq("Cumple").sum())
             no_cumple = int(data_centro[COL_PERFORMANCE_TAT].eq("No cumple").sum())
             total = cumple + no_cumple
@@ -1315,25 +1392,6 @@ def mostrar_diagnostico(df: pd.DataFrame):
         st.dataframe(grupos, use_container_width=True, hide_index=True)
 
 
-
-def obtener_maestro_centros_df() -> pd.DataFrame:
-    maestro = pd.DataFrame(CENTROS_MAESTRO).copy()
-    maestro["Centro"] = maestro["Centro"].astype(str).str.strip()
-    maestro["Etiqueta"] = maestro["Centro"] + " — " + maestro["Nombre"]
-    return maestro
-
-
-def obtener_mapa_etiquetas_centros() -> dict:
-    maestro = obtener_maestro_centros_df()
-    return dict(zip(maestro["Centro"], maestro["Etiqueta"]))
-
-
-def etiqueta_centro(codigo: str, mapa_etiquetas: dict | None = None) -> str:
-    codigo = str(codigo).strip()
-    mapa = mapa_etiquetas if mapa_etiquetas is not None else obtener_mapa_etiquetas_centros()
-    return mapa.get(codigo, f"{codigo} — Sin nombre en maestro")
-
-
 def mostrar_maestro_centros_colapsable():
     with st.expander("Ver maestro de centros", expanded=False):
         st.dataframe(
@@ -1341,6 +1399,7 @@ def mostrar_maestro_centros_colapsable():
             use_container_width=True,
             hide_index=True,
         )
+
 
 def formatear_fecha(valor) -> str:
     if valor is None:
@@ -1403,6 +1462,14 @@ def describir_filtros_aplicados(
             "Criterio aplicado": "Se excluye grupo_planta = Excluir",
         },
     ]
+
+    if centros_sel:
+        filtros.append(
+            {
+                "Filtro": "Centros específicos",
+                "Criterio aplicado": formatear_lista(centros_sel),
+            }
+        )
 
     return pd.DataFrame(filtros)
 
@@ -1474,6 +1541,133 @@ def resumen_cumplimiento_plantas(df: pd.DataFrame) -> pd.DataFrame:
     tabla["% Cumplimiento"] = tabla["% Cumplimiento"].round(1)
 
     return tabla.sort_values("% Cumplimiento", ascending=False).reset_index(drop=True)
+
+
+def crear_tabla_cumplimiento_visual(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Crea tabla resumen tipo:
+    Planta | Cumple | No Cumple | % Cumple
+
+    Incluye fila Total.
+    Solo considera estados evaluables: Cumple y No cumple.
+    """
+    tabla = resumen_kpis_plantas(df)
+
+    columnas_salida = ["Planta", "Cumple", "No Cumple", "% Cumple"]
+
+    if tabla.empty:
+        return pd.DataFrame(columns=columnas_salida)
+
+    tabla = tabla.rename(
+        columns={
+            "grupo_planta": "Planta",
+            "No cumple": "No Cumple",
+        }
+    )
+
+    for col in ["Cumple", "No Cumple", "Total evaluable", "% Cumple"]:
+        if col not in tabla.columns:
+            tabla[col] = 0
+
+    tabla = tabla[
+        ["Planta", "Cumple", "No Cumple", "Total evaluable", "% Cumple"]
+    ].copy()
+
+    orden_plantas = {
+        "Prillex": 1,
+        "Rio Loa": 2,
+        "Plantas de servicios": 3,
+    }
+
+    tabla["orden"] = tabla["Planta"].map(orden_plantas).fillna(99)
+    tabla = tabla.sort_values("orden").drop(columns="orden")
+
+    total_cumple = int(tabla["Cumple"].sum())
+    total_no_cumple = int(tabla["No Cumple"].sum())
+    total_evaluable = total_cumple + total_no_cumple
+
+    pct_total = (
+        total_cumple / total_evaluable * 100
+        if total_evaluable > 0
+        else 0
+    )
+
+    fila_total = pd.DataFrame(
+        [
+            {
+                "Planta": "Total",
+                "Cumple": total_cumple,
+                "No Cumple": total_no_cumple,
+                "Total evaluable": total_evaluable,
+                "% Cumple": pct_total,
+            }
+        ]
+    )
+
+    tabla = pd.concat([tabla, fila_total], ignore_index=True)
+
+    return tabla[["Planta", "Cumple", "No Cumple", "% Cumple"]]
+
+
+def clase_porcentaje_cumplimiento(pct: float) -> str:
+    if pct >= META_CUMPLIMIENTO:
+        return "pct-ok"
+
+    if pct >= 50:
+        return "pct-mid"
+
+    return "pct-low"
+
+
+def mostrar_tabla_cumplimiento_visual(df: pd.DataFrame):
+    """
+    Muestra una tabla HTML estilizada con Cumple, No Cumple y % Cumple.
+    """
+    tabla = crear_tabla_cumplimiento_visual(df)
+
+    if tabla.empty:
+        st.info("No hay datos evaluables para construir la tabla de cumplimiento.")
+        return
+
+    filas_html = []
+
+    for _, fila in tabla.iterrows():
+        planta = str(fila["Planta"])
+        cumple = int(fila["Cumple"])
+        no_cumple = int(fila["No Cumple"])
+        pct = float(fila["% Cumple"])
+        clase_pct = clase_porcentaje_cumplimiento(pct)
+
+        filas_html.append(
+            f"""
+            <tr>
+                <td>{planta}</td>
+                <td>{cumple:,}</td>
+                <td>{no_cumple:,}</td>
+                <td class="{clase_pct}">{pct:.0f}%</td>
+            </tr>
+            """
+        )
+
+    html = f"""
+    <div class="summary-table-wrap">
+        <table class="summary-table">
+            <thead>
+                <tr>
+                    <th></th>
+                    <th>Cumple</th>
+                    <th>No Cumple</th>
+                    <th>% Cumple</th>
+                </tr>
+            </thead>
+            <tbody>
+                {''.join(filas_html)}
+            </tbody>
+        </table>
+    </div>
+    """
+
+    st.markdown(html, unsafe_allow_html=True)
 
 
 def calcular_mejor_mes_planta(df: pd.DataFrame):
@@ -1575,7 +1769,6 @@ try:
 
     # -----------------------------------------------------
     # Filtros con valores por defecto, pero modificables
-    # Ahora se muestran arriba, dentro del dashboard.
     # -----------------------------------------------------
     st.markdown("<div class='section-card'>", unsafe_allow_html=True)
     section_header(
@@ -1706,11 +1899,6 @@ try:
     tab_dashboard, tab_datos = st.tabs(["Dashboard", "Datos"])
 
     with tab_dashboard:
-        section_header(
-            "Indicadores generales",
-            "Eje temporal de gráficos: fecha_recepcion_final. Filtro de facturación: fecha_facturacion_final.",
-        )
-
         total_original = len(df_original)
         total_filas = len(df_dashboard)
         cumple_tat = int(df_dashboard[COL_PERFORMANCE_TAT].eq("Cumple").sum())
@@ -1721,6 +1909,123 @@ try:
         mejor_planta = calcular_mejor_planta(df_dashboard)
         peor_planta = calcular_peor_planta(df_dashboard)
         mejor_mes = calcular_mejor_mes_planta(df_dashboard)
+
+        # =================================================
+        # 1) Respuestas clave
+        # =================================================
+        section_header(
+            "Respuestas clave",
+            "Resumen ejecutivo del desempeño con los filtros actuales.",
+        )
+
+        r1, r2, r3, r4 = st.columns(4)
+
+        with r1:
+            card_metric(
+                "Cumplimiento global",
+                f"{pct_cumple_tat:.1f}%",
+                f"Cumple: {cumple_tat:,} · No cumple: {no_cumple_tat:,}",
+            )
+
+        with r2:
+            if mejor_planta is not None:
+                card_metric(
+                    "Mejor planta promedio",
+                    str(mejor_planta["grupo_planta"]),
+                    (
+                        f"{float(mejor_planta['% Cumple']):.1f}% cumplimiento · "
+                        f"Total evaluable: {int(mejor_planta['Total evaluable']):,}"
+                    ),
+                )
+            else:
+                card_metric(
+                    "Mejor planta promedio",
+                    "Sin datos",
+                    "No hay registros evaluables.",
+                )
+
+        with r3:
+            if peor_planta is not None:
+                card_metric(
+                    "Planta con mayor brecha",
+                    str(peor_planta["grupo_planta"]),
+                    (
+                        f"{float(peor_planta['% Cumple']):.1f}% cumplimiento · "
+                        f"Total evaluable: {int(peor_planta['Total evaluable']):,}"
+                    ),
+                )
+            else:
+                card_metric(
+                    "Planta con mayor brecha",
+                    "Sin datos",
+                    "No hay registros evaluables.",
+                )
+
+        with r4:
+            if mejor_mes is not None:
+                card_metric(
+                    "Mejor mes y planta",
+                    str(mejor_mes["periodo_label"]),
+                    (
+                        f"{str(mejor_mes['grupo_planta'])} · "
+                        f"{float(mejor_mes['% Cumple']):.1f}% cumplimiento · "
+                        f"Total: {int(mejor_mes['Total']):,}"
+                    ),
+                )
+            else:
+                card_metric(
+                    "Mejor mes y planta",
+                    "Sin datos",
+                    "No hay registros evaluables.",
+                )
+
+        st.divider()
+
+        # =================================================
+        # 2) Filtros aplicados
+        # =================================================
+        section_header(
+            "Filtros aplicados",
+            "Criterios usados para calcular todos los indicadores y visualizaciones.",
+        )
+
+        st.dataframe(
+            describir_filtros_aplicados(
+                fecha_facturacion_desde=fecha_facturacion_desde,
+                estados_tat_sel=estados_tat_sel,
+                grupos_sel=grupos_sel,
+                centros_sel=centros_sel_descripcion,
+                rango_recepcion=rango_recepcion,
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        st.divider()
+
+        # =================================================
+        # 3) Cumplimiento a nivel plantas
+        # =================================================
+        section_header(
+            "Cumplimiento a nivel de plantas",
+            "Resumen evaluable por planta: Cumple, No Cumple y porcentaje de cumplimiento.",
+        )
+
+        mostrar_tabla_cumplimiento_visual(df_dashboard)
+
+        st.caption(
+            f"Meta referencial de cumplimiento: {META_CUMPLIMIENTO}%."
+        )
+
+        st.divider()
+
+        # =================================================
+        # 4) Indicadores generales
+        # =================================================
+        section_header(
+            "Indicadores generales",
+            "Vista general del volumen de datos usado en el análisis.",
+        )
 
         k1, k2, k3, k4 = st.columns(4)
 
@@ -1739,20 +2044,43 @@ try:
             )
 
         with k3:
-            card_metric("TAT evaluable", f"{evaluables_tat:,}")
+            card_metric(
+                "TAT evaluable",
+                f"{evaluables_tat:,}",
+                "Solo Cumple y No cumple.",
+            )
 
         with k4:
             card_metric(
-                "Cumplimiento global",
-                f"{pct_cumple_tat:.1f}%",
-                f"Cumple: {cumple_tat:,} · No cumple: {no_cumple_tat:,}",
+                "No cumplimiento",
+                f"{no_cumple_tat:,}",
+                (
+                    f"{(no_cumple_tat / evaluables_tat * 100):.1f}% del total evaluable"
+                    if evaluables_tat
+                    else "Sin registros evaluables."
+                ),
             )
 
         st.divider()
 
+        # =================================================
+        # 5) Gráfico general
+        # =================================================
         section_header(
-            "Gráficos de performance",
-            "Vista mensual por planta. Se muestran primero para que sean lo principal al abrir el dashboard.",
+            "Evolución general del cumplimiento",
+            "Comparación mensual del porcentaje de cumplimiento por grupo de planta.",
+        )
+
+        grafico_temporal_porcentual_performance(df_dashboard)
+
+        st.divider()
+
+        # =================================================
+        # 6) Gráficos específicos por planta
+        # =================================================
+        section_header(
+            "Detalle mensual por planta",
+            "Vista mensual 100% apilada de Cumple y No Cumple.",
         )
 
         graficos_disponibles = {
@@ -1761,14 +2089,22 @@ try:
             "Plantas de servicios": "Performance TAT Plantas de servicios",
         }
 
-        grafico_temporal_porcentual_performance(df_dashboard)
-
         for grupo, titulo in graficos_disponibles.items():
             if grupo in grupos_sel:
                 grafico_mensual_100_plantas(
                     crear_resumen_mensual_grupo(df_dashboard, grupo),
                     titulo,
                 )
+
+        st.divider()
+
+        # =================================================
+        # 7) Análisis opcional por centro
+        # =================================================
+        section_header(
+            "Análisis específico por centro",
+            "Profundización opcional para revisar centros puntuales.",
+        )
 
         mostrar_exploracion_centros_opcional(
             df_final=df_final,
@@ -1781,72 +2117,8 @@ try:
             mapa_etiquetas_centros=mapa_etiquetas_centros,
         )
 
-        st.divider()
-
-        section_header(
-            "Respuestas clave",
-            "Resumen automático de las preguntas principales del dashboard.",
-        )
-
-        r1, r2, r3 = st.columns(3)
-
-        with r1:
-            if mejor_planta is not None:
-                card_metric(
-                    "Mejor planta promedio",
-                    str(mejor_planta["grupo_planta"]),
-                    (
-                        f"{float(mejor_planta['% Cumple']):.1f}% cumplimiento · "
-                        f"Total evaluable: {int(mejor_planta['Total evaluable']):,}"
-                    ),
-                )
-            else:
-                card_metric("Mejor planta promedio", "Sin datos", "No hay registros evaluables.")
-
-        with r2:
-            if peor_planta is not None:
-                card_metric(
-                    "Peor planta promedio",
-                    str(peor_planta["grupo_planta"]),
-                    (
-                        f"{float(peor_planta['% Cumple']):.1f}% cumplimiento · "
-                        f"Total evaluable: {int(peor_planta['Total evaluable']):,}"
-                    ),
-                )
-            else:
-                card_metric("Peor planta promedio", "Sin datos", "No hay registros evaluables.")
-
-        with r3:
-            if mejor_mes is not None:
-                card_metric(
-                    "Mejor mes y planta",
-                    str(mejor_mes["periodo_label"]),
-                    (
-                        f"{str(mejor_mes['grupo_planta'])} · "
-                        f"{float(mejor_mes['% Cumple']):.1f}% cumplimiento · "
-                        f"Total: {int(mejor_mes['Total']):,}"
-                    ),
-                )
-            else:
-                card_metric("Mejor mes y planta", "Sin datos", "No hay registros evaluables.")
-
-        st.markdown("**Filtros aplicados**")
-        st.dataframe(
-            describir_filtros_aplicados(
-                fecha_facturacion_desde=fecha_facturacion_desde,
-                estados_tat_sel=estados_tat_sel,
-                grupos_sel=grupos_sel,
-                centros_sel=centros_sel_descripcion,
-                rango_recepcion=rango_recepcion,
-            ),
-            use_container_width=True,
-            hide_index=True,
-        )
-
-        st.markdown("**Cumplimiento a nivel plantas**")
-        mostrar_kpis_plantas(df_dashboard)
-
         if mostrar_diagnostico_check:
+            st.divider()
             mostrar_diagnostico(df_dashboard)
 
     with tab_datos:
