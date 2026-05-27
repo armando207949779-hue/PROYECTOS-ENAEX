@@ -208,7 +208,7 @@ def pagina_inicio():
     with col6:
         st.info(
             """
-            **Gráficos TAT**
+            **Performance Mensual**
 
             Visualización y análisis gráfico de resultados TAT.
             """
@@ -252,11 +252,11 @@ apps_requeridas = {
     "Cargar archivo": APP_TAT_CARGAR_ARCHIVO,
     "Limpieza Ariba": APP_TAT_LIMPIEZA_ARIBA,
     "Limpieza ME5A": APP_TAT_LIMPIEZA_ME5A,
-    "Limpieza ME80FN": APP_TAT_LIMPIEZA_ME80FN,
+    "Limpieza NME80FN": APP_TAT_LIMPIEZA_ME80FN,
     "Match TAT": APP_TAT_MATCH,
     "Fechas + Cálculos TAT": APP_CREAR_FECHAS_CALCULOS_TAT,
     "Filtro TAT": APP_TAT_FILTRO,
-    "Gráficos TAT": APP_TAT_GRAFICOS,
+    "Performance Mensual": APP_TAT_GRAFICOS,
     "Performance de Plantas": APP_GRAPH_PERFORMANCE_PLANTAS,
     "Alertas TAT": APP_TAT_ALERTAS,
 }
@@ -303,7 +303,7 @@ pagina = st.navigation(
             ),
             st.Page(
                 APP_TAT_LIMPIEZA_ME80FN,
-                title="Limpieza ME80FN",
+                title="Limpieza NME80FN",
                 icon="📄"
             ),
         ],
@@ -337,7 +337,7 @@ pagina = st.navigation(
             ),
             st.Page(
                 APP_TAT_GRAFICOS,
-                title="Gráficos TAT",
+                title="Performance Mensual",
                 icon="📊"
             ),
             st.Page(
