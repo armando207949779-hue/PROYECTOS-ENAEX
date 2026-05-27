@@ -3466,7 +3466,7 @@ st.markdown(
             Control TAT · SolPed / OC
         </div>
         <div style="font-size:14px; color:#6B7280; margin-top:8px;">
-            Panel único optimizado: portada visual, filtros, vencidos, próximos a vencer, expediente y estadística por material
+            Panel único optimizado: filtros, vencidos, próximos a vencer, expediente y estadística por material
         </div>
     </div>
     """,
@@ -4881,54 +4881,6 @@ df_filtrado = aplicar_filtros_panel(
 
 filtrados = len(df_filtrado)
 porcentaje_filtrado = filtrados / total_archivo * 100 if total_archivo else 0
-
-
-# =========================================================
-# Vista estética inicial del pedido prioritario
-# =========================================================
-st.markdown("### Vista rápida del pedido prioritario")
-st.caption(
-    "Esta copia estética muestra el resumen, la línea de pedido y las etapas TAT del pedido más crítico dentro del filtrado actual. "
-    "Puedes cambiar el pedido destacado y el expediente inferior quedará alineado con esta selección."
-)
-
-df_inicio_dashboard = ordenar_expediente_critico(df_filtrado.copy())
-
-if df_inicio_dashboard.empty:
-    st.info("No hay pedidos disponibles para mostrar en la vista rápida inicial con los filtros actuales.")
-else:
-    max_inicio = 1000
-    opciones_inicio = df_inicio_dashboard.index.tolist()[:max_inicio]
-    sugerido_inicio = st.session_state.get("expediente_idx_sugerido")
-
-    if sugerido_inicio in df_inicio_dashboard.index and sugerido_inicio not in opciones_inicio:
-        opciones_inicio = [sugerido_inicio] + opciones_inicio[:-1]
-    elif sugerido_inicio in opciones_inicio:
-        opciones_inicio = [sugerido_inicio] + [idx for idx in opciones_inicio if idx != sugerido_inicio]
-
-    labels_inicio = {
-        idx: construir_label_registro_critico(df_inicio_dashboard.loc[idx])
-        for idx in opciones_inicio
-    }
-
-    with st.expander("Elegir pedido destacado de la portada", expanded=False):
-        st.caption(
-            "El selector está ordenado por criticidad operativa: vencidos, próximos a vencer, mayor score de riesgo, mayor brecha TAT y mayor tiempo transcurrido."
-        )
-        seleccionado_inicio = st.selectbox(
-            "Pedido destacado al inicio del dashboard",
-            opciones_inicio,
-            index=0,
-            format_func=lambda idx: labels_inicio.get(idx, str(idx)),
-            key="selector_pedido_destacado_inicio_dashboard",
-        )
-
-    st.session_state["expediente_idx_sugerido"] = seleccionado_inicio
-    row_inicio = df_inicio_dashboard.loc[seleccionado_inicio]
-
-    st.markdown(html_resumen_pedido_expediente(row_inicio), unsafe_allow_html=True)
-    st.markdown(html_linea_pedido(row_inicio), unsafe_allow_html=True)
-    st.markdown(html_diagrama_tat_unificado(row_inicio), unsafe_allow_html=True)
 
 
 # =========================================================
