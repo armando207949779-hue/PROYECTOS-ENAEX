@@ -1609,19 +1609,11 @@ def crear_tabla_cumplimiento_visual(df: pd.DataFrame) -> pd.DataFrame:
     return tabla[["Planta", "Cumple", "No Cumple", "% Cumple"]]
 
 
-def clase_porcentaje_cumplimiento(pct: float) -> str:
-    if pct >= META_CUMPLIMIENTO:
-        return "pct-ok"
-
-    if pct >= 50:
-        return "pct-mid"
-
-    return "pct-low"
 
 
 def mostrar_tabla_cumplimiento_visual(df: pd.DataFrame):
     """
-    Muestra una tabla HTML estilizada con Cumple, No Cumple y % Cumple.
+    Muestra tabla nativa de Streamlit, sin HTML.
     """
     tabla = crear_tabla_cumplimiento_visual(df)
 
@@ -1629,45 +1621,34 @@ def mostrar_tabla_cumplimiento_visual(df: pd.DataFrame):
         st.info("No hay datos evaluables para construir la tabla de cumplimiento.")
         return
 
-    filas_html = []
-
-    for _, fila in tabla.iterrows():
-        planta = str(fila["Planta"])
-        cumple = int(fila["Cumple"])
-        no_cumple = int(fila["No Cumple"])
-        pct = float(fila["% Cumple"])
-        clase_pct = clase_porcentaje_cumplimiento(pct)
-
-        filas_html.append(
-            f"""
-            <tr>
-                <td>{planta}</td>
-                <td>{cumple:,}</td>
-                <td>{no_cumple:,}</td>
-                <td class="{clase_pct}">{pct:.0f}%</td>
-            </tr>
-            """
-        )
-
-    html = f"""
-    <div class="summary-table-wrap">
-        <table class="summary-table">
-            <thead>
-                <tr>
-                    <th></th>
-                    <th>Cumple</th>
-                    <th>No Cumple</th>
-                    <th>% Cumple</th>
-                </tr>
-            </thead>
-            <tbody>
-                {''.join(filas_html)}
-            </tbody>
-        </table>
-    </div>
-    """
-
-    st.markdown(html, unsafe_allow_html=True)
+    st.dataframe(
+        tabla,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Planta": st.column_config.TextColumn(
+                "Planta",
+                width="medium",
+            ),
+            "Cumple": st.column_config.NumberColumn(
+                "Cumple",
+                format="%d",
+                width="small",
+            ),
+            "No Cumple": st.column_config.NumberColumn(
+                "No Cumple",
+                format="%d",
+                width="small",
+            ),
+            "% Cumple": st.column_config.ProgressColumn(
+                "% Cumple",
+                format="%.0f%%",
+                min_value=0,
+                max_value=100,
+                width="medium",
+            ),
+        },
+    )
 
 
 def calcular_mejor_mes_planta(df: pd.DataFrame):
