@@ -1,5 +1,6 @@
 import base64
 from datetime import date
+from io import BytesIO
 from pathlib import Path
 
 import altair as alt
@@ -187,8 +188,6 @@ CENTROS_MAESTRO = [
     {"Centro": "E052", "Sociedad": "EC06", "Nombre": "Faena Spence"},
 ]
 
-# Filtro por defecto, editable en dashboard.
-# Este filtro NO define el eje temporal. Solo filtra registros.
 FECHA_FILTRO_FACTURACION_DEFAULT = pd.Timestamp("2024-02-01")
 
 
@@ -207,26 +206,6 @@ def aplicar_css():
                 padding-top: 2rem;
                 padding-bottom: 2rem;
                 max-width: 1500px;
-            }}
-            .header-card {{
-                background: {COLOR_CARD};
-                border: 1px solid #E5E7EB;
-                border-radius: 18px;
-                padding: 18px 22px;
-                box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
-                margin-bottom: 16px;
-            }}
-            .title-main {{
-                font-size: 24px;
-                font-weight: 800;
-                color: {COLOR_TEXTO};
-                margin: 0;
-                line-height: 1.15;
-            }}
-            .subtitle-main {{
-                font-size: 13px;
-                color: {COLOR_MUTED};
-                margin-top: 4px;
             }}
             .section-card {{
                 background: {COLOR_CARD};
@@ -289,16 +268,6 @@ def aplicar_css():
                 font-size: 12px;
                 color: {COLOR_MUTED};
                 margin-bottom: 10px;
-            }}
-            .status-pill {{
-                display: inline-block;
-                border-radius: 999px;
-                padding: 5px 10px;
-                background: #F3F4F6;
-                color: {COLOR_TEXTO};
-                font-size: 12px;
-                font-weight: 700;
-                border: 1px solid #E5E7EB;
             }}
             .stTabs [data-baseweb="tab-list"] {{
                 gap: 8px;
@@ -1201,7 +1170,7 @@ def grafico_temporal_porcentual_centros(
 
 
 # =========================================================
-# TABLA DE CUMPLIMIENTO Y FILTRO SEMANAL
+# TABLA DE CUMPLIMIENTO, FILTRO SEMANAL Y DESCARGAS
 # =========================================================
 
 def crear_tabla_cumplimiento_visual(df: pd.DataFrame) -> pd.DataFrame:
@@ -1339,9 +1308,12 @@ def crear_catalogo_semanas_disponibles(df: pd.DataFrame) -> pd.DataFrame:
             columns=[
                 "Año",
                 "Semana",
-                "Desde",
-                "Hasta",
+                "Inicio semana",
+                "Fin semana",
+                "Desde datos",
+                "Hasta datos",
                 "Registros",
+                "Etiqueta",
             ]
         )
 
@@ -1356,9 +1328,12 @@ def crear_catalogo_semanas_disponibles(df: pd.DataFrame) -> pd.DataFrame:
             columns=[
                 "Año",
                 "Semana",
-                "Desde",
-                "Hasta",
+                "Inicio semana",
+                "Fin semana",
+                "Desde datos",
+                "Hasta datos",
                 "Registros",
+                "Etiqueta",
             ]
         )
 
@@ -1366,8 +1341,8 @@ def crear_catalogo_semanas_disponibles(df: pd.DataFrame) -> pd.DataFrame:
         base
         .groupby(["anio_iso_recepcion", "semana_iso_recepcion"])
         .agg(
-            Desde=(COL_FECHA_RECEPCION_FINAL, "min"),
-            Hasta=(COL_FECHA_RECEPCION_FINAL, "max"),
+            Desde_datos=(COL_FECHA_RECEPCION_FINAL, "min"),
+            Hasta_datos=(COL_FECHA_RECEPCION_FINAL, "max"),
             Registros=(COL_FECHA_RECEPCION_FINAL, "size"),
         )
         .reset_index()
@@ -1381,67 +1356,201 @@ def crear_catalogo_semanas_disponibles(df: pd.DataFrame) -> pd.DataFrame:
 
     catalogo["Año"] = catalogo["Año"].astype(int)
     catalogo["Semana"] = catalogo["Semana"].astype(int)
-    catalogo["Desde"] = catalogo["Desde"].dt.strftime("%d-%m-%Y")
-    catalogo["Hasta"] = catalogo["Hasta"].dt.strftime("%d-%m-%Y")
+
+    inicios = []
+    fines = []
+
+    for _, fila in catalogo.iterrows():
+        inicio, fin = obtener_rango_fechas_semana_iso(fila["Año"], fila["Semana"])
+        inicios.append(inicio)
+        fines.append(fin)
+
+    catalogo["Inicio semana"] = inicios
+    catalogo["Fin semana"] = fines
+
+    catalogo["Etiqueta"] = (
+        "Semana "
+        + catalogo["Semana"].astype(str).str.zfill(2)
+        + " · "
+        + catalogo["Inicio semana"].dt.strftime("%d-%m-%Y")
+        + " a "
+        + catalogo["Fin semana"].dt.strftime("%d-%m-%Y")
+        + " · "
+        + catalogo["Registros"].astype(str)
+        + " registros"
+    )
+
+    catalogo["Desde datos"] = catalogo["Desde_datos"].dt.strftime("%d-%m-%Y")
+    catalogo["Hasta datos"] = catalogo["Hasta_datos"].dt.strftime("%d-%m-%Y")
+    catalogo["Inicio semana"] = catalogo["Inicio semana"].dt.strftime("%d-%m-%Y")
+    catalogo["Fin semana"] = catalogo["Fin semana"].dt.strftime("%d-%m-%Y")
+
+    catalogo = catalogo.drop(columns=["Desde_datos", "Hasta_datos"])
 
     return catalogo.sort_values(["Año", "Semana"]).reset_index(drop=True)
+
+
+def filtrar_por_fecha_recepcion(
+    df: pd.DataFrame,
+    fecha_inicio,
+    fecha_fin,
+) -> pd.DataFrame:
+    if df.empty:
+        return df.copy()
+
+    fecha_inicio = pd.Timestamp(fecha_inicio)
+    fecha_fin = (
+        pd.Timestamp(fecha_fin)
+        + pd.Timedelta(days=1)
+        - pd.Timedelta(microseconds=1)
+    )
+
+    return df[
+        df[COL_FECHA_RECEPCION_FINAL].between(fecha_inicio, fecha_fin)
+    ].copy()
 
 
 def filtrar_por_anio_y_semana_iso(
     df: pd.DataFrame,
     anio_iso: int | None,
-    rango_semanas: tuple[int, int] | list[int] | None,
+    semana_inicio: int | None,
+    semana_fin: int | None,
 ) -> pd.DataFrame:
-    """
-    Filtra un dataframe por año ISO y rango de semanas ISO.
-    """
     if df.empty:
         return df.copy()
 
-    if anio_iso is None or rango_semanas is None:
+    if anio_iso is None or semana_inicio is None or semana_fin is None:
         return df.copy()
 
     if "anio_iso_recepcion" not in df.columns or "semana_iso_recepcion" not in df.columns:
         return df.copy()
 
-    semana_inicio = int(rango_semanas[0])
-    semana_fin = int(rango_semanas[1])
-
-    data = df[
+    return df[
         df["anio_iso_recepcion"].eq(int(anio_iso))
-        & df["semana_iso_recepcion"].between(semana_inicio, semana_fin)
+        & df["semana_iso_recepcion"].between(int(semana_inicio), int(semana_fin))
     ].copy()
 
-    return data
 
-
-def selector_filtro_semanal_tabla(df: pd.DataFrame) -> pd.DataFrame:
+def selector_filtro_semanal_tabla(df: pd.DataFrame):
     """
     Selector específico para filtrar solo la tabla de cumplimiento por plantas.
-    No afecta los demás gráficos del dashboard.
+    Devuelve:
+    - dataframe filtrado para tabla
+    - metadata del filtro
     """
+    metadata = {
+        "filtro_activo": False,
+        "modo": "Sin filtro semanal específico",
+        "descripcion": "Se usa el rango general del dashboard.",
+    }
+
     if df.empty:
-        return df.copy()
+        return df.copy(), metadata
 
     if "anio_iso_recepcion" not in df.columns or "semana_iso_recepcion" not in df.columns:
         st.warning("No existen columnas de año/semana ISO para aplicar este filtro.")
-        return df.copy()
+        return df.copy(), metadata
 
     usar_filtro = st.checkbox(
-        "Filtrar esta tabla por año y semana ISO",
+        "Filtrar esta tabla y su detalle por semana",
         value=False,
         key="usar_filtro_semana_tabla_plantas",
     )
 
     if not usar_filtro:
-        return df.copy()
+        return df.copy(), metadata
 
     catalogo = crear_catalogo_semanas_disponibles(df)
 
     if catalogo.empty:
         st.info("No hay semanas disponibles con los filtros actuales.")
-        return df.copy()
+        return df.copy(), metadata
 
+    modo_filtro = st.radio(
+        "Forma de selección",
+        options=[
+            "Calendario",
+            "Semana ISO manual",
+        ],
+        horizontal=True,
+        key="modo_filtro_semana_tabla",
+        help=(
+            "Calendario: eliges fechas y el sistema muestra las semanas involucradas. "
+            "Semana ISO manual: eliges año, semana inicial y semana final."
+        ),
+    )
+
+    if modo_filtro == "Calendario":
+        fechas_validas = df[COL_FECHA_RECEPCION_FINAL].dropna()
+
+        fecha_min = fechas_validas.min().date()
+        fecha_max = fechas_validas.max().date()
+
+        rango_fecha_tabla = st.date_input(
+            "Rango de fechas para esta visualización",
+            value=(fecha_min, fecha_max),
+            min_value=fecha_min,
+            max_value=fecha_max,
+            key="rango_fecha_tabla_plantas",
+            help="Usa fecha_recepcion_final. El detalle semanal se calcula con las semanas ISO contenidas en este rango.",
+        )
+
+        if not isinstance(rango_fecha_tabla, (tuple, list)) or len(rango_fecha_tabla) != 2:
+            st.info("Selecciona una fecha inicial y una fecha final.")
+            return df.copy(), metadata
+
+        fecha_inicio = rango_fecha_tabla[0]
+        fecha_fin = rango_fecha_tabla[1]
+
+        df_filtrado = filtrar_por_fecha_recepcion(
+            df=df,
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+        )
+
+        if df_filtrado.empty:
+            st.warning("No hay datos para el rango de fechas seleccionado.")
+            return df_filtrado, {
+                "filtro_activo": True,
+                "modo": "Calendario",
+                "descripcion": f"{formatear_fecha(fecha_inicio)} a {formatear_fecha(fecha_fin)}",
+            }
+
+        catalogo_filtrado = crear_catalogo_semanas_disponibles(df_filtrado)
+
+        semanas_txt = ", ".join(
+            [
+                f"{int(row['Año'])}-S{int(row['Semana']):02d}"
+                for _, row in catalogo_filtrado.iterrows()
+            ]
+        )
+
+        st.caption(
+            f"Rango seleccionado: {formatear_fecha(fecha_inicio)} a {formatear_fecha(fecha_fin)}. "
+            f"Semanas incluidas: {semanas_txt if semanas_txt else 'Sin semanas'}."
+        )
+
+        with st.expander("Ver semanas incluidas en el rango seleccionado", expanded=False):
+            st.dataframe(
+                catalogo_filtrado,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Año": st.column_config.NumberColumn("Año", format="%d"),
+                    "Semana": st.column_config.NumberColumn("Semana", format="%d"),
+                    "Registros": st.column_config.NumberColumn("Registros", format="%d"),
+                },
+            )
+
+        metadata = {
+            "filtro_activo": True,
+            "modo": "Calendario",
+            "descripcion": f"{formatear_fecha(fecha_inicio)} a {formatear_fecha(fecha_fin)}",
+        }
+
+        return df_filtrado, metadata
+
+    # Modo Semana ISO manual
     anios_disponibles = sorted(
         catalogo["Año"].dropna().astype(int).unique().tolist()
     )
@@ -1459,35 +1568,55 @@ def selector_filtro_semanal_tabla(df: pd.DataFrame) -> pd.DataFrame:
         catalogo_anio["Semana"].dropna().astype(int).unique().tolist()
     )
 
-    semana_min = min(semanas_disponibles)
-    semana_max = max(semanas_disponibles)
-
-    rango_semanas = st.slider(
-        "Rango de semanas ISO",
-        min_value=semana_min,
-        max_value=semana_max,
-        value=(semana_min, semana_max),
-        step=1,
-        key="rango_semanas_tabla_plantas",
+    mapa_semana_etiqueta = dict(
+        zip(
+            catalogo_anio["Semana"].astype(int),
+            catalogo_anio["Etiqueta"].astype(str),
+        )
     )
+
+    c1, c2 = st.columns(2)
+
+    with c1:
+        semana_inicio_sel = st.selectbox(
+            "Semana inicial",
+            options=semanas_disponibles,
+            format_func=lambda semana: mapa_semana_etiqueta.get(int(semana), f"Semana {int(semana):02d}"),
+            index=0,
+            key="semana_inicio_tabla_plantas",
+        )
+
+    semanas_fin_disponibles = [
+        semana for semana in semanas_disponibles
+        if int(semana) >= int(semana_inicio_sel)
+    ]
+
+    with c2:
+        semana_fin_sel = st.selectbox(
+            "Semana final",
+            options=semanas_fin_disponibles,
+            format_func=lambda semana: mapa_semana_etiqueta.get(int(semana), f"Semana {int(semana):02d}"),
+            index=len(semanas_fin_disponibles) - 1,
+            key="semana_fin_tabla_plantas",
+        )
 
     fecha_inicio_semana, _ = obtener_rango_fechas_semana_iso(
         anio_sel,
-        rango_semanas[0],
+        semana_inicio_sel,
     )
     _, fecha_fin_semana = obtener_rango_fechas_semana_iso(
         anio_sel,
-        rango_semanas[1],
+        semana_fin_sel,
     )
 
     st.caption(
-        f"Rango seleccionado: Año {anio_sel}, semana {rango_semanas[0]} "
-        f"a semana {rango_semanas[1]} · "
+        f"Rango seleccionado: Año {anio_sel}, semana {semana_inicio_sel} "
+        f"a semana {semana_fin_sel} · "
         f"{fecha_inicio_semana.strftime('%d-%m-%Y')} a "
         f"{fecha_fin_semana.strftime('%d-%m-%Y')}"
     )
 
-    with st.expander("Ver semanas disponibles en los datos filtrados", expanded=False):
+    with st.expander("Ver semanas disponibles del año seleccionado", expanded=False):
         st.dataframe(
             catalogo_anio,
             use_container_width=True,
@@ -1499,11 +1628,269 @@ def selector_filtro_semanal_tabla(df: pd.DataFrame) -> pd.DataFrame:
             },
         )
 
-    return filtrar_por_anio_y_semana_iso(
+    df_filtrado = filtrar_por_anio_y_semana_iso(
         df=df,
         anio_iso=anio_sel,
-        rango_semanas=rango_semanas,
+        semana_inicio=semana_inicio_sel,
+        semana_fin=semana_fin_sel,
     )
+
+    metadata = {
+        "filtro_activo": True,
+        "modo": "Semana ISO manual",
+        "descripcion": f"Año {anio_sel}, semana {semana_inicio_sel} a semana {semana_fin_sel}",
+    }
+
+    return df_filtrado, metadata
+
+
+def crear_detalle_cumplimiento_semanal(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Crea detalle por semana ISO y planta:
+    Año | Semana | Inicio semana | Fin semana | Planta | Cumple | No Cumple | Total evaluable | % Cumple
+
+    Agrega una fila 'Total semana' por cada semana.
+    """
+    columnas_salida = [
+        "Año",
+        "Semana",
+        "Inicio semana",
+        "Fin semana",
+        "Planta",
+        "Cumple",
+        "No Cumple",
+        "Total evaluable",
+        "% Cumple",
+    ]
+
+    if df.empty:
+        return pd.DataFrame(columns=columnas_salida)
+
+    base = df[
+        df[COL_PERFORMANCE_TAT].isin(["Cumple", "No cumple"])
+        & df["anio_iso_recepcion"].notna()
+        & df["semana_iso_recepcion"].notna()
+    ].copy()
+
+    if base.empty:
+        return pd.DataFrame(columns=columnas_salida)
+
+    resumen = (
+        base
+        .groupby(["anio_iso_recepcion", "semana_iso_recepcion", "grupo_planta", COL_PERFORMANCE_TAT])
+        .size()
+        .reset_index(name="cantidad")
+    )
+
+    tabla = resumen.pivot_table(
+        index=["anio_iso_recepcion", "semana_iso_recepcion", "grupo_planta"],
+        columns=COL_PERFORMANCE_TAT,
+        values="cantidad",
+        aggfunc="sum",
+        fill_value=0,
+    ).reset_index()
+
+    for col in ["Cumple", "No cumple"]:
+        if col not in tabla.columns:
+            tabla[col] = 0
+
+    tabla = tabla.rename(
+        columns={
+            "anio_iso_recepcion": "Año",
+            "semana_iso_recepcion": "Semana",
+            "grupo_planta": "Planta",
+            "No cumple": "No Cumple",
+        }
+    )
+
+    tabla["Año"] = tabla["Año"].astype(int)
+    tabla["Semana"] = tabla["Semana"].astype(int)
+    tabla["Cumple"] = tabla["Cumple"].astype(int)
+    tabla["No Cumple"] = tabla["No Cumple"].astype(int)
+    tabla["Total evaluable"] = tabla["Cumple"] + tabla["No Cumple"]
+    tabla["% Cumple"] = np.where(
+        tabla["Total evaluable"].gt(0),
+        tabla["Cumple"] / tabla["Total evaluable"] * 100,
+        0,
+    )
+
+    orden_plantas = {
+        "Prillex": 1,
+        "Rio Loa": 2,
+        "Plantas de servicios": 3,
+    }
+
+    tabla["orden_planta"] = tabla["Planta"].map(orden_plantas).fillna(99)
+
+    totales = (
+        tabla
+        .groupby(["Año", "Semana"], as_index=False)
+        .agg(
+            Cumple=("Cumple", "sum"),
+            **{"No Cumple": ("No Cumple", "sum")},
+            **{"Total evaluable": ("Total evaluable", "sum")},
+        )
+    )
+
+    totales["Planta"] = "Total semana"
+    totales["% Cumple"] = np.where(
+        totales["Total evaluable"].gt(0),
+        totales["Cumple"] / totales["Total evaluable"] * 100,
+        0,
+    )
+    totales["orden_planta"] = 999
+
+    tabla_final = pd.concat(
+        [
+            tabla[
+                [
+                    "Año",
+                    "Semana",
+                    "Planta",
+                    "Cumple",
+                    "No Cumple",
+                    "Total evaluable",
+                    "% Cumple",
+                    "orden_planta",
+                ]
+            ],
+            totales[
+                [
+                    "Año",
+                    "Semana",
+                    "Planta",
+                    "Cumple",
+                    "No Cumple",
+                    "Total evaluable",
+                    "% Cumple",
+                    "orden_planta",
+                ]
+            ],
+        ],
+        ignore_index=True,
+    )
+
+    inicios = []
+    fines = []
+
+    for _, fila in tabla_final.iterrows():
+        inicio, fin = obtener_rango_fechas_semana_iso(
+            int(fila["Año"]),
+            int(fila["Semana"]),
+        )
+        inicios.append(inicio.strftime("%d-%m-%Y"))
+        fines.append(fin.strftime("%d-%m-%Y"))
+
+    tabla_final["Inicio semana"] = inicios
+    tabla_final["Fin semana"] = fines
+
+    tabla_final["% Cumple"] = tabla_final["% Cumple"].round(1)
+
+    tabla_final = (
+        tabla_final
+        .sort_values(["Año", "Semana", "orden_planta"])
+        .drop(columns=["orden_planta"])
+        .reset_index(drop=True)
+    )
+
+    return tabla_final[columnas_salida]
+
+
+def convertir_df_a_excel_bytes(
+    resumen: pd.DataFrame,
+    detalle: pd.DataFrame,
+    metadata: dict | None = None,
+) -> bytes:
+    """
+    Genera un archivo Excel en memoria con resumen, detalle semanal y filtros.
+    """
+    output = BytesIO()
+
+    filtros_df = pd.DataFrame(
+        [
+            {
+                "Campo": "Modo filtro semanal",
+                "Valor": (metadata or {}).get("modo", "Sin información"),
+            },
+            {
+                "Campo": "Descripción",
+                "Valor": (metadata or {}).get("descripcion", "Sin información"),
+            },
+            {
+                "Campo": "Meta cumplimiento",
+                "Valor": f"{META_CUMPLIMIENTO}%",
+            },
+        ]
+    )
+
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        filtros_df.to_excel(writer, sheet_name="Filtros", index=False)
+        resumen.to_excel(writer, sheet_name="Resumen plantas", index=False)
+        detalle.to_excel(writer, sheet_name="Detalle semanal", index=False)
+
+    return output.getvalue()
+
+
+def mostrar_detalle_semanal_y_descargas(
+    df_filtrado: pd.DataFrame,
+    metadata: dict | None = None,
+):
+    """
+    Muestra detalle semanal del dataframe filtrado y permite descargar CSV o Excel.
+    """
+    detalle = crear_detalle_cumplimiento_semanal(df_filtrado)
+    resumen = crear_tabla_cumplimiento_visual(df_filtrado)
+
+    section_header(
+        "Detalle semanal del rango seleccionado",
+        "Detalle por semana ISO y planta. Incluye una fila Total semana para cada semana.",
+    )
+
+    if detalle.empty:
+        st.info("No hay detalle semanal evaluable para el rango seleccionado.")
+        return
+
+    st.dataframe(
+        detalle,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Año": st.column_config.NumberColumn("Año", format="%d"),
+            "Semana": st.column_config.NumberColumn("Semana", format="%d"),
+            "Cumple": st.column_config.NumberColumn("Cumple", format="%d"),
+            "No Cumple": st.column_config.NumberColumn("No Cumple", format="%d"),
+            "Total evaluable": st.column_config.NumberColumn("Total evaluable", format="%d"),
+            "% Cumple": st.column_config.NumberColumn("% Cumple", format="%.1f%%"),
+        },
+    )
+
+    csv_bytes = detalle.to_csv(index=False).encode("utf-8-sig")
+
+    excel_bytes = convertir_df_a_excel_bytes(
+        resumen=resumen,
+        detalle=detalle,
+        metadata=metadata,
+    )
+
+    d1, d2 = st.columns(2)
+
+    with d1:
+        st.download_button(
+            label="Descargar detalle semanal CSV",
+            data=csv_bytes,
+            file_name="detalle_semanal_performance_plantas.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+
+    with d2:
+        st.download_button(
+            label="Descargar resumen y detalle Excel",
+            data=excel_bytes,
+            file_name="detalle_semanal_performance_plantas.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
 
 
 # =========================================================
@@ -1794,41 +2181,6 @@ def calcular_peor_planta(df: pd.DataFrame):
         ["% Cumple", "Total evaluable"],
         ascending=[True, False],
     ).iloc[0]
-
-
-def resumen_cumplimiento_plantas(df: pd.DataFrame) -> pd.DataFrame:
-    kpis = resumen_kpis_plantas(df)
-
-    if kpis.empty:
-        return pd.DataFrame(
-            columns=[
-                "Planta",
-                "Cumple",
-                "No cumple",
-                "Total evaluable",
-                "% Cumplimiento",
-            ]
-        )
-
-    tabla = kpis.rename(
-        columns={
-            "grupo_planta": "Planta",
-            "% Cumple": "% Cumplimiento",
-        }
-    )
-
-    columnas = [
-        "Planta",
-        "Cumple",
-        "No cumple",
-        "Total evaluable",
-        "% Cumplimiento",
-    ]
-
-    tabla = tabla[columnas].copy()
-    tabla["% Cumplimiento"] = tabla["% Cumplimiento"].round(1)
-
-    return tabla.sort_values("% Cumplimiento", ascending=False).reset_index(drop=True)
 
 
 def calcular_mejor_mes_planta(df: pd.DataFrame):
@@ -2166,10 +2518,10 @@ try:
         # =================================================
         section_header(
             "Cumplimiento a nivel de plantas",
-            "Resumen evaluable por planta. Puedes filtrar esta visualización por año y semana ISO.",
+            "Resumen evaluable por planta. Puedes filtrar esta visualización por calendario o por semana ISO.",
         )
 
-        df_tabla_cumplimiento = selector_filtro_semanal_tabla(df_dashboard)
+        df_tabla_cumplimiento, metadata_filtro_semanal = selector_filtro_semanal_tabla(df_dashboard)
 
         mostrar_tabla_cumplimiento_visual(df_tabla_cumplimiento)
 
@@ -2180,7 +2532,17 @@ try:
         st.divider()
 
         # =================================================
-        # 4) Indicadores generales
+        # 4) Detalle semanal y descargas
+        # =================================================
+        mostrar_detalle_semanal_y_descargas(
+            df_filtrado=df_tabla_cumplimiento,
+            metadata=metadata_filtro_semanal,
+        )
+
+        st.divider()
+
+        # =================================================
+        # 5) Indicadores generales
         # =================================================
         section_header(
             "Indicadores generales",
@@ -2224,7 +2586,7 @@ try:
         st.divider()
 
         # =================================================
-        # 5) Gráfico general
+        # 6) Gráfico general
         # =================================================
         section_header(
             "Evolución general del cumplimiento",
@@ -2236,7 +2598,7 @@ try:
         st.divider()
 
         # =================================================
-        # 6) Gráficos específicos por planta
+        # 7) Gráficos específicos por planta
         # =================================================
         section_header(
             "Detalle mensual por planta",
@@ -2259,7 +2621,7 @@ try:
         st.divider()
 
         # =================================================
-        # 7) Análisis opcional por centro
+        # 8) Análisis opcional por centro
         # =================================================
         section_header(
             "Análisis específico por centro",
