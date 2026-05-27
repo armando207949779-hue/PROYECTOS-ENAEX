@@ -1187,6 +1187,94 @@ st.markdown(
             line-height: 1.25;
         }
 
+
+        .critical-hero {
+            background: linear-gradient(180deg, #fff7ed 0%, #ffffff 100%);
+            border: 1px solid #fdba74;
+            border-left: 8px solid #ea580c;
+            border-radius: 22px;
+            padding: 18px 20px;
+            margin: 0.85rem 0 1rem 0;
+            box-shadow: 0 2px 10px rgba(234, 88, 12, 0.08);
+        }
+
+        .critical-hero-title {
+            color: #7c2d12;
+            font-size: 1.02rem;
+            line-height: 1.25;
+            font-weight: 950;
+            text-transform: uppercase;
+            letter-spacing: 0.035em;
+            margin-bottom: 6px;
+        }
+
+        .critical-hero-text {
+            color: #334155;
+            font-size: 0.92rem;
+            line-height: 1.45;
+        }
+
+        .critical-selected-card {
+            background: linear-gradient(180deg, #fef2f2 0%, #ffffff 100%);
+            border: 1px solid #fecaca;
+            border-left: 8px solid #dc2626;
+            border-radius: 22px;
+            padding: 16px 18px;
+            margin: 0.8rem 0 0.9rem 0;
+            box-shadow: 0 2px 10px rgba(220, 38, 38, 0.08);
+        }
+
+        .critical-selected-title {
+            color: #7f1d1d;
+            font-size: 0.94rem;
+            font-weight: 950;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: 10px;
+        }
+
+        .critical-selected-grid {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(130px, 1fr));
+            gap: 10px;
+        }
+
+        .critical-selected-field {
+            background: #ffffff;
+            border: 1px solid #fee2e2;
+            border-radius: 14px;
+            padding: 10px 12px;
+        }
+
+        .critical-selected-label {
+            color: #64748b;
+            font-size: 0.68rem;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 0.045em;
+            margin-bottom: 4px;
+        }
+
+        .critical-selected-value {
+            color: #0f172a;
+            font-size: 0.96rem;
+            font-weight: 900;
+            line-height: 1.22;
+            overflow-wrap: anywhere;
+        }
+
+        @media (max-width: 1200px) {
+            .critical-selected-grid {
+                grid-template-columns: repeat(2, minmax(130px, 1fr));
+            }
+        }
+
+        @media (max-width: 760px) {
+            .critical-selected-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
         .criteria-box {
             background: #f8fafc;
             border: 1px solid #e2e8f0;
@@ -1897,6 +1985,8 @@ def html_resumen_pedido_expediente(row: pd.Series) -> str:
     oc_principal = row.get(COL_OC_ME5A, row.get(COL_OC_NME, np.nan))
     pos_principal = row.get(COL_POS_SOLPED, np.nan)
     estado_recepcion = row.get("estado_recepcion_simple", row.get(COL_ESTADO_RECEPCION_ALERTA, np.nan))
+    tiempo_transcurrido = row.get("tiempo_transcurrido_tat", np.nan)
+    dias_restantes = row.get("dias_restantes_texto", row.get("dias_restantes_tat", np.nan))
 
     return dedent(
         f"""
@@ -1918,22 +2008,41 @@ def html_resumen_pedido_expediente(row: pd.Series) -> str:
                     <div class="exp-field-value">{html_id(oc_principal)}</div>
                 </div>
                 <div class="exp-field">
-                    <div class="exp-field-label">Posición solicitud de pedido</div>
-                    <div class="exp-field-value">{html_id(pos_principal)}</div>
+                    <div class="exp-field-label">Tiempo transcurrido</div>
+                    <div class="exp-field-value">{html_texto(tiempo_transcurrido)}</div>
+                </div>
+                <div class="exp-field">
+                    <div class="exp-field-label">Vencimiento / plazo</div>
+                    <div class="exp-field-value">{html_texto(dias_restantes)}</div>
                 </div>
                 <div class="exp-field">
                     <div class="exp-field-label">Centro</div>
                     <div class="exp-field-value">{html_texto(row.get(COL_CENTRO, np.nan))}</div>
                 </div>
                 <div class="exp-field">
+                    <div class="exp-field-label">Posición solicitud de pedido</div>
+                    <div class="exp-field-value">{html_id(pos_principal)}</div>
+                </div>
+                <div class="exp-field">
                     <div class="exp-field-label">Grupo compras</div>
                     <div class="exp-field-value">{html_texto(row.get(COL_GRUPO_COMPRAS, np.nan))}</div>
+                </div>
+                <div class="exp-field">
+                    <div class="exp-field-label">Nivel alerta</div>
+                    <div class="exp-field-value">{html_texto(row.get('nivel_alerta', np.nan))}</div>
+                </div>
+                <div class="exp-field">
+                    <div class="exp-field-label">Fecha pendiente</div>
+                    <div class="exp-field-value">{html_texto(row.get('fecha_pendiente', np.nan))}</div>
+                </div>
+                <div class="exp-field">
+                    <div class="exp-field-label">Acción sugerida</div>
+                    <div class="exp-field-value">{html_texto(row.get('accion_sugerida', np.nan))}</div>
                 </div>
             </div>
         </div>
         """
     ).strip()
-
 
 def html_kpis_expediente(row: pd.Series) -> str:
     estado_pedido = row.get("clasificacion_vencimiento", np.nan)
@@ -2471,6 +2580,174 @@ def construir_label_registro(row: pd.Series) -> str:
         f"{texto}"
     )
 
+
+
+
+def construir_label_registro_critico(row: pd.Series) -> str:
+    solped = formato_id(row.get(COL_SOLPED, np.nan))
+    oc = formato_id(row.get(COL_OC_ME5A, row.get(COL_OC_NME, np.nan)))
+    pos = formato_id(row.get(COL_POS_SOLPED, np.nan))
+    nivel = formato_valor(row.get("nivel_alerta", np.nan))
+    vencimiento = formato_valor(row.get("dias_hasta_vencimiento", np.nan))
+    tiempo = formato_valor(row.get("tiempo_transcurrido_tat", np.nan))
+    pendiente = formato_valor(row.get("fecha_pendiente", np.nan))
+    accion = formato_valor(row.get("accion_sugerida", np.nan))
+    descripcion = str(row.get(COL_TEXTO, ""))[:70]
+
+    return (
+        f"{nivel} · {vencimiento} | "
+        f"SolPed {solped} | OC {oc} | Pos {pos} | "
+        f"Transcurrido {tiempo} | Pendiente {pendiente} | "
+        f"{accion} | {descripcion}"
+    )
+
+
+def columnas_gestion_expediente(df_base: pd.DataFrame) -> list[str]:
+    return columnas_existentes(
+        df_base,
+        [
+            "nivel_alerta",
+            "dias_hasta_vencimiento",
+            "score_riesgo",
+            "tiempo_transcurrido_tat",
+            "dias_restantes_texto",
+            "fecha_vencimiento_texto",
+            "fecha_pendiente",
+            "accion_sugerida",
+            "causa_probable",
+            "etapa_actual",
+            COL_ESTADO_RECEPCION_ALERTA,
+            COL_SOLPED,
+            COL_OC_ME5A,
+            COL_OC_NME,
+            COL_POS_SOLPED,
+            COL_MATERIAL,
+            COL_TEXTO,
+            COL_CENTRO,
+            COL_GRUPO_COMPRAS,
+            COL_TIPO_OC,
+            COL_MONTO,
+        ],
+    )
+
+
+def tabla_gestion_expediente(df_base: pd.DataFrame) -> pd.DataFrame:
+    columnas = columnas_gestion_expediente(df_base)
+    tabla = df_base[columnas].copy() if columnas else pd.DataFrame(index=df_base.index)
+    renombres = {
+        "nivel_alerta": "Nivel alerta",
+        "dias_hasta_vencimiento": "Urgencia",
+        "score_riesgo": "Score riesgo",
+        "tiempo_transcurrido_tat": "Tiempo transcurrido",
+        "dias_restantes_texto": "Días restantes",
+        "fecha_vencimiento_texto": "Fecha vencimiento",
+        "fecha_pendiente": "Fecha pendiente",
+        "accion_sugerida": "Acción sugerida",
+        "causa_probable": "Causa probable",
+        "etapa_actual": "Etapa actual",
+        COL_ESTADO_RECEPCION_ALERTA: "Recepción",
+        COL_SOLPED: "SolPed",
+        COL_OC_ME5A: "Pedido ME5A",
+        COL_OC_NME: "Pedido NME80FN",
+        COL_POS_SOLPED: "Posición SolPed",
+        COL_MATERIAL: "Material",
+        COL_TEXTO: "Descripción",
+        COL_CENTRO: "Centro",
+        COL_GRUPO_COMPRAS: "Grupo compras",
+        COL_TIPO_OC: "Tipo OC",
+        COL_MONTO: "Monto",
+    }
+    return tabla.rename(columns=renombres)
+
+
+def aplicar_estilo_gestion_expediente(df_tabla: pd.DataFrame):
+    styler = df_tabla.style
+
+    def color_nivel(valor):
+        texto = str(valor).strip()
+        if texto == "Crítica":
+            return "background-color:#fee2e2; color:#991b1b; font-weight:900;"
+        if texto == "Alta":
+            return "background-color:#ffedd5; color:#9a3412; font-weight:900;"
+        if texto == "Media":
+            return "background-color:#fef9c3; color:#854d0e; font-weight:850;"
+        if texto == "Normal":
+            return "background-color:#dcfce7; color:#166534; font-weight:850;"
+        if texto == "Sin datos":
+            return "background-color:#f1f5f9; color:#475569; font-weight:850;"
+        return ""
+
+    def color_urgencia(valor):
+        texto = str(valor).strip()
+        if texto == "Vencido":
+            return "background-color:#fee2e2; color:#991b1b; font-weight:900;"
+        if texto in ["1 día", "2 días"]:
+            return "background-color:#ffedd5; color:#9a3412; font-weight:900;"
+        if texto == "7 días":
+            return "background-color:#fef3c7; color:#92400e; font-weight:900;"
+        if texto == "+7 días":
+            return "background-color:#dcfce7; color:#166534; font-weight:850;"
+        if texto == "Sin datos":
+            return "background-color:#f1f5f9; color:#475569; font-weight:850;"
+        return ""
+
+    for col in ["Nivel alerta"]:
+        if col in df_tabla.columns:
+            styler = styler.map(color_nivel, subset=[col])
+    for col in ["Urgencia"]:
+        if col in df_tabla.columns:
+            styler = styler.map(color_urgencia, subset=[col])
+    return styler
+
+
+def html_pedido_critico_seleccionado(row: pd.Series) -> str:
+    return dedent(
+        f"""
+        <div class="critical-selected-card">
+            <div class="critical-selected-title">Pedido crítico seleccionado para expediente</div>
+            <div class="critical-selected-grid">
+                <div class="critical-selected-field">
+                    <div class="critical-selected-label">Nivel / urgencia</div>
+                    <div class="critical-selected-value">{html_texto(row.get('nivel_alerta', np.nan))} · {html_texto(row.get('dias_hasta_vencimiento', np.nan))}</div>
+                </div>
+                <div class="critical-selected-field">
+                    <div class="critical-selected-label">Tiempo transcurrido</div>
+                    <div class="critical-selected-value">{html_texto(row.get('tiempo_transcurrido_tat', np.nan))}</div>
+                </div>
+                <div class="critical-selected-field">
+                    <div class="critical-selected-label">Fecha pendiente</div>
+                    <div class="critical-selected-value">{html_texto(row.get('fecha_pendiente', np.nan))}</div>
+                </div>
+                <div class="critical-selected-field">
+                    <div class="critical-selected-label">Acción sugerida</div>
+                    <div class="critical-selected-value">{html_texto(row.get('accion_sugerida', np.nan))}</div>
+                </div>
+                <div class="critical-selected-field">
+                    <div class="critical-selected-label">Score riesgo</div>
+                    <div class="critical-selected-value">{html_texto(row.get('score_riesgo', np.nan))}</div>
+                </div>
+            </div>
+        </div>
+        """
+    ).strip()
+
+
+def ordenar_expediente_critico(df_base: pd.DataFrame) -> pd.DataFrame:
+    if df_base.empty:
+        return df_base.copy()
+
+    salida = df_base.copy()
+    if "prioridad_operativa" not in salida.columns:
+        salida["prioridad_operativa"] = salida.apply(prioridad_operativa, axis=1)
+
+    columnas_orden = ["prioridad_operativa"]
+    ascendentes = [True]
+    for col in ["score_riesgo", "brecha_tat", "tiempo_transcurrido_tat_dias"]:
+        if col in salida.columns:
+            columnas_orden.append(col)
+            ascendentes.append(False)
+
+    return salida.sort_values(columnas_orden, ascending=ascendentes)
 
 def aplicar_estilo_tabla(df_tabla: pd.DataFrame):
     def color_performance(valor):
@@ -4952,30 +5229,181 @@ if df_filtrado.empty:
 else:
     total_expediente_base = len(df_filtrado)
 
-    st.markdown("#### Selecciona un pedido para ver el expediente")
+    st.markdown("#### Gestión visual y selección de pedidos críticos")
     st.caption(
         (
             f"El expediente parte desde los {total_expediente_base:,} registros que quedaron después de los filtros generales. "
-            "Primero acota la búsqueda con los filtros del expediente y luego selecciona el pedido específico que quieres revisar."
+            "La gestión visual prioriza vencidos, alertas críticas y pedidos sin recepción para que puedas elegir rápidamente el caso a revisar."
         ).replace(",", ".")
     )
 
     st.markdown(
         """
-        <div class="exp-filter-hero">
-            <div class="exp-filter-hero-title">Paso recomendado: filtra el expediente antes de seleccionar</div>
-            <div class="exp-filter-hero-text">
-                Usa SolPed, Pedido, Posición solicitud de pedido, Centro, Grupo de compras, Recepción, Estado pedido o Fecha pendiente para reducir la lista del selector.
+        <div class="critical-hero">
+            <div class="critical-hero-title">Gestión visual para identificar pedidos críticos</div>
+            <div class="critical-hero-text">
+                Filtra por nivel de alerta, urgencia, recepción, etapa pendiente y responsable operativo. Luego revisa la tabla priorizada y selecciona el pedido crítico para abrir su expediente completo.
             </div>
-        </div>
-        <div class="exp-filter-help">
-            Ayuda: puedes descargar alguno de los Excel anteriores para apoyarte con los datos exactos y filtrar mejor el expediente.
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    with st.expander("🔎 Filtros del expediente · acota la búsqueda del pedido", expanded=True):
+    df_expediente_base = ordenar_expediente_critico(df_filtrado)
+
+    with st.expander("🚦 Gestión visual de críticos · filtrar, visualizar y elegir", expanded=True):
+        g1, g2, g3, g4 = st.columns(4)
+
+        niveles_disponibles = (
+            df_expediente_base["nivel_alerta"].dropna().astype(str).sort_values().unique().tolist()
+            if "nivel_alerta" in df_expediente_base.columns else []
+        )
+        niveles_default = [v for v in ["Crítica", "Alta"] if v in niveles_disponibles]
+
+        urgencias_disponibles = (
+            df_expediente_base["dias_hasta_vencimiento"].dropna().astype(str).unique().tolist()
+            if "dias_hasta_vencimiento" in df_expediente_base.columns else []
+        )
+        urgencias_disponibles = [u for u in BUCKETS_DIAS_VENCIMIENTO if u in urgencias_disponibles] + [
+            u for u in sorted(urgencias_disponibles) if u not in BUCKETS_DIAS_VENCIMIENTO
+        ]
+        urgencias_default = [u for u in ["Vencido", "1 día", "2 días", "7 días"] if u in urgencias_disponibles]
+
+        recepcion_disponible = (
+            df_expediente_base[COL_ESTADO_RECEPCION_ALERTA].dropna().astype(str).sort_values().unique().tolist()
+            if COL_ESTADO_RECEPCION_ALERTA in df_expediente_base.columns else []
+        )
+        recepcion_default = [v for v in ["Sin recepción"] if v in recepcion_disponible]
+
+        pendiente_disponible = (
+            df_expediente_base["fecha_pendiente"].dropna().astype(str).sort_values().unique().tolist()
+            if "fecha_pendiente" in df_expediente_base.columns else []
+        )
+
+        with g1:
+            gestion_niveles = st.multiselect(
+                "Nivel de alerta",
+                niveles_disponibles,
+                default=niveles_default,
+                key="gestion_niveles_expediente",
+            )
+
+        with g2:
+            gestion_urgencias = st.multiselect(
+                "Urgencia",
+                urgencias_disponibles,
+                default=urgencias_default,
+                key="gestion_urgencias_expediente",
+            )
+
+        with g3:
+            gestion_recepcion = st.multiselect(
+                "Recepción",
+                recepcion_disponible,
+                default=recepcion_default,
+                key="gestion_recepcion_expediente",
+            )
+
+        with g4:
+            gestion_pendiente = st.multiselect(
+                "Fecha pendiente",
+                pendiente_disponible,
+                key="gestion_pendiente_expediente",
+            )
+
+        gg1, gg2, gg3, gg4 = st.columns(4)
+        with gg1:
+            gestion_centro = st.multiselect(
+                "Centro crítico",
+                sorted(df_expediente_base[COL_CENTRO].dropna().astype(str).unique().tolist())
+                if COL_CENTRO in df_expediente_base.columns else [],
+                key="gestion_centro_expediente",
+            )
+        with gg2:
+            gestion_grupo = st.multiselect(
+                "Grupo compras",
+                sorted(df_expediente_base[COL_GRUPO_COMPRAS].dropna().astype(str).unique().tolist())
+                if COL_GRUPO_COMPRAS in df_expediente_base.columns else [],
+                key="gestion_grupo_expediente",
+            )
+        with gg3:
+            gestion_accion = st.multiselect(
+                "Acción sugerida",
+                sorted(df_expediente_base["accion_sugerida"].dropna().astype(str).unique().tolist())
+                if "accion_sugerida" in df_expediente_base.columns else [],
+                key="gestion_accion_expediente",
+            )
+        with gg4:
+            gestion_top_n = st.number_input(
+                "Máximo a visualizar",
+                min_value=10,
+                max_value=1000,
+                value=100,
+                step=10,
+                key="gestion_top_n_expediente",
+            )
+
+        mask_gestion = pd.Series(True, index=df_expediente_base.index)
+        if gestion_niveles and "nivel_alerta" in df_expediente_base.columns:
+            mask_gestion &= df_expediente_base["nivel_alerta"].astype(str).isin([str(v) for v in gestion_niveles])
+        if gestion_urgencias and "dias_hasta_vencimiento" in df_expediente_base.columns:
+            mask_gestion &= df_expediente_base["dias_hasta_vencimiento"].astype(str).isin([str(v) for v in gestion_urgencias])
+        if gestion_recepcion and COL_ESTADO_RECEPCION_ALERTA in df_expediente_base.columns:
+            mask_gestion &= df_expediente_base[COL_ESTADO_RECEPCION_ALERTA].astype(str).isin([str(v) for v in gestion_recepcion])
+        if gestion_pendiente and "fecha_pendiente" in df_expediente_base.columns:
+            mask_gestion &= df_expediente_base["fecha_pendiente"].astype(str).isin([str(v) for v in gestion_pendiente])
+        if gestion_centro and COL_CENTRO in df_expediente_base.columns:
+            mask_gestion &= df_expediente_base[COL_CENTRO].astype(str).isin([str(v) for v in gestion_centro])
+        if gestion_grupo and COL_GRUPO_COMPRAS in df_expediente_base.columns:
+            mask_gestion &= df_expediente_base[COL_GRUPO_COMPRAS].astype(str).isin([str(v) for v in gestion_grupo])
+        if gestion_accion and "accion_sugerida" in df_expediente_base.columns:
+            mask_gestion &= df_expediente_base["accion_sugerida"].astype(str).isin([str(v) for v in gestion_accion])
+
+        df_gestion = ordenar_expediente_critico(df_expediente_base.loc[mask_gestion].copy())
+        df_gestion_preview = df_gestion.head(int(gestion_top_n)).copy()
+
+        mg1, mg2, mg3, mg4, mg5 = st.columns(5)
+        with mg1:
+            st.metric("Críticos visualizados", f"{len(df_gestion):,}".replace(",", "."))
+        with mg2:
+            vencidos_gestion = int(df_gestion.get("dias_hasta_vencimiento", pd.Series(dtype=str)).astype(str).eq("Vencido").sum())
+            st.metric("Vencidos", f"{vencidos_gestion:,}".replace(",", "."))
+        with mg3:
+            sin_recepcion_gestion = int(df_gestion.get(COL_ESTADO_RECEPCION_ALERTA, pd.Series(dtype=str)).astype(str).eq("Sin recepción").sum())
+            st.metric("Sin recepción", f"{sin_recepcion_gestion:,}".replace(",", "."))
+        with mg4:
+            alta_critica_gestion = int(df_gestion.get("nivel_alerta", pd.Series(dtype=str)).astype(str).isin(["Crítica", "Alta"]).sum())
+            st.metric("Crítica / alta", f"{alta_critica_gestion:,}".replace(",", "."))
+        with mg5:
+            score_promedio = valor_numerico(df_gestion["score_riesgo"].mean()) if "score_riesgo" in df_gestion.columns and not df_gestion.empty else np.nan
+            st.metric("Score prom.", formato_numero_corto(score_promedio, 1))
+
+        if df_gestion.empty:
+            st.warning("No hay pedidos críticos con los filtros visuales aplicados.")
+        else:
+            st.caption("Tabla priorizada: los primeros registros son los más urgentes según prioridad operativa, score de riesgo, brecha TAT y tiempo transcurrido.")
+            tabla_visual = tabla_gestion_expediente(df_gestion_preview)
+            st.dataframe(
+                aplicar_estilo_gestion_expediente(tabla_visual),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+            labels_gestion = {idx: construir_label_registro_critico(df_gestion.loc[idx]) for idx in df_gestion.index.tolist()}
+            seleccionado_gestion = st.selectbox(
+                "Elegir pedido crítico desde la gestión visual",
+                df_gestion.index.tolist(),
+                format_func=lambda idx: labels_gestion.get(idx, str(idx)),
+                key="selector_gestion_visual_expediente",
+            )
+            st.session_state["expediente_idx_sugerido"] = seleccionado_gestion
+
+    st.markdown("#### Filtros finos del expediente")
+    st.caption(
+        "Usa estos filtros si quieres buscar por identificadores exactos o acotar aún más el selector del expediente."
+    )
+
+    with st.expander("🔎 Filtros del expediente · búsqueda detallada", expanded=False):
         st.caption("Estos filtros solo afectan el selector del expediente; no modifican las alertas ni las tablas superiores.")
 
         with st.form("form_filtros_expediente"):
@@ -5088,11 +5516,19 @@ else:
     if exp_fecha_pendiente and "fecha_pendiente" in df_filtrado.columns:
         mask_exp &= df_filtrado["fecha_pendiente"].astype(str).isin([str(v) for v in exp_fecha_pendiente])
 
-    df_expediente = df_filtrado.loc[mask_exp].copy()
+    df_expediente = ordenar_expediente_critico(df_filtrado.loc[mask_exp].copy())
+
+    # Si la gestión visual ya eligió un caso, lo mantenemos arriba del selector cuando también cumple los filtros finos.
+    sugerido = st.session_state.get("expediente_idx_sugerido")
 
     total_expediente_filtrado = len(df_expediente)
     max_selector = 5000
     opciones_registro = df_expediente.index.tolist()[:max_selector]
+    if sugerido in df_expediente.index and sugerido not in opciones_registro:
+        opciones_registro = [sugerido] + opciones_registro[:-1]
+    elif sugerido in opciones_registro:
+        opciones_registro = [sugerido] + [idx for idx in opciones_registro if idx != sugerido]
+
     registros_selector = len(opciones_registro)
 
     mexp1, mexp2, mexp3 = st.columns(3)
@@ -5107,23 +5543,29 @@ else:
         st.warning(
             (
                 f"El selector muestra los primeros {max_selector:,} registros de {total_expediente_filtrado:,}. "
-                "Usa los filtros del expediente para acotar la búsqueda."
+                "Usa la gestión visual o los filtros finos del expediente para acotar la búsqueda."
             ).replace(",", ".")
         )
 
     if df_expediente.empty:
         st.warning("No hay pedidos disponibles para el expediente con los filtros locales aplicados.")
     else:
-        labels = {idx: construir_label_registro(df_expediente.loc[idx]) for idx in opciones_registro}
+        labels = {idx: construir_label_registro_critico(df_expediente.loc[idx]) for idx in opciones_registro}
+
+        index_default = 0
+        if sugerido in opciones_registro:
+            index_default = opciones_registro.index(sugerido)
 
         seleccionado = st.selectbox(
             "Pedido disponible según filtros del expediente",
             opciones_registro,
+            index=index_default,
             format_func=lambda idx: labels.get(idx, str(idx)),
         )
 
         row = df_expediente.loc[seleccionado]
 
+        st.markdown(html_pedido_critico_seleccionado(row), unsafe_allow_html=True)
         st.markdown(html_resumen_pedido_expediente(row), unsafe_allow_html=True)
         st.markdown(html_avance_actual(row), unsafe_allow_html=True)
         st.markdown(html_linea_pedido(row), unsafe_allow_html=True)
