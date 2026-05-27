@@ -286,7 +286,8 @@ pagina = st.navigation(
             st.Page(
                 pagina_inicio,
                 title="Inicio",
-                icon="🏠"
+                icon="🏠",
+                url_path="inicio"
             )
         ],
 
@@ -294,17 +295,20 @@ pagina = st.navigation(
             st.Page(
                 APP_TAT_LIMPIEZA_ARIBA,
                 title="Limpieza Ariba",
-                icon="🧹"
+                icon="🧹",
+                url_path="limpieza-ariba"
             ),
             st.Page(
                 APP_TAT_LIMPIEZA_ME5A,
                 title="Limpieza ME5A",
-                icon="🧾"
+                icon="🧾",
+                url_path="limpieza-me5a"
             ),
             st.Page(
                 APP_TAT_LIMPIEZA_ME80FN,
                 title="Limpieza NME80FN",
-                icon="📄"
+                icon="📄",
+                url_path="limpieza-nme80fn"
             ),
         ],
 
@@ -312,7 +316,8 @@ pagina = st.navigation(
             st.Page(
                 APP_TAT_MATCH,
                 title="Match TAT",
-                icon="🔗"
+                icon="🔗",
+                url_path="match-tat"
             ),
         ],
 
@@ -320,7 +325,8 @@ pagina = st.navigation(
             st.Page(
                 APP_CREAR_FECHAS_CALCULOS_TAT,
                 title="Fechas + Cálculos TAT",
-                icon="📊"
+                icon="📊",
+                url_path="fechas-calculos-tat"
             ),
         ],
 
@@ -328,27 +334,32 @@ pagina = st.navigation(
             st.Page(
                 APP_TAT_CARGAR_ARCHIVO,
                 title="Cargar archivo",
-                icon="📁"
+                icon="📁",
+                url_path="cargar-archivo"
             ),
             st.Page(
                 APP_TAT_FILTRO,
                 title="Filtro TAT",
-                icon="🔎"
+                icon="🔎",
+                url_path="filtro-tat"
             ),
             st.Page(
                 APP_TAT_GRAFICOS,
                 title="Performance Mensual",
-                icon="📊"
+                icon="📊",
+                url_path="performance-mensual"
             ),
             st.Page(
                 APP_GRAPH_PERFORMANCE_PLANTAS,
                 title="Performance de Plantas",
-                icon="🏭"
+                icon="🏭",
+                url_path="performance-plantas"
             ),
             st.Page(
                 APP_TAT_ALERTAS,
                 title="Alertas TAT",
-                icon="🚨"
+                icon="🚨",
+                url_path="alertas-tat"
             ),
         ],
     }
