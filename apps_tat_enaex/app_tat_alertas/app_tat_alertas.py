@@ -236,6 +236,114 @@ COLUMNAS_ALERTA = [
 ]
 
 
+
+# =========================================================
+# Catálogo de centros
+# =========================================================
+CENTROS_NOMBRES = {
+    "E002": "Prillex",
+    "E021": "CM-Enaex Servicios",
+    "E024": "Río Loa",
+    "E025": "Planta La Chimba",
+    "E026": "Teatinos",
+    "E029": "Chuquicamata",
+    "E030": "El Tesoro",
+    "E031": "La Escondida",
+    "E032": "Loma Bayas",
+    "E033": "Los Pelambres",
+    "E034": "Los Sauces",
+    "E035": "Mantos Blancos",
+    "E036": "Michilla",
+    "E037": "RT",
+    "E038": "El Soldado",
+    "E039": "Polpaico",
+    "E040": "Peldehue",
+    "E041": "Esperanza",
+    "E042": "Gaby",
+    "E044": "Atacama Kozan",
+    "E045": "Franke",
+    "E046": "Manto Verde",
+    "E047": "Polvorín Copiapó",
+    "E069": "Guanaco",
+    "E071": "Teniente",
+    "E076": "Mejillones",
+    "E077": "Ministro Hales",
+    "E078": "Sierra Gorda",
+    "E079": "Planta Quebrada Blanca",
+    "E081": "Chuqui Subte",
+    "E086": "Antucoya",
+    "E087": "Alto Maipo",
+    "E088": "Encuentro",
+    "E089": "Cerro Colorado",
+    "E090": "Collahuasi",
+    "E091": "Romeral",
+    "E095": "Planta Andina",
+    "E097": "Andina",
+    "E099": "Salvador",
+    "E103": "Zaldívar",
+    "E104": "Salares Norte",
+    "E105": "Los Colorados",
+    "E106": "Cerro N.N.",
+    "E107": "Pleito",
+    "E108": "Plasma Enaex Servicios",
+    "E109": "Carola",
+    "E110": "Alto Hospicio SKC Enaex Servicios",
+    "E113": "Copiapó SKC Enaex Servicios",
+    "E114": "FullRPM Nogales Enaex Servicios",
+    "E082": "Nittra Casa Matriz",
+    "E083": "Nittra Prillex",
+    "E084": "Nittra Paine",
+    "E101": "Plasma",
+    "E003": "Planta Río Loa",
+    "E009": "Planta Chuquicamata",
+    "E020": "Planta Polpaico",
+    "E057": "Esperanza",
+    "E102": "SCL Bodega Arriendo",
+    "E043": "El Peñón Subte",
+    "E115": "Enaex SKC ING",
+    "E027": "Faena Teniente Rajo",
+    "E052": "Faena Spence",
+}
+
+
+def normalizar_codigo_centro(valor: Any) -> str:
+    if pd.isna(valor):
+        return "Sin dato"
+
+    texto = str(valor).strip()
+    if not texto or texto.lower() in ["nan", "none", "nat"]:
+        return "Sin dato"
+
+    if texto.endswith(".0"):
+        texto = texto[:-2]
+
+    return texto.upper()
+
+
+def etiqueta_centro(valor: Any) -> str:
+    codigo = normalizar_codigo_centro(valor)
+    nombre = CENTROS_NOMBRES.get(codigo)
+
+    if nombre:
+        return f"{codigo} · {nombre}"
+
+    return codigo
+
+
+def lista_centros_corta(valores: Any, max_items: int = 4) -> str:
+    if valores is None:
+        return "Todos"
+    if isinstance(valores, str):
+        valores = [valores]
+
+    etiquetas = [etiqueta_centro(v) for v in valores if str(v).strip()]
+    if not etiquetas:
+        return "Todos"
+    if len(etiquetas) <= max_items:
+        return ", ".join(etiquetas)
+    return ", ".join(etiquetas[:max_items]) + f" +{len(etiquetas) - max_items} más"
+
+
 # =========================================================
 # Estilos visuales
 # =========================================================
@@ -3717,7 +3825,7 @@ def construir_resumen_ejecutivo(
 
     etapa_critica = _top_valor(base_riesgo, "fecha_pendiente")
     grupo_critico = _top_valor(base_riesgo, COL_GRUPO_COMPRAS)
-    centro_critico = _top_valor(base_riesgo, COL_CENTRO)
+    centro_critico = etiqueta_centro(_top_valor(base_riesgo, COL_CENTRO))
     solicitante_critico = _top_valor(base_riesgo, COL_SOLICITANTE)
 
     if vencidos_sin_recepcion > 0:
@@ -3832,6 +3940,9 @@ def construir_top_prioridades_ejecutivas(df_filtrado: pd.DataFrame, limite: int 
         [columnas]
         .copy()
     )
+
+    if COL_CENTRO in salida.columns:
+        salida[COL_CENTRO] = salida[COL_CENTRO].map(etiqueta_centro)
 
     return salida.rename(
         columns={
@@ -4173,10 +4284,18 @@ def construir_distribucion_porcentual(
         return pd.DataFrame(columns=[nombre_columna, "Cantidad", "% del total"])
 
     total = len(df_base)
-    conteo = (
+    serie_distribucion = (
         df_base[columna]
         .fillna("Sin dato")
         .astype(str)
+        .str.strip()
+    )
+
+    if columna == COL_CENTRO:
+        serie_distribucion = serie_distribucion.map(etiqueta_centro)
+
+    conteo = (
+        serie_distribucion
         .value_counts(dropna=False)
         .rename_axis(nombre_columna)
         .reset_index(name="Cantidad")
@@ -4245,16 +4364,67 @@ except Exception as e:
 total_archivo = len(df_panel)
 st.success(f"Archivo activo: {nombre_archivo}")
 
+# Valores iniciales/persistentes de filtros.
+# El resumen ejecutivo aparece antes del formulario, pero se calcula con estos
+# mismos filtros. En primera carga el centro queda fijado en E002 · Prillex.
+opciones_centro_panel = opciones_filtros.get(COL_CENTRO, [])
+centro_default_panel = [
+    c for c in opciones_centro_panel
+    if normalizar_codigo_centro(c) == "E002"
+]
+
+if "filtro_panel_centro" not in st.session_state:
+    st.session_state["filtro_panel_centro"] = centro_default_panel
+if "filtro_panel_recepcion" not in st.session_state:
+    st.session_state["filtro_panel_recepcion"] = "Sin recepción"
+if "filtro_panel_vencimiento" not in st.session_state:
+    st.session_state["filtro_panel_vencimiento"] = []
+if "filtro_panel_grupo" not in st.session_state:
+    st.session_state["filtro_panel_grupo"] = []
+if "filtro_panel_tipo_oc" not in st.session_state:
+    st.session_state["filtro_panel_tipo_oc"] = []
+if "filtro_panel_ultima_fecha" not in st.session_state:
+    st.session_state["filtro_panel_ultima_fecha"] = []
+if "filtro_panel_fecha_pendiente" not in st.session_state:
+    st.session_state["filtro_panel_fecha_pendiente"] = []
+if "filtro_panel_limite_tabla" not in st.session_state:
+    st.session_state["filtro_panel_limite_tabla"] = 300
+if "filtro_panel_solped" not in st.session_state:
+    st.session_state["filtro_panel_solped"] = ""
+if "filtro_panel_oc" not in st.session_state:
+    st.session_state["filtro_panel_oc"] = ""
+if "filtro_panel_texto" not in st.session_state:
+    st.session_state["filtro_panel_texto"] = ""
+
 
 # =========================================================
-# Resumen ejecutivo inicial · antes de filtros
+# Resumen ejecutivo inicial · conectado a filtros activos
 # =========================================================
+df_resumen_ejecutivo = aplicar_filtros_panel(
+    df_panel,
+    centro_sel=st.session_state.get("filtro_panel_centro", centro_default_panel),
+    recepcion_sel=st.session_state.get("filtro_panel_recepcion", "Sin recepción"),
+    vencimiento_sel=st.session_state.get("filtro_panel_vencimiento", []),
+    grupo_sel=st.session_state.get("filtro_panel_grupo", []),
+    tipo_oc_sel=st.session_state.get("filtro_panel_tipo_oc", []),
+    ultima_fecha_sel=st.session_state.get("filtro_panel_ultima_fecha", []),
+    fecha_pendiente_sel=st.session_state.get("filtro_panel_fecha_pendiente", []),
+    solped_txt=st.session_state.get("filtro_panel_solped", ""),
+    oc_txt=st.session_state.get("filtro_panel_oc", ""),
+    texto_txt=st.session_state.get("filtro_panel_texto", ""),
+)
+
 resumen_ejecutivo_global = construir_resumen_ejecutivo(
     df_total=df_panel,
-    df_filtrado=df_panel,
+    df_filtrado=df_resumen_ejecutivo,
     hoy=hoy,
 )
-mostrar_panel_resumen_ejecutivo(resumen_ejecutivo_global, df_panel)
+st.caption(
+    "Resumen calculado con filtros activos: "
+    f"Centro: {lista_centros_corta(st.session_state.get('filtro_panel_centro', centro_default_panel))} · "
+    f"Recepción: {st.session_state.get('filtro_panel_recepcion', 'Sin recepción')}"
+)
+mostrar_panel_resumen_ejecutivo(resumen_ejecutivo_global, df_resumen_ejecutivo)
 
 
 # =========================================================
@@ -4288,15 +4458,19 @@ with st.form("form_filtros_panel_unico"):
     f1, f2, f3, f4 = st.columns([1.1, 1.1, 1.6, 1.1])
 
     with f1:
-        opciones_centro = opciones_filtros.get(COL_CENTRO, [])
-        centro_default = [c for c in opciones_centro if str(c).strip().upper() == "E002"]
-        centro_sel = st.multiselect("Filtro 1 · Centro", opciones_centro, default=centro_default)
+        opciones_centro = opciones_centro_panel
+        centro_sel = st.multiselect(
+            "Filtro 1 · Centro",
+            opciones_centro,
+            key="filtro_panel_centro",
+            format_func=etiqueta_centro,
+        )
 
     with f2:
         recepcion_sel = st.selectbox(
             "Filtro 2 · Recepción",
             ["Todos", "Sin recepción", "Recepcionado"],
-            index=1,
+            key="filtro_panel_recepcion",
         )
 
     with f3:
@@ -4317,7 +4491,7 @@ with st.form("form_filtros_panel_unico"):
         vencimiento_sel = st.multiselect(
             "Filtro 3 · Urgencia / días hasta vencimiento",
             opciones_vencimiento,
-            default=[],
+            key="filtro_panel_vencimiento",
             help=(
                 "Puedes seleccionar una o varias urgencias. "
                 "Déjalo vacío para no filtrar por días hasta vencimiento."
@@ -4326,23 +4500,33 @@ with st.form("form_filtros_panel_unico"):
         st.caption("Selecciona una o varias urgencias y confirma con Aplicar filtros.")
 
     with f4:
-        grupo_sel = st.multiselect("Filtro 4 · Grupo compras", opciones_filtros.get(COL_GRUPO_COMPRAS, []))
+        grupo_sel = st.multiselect(
+            "Filtro 4 · Grupo compras",
+            opciones_filtros.get(COL_GRUPO_COMPRAS, []),
+            key="filtro_panel_grupo",
+        )
 
     f5, f6, f7, f8 = st.columns([1.1, 1.1, 1, 1])
 
     with f5:
-        tipo_oc_sel = st.multiselect("Filtro 5 · Tipo OC", opciones_filtros.get(COL_TIPO_OC, []))
+        tipo_oc_sel = st.multiselect(
+            "Filtro 5 · Tipo OC",
+            opciones_filtros.get(COL_TIPO_OC, []),
+            key="filtro_panel_tipo_oc",
+        )
 
     with f6:
         ultima_fecha_sel = st.multiselect(
             "Filtro 6 · Última etapa registrada",
             opciones_filtros.get("ultima_etapa_registrada", []),
+            key="filtro_panel_ultima_fecha",
         )
 
     with f7:
         fecha_pendiente_sel = st.multiselect(
             "Filtro 7 · Fecha pendiente",
             opciones_filtros.get("fecha_pendiente", []),
+            key="filtro_panel_fecha_pendiente",
         )
 
     with f8:
@@ -4350,18 +4534,30 @@ with st.form("form_filtros_panel_unico"):
             "Filas visibles",
             min_value=50,
             max_value=2000,
-            value=300,
             step=50,
+            key="filtro_panel_limite_tabla",
             help="Mostrar menos filas acelera la visualización. La descarga puede incluir todo el filtrado.",
         )
 
     f9, f10, f11 = st.columns([1, 1, 1.4])
     with f9:
-        solped_txt = st.text_input("Filtro 8 · SolPed", placeholder="Buscar SolPed")
+        solped_txt = st.text_input(
+            "Filtro 8 · SolPed",
+            placeholder="Buscar SolPed",
+            key="filtro_panel_solped",
+        )
     with f10:
-        oc_txt = st.text_input("Filtro 9 · OC / Pedido", placeholder="Buscar OC")
+        oc_txt = st.text_input(
+            "Filtro 9 · OC / Pedido",
+            placeholder="Buscar OC",
+            key="filtro_panel_oc",
+        )
     with f11:
-        texto_txt = st.text_input("Filtro 10 · Material / descripción / solicitante", placeholder="Buscar texto")
+        texto_txt = st.text_input(
+            "Filtro 10 · Material / descripción / solicitante",
+            placeholder="Buscar texto",
+            key="filtro_panel_texto",
+        )
 
     # Detalle anidado del Filtro 3 para elegir rápidamente según urgencia.
     base_detalle_filtro_3 = df_panel.copy()
@@ -4466,7 +4662,7 @@ st.caption(
 
 filtros_resumen = pd.DataFrame(
     [
-        {"Filtro": "Filtro 1", "Campo": "Centro", "Selección": lista_valores_corta(centro_sel)},
+        {"Filtro": "Filtro 1", "Campo": "Centro", "Selección": lista_centros_corta(centro_sel)},
         {"Filtro": "Filtro 2", "Campo": "Recepción", "Selección": recepcion_sel},
         {"Filtro": "Filtro 3", "Campo": "Días hasta vencimiento", "Selección": lista_valores_corta(vencimiento_sel)},
         {"Filtro": "Filtro 4", "Campo": "Grupo compras", "Selección": lista_valores_corta(grupo_sel)},
