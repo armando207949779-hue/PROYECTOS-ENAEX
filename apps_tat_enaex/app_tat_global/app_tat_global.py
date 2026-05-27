@@ -1,6 +1,6 @@
 # ============================================================
 # Portal principal TAT ENAEX
-# Navegación general entre carga, limpieza, cruce, cálculos,
+# Navegación general entre carga, limpieza, consolidado final,
 # análisis gráfico y alertas TAT
 # ============================================================
 
@@ -25,10 +25,11 @@ APP_TAT_CARGAR_ARCHIVO = (
     / "app_tat_crear_archivo.py"
 )
 
-APP_CREAR_FECHAS_CALCULOS_TAT = (
+# Nueva app consolidada que reemplaza Match TAT y Fechas + Cálculos TAT.
+APP_CONSOLIDADO_FINAL_V2 = (
     PROJECT_DIR
-    / "app_crear_fechas_calculos_tat"
-    / "app_crear_fechas_calculos_tat.py"
+    / "app_consolidado_final_v2"
+    / "app_consolidado_final_v2.py"
 )
 
 APP_TAT_ESTADO_PEDIDO = (
@@ -77,12 +78,6 @@ APP_TAT_LIMPIEZA_ME80FN = (
     PROJECT_DIR
     / "app_tat_limpieza_me80fn"
     / "app_tat_limpieza_me80fn.py"
-)
-
-APP_TAT_MATCH = (
-    PROJECT_DIR
-    / "app_tat_match"
-    / "app_tat_match.py"
 )
 
 
@@ -147,8 +142,8 @@ def pagina_inicio():
         """
         <p style='text-align: center; font-size: 18px;'>
             Selecciona una aplicación desde el menú lateral para cargar archivos,
-            limpiar datos, realizar cruces, generar fechas finales, calcular performance TAT,
-            filtrar datos, visualizar gráficos y revisar alertas operacionales del proceso TAT.
+            limpiar datos, ejecutar el consolidado final, filtrar datos,
+            visualizar gráficos y revisar alertas operacionales del proceso TAT.
         </p>
         """,
         unsafe_allow_html=True
@@ -172,16 +167,16 @@ def pagina_inicio():
             """
             **Limpieza de datos**
 
-            Prepara la información proveniente de Ariba, ME5A y ME80FN antes del cruce.
+            Prepara la información proveniente de Ariba, ME5A y ME80FN antes del consolidado final.
             """
         )
 
     with col3:
         st.info(
             """
-            **Match TAT**
+            **Consolidado final V2**
 
-            Cruce y validación de información entre las fuentes principales del proceso.
+            Nueva app integrada que reemplaza las secciones anteriores de Match TAT y Fechas + Cálculos TAT.
             """
         )
 
@@ -190,22 +185,13 @@ def pagina_inicio():
     with col4:
         st.info(
             """
-            **Fechas + Cálculos TAT**
-
-            Generación de fechas finales, cálculo de indicadores y performance TAT.
-            """
-        )
-
-    with col5:
-        st.info(
-            """
             **Filtro TAT**
 
             Filtrado y depuración de información TAT según criterios definidos.
             """
         )
 
-    with col6:
+    with col5:
         st.info(
             """
             **Gráficos TAT**
@@ -214,9 +200,7 @@ def pagina_inicio():
             """
         )
 
-    col7, col8, col9 = st.columns(3)
-
-    with col7:
+    with col6:
         st.info(
             """
             **Performance de Plantas**
@@ -225,7 +209,9 @@ def pagina_inicio():
             """
         )
 
-    with col8:
+    col7, col8, col9 = st.columns(3)
+
+    with col7:
         st.info(
             """
             **Alertas TAT**
@@ -234,12 +220,21 @@ def pagina_inicio():
             """
         )
 
-    with col9:
+    with col8:
         st.info(
             """
             **Flujo recomendado**
 
-            Limpieza → Cruce → Fechas y cálculos → Análisis TAT → Alertas.
+            Limpieza → Consolidado final V2 → Análisis TAT → Alertas.
+            """
+        )
+
+    with col9:
+        st.info(
+            """
+            **Actualización aplicada**
+
+            Match TAT y Fechas + Cálculos TAT fueron reemplazadas por una sola app consolidada.
             """
         )
 
@@ -253,8 +248,7 @@ apps_requeridas = {
     "Limpieza Ariba": APP_TAT_LIMPIEZA_ARIBA,
     "Limpieza ME5A": APP_TAT_LIMPIEZA_ME5A,
     "Limpieza ME80FN": APP_TAT_LIMPIEZA_ME80FN,
-    "Match TAT": APP_TAT_MATCH,
-    "Fechas + Cálculos TAT": APP_CREAR_FECHAS_CALCULOS_TAT,
+    "Consolidado final V2": APP_CONSOLIDADO_FINAL_V2,
     "Filtro TAT": APP_TAT_FILTRO,
     "Gráficos TAT": APP_TAT_GRAFICOS,
     "Performance de Plantas": APP_GRAPH_PERFORMANCE_PLANTAS,
@@ -308,19 +302,11 @@ pagina = st.navigation(
             ),
         ],
 
-        "Cruce": [
+        "Consolidado final": [
             st.Page(
-                APP_TAT_MATCH,
-                title="Match TAT",
+                APP_CONSOLIDADO_FINAL_V2,
+                title="Consolidado final V2",
                 icon="🔗"
-            ),
-        ],
-
-        "Fechas y cálculos": [
-            st.Page(
-                APP_CREAR_FECHAS_CALCULOS_TAT,
-                title="Fechas + Cálculos TAT",
-                icon="📊"
             ),
         ],
 
