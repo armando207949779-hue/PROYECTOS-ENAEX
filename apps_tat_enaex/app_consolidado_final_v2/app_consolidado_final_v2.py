@@ -8,18 +8,20 @@ import streamlit as st
 
 
 # =========================================================
-# App única: Match Integrado + Performance TAT
+# Configuración general
 # =========================================================
 
 st.set_page_config(
-    page_title="Nueva App - Match + Performance TAT",
+    page_title="Match + Performance TAT",
     page_icon="📊",
     layout="wide"
 )
 
+
 BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
 LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
+
 
 # =========================================================
 # UI común
@@ -1016,7 +1018,9 @@ def convertir_a_excel_cache(df: pd.DataFrame, resumen: pd.DataFrame) -> bytes:
     return convertir_a_excel(df, resumen)
 
 
-
+# =========================================================
+# Performance TAT incorporado
+# =========================================================
 
 # =========================================================
 # Columnas esperadas
@@ -1129,97 +1133,6 @@ COLUMNAS_NUEVAS_ORDENADAS = [
     "rango_incumplimiento_tat",
 ]
 
-
-# =========================================================
-# UI común
-# =========================================================
-
-def mostrar_logo(ancho: int = 180):
-    if not LOGO_PATH.exists():
-        return
-
-    logo_svg = LOGO_PATH.read_text(encoding="utf-8")
-    logo_base64 = base64.b64encode(logo_svg.encode("utf-8")).decode("utf-8")
-
-    st.markdown(
-        f"""
-        <div style="
-            width: 100%;
-            text-align: center;
-            margin-top: 0.5rem;
-            margin-bottom: 1rem;
-        ">
-            <img
-                src="data:image/svg+xml;base64,{logo_base64}"
-                width="{ancho}"
-            >
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-
-# =========================================================
-# Funciones generales
-# =========================================================
-
-def obtener_separador(separador_csv: str):
-    if separador_csv == "Automático":
-        return None
-    if separador_csv in ["Punto y coma (;)", "Punto y coma (;):"]:
-        return ";"
-    if separador_csv in ["Coma (,)", "Coma (,):", "Coma (, )"]:
-        return ","
-    if separador_csv == "Tabulación":
-        return "\t"
-    return None
-
-
-@st.cache_data(show_spinner=False)
-def leer_archivo_cache(
-    bytes_archivo: bytes,
-    nombre_archivo: str,
-    separador_csv: str
-) -> pd.DataFrame:
-    buffer = io.BytesIO(bytes_archivo)
-    nombre = nombre_archivo.lower()
-
-    if nombre.endswith(".parquet"):
-        return pd.read_parquet(buffer)
-
-    if nombre.endswith(".xlsx"):
-        return pd.read_excel(buffer)
-
-    if nombre.endswith(".csv"):
-        sep = obtener_separador(separador_csv)
-
-        try:
-            return pd.read_csv(
-                buffer,
-                sep=sep,
-                engine="python",
-                encoding="utf-8-sig",
-                on_bad_lines="skip"
-            )
-        except Exception:
-            buffer.seek(0)
-            return pd.read_csv(
-                buffer,
-                sep=sep,
-                engine="python",
-                encoding="latin1",
-                on_bad_lines="skip"
-            )
-
-    raise ValueError("Formato no soportado. Usa .parquet, .xlsx o .csv")
-
-
-def limpiar_nombres_columnas(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    df.columns = df.columns.astype(str).str.strip()
-    return df
-
-
 def validar_columnas_requeridas(df: pd.DataFrame):
     faltantes = [
         col for col in COLUMNAS_REQUERIDAS_PERFORMANCE
@@ -1235,50 +1148,116 @@ def validar_columnas_requeridas(df: pd.DataFrame):
 
 def convertir_fecha_columna(serie: pd.Series) -> pd.Series:
     """
-    Convierte fechas que pueden venir como:
-    - datetime
-    - texto de fecha
-    - timestamp numérico en milisegundos
-    - timestamp numérico en segundos
-    """
-    if pd.api.types.is_datetime64_any_dtype(serie):
-        return pd.to_datetime(serie, errors="coerce")
+    Convierte fechas evitando la rotación día/mes.
 
-    serie_num = pd.to_numeric(serie, errors="coerce")
+    Regla principal:
+    - 09/01/2024 se interpreta como 9 de enero de 2024.
+    - 2024-01-09 se interpreta como 9 de enero de 2024.
+
+    También soporta serial Excel y timestamps reales.
+    """
+    texto = serie.astype("string").str.strip()
     resultado = pd.Series(pd.NaT, index=serie.index, dtype="datetime64[ns]")
 
-    mask_num = serie_num.notna()
+    mask_vacio = (
+        texto.isna()
+        | texto.eq("")
+        | texto.str.lower().isin(["nan", "nat", "none", "null"])
+    )
 
-    if mask_num.any():
-        mask_ms = mask_num & serie_num.abs().ge(10**11)
-        mask_s = mask_num & serie_num.abs().lt(10**11)
+    # Fechas con separador en formato latino DD/MM/YYYY o DD-MM-YYYY.
+    mask_ddmmyyyy = texto.str.match(
+        r"^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$",
+        na=False
+    )
 
-        if mask_ms.any():
-            resultado.loc[mask_ms] = pd.to_datetime(
-                serie_num.loc[mask_ms],
-                unit="ms",
-                errors="coerce"
-            )
+    if mask_ddmmyyyy.any():
+        resultado.loc[mask_ddmmyyyy] = pd.to_datetime(
+            texto.loc[mask_ddmmyyyy],
+            errors="coerce",
+            dayfirst=True
+        )
 
-        if mask_s.any():
-            resultado.loc[mask_s] = pd.to_datetime(
-                serie_num.loc[mask_s],
-                unit="s",
-                errors="coerce"
-            )
+    # Fechas ISO o similares YYYY-MM-DD / YYYY/MM/DD.
+    mask_yyyymmdd_sep = texto.str.match(
+        r"^\d{4}[/-]\d{1,2}[/-]\d{1,2}$",
+        na=False
+    )
 
-    mask_no_num = ~mask_num
+    if mask_yyyymmdd_sep.any():
+        resultado.loc[mask_yyyymmdd_sep] = pd.to_datetime(
+            texto.loc[mask_yyyymmdd_sep],
+            errors="coerce",
+            yearfirst=True
+        )
 
-    if mask_no_num.any():
-        resultado.loc[mask_no_num] = pd.to_datetime(
-            serie.loc[mask_no_num],
+    # Fechas compactas YYYYMMDD.
+    mask_yyyymmdd = texto.str.fullmatch(r"(19|20)\d{6}", na=False)
+
+    if mask_yyyymmdd.any():
+        resultado.loc[mask_yyyymmdd] = pd.to_datetime(
+            texto.loc[mask_yyyymmdd],
+            format="%Y%m%d",
+            errors="coerce"
+        )
+
+    # Fechas compactas DDMMYYYY.
+    mask_ddmmyyyy_compacto = (
+        texto.str.fullmatch(r"\d{8}", na=False)
+        & ~mask_yyyymmdd
+    )
+
+    if mask_ddmmyyyy_compacto.any():
+        resultado.loc[mask_ddmmyyyy_compacto] = pd.to_datetime(
+            texto.loc[mask_ddmmyyyy_compacto],
+            format="%d%m%Y",
+            errors="coerce"
+        )
+
+    # Valores numéricos pendientes: serial Excel o timestamps reales.
+    pendiente = resultado.isna() & ~mask_vacio
+    serie_num = pd.to_numeric(texto.where(pendiente), errors="coerce")
+
+    mask_excel = pendiente & serie_num.between(20000, 80000)
+
+    if mask_excel.any():
+        resultado.loc[mask_excel] = pd.to_datetime(
+            serie_num.loc[mask_excel],
+            unit="D",
+            origin="1899-12-30",
+            errors="coerce"
+        )
+
+    pendiente = resultado.isna() & ~mask_vacio
+    mask_ms = pendiente & serie_num.abs().ge(10**11)
+
+    if mask_ms.any():
+        resultado.loc[mask_ms] = pd.to_datetime(
+            serie_num.loc[mask_ms],
+            unit="ms",
+            errors="coerce"
+        )
+
+    pendiente = resultado.isna() & ~mask_vacio
+    mask_s = pendiente & serie_num.between(946684800, 4102444800)
+
+    if mask_s.any():
+        resultado.loc[mask_s] = pd.to_datetime(
+            serie_num.loc[mask_s],
+            unit="s",
+            errors="coerce"
+        )
+
+    pendiente = resultado.isna() & ~mask_vacio
+
+    if pendiente.any():
+        resultado.loc[pendiente] = pd.to_datetime(
+            texto.loc[pendiente],
             errors="coerce",
             dayfirst=True
         )
 
     return resultado
-
-
 def bool_array(condicion) -> np.ndarray:
     return pd.Series(condicion).fillna(False).to_numpy(dtype=bool)
 
@@ -2123,29 +2102,13 @@ def mostrar_resumen_cambios_performance(
 
 
 # =========================================================
-# Exportación
+
+
+# =========================================================
+# Exportación Performance TAT
 # =========================================================
 
-def convertir_a_csv(df: pd.DataFrame) -> bytes:
-    return df.to_csv(
-        index=False,
-        encoding="utf-8-sig"
-    ).encode("utf-8-sig")
-
-
-def convertir_a_parquet(df: pd.DataFrame) -> bytes:
-    output = io.BytesIO()
-
-    df.to_parquet(
-        output,
-        index=False,
-        engine="pyarrow"
-    )
-
-    return output.getvalue()
-
-
-def convertir_a_excel(
+def convertir_a_excel_performance(
     df: pd.DataFrame,
     resumen_perf: pd.DataFrame,
     resumen_cols: pd.DataFrame,
@@ -2154,51 +2117,22 @@ def convertir_a_excel(
     output = io.BytesIO()
 
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df.to_excel(
-            writer,
-            index=False,
-            sheet_name="Performance_TAT"
-        )
-
-        resumen_perf.to_excel(
-            writer,
-            index=False,
-            sheet_name="Resumen_Performance"
-        )
-
-        resumen_cols.to_excel(
-            writer,
-            index=False,
-            sheet_name="Columnas_Nuevas"
-        )
-
-        tabla_formulas.to_excel(
-            writer,
-            index=False,
-            sheet_name="Inputs_Formulas"
-        )
+        df.to_excel(writer, index=False, sheet_name="Performance_TAT")
+        resumen_perf.to_excel(writer, index=False, sheet_name="Resumen_Performance")
+        resumen_cols.to_excel(writer, index=False, sheet_name="Columnas_Nuevas")
+        tabla_formulas.to_excel(writer, index=False, sheet_name="Inputs_Formulas")
 
     return output.getvalue()
 
 
 @st.cache_data(show_spinner=False)
-def convertir_a_csv_cache(df: pd.DataFrame) -> bytes:
-    return convertir_a_csv(df)
-
-
-@st.cache_data(show_spinner=False)
-def convertir_a_parquet_cache(df: pd.DataFrame) -> bytes:
-    return convertir_a_parquet(df)
-
-
-@st.cache_data(show_spinner=False)
-def convertir_a_excel_cache(
+def convertir_a_excel_performance_cache(
     df: pd.DataFrame,
     resumen_perf: pd.DataFrame,
     resumen_cols: pd.DataFrame,
     tabla_formulas: pd.DataFrame
 ) -> bytes:
-    return convertir_a_excel(
+    return convertir_a_excel_performance(
         df=df,
         resumen_perf=resumen_perf,
         resumen_cols=resumen_cols,
@@ -2206,152 +2140,14 @@ def convertir_a_excel_cache(
     )
 
 
-
-
 # =========================================================
-# Helpers app integrada
-# =========================================================
-
-def primera_columna_existente(df: pd.DataFrame, columnas: list[str]):
-    for col in columnas:
-        if col in df.columns:
-            return col
-    return None
-
-
-def completar_fechas_finales_para_performance(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Crea las columnas fecha_*_final si no existen, usando las columnas
-    disponibles del resultado integrado.
-
-    La performance TAT usa estas cinco columnas:
-    - fecha_solicitud_final
-    - fecha_liberacion_final
-    - fecha_pedido_final
-    - fecha_facturacion_final
-    - fecha_recepcion_final
-    """
-    df = df.copy()
-
-    reglas = {
-        COL_FECHA_SOLICITUD_FINAL: [
-            "Fecha de solicitud - ME5A",
-            "Fecha solicitud de compra - ARIBA",
-            "Fecha de solicitud",
-        ],
-        COL_FECHA_LIBERACION_FINAL: [
-            "Fecha de liberación - ME5A",
-            "Fecha de aprobación - ARIBA",
-            "Fe.liber.Z",
-            "Fecha de liberación",
-        ],
-        COL_FECHA_PEDIDO_FINAL: [
-            "Fecha de pedido - ME5A",
-            "Fecha de pedido",
-            "Fecha de documento - NME80FN",
-        ],
-        COL_FECHA_FACTURACION_FINAL: [
-            "Fecha facturación proveedor - NME80FN",
-            "Fecha de documento - NME80FN",
-            "nme_fecha_facturacion_proveedor",
-        ],
-        COL_FECHA_RECEPCION_FINAL: [
-            "Fecha recepción mercancía - NME80FN",
-            "Fecha de entrada - NME80FN",
-            "Fecha contabilización - NME80FN",
-            "nme_fecha_entrada_mercancia_recepcion",
-        ],
-    }
-
-    for col_final, candidatas in reglas.items():
-        if col_final not in df.columns:
-            col_origen = primera_columna_existente(df, candidatas)
-            if col_origen:
-                df[col_final] = df[col_origen]
-            else:
-                df[col_final] = pd.NaT
-
-    return df
-
-
-def convertir_resultado_integrado_a_excel(
-    df_match: pd.DataFrame,
-    resumen_match: pd.DataFrame,
-    df_performance: pd.DataFrame,
-    resumen_perf: pd.DataFrame,
-    resumen_cols: pd.DataFrame,
-    tabla_formulas_df: pd.DataFrame
-) -> bytes:
-    output = io.BytesIO()
-
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df_match.to_excel(writer, index=False, sheet_name="Match_Final")
-        resumen_match.to_excel(writer, index=False, sheet_name="Resumen_Match")
-        df_performance.to_excel(writer, index=False, sheet_name="Performance_TAT")
-        resumen_perf.to_excel(writer, index=False, sheet_name="Resumen_Performance")
-        resumen_cols.to_excel(writer, index=False, sheet_name="Columnas_Nuevas")
-        tabla_formulas_df.to_excel(writer, index=False, sheet_name="Inputs_Formulas")
-
-    return output.getvalue()
-
-
-@st.cache_data(show_spinner=False)
-def convertir_resultado_integrado_a_excel_cache(
-    df_match: pd.DataFrame,
-    resumen_match: pd.DataFrame,
-    df_performance: pd.DataFrame,
-    resumen_perf: pd.DataFrame,
-    resumen_cols: pd.DataFrame,
-    tabla_formulas_df: pd.DataFrame
-) -> bytes:
-    return convertir_resultado_integrado_a_excel(
-        df_match=df_match,
-        resumen_match=resumen_match,
-        df_performance=df_performance,
-        resumen_perf=resumen_perf,
-        resumen_cols=resumen_cols,
-        tabla_formulas_df=tabla_formulas_df
-    )
-
-
-def mostrar_metricas_match(resumen_match: pd.DataFrame):
-    if resumen_match.empty:
-        return
-
-    cols = st.columns(min(3, len(resumen_match)))
-
-    for i, fila in resumen_match.head(3).iterrows():
-        with cols[i % len(cols)]:
-            st.metric(
-                label=fila["Mensaje"].split(" fueron ")[-1],
-                value=f"{int(fila['Cantidad']):,}",
-                delta=f"{fila['%']}%"
-            )
-
-
-def mostrar_metricas_performance(resumen_perf: pd.DataFrame):
-    if resumen_perf.empty:
-        return
-
-    cols = st.columns(min(3, len(resumen_perf)))
-
-    for i, fila in resumen_perf.head(3).iterrows():
-        with cols[i % len(cols)]:
-            st.metric(
-                label=fila["Métrica"],
-                value=f"{fila['% Cumple sobre evaluables']}%",
-                delta=f"Cumple: {int(fila['Cumple']):,}"
-            )
-
-
-# =========================================================
-# Interfaz única
+# Interfaz unificada
 # =========================================================
 
 mostrar_logo()
 
-st.title("Nueva App Integrada")
-st.caption("Match ME5A · ARIBA · NME80FN + Performance TAT en un solo flujo")
+st.title("Match Integrado + Performance TAT")
+st.caption("ME5A · ARIBA · NME80FN · Fechas finales")
 
 with st.sidebar:
     st.header("Configuración")
@@ -2362,7 +2158,7 @@ with st.sidebar:
             "Automático",
             "Punto y coma (;)",
             "Coma (,)",
-            "Tabulación"
+            "Tabulación",
         ],
         index=0
     )
@@ -2370,256 +2166,510 @@ with st.sidebar:
     limite_vista = st.number_input(
         "Filas en vista previa",
         min_value=50,
-        max_value=5000,
+        max_value=1000,
         value=300,
         step=50
     )
 
     ver_vista_previa_archivos = st.checkbox(
         "Ver vista previa de archivos cargados",
-        value=False
+        value=True
+    )
+
+    ordenar_performance_final = st.checkbox(
+        "Mover columnas de performance al final",
+        value=True
     )
 
     st.caption("El separador solo aplica a archivos CSV.")
 
-st.subheader("1. Carga de archivos base")
 
-col1, col2, col3 = st.columns(3)
+tab_match, tab_performance = st.tabs([
+    "1. Match Integrado",
+    "2. Performance TAT",
+])
 
-with col1:
-    archivo_me5a = st.file_uploader(
-        "ME5A limpio",
-        type=["parquet", "xlsx", "csv"],
-        key="me5a_integrado"
-    )
 
-with col2:
-    archivo_ariba = st.file_uploader(
-        "ARIBA limpio",
-        type=["parquet", "xlsx", "csv"],
-        key="ariba_integrado"
-    )
+with tab_match:
+    st.subheader("Archivos para Match")
 
-with col3:
-    archivo_nme = st.file_uploader(
-        "NME80FN limpio",
-        type=["parquet", "xlsx", "csv"],
-        key="nme_integrado"
-    )
+    col1, col2, col3 = st.columns(3)
 
-if not archivo_me5a or not archivo_ariba or not archivo_nme:
-    st.info("Carga los tres archivos para ejecutar el match y calcular la performance TAT.")
-    st.stop()
-
-try:
-    with st.spinner("Leyendo archivos..."):
-        df_me5a = leer_archivo_cache(
-            archivo_me5a.getvalue(),
-            archivo_me5a.name,
-            separador_csv
+    with col1:
+        archivo_me5a = st.file_uploader(
+            "ME5A limpio",
+            type=["parquet", "xlsx", "csv"],
+            key="me5a"
         )
 
-        df_ariba = leer_archivo_cache(
-            archivo_ariba.getvalue(),
-            archivo_ariba.name,
-            separador_csv
+    with col2:
+        archivo_ariba = st.file_uploader(
+            "ARIBA limpio",
+            type=["parquet", "xlsx", "csv"],
+            key="ariba"
         )
 
-        df_nme = leer_archivo_cache(
-            archivo_nme.getvalue(),
-            archivo_nme.name,
-            separador_csv
+    with col3:
+        archivo_nme = st.file_uploader(
+            "NME80FN limpio",
+            type=["parquet", "xlsx", "csv"],
+            key="nme"
         )
 
-    df_me5a = limpiar_nombres_columnas(df_me5a)
-    df_ariba = limpiar_nombres_columnas(df_ariba)
-    df_nme = limpiar_nombres_columnas(df_nme)
+    if not archivo_me5a or not archivo_ariba or not archivo_nme:
+        st.info("Carga los tres archivos para generar el match.")
+    else:
+        try:
+            with st.spinner("Leyendo archivos..."):
+                df_me5a = leer_archivo_cache(
+                    archivo_me5a.getvalue(),
+                    archivo_me5a.name,
+                    separador_csv
+                )
 
-    if ver_vista_previa_archivos:
-        with st.expander("Vista previa de archivos cargados", expanded=False):
-            t1, t2, t3 = st.tabs(["ME5A", "ARIBA", "NME80FN"])
+                df_ariba = leer_archivo_cache(
+                    archivo_ariba.getvalue(),
+                    archivo_ariba.name,
+                    separador_csv
+                )
 
-            with t1:
-                st.dataframe(df_me5a.head(int(limite_vista)), use_container_width=True)
-            with t2:
-                st.dataframe(df_ariba.head(int(limite_vista)), use_container_width=True)
-            with t3:
-                st.dataframe(df_nme.head(int(limite_vista)), use_container_width=True)
+                df_nme = leer_archivo_cache(
+                    archivo_nme.getvalue(),
+                    archivo_nme.name,
+                    separador_csv
+                )
 
-    with st.spinner("Generando match integrado..."):
-        resultado_match = construir_match_final(
-            df_me5a=df_me5a,
-            df_ariba=df_ariba,
-            df_nme=df_nme
-        )
+            if ver_vista_previa_archivos:
+                st.subheader("Vista previa de archivos cargados")
 
-        resultado_match_export = preparar_resultado_exportacion(resultado_match)
-        resumen_match = generar_resumen(resultado_match)
+                tab_me5a, tab_ariba, tab_nme = st.tabs([
+                    "ME5A",
+                    "ARIBA",
+                    "NME80FN",
+                ])
 
-    with st.spinner("Preparando fechas finales y calculando Performance TAT..."):
-        base_performance = completar_fechas_finales_para_performance(
-            resultado_match_export
-        )
+                with tab_me5a:
+                    st.dataframe(df_me5a.head(int(limite_vista)), use_container_width=True)
 
-        resultado_performance = aplicar_logica_performance(base_performance)
-        resultado_performance = reordenar_columnas_performance_al_final(
-            resultado_performance
-        )
+                with tab_ariba:
+                    st.dataframe(df_ariba.head(int(limite_vista)), use_container_width=True)
 
-        resumen_perf = resumen_performance(resultado_performance)
-        columnas_originales = list(base_performance.columns)
-        columnas_nuevas = [
-            col for col in resultado_performance.columns
-            if col not in columnas_originales
-        ]
-        resumen_cols = resumen_columnas_nuevas(resultado_performance)
-        resumen_cambios_perf = generar_resumen_cambios_performance(
-            df_original=base_performance,
-            df_final=resultado_performance,
-            columnas_originales=columnas_originales,
-            columnas_nuevas=columnas_nuevas
-        )
+                with tab_nme:
+                    st.dataframe(df_nme.head(int(limite_vista)), use_container_width=True)
 
-    st.success("Proceso integrado completado.")
+            with st.spinner("Generando match integrado..."):
+                resultado_final = construir_match_final(
+                    df_me5a=df_me5a,
+                    df_ariba=df_ariba,
+                    df_nme=df_nme
+                )
 
-    tab_match, tab_perf, tab_auditoria = st.tabs(
-        [
-            "Match integrado",
-            "Performance TAT",
-            "Auditoría"
-        ]
-    )
+                resultado_exportacion = preparar_resultado_exportacion(resultado_final)
+                resumen = generar_resumen(resultado_final)
+                parquet_bytes = convertir_a_parquet_cache(resultado_exportacion)
 
-    with tab_match:
-        st.subheader("2. Resultado del match")
-        mostrar_metricas_match(resumen_match)
+                resumen_cambios = generar_resumen_cambios_match(
+                    df_me5a=df_me5a,
+                    df_ariba=df_ariba,
+                    df_nme=df_nme,
+                    resultado_final=resultado_final
+                )
 
-        st.dataframe(
-            resultado_match_export.head(int(limite_vista)),
-            use_container_width=True,
-            hide_index=True
-        )
+            st.success("Match generado correctamente.")
 
-        with st.expander("Resumen completo del match", expanded=False):
-            st.dataframe(resumen_match, use_container_width=True, hide_index=True)
+            mostrar_resumen_cambios_match(resumen_cambios)
 
-        resumen_cambios_match = generar_resumen_cambios_match(
-            df_me5a=df_me5a,
-            df_ariba=df_ariba,
-            df_nme=df_nme,
-            resultado_final=resultado_match
-        )
-        mostrar_resumen_cambios_match(resumen_cambios_match)
+            total_me5a = int(len(df_me5a))
+            total_resultado = int(len(resultado_final))
+            total_ariba_match = int(resultado_final["match_ariba_encontrado"].sum())
+            total_nme_match = int(resultado_final["match_nme80fn_encontrado"].sum())
 
-        st.markdown("---")
-        st.subheader("Descarga")
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Registros ME5A", f"{total_me5a:,}")
+            m2.metric("Resultado integrado", f"{total_resultado:,}")
+            m3.metric("Encontrados en ARIBA", f"{total_ariba_match:,} de {total_me5a:,}")
+            m4.metric("Encontrados en NME80FN", f"{total_nme_match:,} de {total_me5a:,}")
 
-        st.markdown("### Descarga principal")
-        st.caption("Formato recomendado por defecto: Parquet.")
+            st.subheader("Resumen")
+            st.dataframe(resumen, use_container_width=True, hide_index=True)
 
-        parquet_bytes = convertir_a_parquet_cache(resultado_performance)
+            st.subheader("Vista previa del match final")
+            st.caption(
+                f"Mostrando hasta {int(limite_vista):,} registros de "
+                f"{len(resultado_exportacion):,} registros generados en el match final. "
+                f"Columnas visibles: {len(resultado_exportacion.columns):,}."
+            )
+            st.dataframe(
+                resultado_exportacion.head(int(limite_vista)),
+                use_container_width=True,
+                hide_index=True
+            )
 
-        st.download_button(
-            label="Descargar Parquet Performance TAT",
-            data=parquet_bytes,
-            file_name="performance_tat_integrado.parquet",
-            mime="application/octet-stream",
-            use_container_width=True
-        )
+            with st.expander("Ver columnas disponibles"):
+                c1, c2, c3, c4 = st.columns(4)
 
-        st.markdown("### Opciones secundarias")
+                with c1:
+                    st.markdown("**ME5A**")
+                    st.write(df_me5a.columns.tolist())
 
-        col_csv, col_excel = st.columns(2)
+                with c2:
+                    st.markdown("**ARIBA**")
+                    st.write(df_ariba.columns.tolist())
 
-        with col_csv:
-            csv_bytes = convertir_a_csv_cache(resultado_performance)
+                with c3:
+                    st.markdown("**NME80FN**")
+                    st.write(df_nme.columns.tolist())
+
+                with c4:
+                    st.markdown("**Resultado exportado**")
+                    st.write(resultado_exportacion.columns.tolist())
+
+            st.subheader("Descarga")
 
             st.download_button(
-                label="Descargar CSV Performance TAT",
-                data=csv_bytes,
-                file_name="performance_tat_integrado.csv",
-                mime="text/csv",
+                label="Descargar resultado en Parquet",
+                data=parquet_bytes,
+                file_name="match_integrado_me5a_ariba_nme80fn.parquet",
+                mime="application/octet-stream",
                 use_container_width=True
             )
 
-        with col_excel:
-            excel_bytes = convertir_resultado_integrado_a_excel_cache(
-                df_match=resultado_match_export,
-                resumen_match=resumen_match,
-                df_performance=resultado_performance,
-                resumen_perf=resumen_perf,
-                resumen_cols=resumen_cols,
-                tabla_formulas_df=tabla_inputs_formulas()
+            st.caption(
+                "Parquet es el formato principal recomendado para conservar tipos de datos "
+                "y trabajar con Python. CSV y Excel se preparan solo si los solicitas."
             )
 
-            st.download_button(
-                label="Descargar Excel integrado",
-                data=excel_bytes,
-                file_name="nueva_app_match_performance_tat.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
+            with st.expander("Opcional: descargar como CSV o Excel"):
+                col_csv, col_excel = st.columns(2)
+
+                with col_csv:
+                    preparar_csv = st.button(
+                        "Preparar CSV",
+                        use_container_width=True,
+                        key="preparar_csv_match"
+                    )
+
+                    if preparar_csv:
+                        with st.spinner("Preparando CSV..."):
+                            csv_bytes = convertir_a_csv_cache(resultado_exportacion)
+
+                        st.download_button(
+                            label="Descargar CSV",
+                            data=csv_bytes,
+                            file_name="match_integrado_me5a_ariba_nme80fn.csv",
+                            mime="text/csv",
+                            use_container_width=True,
+                            key="descargar_csv_match"
+                        )
+
+                with col_excel:
+                    limite_excel = 250_000
+
+                    if len(resultado_exportacion) > limite_excel:
+                        st.button(
+                            "Excel no disponible",
+                            disabled=True,
+                            use_container_width=True,
+                            key="excel_no_disponible_match"
+                        )
+
+                        st.warning(
+                            f"Excel no está disponible porque la salida tiene más de {limite_excel:,} filas. "
+                            "Usa Parquet o CSV."
+                        )
+                    else:
+                        preparar_excel = st.button(
+                            "Preparar Excel",
+                            use_container_width=True,
+                            key="preparar_excel_match"
+                        )
+
+                        if preparar_excel:
+                            with st.spinner("Preparando Excel..."):
+                                excel_bytes = convertir_a_excel_cache(
+                                    resultado_exportacion,
+                                    resumen
+                                )
+
+                            st.download_button(
+                                label="Descargar Excel",
+                                data=excel_bytes,
+                                file_name="match_integrado_me5a_ariba_nme80fn.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                use_container_width=True,
+                                key="descargar_excel_match"
+                            )
+
+        except Exception as e:
+            st.error("No se pudo generar el match.")
+            st.exception(e)
+
+
+with tab_performance:
+    st.subheader("Archivo para Performance TAT")
+
+    uploaded_file = st.file_uploader(
+        "Selecciona archivo con fechas finales",
+        type=["parquet", "xlsx", "csv"],
+        key="performance_file"
+    )
+
+    if uploaded_file is None:
+        st.info("Carga el archivo con fechas finales para calcular performance TAT.")
+    else:
+        try:
+            with st.spinner("Leyendo archivo..."):
+                df_original = leer_archivo_cache(
+                    bytes_archivo=uploaded_file.getvalue(),
+                    nombre_archivo=uploaded_file.name,
+                    separador_csv=separador_csv
+                )
+
+            columnas_originales = list(df_original.columns)
+
+            with st.spinner("Aplicando lógica de performance..."):
+                df_final = aplicar_logica_performance(df_original)
+
+                columnas_nuevas = [
+                    col for col in df_final.columns
+                    if col not in columnas_originales
+                ]
+
+                if ordenar_performance_final:
+                    df_final = reordenar_columnas_performance_al_final(df_final)
+
+                resumen_perf = resumen_performance(df_final)
+                resumen_cols = resumen_columnas_nuevas(df_final)
+                tabla_formulas = tabla_inputs_formulas()
+                parquet_bytes = convertir_a_parquet_cache(df_final)
+
+                resumen_cambios = generar_resumen_cambios_performance(
+                    df_original=df_original,
+                    df_final=df_final,
+                    columnas_originales=columnas_originales,
+                    columnas_nuevas=columnas_nuevas
+                )
+
+            st.success("Performance TAT calculada correctamente.")
+
+            mostrar_resumen_cambios_performance(
+                resumen_cambios=resumen_cambios,
+                resumen_cols=resumen_cols
             )
 
-    with tab_perf:
-        st.subheader("3. Resultado Performance TAT")
-        mostrar_metricas_performance(resumen_perf)
+            st.subheader("Indicadores generales")
 
-        st.dataframe(
-            resultado_performance.head(int(limite_vista)),
-            use_container_width=True,
-            hide_index=True
-        )
+            col1, col2, col3, col4 = st.columns(4)
 
-        with st.expander("Resumen de performance", expanded=True):
+            col1.metric("Filas originales", f"{len(df_original):,}")
+            col2.metric("Filas finales", f"{len(df_final):,}")
+            col3.metric("Columnas nuevas", f"{len(columnas_nuevas):,}")
+            col4.metric("Incumplimientos TAT", f"{resumen_cambios['incumplimientos_tat']:,}")
+
+            st.subheader("Resumen de performance")
             st.dataframe(resumen_perf, use_container_width=True, hide_index=True)
 
-        mostrar_resumen_cambios_performance(
-            resumen_cambios=resumen_cambios_perf,
-            resumen_cols=resumen_cols
-        )
+            st.subheader("Vista previa del resultado")
+            st.caption(
+                f"Mostrando hasta {int(limite_vista):,} registros de "
+                f"{len(df_final):,} registros calculados. "
+                f"Columnas visibles: {len(df_final.columns):,}."
+            )
+            st.dataframe(
+                df_final.head(int(limite_vista)),
+                use_container_width=True,
+                hide_index=True
+            )
 
-    with tab_auditoria:
-        st.subheader("4. Auditoría de datos")
-
-        col_a, col_b, col_c = st.columns(3)
-        col_a.metric("Registros ME5A", f"{len(df_me5a):,}")
-        col_b.metric("Registros Match", f"{len(resultado_match_export):,}")
-        col_c.metric("Registros Performance", f"{len(resultado_performance):,}")
-
-        with st.expander("Columnas finales usadas para Performance TAT", expanded=True):
-            columnas_fecha_final = [
-                COL_FECHA_SOLICITUD_FINAL,
-                COL_FECHA_LIBERACION_FINAL,
-                COL_FECHA_PEDIDO_FINAL,
-                COL_FECHA_FACTURACION_FINAL,
-                COL_FECHA_RECEPCION_FINAL,
-            ]
-            auditoria_fechas = pd.DataFrame({
-                "Columna final": columnas_fecha_final,
-                "Existe": [col in resultado_performance.columns for col in columnas_fecha_final],
-                "Nulos": [
-                    int(resultado_performance[col].isna().sum())
-                    if col in resultado_performance.columns else None
-                    for col in columnas_fecha_final
-                ],
-            })
-            st.dataframe(auditoria_fechas, use_container_width=True, hide_index=True)
-
-        with st.expander("Filas con fechas inconsistentes", expanded=False):
-            if "tiene_fechas_inconsistentes" in resultado_performance.columns:
-                df_inconsistentes = resultado_performance[
-                    resultado_performance["tiene_fechas_inconsistentes"].eq(True)
+            with st.expander("Auditoría de días calculados", expanded=False):
+                columnas_auditoria = [
+                    COL_FECHA_SOLICITUD_FINAL,
+                    COL_FECHA_LIBERACION_FINAL,
+                    COL_FECHA_PEDIDO_FINAL,
+                    COL_FECHA_FACTURACION_FINAL,
+                    COL_FECHA_RECEPCION_FINAL,
+                    "dias_liberacion_solped",
+                    "dias_comprador",
+                    "dias_liberacion_pedido",
+                    "dias_proveedor",
+                    "dias_logistica",
+                    "dias_tat_total",
+                    "umbral_liberacion_solped",
+                    "umbral_comprador",
+                    "umbral_proveedor",
+                    "umbral_logistica",
+                    "umbral_tat_total",
+                    "performance_liberacion_solped",
+                    "performance_comprador",
+                    "performance_proveedor",
+                    "performance_logistica",
+                    "performance_tat_total",
+                    "tiene_fechas_inconsistentes",
                 ]
-                st.caption(
-                    f"Filas con fechas inconsistentes detectadas: {len(df_inconsistentes):,}"
-                )
-                st.dataframe(
-                    df_inconsistentes.head(int(limite_vista)),
-                    use_container_width=True,
-                    hide_index=True
-                )
 
+                columnas_auditoria = [
+                    col for col in columnas_auditoria
+                    if col in df_final.columns
+                ]
 
-except Exception as e:
-    st.error("No se pudo ejecutar la app integrada.")
-    st.exception(e)
+                columnas_dias_auditoria = [
+                    "dias_liberacion_solped",
+                    "dias_comprador",
+                    "dias_proveedor",
+                    "dias_logistica",
+                    "dias_tat_total",
+                ]
+
+                columnas_dias_auditoria = [
+                    col for col in columnas_dias_auditoria
+                    if col in df_final.columns
+                ]
+
+                if columnas_dias_auditoria:
+                    etapa_auditoria = st.selectbox(
+                        "Selecciona etapa para revisar",
+                        options=columnas_dias_auditoria,
+                        index=0,
+                        key="etapa_auditoria_performance"
+                    )
+
+                    modo_auditoria = st.radio(
+                        "Ordenar por",
+                        options=[
+                            "Días más altos",
+                            "Días más bajos / negativos",
+                        ],
+                        horizontal=True,
+                        key="modo_auditoria_performance"
+                    )
+
+                    ascendente = modo_auditoria == "Días más bajos / negativos"
+
+                    serie_etapa = pd.to_numeric(
+                        df_final[etapa_auditoria],
+                        errors="coerce"
+                    )
+
+                    total_validos = int(serie_etapa.notna().sum())
+                    total_negativos = int(serie_etapa.lt(0).sum())
+                    total_mayor_umbral = 0
+
+                    col_umbral_relacionada = etapa_auditoria.replace("dias_", "umbral_")
+                    if col_umbral_relacionada in df_final.columns:
+                        umbral_etapa = pd.to_numeric(
+                            df_final[col_umbral_relacionada],
+                            errors="coerce"
+                        )
+                        total_mayor_umbral = int(serie_etapa.gt(umbral_etapa).sum())
+
+                    m1, m2, m3 = st.columns(3)
+                    m1.metric("Valores válidos", f"{total_validos:,}")
+                    m2.metric("Días negativos", f"{total_negativos:,}")
+                    m3.metric("Sobre umbral", f"{total_mayor_umbral:,}")
+
+                    st.dataframe(
+                        df_final
+                        .assign(_etapa_auditoria_num=serie_etapa)
+                        .sort_values("_etapa_auditoria_num", ascending=ascendente)
+                        .drop(columns=["_etapa_auditoria_num"])
+                        [columnas_auditoria]
+                        .head(int(limite_vista)),
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                else:
+                    st.info("No hay columnas de días disponibles para auditar.")
+
+            with st.expander("Ver columnas disponibles", expanded=False):
+                c1, c2 = st.columns(2)
+
+                with c1:
+                    st.markdown("**Columnas originales**")
+                    st.write(columnas_originales)
+
+                with c2:
+                    st.markdown("**Columnas finales**")
+                    st.write(df_final.columns.tolist())
+
+            st.subheader("Descarga")
+
+            st.download_button(
+                label="Descargar resultado en Parquet",
+                data=parquet_bytes,
+                file_name="match_integrado_me5a_ariba_nme80fn_performance.parquet",
+                mime="application/octet-stream",
+                use_container_width=True,
+                key="descargar_parquet_performance"
+            )
+
+            st.caption(
+                "Parquet es el formato principal recomendado para conservar tipos de datos. "
+                "CSV y Excel se preparan solo si los solicitas."
+            )
+
+            with st.expander("Opcional: descargar como CSV o Excel", expanded=False):
+                col_csv, col_excel = st.columns(2)
+
+                with col_csv:
+                    preparar_csv = st.button(
+                        "Preparar CSV",
+                        use_container_width=True,
+                        key="preparar_csv_performance"
+                    )
+
+                    if preparar_csv:
+                        with st.spinner("Preparando CSV..."):
+                            csv_bytes = convertir_a_csv_cache(df_final)
+
+                        st.download_button(
+                            label="Descargar CSV",
+                            data=csv_bytes,
+                            file_name="match_integrado_me5a_ariba_nme80fn_performance.csv",
+                            mime="text/csv",
+                            use_container_width=True,
+                            key="descargar_csv_performance"
+                        )
+
+                with col_excel:
+                    limite_excel = 250_000
+
+                    if len(df_final) > limite_excel:
+                        st.button(
+                            "Excel no disponible",
+                            disabled=True,
+                            use_container_width=True,
+                            key="excel_no_disponible_performance"
+                        )
+
+                        st.warning(
+                            f"Excel no está disponible porque la salida tiene más de {limite_excel:,} filas. "
+                            "Usa Parquet o CSV."
+                        )
+                    else:
+                        preparar_excel = st.button(
+                            "Preparar Excel",
+                            use_container_width=True,
+                            key="preparar_excel_performance"
+                        )
+
+                        if preparar_excel:
+                            with st.spinner("Preparando Excel..."):
+                                excel_bytes = convertir_a_excel_performance_cache(
+                                    df=df_final,
+                                    resumen_perf=resumen_perf,
+                                    resumen_cols=resumen_cols,
+                                    tabla_formulas=tabla_formulas
+                                )
+
+                            st.download_button(
+                                label="Descargar Excel",
+                                data=excel_bytes,
+                                file_name="match_integrado_me5a_ariba_nme80fn_performance.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                use_container_width=True,
+                                key="descargar_excel_performance"
+                            )
+
+        except Exception as e:
+            st.error("No se pudo calcular la performance TAT.")
+            st.exception(e)
