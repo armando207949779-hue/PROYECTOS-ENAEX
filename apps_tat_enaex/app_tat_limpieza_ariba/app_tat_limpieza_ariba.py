@@ -205,14 +205,17 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
 
 def aplicar_filtros_y_categoria(
     df: pd.DataFrame,
-    aplicar_filtro_cen1: bool = True
+    excluir_nan_tipo_compra: bool = True,
+    filtrar_solo_cen1: bool = True
 ) -> pd.DataFrame:
     df = df.copy()
 
     columnas_requeridas = [
-        "Tipo de Compra",
-        "ID de unidad de negocio"
+        "Tipo de Compra"
     ]
+
+    if filtrar_solo_cen1:
+        columnas_requeridas.append("ID de unidad de negocio")
 
     faltantes = [
         col for col in columnas_requeridas
@@ -222,11 +225,14 @@ def aplicar_filtros_y_categoria(
     if faltantes:
         raise ValueError(f"Faltan columnas requeridas: {faltantes}")
 
-    # Excluir nulos en Tipo de Compra
-    df = df[df["Tipo de Compra"].notna()].copy()
+    # Filtro opcional: excluir registros sin Tipo de Compra.
+    # Si se desactiva, los NaN se conservan en el output.
+    if excluir_nan_tipo_compra:
+        df = df[df["Tipo de Compra"].notna()].copy()
 
-    # Filtro opcional por unidad de negocio CEN1
-    if aplicar_filtro_cen1:
+    # Filtro opcional: conservar solo CEN1.
+    # Si se desactiva, se muestran CEN1 y también unidades distintas a CEN1.
+    if filtrar_solo_cen1:
         df = df[
             df["ID de unidad de negocio"]
             .astype("string")
@@ -258,11 +264,13 @@ def limpiar_cache(df: pd.DataFrame) -> pd.DataFrame:
 @st.cache_data(show_spinner=False)
 def filtrar_cache(
     df: pd.DataFrame,
-    aplicar_filtro_cen1: bool
+    excluir_nan_tipo_compra: bool,
+    filtrar_solo_cen1: bool
 ) -> pd.DataFrame:
     return aplicar_filtros_y_categoria(
         df,
-        aplicar_filtro_cen1=aplicar_filtro_cen1
+        excluir_nan_tipo_compra=excluir_nan_tipo_compra,
+        filtrar_solo_cen1=filtrar_solo_cen1
     )
 
 
@@ -392,7 +400,8 @@ def generar_resumen_cambios(
     df_input: pd.DataFrame,
     df_input_limpio: pd.DataFrame,
     df_output: pd.DataFrame,
-    aplicar_filtro_cen1: bool
+    excluir_nan_tipo_compra: bool,
+    filtrar_solo_cen1: bool
 ) -> dict:
 
     columnas_originales = set(df_input.columns.astype(str))
@@ -402,25 +411,28 @@ def generar_resumen_cambios(
     columnas_eliminadas = sorted(list(columnas_originales - columnas_limpias))
     columnas_agregadas = sorted(list(columnas_output - columnas_limpias))
 
-    nulos_tipo_compra = (
+    nulos_tipo_compra_input_limpio = (
         int(df_input_limpio["Tipo de Compra"].isna().sum())
         if "Tipo de Compra" in df_input_limpio.columns
         else 0
     )
 
-    filas_sin_tipo_compra = (
-        int(df_input_limpio["Tipo de Compra"].isna().sum())
-        if "Tipo de Compra" in df_input_limpio.columns
+    nulos_tipo_compra_output = (
+        int(df_output["Tipo de Compra"].isna().sum())
+        if "Tipo de Compra" in df_output.columns
         else 0
     )
 
-    if aplicar_filtro_cen1 and "ID de unidad de negocio" in df_input_limpio.columns:
+    if "ID de unidad de negocio" in df_input_limpio.columns:
+        base_no_cen1 = df_input_limpio.copy()
+
+        if excluir_nan_tipo_compra and "Tipo de Compra" in base_no_cen1.columns:
+            base_no_cen1 = base_no_cen1[
+                base_no_cen1["Tipo de Compra"].notna()
+            ].copy()
+
         filas_no_cen1 = int(
-            df_input_limpio[
-                df_input_limpio["Tipo de Compra"].notna()
-                if "Tipo de Compra" in df_input_limpio.columns
-                else df_input_limpio.index == df_input_limpio.index
-            ]["ID de unidad de negocio"]
+            base_no_cen1["ID de unidad de negocio"]
             .astype("string")
             .str.strip()
             .ne("CEN1")
@@ -439,19 +451,21 @@ def generar_resumen_cambios(
         "filas_output": int(len(df_output)),
         "columnas_output": int(len(df_output.columns)),
         "filas_filtradas": filas_filtradas,
-        "nulos_tipo_compra": nulos_tipo_compra,
-        "filas_sin_tipo_compra": filas_sin_tipo_compra,
+        "nulos_tipo_compra_input_limpio": nulos_tipo_compra_input_limpio,
+        "nulos_tipo_compra_output": nulos_tipo_compra_output,
         "filas_no_cen1": filas_no_cen1,
         "columnas_eliminadas": columnas_eliminadas,
         "columnas_agregadas": columnas_agregadas,
-        "aplicar_filtro_cen1": aplicar_filtro_cen1
+        "excluir_nan_tipo_compra": excluir_nan_tipo_compra,
+        "filtrar_solo_cen1": filtrar_solo_cen1
     }
 
 
 def mostrar_resumen_cambios(resumen: dict):
     columnas_eliminadas = resumen["columnas_eliminadas"]
     columnas_agregadas = resumen["columnas_agregadas"]
-    aplicar_filtro_cen1 = resumen["aplicar_filtro_cen1"]
+    excluir_nan_tipo_compra = resumen["excluir_nan_tipo_compra"]
+    filtrar_solo_cen1 = resumen["filtrar_solo_cen1"]
 
     texto_columnas_eliminadas = (
         ", ".join(columnas_eliminadas)
@@ -465,10 +479,16 @@ def mostrar_resumen_cambios(resumen: dict):
         else "No se agregaron columnas nuevas."
     )
 
+    texto_filtro_nan = (
+        f"- Se quitaron registros sin **Tipo de Compra** válido: **{resumen['nulos_tipo_compra_input_limpio']:,}**."
+        if excluir_nan_tipo_compra
+        else f"- No se eliminaron los registros con **Tipo de Compra** vacío/NaN. En el output quedan **{resumen['nulos_tipo_compra_output']:,}** registros con Tipo de Compra vacío/NaN."
+    )
+
     texto_filtro_cen1 = (
-        "- Se conservaron solo registros con **ID de unidad de negocio = CEN1**."
-        if aplicar_filtro_cen1
-        else "- No se aplicó filtro por **ID de unidad de negocio = CEN1**."
+        f"- Se conservaron solo registros con **ID de unidad de negocio = CEN1**. Registros distintos a CEN1 excluidos: **{resumen['filas_no_cen1']:,}**."
+        if filtrar_solo_cen1
+        else "- No se aplicó filtro por **ID de unidad de negocio = CEN1**. El output puede incluir unidades distintas a CEN1."
     )
 
     st.info(
@@ -478,7 +498,7 @@ def mostrar_resumen_cambios(resumen: dict):
         - Se leyeron **{resumen['filas_input']:,} filas** y **{resumen['columnas_input']:,} columnas**.
         - Después de limpiar nombres de columnas, textos, fechas, números y columnas vacías, quedaron **{resumen['filas_limpias']:,} filas** y **{resumen['columnas_limpias']:,} columnas**.
         - Se filtraron **{resumen['filas_filtradas']:,} filas**.
-        - Se quitaron registros sin **Tipo de Compra** válido: **{resumen['filas_sin_tipo_compra']:,}**.
+        {texto_filtro_nan}
         {texto_filtro_cen1}
         - Se creó la columna **Categoria Tipo de Compra**.
         - El output final tiene **{resumen['filas_output']:,} filas** y **{resumen['columnas_output']:,} columnas**.
@@ -841,8 +861,9 @@ st.markdown(
 
 st.info(
     "La aplicación lee archivos ARIBA, limpia textos, fechas y números, "
-    "filtra registros con Tipo de Compra válido, permite filtrar opcionalmente "
-    "por la unidad de negocio CEN1 y crea la columna Categoria Tipo de Compra."
+    "permite decidir si se eliminan registros con Tipo de Compra vacío/NaN, "
+    "permite decidir si se conserva solo la unidad de negocio CEN1 "
+    "y crea la columna Categoria Tipo de Compra."
 )
 
 st.divider()
@@ -860,9 +881,26 @@ with st.sidebar:
         value=False
     )
 
-    aplicar_filtro_cen1 = st.checkbox(
-        "Filtrar solo unidad de negocio CEN1",
-        value=True
+    st.divider()
+
+    st.subheader("Filtros del output")
+
+    excluir_nan_tipo_compra = st.checkbox(
+        "Excluir registros con Tipo de Compra vacío/NaN",
+        value=True,
+        help=(
+            "Activado: elimina registros sin Tipo de Compra. "
+            "Desactivado: conserva los registros con Tipo de Compra vacío/NaN."
+        )
+    )
+
+    filtrar_solo_cen1 = st.checkbox(
+        "Conservar solo unidad de negocio CEN1",
+        value=True,
+        help=(
+            "Activado: deja solo registros con ID de unidad de negocio CEN1. "
+            "Desactivado: conserva también unidades distintas a CEN1."
+        )
     )
 
     st.divider()
@@ -912,7 +950,8 @@ try:
 
         df_output = filtrar_cache(
             df_input_limpio,
-            aplicar_filtro_cen1=aplicar_filtro_cen1
+            excluir_nan_tipo_compra=excluir_nan_tipo_compra,
+            filtrar_solo_cen1=filtrar_solo_cen1
         )
 
         diagnostico_columnas, resumen_general, resumen_fechas, resumen_num = diagnostico_cache(
@@ -930,7 +969,8 @@ try:
             df_input=df_input,
             df_input_limpio=df_input_limpio,
             df_output=df_output,
-            aplicar_filtro_cen1=aplicar_filtro_cen1
+            excluir_nan_tipo_compra=excluir_nan_tipo_compra,
+            filtrar_solo_cen1=filtrar_solo_cen1
         )
 
     st.success("Archivo procesado correctamente.")
@@ -952,9 +992,15 @@ mostrar_resumen_cambios(resumen_cambios)
 # Métricas superiores
 # =========================================================
 
-nulos_tipo_compra = (
+nulos_tipo_compra_input_limpio = (
     df_input_limpio["Tipo de Compra"].isna().sum()
     if "Tipo de Compra" in df_input_limpio.columns
+    else 0
+)
+
+nulos_tipo_compra_output = (
+    df_output["Tipo de Compra"].isna().sum()
+    if "Tipo de Compra" in df_output.columns
     else 0
 )
 
@@ -967,10 +1013,20 @@ col2.metric("Filas limpias", f"{len(df_input_limpio):,}")
 col3.metric("Filas output", f"{len(df_output):,}")
 col4.metric("Filas filtradas", f"{filas_filtradas:,}")
 
+texto_estado_nan = (
+    f"Se excluyeron los registros con Tipo de Compra vacío/NaN. NaN detectados antes del filtro: {nulos_tipo_compra_input_limpio:,}."
+    if excluir_nan_tipo_compra
+    else f"Se conservaron los registros con Tipo de Compra vacío/NaN. NaN en output: {nulos_tipo_compra_output:,}."
+)
+
+texto_estado_cen1 = (
+    "Se conserva solo unidad de negocio CEN1."
+    if filtrar_solo_cen1
+    else "Se conservan también unidades distintas a CEN1."
+)
+
 st.caption(
-    f"Nulos en Tipo de Compra: {nulos_tipo_compra:,}. "
-    "El output corresponde a registros con Tipo de Compra válido"
-    + (" y unidad de negocio CEN1." if aplicar_filtro_cen1 else ".")
+    f"{texto_estado_nan} {texto_estado_cen1}"
 )
 
 st.divider()
@@ -1003,18 +1059,23 @@ with tab_input:
 with tab_output:
     st.markdown("#### Output final")
 
-    if aplicar_filtro_cen1:
-        texto_output = (
-            "Vista previa del dataframe final que se descarga: limpio, filtrado por CEN1, "
-            "con Tipo de Compra válido y con Categoria Tipo de Compra."
-        )
-    else:
-        texto_output = (
-            "Vista previa del dataframe final que se descarga: limpio, "
-            "sin filtro por CEN1, con Tipo de Compra válido y con Categoria Tipo de Compra."
-        )
+    condiciones_output = []
 
-    st.caption(texto_output)
+    if excluir_nan_tipo_compra:
+        condiciones_output.append("sin Tipo de Compra vacío/NaN")
+    else:
+        condiciones_output.append("incluyendo Tipo de Compra vacío/NaN")
+
+    if filtrar_solo_cen1:
+        condiciones_output.append("solo CEN1")
+    else:
+        condiciones_output.append("incluyendo unidades distintas a CEN1")
+
+    st.caption(
+        "Vista previa del dataframe final que se descarga: limpio, "
+        + ", ".join(condiciones_output)
+        + " y con Categoria Tipo de Compra."
+    )
 
     st.dataframe(
         df_output.head(100),
