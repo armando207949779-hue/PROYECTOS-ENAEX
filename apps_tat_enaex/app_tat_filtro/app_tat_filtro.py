@@ -522,6 +522,128 @@ st.markdown(
             margin-top: 14px;
         }
 
+        .tat-flow-card {
+            background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+            border: 1px solid #dbeafe;
+            border-radius: 22px;
+            padding: 18px 20px 16px 20px;
+            margin: 0.85rem 0 0.95rem 0;
+            box-shadow: 0 1px 6px rgba(15, 23, 42, 0.045);
+        }
+
+        .tat-flow-title {
+            font-size: 0.9rem;
+            font-weight: 950;
+            color: #1e3a8a;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 0.045em;
+        }
+
+        .tat-flow {
+            display: flex;
+            align-items: stretch;
+            width: 100%;
+            overflow-x: auto;
+            padding-bottom: 4px;
+        }
+
+        .tat-flow-step {
+            flex: 0 0 154px;
+            text-align: center;
+            min-width: 0;
+        }
+
+        .tat-flow-dot {
+            width: 54px;
+            height: 54px;
+            border-radius: 999px;
+            margin: 0 auto 10px auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 950;
+            font-size: 1.1rem;
+            box-sizing: border-box;
+        }
+
+        .tat-flow-dot-ok {
+            background: #22c55e;
+            color: #ffffff;
+            border: 4px solid #22c55e;
+        }
+
+        .tat-flow-dot-risk {
+            background: #fff7ed;
+            color: #c2410c;
+            border: 5px solid #fb923c;
+        }
+
+        .tat-flow-dot-bad {
+            background: #fef2f2;
+            color: #991b1b;
+            border: 5px solid #ef4444;
+        }
+
+        .tat-flow-dot-active {
+            background: #ffffff;
+            color: #1d4ed8;
+            border: 6px solid #3b82f6;
+        }
+
+        .tat-flow-dot-pending {
+            background: #ffffff;
+            color: #94a3b8;
+            border: 5px solid #cbd5e1;
+        }
+
+        .tat-flow-label {
+            font-size: 0.82rem;
+            font-weight: 950;
+            color: #1f2937;
+            line-height: 1.15;
+            text-transform: uppercase;
+        }
+
+        .tat-flow-date {
+            color: #475569;
+            font-size: 0.76rem;
+            line-height: 1.22;
+            margin-top: 4px;
+            overflow-wrap: anywhere;
+        }
+
+        .tat-flow-detail {
+            color: #334155;
+            font-size: 0.76rem;
+            line-height: 1.25;
+            margin-top: 6px;
+        }
+
+        .tat-flow-connector {
+            flex: 1 1 auto;
+            height: 7px;
+            min-width: 34px;
+            margin-top: 24px;
+            border-radius: 999px;
+            background: #cbd5e1;
+        }
+
+        .tat-flow-connector-ok {
+            background: #22c55e;
+        }
+
+        .tat-flow-connector-active {
+            background: repeating-linear-gradient(90deg, #3b82f6 0 18px, transparent 18px 30px);
+        }
+
+        .tat-flow-note {
+            color: #475569;
+            font-size: 0.84rem;
+            line-height: 1.35;
+            margin-top: 14px;
+        }
+
         .pill {
             display: inline-block;
             border-radius: 999px;
@@ -1762,249 +1884,95 @@ def etapa_color(row: pd.Series, etapa: dict) -> str:
     return "gray"
 
 
-def html_estado_pedido(row: pd.Series) -> str:
-    cards = []
+def _estado_visual_etapa_tat(row: pd.Series, etapa: dict, indice: int, indice_activo: int) -> tuple[str, str]:
+    fecha_col = etapa.get("fecha")
+    completada = bool(fecha_col and pd.notna(row.get(fecha_col, np.nan)))
+    perf_col = etapa.get("performance")
+    perf = str(row.get(perf_col, "")).strip().lower() if perf_col else ""
 
-    for etapa in ETAPAS_PEDIDO:
-        color = etapa_color(row, etapa)
+    if completada and perf == "no cumple":
+        return "tat-flow-dot-bad", "!"
+    if completada and perf in ["en proceso", "sin datos"]:
+        return "tat-flow-dot-risk", "…"
+    if completada:
+        return "tat-flow-dot-ok", "✓"
+    if indice == indice_activo:
+        return "tat-flow-dot-active", ""
+    return "tat-flow-dot-pending", ""
 
-        fecha = (
-            html_texto(row.get(etapa["fecha"], np.nan))
-            if etapa.get("fecha")
-            else "-"
-        )
 
+def html_diagrama_tat_unificado(row: pd.Series) -> str:
+    etapas = ETAPAS_PEDIDO
+    completadas = [pd.notna(row.get(etapa.get("fecha"), np.nan)) for etapa in etapas]
+
+    try:
+        indice_activo = completadas.index(False)
+    except ValueError:
+        indice_activo = len(etapas) - 1
+
+    partes = []
+
+    for i, etapa in enumerate(etapas):
+        dot_class, icono = _estado_visual_etapa_tat(row, etapa, i, indice_activo)
+        fecha_col = etapa.get("fecha")
+        fecha_txt = fecha_etapa_texto(row, fecha_col) if fecha_col else "-"
         dias_col = etapa.get("dias")
         umbral_col = etapa.get("umbral")
         perf_col = etapa.get("performance")
 
         if dias_col:
-            dias_valor = row.get(dias_col, np.nan)
-            umbral = (
-                html_texto(row.get(umbral_col, np.nan))
-                if umbral_col
-                else "-"
-            )
-
-            fecha_fin_col = etapa.get("fecha")
-
-            if pd.isna(row.get(fecha_fin_col, np.nan)):
-                falta = nombre_fecha_faltante(fecha_fin_col)
-                dias_txt = f"Pendiente · falta {escape(falta)}"
-            elif dias_col == COL_DIAS_TAT:
-                dias_txt = (
-                    escape(texto_dias_y_meses(dias_valor))
-                    + f" · umbral {umbral} días"
-                )
-            else:
-                dias = html_texto(dias_valor)
-                dias_txt = f"{dias} días · umbral {umbral}"
+            dias_txt = texto_dias_y_meses(row.get(dias_col, np.nan))
+            umbral_txt = formato_valor(row.get(umbral_col, np.nan)) if umbral_col else "-"
+            perf_txt = formato_valor(row.get(perf_col, np.nan)) if perf_col else "Registrado"
+            detalle = f"{dias_txt} · umbral {umbral_txt} días · {perf_txt}"
         else:
-            dias_txt = "Punto de inicio"
+            detalle = "Punto de inicio"
 
-        perf_val = (
-            row.get(perf_col, "Registrado")
-            if perf_col
-            else "Registrado"
+        partes.append(
+            dedent(
+                f'''
+                <div class="tat-flow-step">
+                    <div class="tat-flow-dot {dot_class}">{escape(icono)}</div>
+                    <div class="tat-flow-label">{escape(str(etapa.get('titulo', '')))}</div>
+                    <div class="tat-flow-date">{escape(fecha_txt)}</div>
+                    <div class="tat-flow-detail">{escape(detalle)}</div>
+                </div>
+                '''
+            ).strip()
         )
 
-        perf_color = (
-            clase_performance(perf_val)
-            if perf_col
-            else color
-        )
+        if i < len(etapas) - 1:
+            if completadas[i] and completadas[i + 1]:
+                connector_class = "tat-flow-connector-ok"
+            elif completadas[i] and not completadas[i + 1]:
+                connector_class = "tat-flow-connector-active"
+            else:
+                connector_class = ""
 
-        cards.append(
-            f"""
-            <div class="stage-card stage-{color}">
-                <div class="stage-title">{escape(etapa['titulo'])}</div>
-                <div class="stage-date">{fecha}</div>
-                <div class="stage-note">{escape(etapa['nota'])}</div>
-                <div class="stage-days">{dias_txt}</div>
-                {pill(perf_val, perf_color)}
+            partes.append(f'<div class="tat-flow-connector {connector_class}"></div>')
+
+    estado_tat = formato_valor(row.get(COL_PERF_TAT, np.nan))
+    dias_tat = texto_tat_total_usuario(
+        row.get(COL_PERF_TAT, np.nan),
+        row.get(COL_DIAS_TAT, np.nan),
+    )
+
+    return dedent(
+        f'''
+        <div class="tat-flow-card">
+            <div class="tat-flow-title">Etapas TAT</div>
+            <div class="tat-flow">{''.join(partes)}</div>
+            <div class="tat-flow-note">
+                TAT total: <strong>{escape(dias_tat)}</strong> · Estado: <strong>{escape(estado_tat)}</strong>. Las etapas respetan el orden original: Solicitud, Liberación SolPed, Comprador, Proveedor, Logística y TAT Total.
             </div>
-            """
-        )
+        </div>
+        '''
+    ).strip()
 
-    return f"""
-    <!doctype html>
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <style>
-            html, body {{
-                margin: 0;
-                padding: 0;
-                font-family: "Source Sans Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-                color: #0f172a;
-                background: transparent;
-                overflow: hidden;
-            }}
 
-            .stage-wrap {{
-                display: grid;
-                grid-template-columns: repeat(6, minmax(150px, 1fr));
-                gap: 10px;
-                align-items: stretch;
-                margin-top: 0.55rem;
-                padding: 2px 0 18px 0;
-                box-sizing: border-box;
-            }}
-
-            .stage-card {{
-                border-radius: 14px;
-                padding: 12px 12px 11px 12px;
-                border: 1px solid #e5e7eb;
-                min-height: 138px;
-                position: relative;
-                box-sizing: border-box;
-                box-shadow: none;
-            }}
-
-            .stage-card::after {{
-                content: "→";
-                position: absolute;
-                right: -9px;
-                top: 50%;
-                transform: translateY(-50%);
-                color: #94a3b8;
-                font-weight: 900;
-                font-size: 1rem;
-                z-index: 2;
-            }}
-
-            .stage-card:last-child::after {{
-                content: "";
-            }}
-
-            .stage-green {{
-                background: #f0fdf4;
-                border-color: #bbf7d0;
-            }}
-
-            .stage-red {{
-                background: #fef2f2;
-                border-color: #fecaca;
-            }}
-
-            .stage-yellow {{
-                background: #fefce8;
-                border-color: #fde68a;
-            }}
-
-            .stage-gray {{
-                background: #f8fafc;
-                border-color: #e2e8f0;
-            }}
-
-            .stage-blue {{
-                background: #eff6ff;
-                border-color: #bfdbfe;
-            }}
-
-            .stage-title {{
-                font-size: 0.78rem;
-                font-weight: 850;
-                color: #0f172a;
-                margin-bottom: 5px;
-            }}
-
-            .stage-date {{
-                font-size: 0.98rem;
-                font-weight: 850;
-                color: #111827;
-                margin-bottom: 4px;
-            }}
-
-            .stage-note {{
-                color: #64748b;
-                font-size: 0.72rem;
-                line-height: 1.2;
-                min-height: 24px;
-                margin-bottom: 7px;
-            }}
-
-            .stage-days {{
-                font-size: 0.8rem;
-                color: #334155;
-                margin-bottom: 6px;
-            }}
-
-            .pill {{
-                display: inline-block;
-                border-radius: 999px;
-                padding: 3px 8px;
-                font-size: 0.7rem;
-                font-weight: 800;
-                border: 1px solid transparent;
-                white-space: nowrap;
-            }}
-
-            .pill-green {{
-                background: #dcfce7;
-                color: #166534;
-                border-color: #bbf7d0;
-            }}
-
-            .pill-red {{
-                background: #fee2e2;
-                color: #991b1b;
-                border-color: #fecaca;
-            }}
-
-            .pill-yellow {{
-                background: #fef9c3;
-                color: #854d0e;
-                border-color: #fde68a;
-            }}
-
-            .pill-gray {{
-                background: #f1f5f9;
-                color: #475569;
-                border-color: #e2e8f0;
-            }}
-
-            .pill-blue {{
-                background: #dbeafe;
-                color: #1e40af;
-                border-color: #bfdbfe;
-            }}
-
-            @media (max-width: 1200px) {{
-                .stage-wrap {{
-                    grid-template-columns: repeat(3, minmax(150px, 1fr));
-                }}
-
-                html, body {{
-                    overflow: auto;
-                }}
-            }}
-
-            @media (max-width: 760px) {{
-                .stage-wrap {{
-                    grid-template-columns: 1fr;
-                    padding-bottom: 24px;
-                }}
-
-                .stage-card::after {{
-                    content: "↓";
-                    right: 50%;
-                    top: auto;
-                    bottom: -14px;
-                    transform: translateX(50%);
-                }}
-
-                .stage-card:last-child::after {{
-                    content: "";
-                }}
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="stage-wrap">{''.join(cards)}</div>
-    </body>
-    </html>
-    """
+# Compatibilidad con versiones anteriores del buscador.
+def html_estado_pedido(row: pd.Series) -> str:
+    return html_diagrama_tat_unificado(row)
 
 
 
@@ -2920,10 +2888,9 @@ else:
         unsafe_allow_html=True,
     )
 
-    components.html(
-        html_estado_pedido(row),
-        height=215,
-        scrolling=False,
+    st.markdown(
+        html_diagrama_tat_unificado(row),
+        unsafe_allow_html=True,
     )
 
 
