@@ -2863,13 +2863,13 @@ else:
         """
     ).strip()
 
+    # Orden de lectura del expediente: de lo más general a lo más específico.
+    # 1) Resumen del expediente y datos principales.
+    # 2) Indicadores TAT y avance actual.
+    # 3) Línea de pedido.
+    # 4) Etapas TAT detalladas.
     st.markdown(
         html_resumen_expediente_buscador(row),
-        unsafe_allow_html=True,
-    )
-
-    st.markdown(
-        html_linea_pedido(row),
         unsafe_allow_html=True,
     )
 
@@ -2885,6 +2885,11 @@ else:
 
     st.markdown(
         html_avance_actual(row),
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        html_linea_pedido(row),
         unsafe_allow_html=True,
     )
 
