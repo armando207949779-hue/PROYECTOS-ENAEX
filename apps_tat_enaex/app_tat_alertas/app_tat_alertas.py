@@ -4750,6 +4750,20 @@ if cantidad_vencidos_sin_recepcion_alerta > 0:
         """,
         unsafe_allow_html=True,
     )
+
+    with st.expander("Vista previa · Vencidos sin recepción", expanded=False):
+        st.caption(
+            f"Mostrando {cantidad_vencidos_sin_recepcion_alerta:,} registros vencidos sin recepción. "
+            "Abre esta sección solo si necesitas revisar el detalle."
+            .replace(",", ".")
+        )
+
+        st.dataframe(
+            df_vencidos_sin_recepcion_detalle,
+            use_container_width=True,
+            hide_index=True,
+        )
+
     v1, v2 = st.columns(2)
     with v1:
         st.download_button(
@@ -4798,6 +4812,20 @@ if cantidad_proximos_alerta > 0:
         """,
         unsafe_allow_html=True,
     )
+
+    with st.expander("Vista previa · Próximos a vencer sin recepción", expanded=False):
+        st.caption(
+            f"Mostrando {cantidad_proximos_alerta:,} registros próximos a vencer sin recepción entre hoy y 30 días. "
+            "Abre esta sección solo si necesitas revisar el detalle."
+            .replace(",", ".")
+        )
+
+        st.dataframe(
+            df_proximos_sin_recepcion_detalle,
+            use_container_width=True,
+            hide_index=True,
+        )
+
     a1, a2 = st.columns(2)
     with a1:
         st.download_button(
