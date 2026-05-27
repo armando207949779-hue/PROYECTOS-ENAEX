@@ -148,7 +148,7 @@ def pagina_inicio():
         <p style='text-align: center; font-size: 18px;'>
             Selecciona una aplicación desde el menú lateral para cargar archivos,
             limpiar datos, realizar cruces, generar fechas finales, calcular performance TAT,
-            filtrar datos, visualizar gráficos y revisar alertas operacionales del proceso TAT.
+            filtrar datos, visualizar performance mensual y revisar alertas operacionales del proceso TAT.
         </p>
         """,
         unsafe_allow_html=True
@@ -172,7 +172,7 @@ def pagina_inicio():
             """
             **Limpieza de datos**
 
-            Prepara la información proveniente de Ariba, ME5A y ME80FN antes del cruce.
+            Prepara la información proveniente de Ariba, ME5A y NME80FN antes del cruce.
             """
         )
 
@@ -210,7 +210,7 @@ def pagina_inicio():
             """
             **Performance Mensual**
 
-            Visualización y análisis gráfico de resultados TAT.
+            Visualización y análisis del performance mensual.
             """
         )
 
@@ -239,7 +239,7 @@ def pagina_inicio():
             """
             **Flujo recomendado**
 
-            Limpieza → Cruce → Fechas y cálculos → Análisis TAT → Alertas.
+            Limpieza → Cruce → Fechas y cálculos → Performance mensual → Alertas.
             """
         )
 
