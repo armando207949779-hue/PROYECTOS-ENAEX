@@ -174,9 +174,9 @@ def pagina_inicio():
     with col3:
         st.info(
             """
-            **Consolidado final V2**
+            **Consolidado final**
 
-            Nueva app integrada que reemplaza las secciones anteriores de Match TAT y Fechas + Cálculos TAT.
+            App de consolidado final que reemplaza las secciones anteriores de Match TAT y Fechas + Cálculos TAT.
             """
         )
 
@@ -194,9 +194,9 @@ def pagina_inicio():
     with col5:
         st.info(
             """
-            **Gráficos TAT**
+            **Performance mensual**
 
-            Visualización y análisis gráfico de resultados TAT.
+            Visualización y análisis de performance mensual de resultados TAT.
             """
         )
 
@@ -225,7 +225,7 @@ def pagina_inicio():
             """
             **Flujo recomendado**
 
-            Limpieza → Consolidado final V2 → Análisis TAT → Alertas.
+            Limpieza → Consolidado final → Análisis TAT → Alertas.
             """
         )
 
@@ -247,10 +247,10 @@ apps_requeridas = {
     "Cargar archivo": APP_TAT_CARGAR_ARCHIVO,
     "Limpieza Ariba": APP_TAT_LIMPIEZA_ARIBA,
     "Limpieza ME5A": APP_TAT_LIMPIEZA_ME5A,
-    "Limpieza ME80FN": APP_TAT_LIMPIEZA_ME80FN,
-    "Consolidado final V2": APP_CONSOLIDADO_FINAL_V2,
+    "Limpieza NME80FN": APP_TAT_LIMPIEZA_ME80FN,
+    "Consolidado final": APP_CONSOLIDADO_FINAL_V2,
     "Filtro TAT": APP_TAT_FILTRO,
-    "Gráficos TAT": APP_TAT_GRAFICOS,
+    "Performance mensual": APP_TAT_GRAFICOS,
     "Performance de Plantas": APP_GRAPH_PERFORMANCE_PLANTAS,
     "Alertas TAT": APP_TAT_ALERTAS,
 }
@@ -297,7 +297,7 @@ pagina = st.navigation(
             ),
             st.Page(
                 APP_TAT_LIMPIEZA_ME80FN,
-                title="Limpieza ME80FN",
+                title="Limpieza NME80FN",
                 icon="📄"
             ),
         ],
@@ -305,7 +305,7 @@ pagina = st.navigation(
         "Consolidado final": [
             st.Page(
                 APP_CONSOLIDADO_FINAL_V2,
-                title="Consolidado final V2",
+                title="Consolidado final",
                 icon="🔗"
             ),
         ],
@@ -323,7 +323,7 @@ pagina = st.navigation(
             ),
             st.Page(
                 APP_TAT_GRAFICOS,
-                title="Gráficos TAT",
+                title="Performance mensual",
                 icon="📊"
             ),
             st.Page(
