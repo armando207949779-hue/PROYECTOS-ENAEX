@@ -96,13 +96,42 @@ def leer_archivo_cache(
     if nombre.endswith(".csv"):
         sep = obtener_separador(separador_csv)
 
+        dtype_csv = {
+            "Indicador liberación": "string",
+            "Grupo de compras": "string",
+            "Tipo de imputación": "string",
+            "Fecha de solicitud": "string",
+            "Fecha modificación": "string",
+            "Fe.liber.Z": "string",
+            "Solicitud de pedido": "string",
+            "Pedido": "string",
+            "Fecha de pedido": "string",
+            "Tipo de posición": "string",
+            "Pos.solicitud pedido": "string",
+            "Posición de pedido": "string",
+            "Material": "string",
+            "Texto breve": "string",
+            "Cantidad solicitada": "string",
+            "Unidad de medida": "string",
+            "Precio de valoración": "string",
+            "Moneda": "string",
+            "Solicitante": "string",
+            "Autor": "string",
+            "Centro": "string",
+            "Número de necesidad": "string",
+            "Status tratamiento": "string",
+            "Fecha de entrega": "string",
+            "Fecha de liberación": "string",
+        }
+
         try:
             return pd.read_csv(
                 buffer,
                 sep=sep,
                 engine="python",
                 encoding="utf-8-sig",
-                on_bad_lines="skip"
+                on_bad_lines="skip",
+                dtype=dtype_csv
             )
 
         except Exception:
@@ -113,10 +142,57 @@ def leer_archivo_cache(
                 sep=sep,
                 engine="python",
                 encoding="latin1",
-                on_bad_lines="skip"
+                on_bad_lines="skip",
+                dtype=dtype_csv
             )
 
     raise ValueError("Formato no soportado. Usa .parquet, .xlsx o .csv")
+
+
+# =========================================================
+# Limpieza de fechas
+# =========================================================
+
+def convertir_fecha_segura(serie: pd.Series) -> pd.Series:
+    s = serie.astype("string").str.strip()
+
+    s = s.replace(
+        {
+            "": pd.NA,
+            "nan": pd.NA,
+            "NaN": pd.NA,
+            "None": pd.NA,
+            "none": pd.NA,
+            "NaT": pd.NA,
+        }
+    )
+
+    es_yyyymmdd = s.str.match(r"^\d{8}$", na=False)
+    es_iso = s.str.match(r"^\d{4}-\d{2}-\d{2}$", na=False)
+
+    resultado = pd.Series(pd.NaT, index=s.index, dtype="datetime64[ns]")
+
+    resultado.loc[es_yyyymmdd] = pd.to_datetime(
+        s.loc[es_yyyymmdd],
+        format="%Y%m%d",
+        errors="coerce"
+    )
+
+    resultado.loc[es_iso] = pd.to_datetime(
+        s.loc[es_iso],
+        format="%Y-%m-%d",
+        errors="coerce"
+    )
+
+    restantes = ~(es_yyyymmdd | es_iso)
+
+    resultado.loc[restantes] = pd.to_datetime(
+        s.loc[restantes],
+        errors="coerce",
+        dayfirst=True
+    )
+
+    return resultado
 
 
 # =========================================================
@@ -160,18 +236,10 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
 
     for col in cols_fecha:
         if col in df.columns:
-            df[col] = pd.to_datetime(
-                df[col],
-                errors="coerce",
-                dayfirst=True
-            )
+            df[col] = convertir_fecha_segura(df[col])
 
     if "Fecha de entrega" in df.columns:
-        df["Fecha de entrega"] = pd.to_datetime(
-            df["Fecha de entrega"].astype("string"),
-            format="%Y%m%d",
-            errors="coerce"
-        )
+        df["Fecha de entrega"] = convertir_fecha_segura(df["Fecha de entrega"])
 
     cols_numericas = [
         "Cantidad solicitada",
@@ -180,12 +248,26 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
 
     for col in cols_numericas:
         if col in df.columns:
+            df[col] = (
+                df[col]
+                .astype("string")
+                .str.strip()
+                .str.replace(",", ".", regex=False)
+            )
+
             df[col] = pd.to_numeric(
                 df[col],
                 errors="coerce"
             )
 
     if "Pedido" in df.columns:
+        df["Pedido"] = (
+            df["Pedido"]
+            .astype("string")
+            .str.strip()
+            .str.replace(r"\.0$", "", regex=True)
+        )
+
         df["Pedido"] = pd.to_numeric(
             df["Pedido"],
             errors="coerce"
@@ -199,6 +281,13 @@ def limpiar_fechas_y_numeros(df: pd.DataFrame) -> pd.DataFrame:
 
     for col in cols_enteras:
         if col in df.columns:
+            df[col] = (
+                df[col]
+                .astype("string")
+                .str.strip()
+                .str.replace(r"\.0$", "", regex=True)
+            )
+
             df[col] = pd.to_numeric(
                 df[col],
                 errors="coerce"
@@ -679,7 +768,7 @@ def chart_serie_fecha(df: pd.DataFrame, columna_fecha: str):
             y=alt.Y("Cantidad:Q", title="Registros"),
             tooltip=[
                 alt.Tooltip("Fecha:T", title="Fecha"),
-                alt.Tooltip("Cantidad:Q", title="Registros")
+                alt.Tooltip("Cantidad:Q", title="Cantidad")
             ]
         )
         .properties(height=360)
