@@ -1612,9 +1612,11 @@ def crear_excel_consolidado_calculado(df_calculado):
 
 def analizar_alertas_datos(df_calculado, n_meses_recientes=3):
     """
-    Analiza los últimos N meses del consolidado para detectar valores faltantes
-    en columnas clave. Devuelve una lista de alertas con detalle.
+    Analiza los últimos N meses anteriores a la fecha actual para detectar
+    valores faltantes en columnas clave. Devuelve una lista de alertas con detalle.
     """
+    import datetime
+
     alertas = []
 
     if df_calculado.empty:
@@ -1622,8 +1624,27 @@ def analizar_alertas_datos(df_calculado, n_meses_recientes=3):
 
     df_sorted = df_calculado.sort_values(["Año", "Mes"], ascending=[True, True])
 
-    # Obtenemos los últimos N meses con datos
-    ultimas_filas = df_sorted.tail(n_meses_recientes)
+    # Calculamos los N meses anteriores (inclusive) a la fecha actual
+    hoy = datetime.date.today()
+    periodos_objetivo = []
+    for delta in range(n_meses_recientes):
+        # Retroceder delta meses desde el mes actual
+        mes_ref = hoy.month - delta
+        anio_ref = hoy.year
+        while mes_ref <= 0:
+            mes_ref += 12
+            anio_ref -= 1
+        periodos_objetivo.append((anio_ref, mes_ref))
+
+    # Filtrar el df sólo por esos períodos
+    ultimas_filas = df_sorted[
+        df_sorted.apply(
+            lambda r: (int(r["Año"]), int(r["Mes"])) in periodos_objetivo
+            if not pd.isna(r.get("Año")) and not pd.isna(r.get("Mes"))
+            else False,
+            axis=1
+        )
+    ]
 
     for _, fila in ultimas_filas.iterrows():
         anio = int(fila["Año"]) if not pd.isna(fila.get("Año")) else "?"
@@ -2115,27 +2136,24 @@ if "df_consolidado_temporal" in st.session_state:
             st.markdown("---")
             st.subheader("📊 Gráfico personalizable")
 
-            columnas_seleccionadas = st.multiselect(
-                "Selecciona indicadores para graficar",
+            st.caption("Se muestra un indicador a la vez para evitar problemas de escala entre series.")
+
+            columna_seleccionada = st.selectbox(
+                "Selecciona un indicador para graficar",
                 options=columnas_graficables,
-                default=[
-                    col for col in [
-                        "Item 2 calculado",
-                        "MOP 3 (Petróleo Diesel)",
-                        "Item 3 calculado"
-                    ]
-                    if col in columnas_graficables
-                ] or columnas_graficables[:1]
+                index=columnas_graficables.index("Item 2 calculado")
+                if "Item 2 calculado" in columnas_graficables
+                else 0
             )
 
-            if columnas_seleccionadas:
+            if columna_seleccionada:
                 df_grafico = df_consolidado_calculado.set_index("Fecha")[
-                    columnas_seleccionadas
+                    [columna_seleccionada]
                 ]
 
                 st.line_chart(df_grafico)
             else:
-                st.info("Selecciona al menos un indicador para graficar.")
+                st.info("Selecciona un indicador para graficar.")
 
         # ── 5. Descargas ──────────────────────────────────────────────────
         st.markdown("---")
