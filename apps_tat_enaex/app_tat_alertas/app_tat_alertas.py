@@ -1200,14 +1200,26 @@ def ordenar_expediente_critico(df_base: pd.DataFrame) -> pd.DataFrame:
     return salida.sort_values(cols_orden, ascending=asc)
 
 def construir_label_critico(row: pd.Series) -> str:
-    solped  = formato_id(row.get(COL_SOLPED, np.nan))
-    oc      = formato_id(row.get(COL_OC_ME5A, row.get(COL_OC_NME, np.nan)))
-    pos     = formato_id(row.get(COL_POS_SOLPED, np.nan))
-    nivel   = formato_valor(row.get("nivel_alerta", np.nan))
-    venc    = formato_valor(row.get("dias_hasta_vencimiento", np.nan))
+    """Etiqueta del selector: urgencia → IDs → centro → tiempo → acción → descripción."""
+    venc      = formato_valor(row.get("dias_hasta_vencimiento", np.nan))
+    dias_rest = formato_valor(row.get("dias_restantes_texto", np.nan))
+    solped    = formato_id(row.get(COL_SOLPED, np.nan))
+    oc        = formato_id(row.get(COL_OC_ME5A, row.get(COL_OC_NME, np.nan)))
+    pos       = formato_id(row.get(COL_POS_SOLPED, np.nan))
+    centro    = normalizar_codigo_centro(row.get(COL_CENTRO, np.nan))
     pendiente = formato_valor(row.get("fecha_pendiente", np.nan))
-    desc    = str(row.get(COL_TEXTO,""))[:60]
-    return f"{nivel} · {venc} | SolPed {solped} | OC {oc} | Pos {pos} | Pendiente {pendiente} | {desc}"
+    accion    = str(row.get("accion_sugerida", ""))[:35]
+    desc      = str(row.get(COL_TEXTO, ""))[:45]
+    tiempo    = formato_valor(row.get("tiempo_transcurrido_tat", np.nan))
+    return (
+        f"[{venc}] {dias_rest}"
+        f"  ·  {solped} / OC {oc} / Pos {pos}"
+        f"  ·  {centro}"
+        f"  ·  Transcurrido: {tiempo}"
+        f"  ·  Pendiente: {pendiente}"
+        f"  ·  {accion}"
+        f"  ·  {desc}"
+    )
 
 
 # =========================================================
@@ -1637,65 +1649,143 @@ with tab1:
 # TAB 2 — ALERTAS Y VENCIMIENTOS
 # ══════════════════════════════════════════════════════════
 with tab2:
-    df_vencidos  = detalle_vencidos(df_filtrado)
-    df_proximos  = detalle_proximos(df_filtrado)
-    df_sin_fecha = detalle_sin_fecha(df_filtrado)
-    n_venc = len(df_vencidos); n_prox = len(df_proximos); n_sf = len(df_sin_fecha)
+    _lim2 = int(st.session_state["f_limite"])
+    _er2  = df_filtrado[COL_ESTADO_RECEPCION_ALERTA].astype(str) if COL_ESTADO_RECEPCION_ALERTA in df_filtrado.columns else pd.Series("Sin recepción", index=df_filtrado.index)
+    _dr2  = pd.to_numeric(df_filtrado.get("dias_restantes_int", pd.Series(np.nan, index=df_filtrado.index)), errors="coerce")
+    _sr2  = _er2.eq("Sin recepción")
 
-    st.markdown("#### Panorama de urgencias")
-    av1, av2, av3 = st.columns(3)
-    av1.metric("🔴 Vencidos sin recepción", f"{n_venc:,}".replace(",","."))
-    av2.metric("🟠 Próximos 0–30 días",     f"{n_prox:,}".replace(",","."))
-    av3.metric("⚪ Sin fecha calculable",    f"{n_sf:,}".replace(",","."))
+    df_vencidos   = df_filtrado.loc[_sr2 & _dr2.lt(0)].copy()
+    df_proximos   = df_filtrado.loc[_sr2 & _dr2.between(0, 30, inclusive="both")].copy()
+    df_mas30_tab2 = df_filtrado.loc[_sr2 & _dr2.gt(30)].copy()
+    df_recep_tab2 = df_filtrado.loc[_er2.eq("Recepcionado")].copy()
+    df_sin_fecha  = detalle_sin_fecha(df_filtrado)
 
-    # ── Vencidos ──
+    n_venc   = len(df_vencidos)
+    n_prox   = len(df_proximos)
+    n_mas30  = len(df_mas30_tab2)
+    n_recep  = len(df_recep_tab2)
+    n_sf     = len(df_sin_fecha)
+    n_total  = len(df_filtrado)
+
+    # ── Tabla de distribución al 100% ──
+    st.markdown("#### Distribución de los registros filtrados")
+    st.caption("La tabla muestra todos los grupos hasta sumar el 100% de los datos filtrados.")
+
+    _grupos_dist = [
+        ("🔴 Vencidos sin recepción",          n_venc,  "#fee2e2", "#fecaca", "#991b1b"),
+        ("🟠 Próximos a vencer (0–30 días)",   n_prox,  "#fff7ed", "#fdba74", "#9a3412"),
+        ("🟡 Por vencer (>30 días)",            n_mas30, "#fefce8", "#fde68a", "#854d0e"),
+        ("✅ Recepcionados",                    n_recep, "#f0fdf4", "#bbf7d0", "#166534"),
+        ("⚪ Sin fecha calculable (sin rec.)",  n_sf,    "#f8fafc", "#e2e8f0", "#475569"),
+    ]
+    # Calcular "otros" que no caen en ningún grupo
+    _suma_grupos = n_venc + n_prox + n_mas30 + n_recep + n_sf
+    _otros = max(0, n_total - _suma_grupos)
+    if _otros > 0:
+        _grupos_dist.append(("⬜ Otros (estados no clasificados)", _otros, "#f8fafc", "#e2e8f0", "#334155"))
+
+    _tabla_dist_html = ""
+    _acumulado = 0
+    for _nombre, _cnt, _bg, _brd, _clr in _grupos_dist:
+        _pct  = _cnt / n_total * 100 if n_total else 0
+        _acumulado += _cnt
+        _pct_acum = _acumulado / n_total * 100 if n_total else 0
+        _barra_w  = max(2, _pct)
+        _tabla_dist_html += f"""
+        <div style="display:grid;grid-template-columns:2.2fr 80px 80px 80px 1fr;align-items:center;gap:12px;
+                    padding:10px 14px;background:{_bg};border:1px solid {_brd};border-radius:12px;margin-bottom:6px;">
+            <div style="font-size:0.88rem;font-weight:600;color:{_clr};">{_nombre}</div>
+            <div style="font-size:1rem;font-weight:800;color:{_clr};text-align:right;">{_cnt:,}</div>
+            <div style="font-size:0.88rem;color:#64748b;text-align:right;">{_pct:.1f}%</div>
+            <div style="font-size:0.88rem;color:#94a3b8;text-align:right;">{_pct_acum:.1f}% acum.</div>
+            <div style="background:#e2e8f0;border-radius:99px;height:8px;overflow:hidden;">
+                <div style="background:{_clr};width:{_barra_w:.1f}%;height:100%;border-radius:99px;opacity:0.7;"></div>
+            </div>
+        </div>""".replace(",", ".")
+    _tabla_dist_html += f"""
+    <div style="display:grid;grid-template-columns:2.2fr 80px 80px 80px 1fr;align-items:center;gap:12px;
+                padding:10px 14px;background:#f1f5f9;border:2px solid #94a3b8;border-radius:12px;margin-top:4px;">
+        <div style="font-size:0.88rem;font-weight:800;color:#0f172a;">TOTAL FILTRADO</div>
+        <div style="font-size:1rem;font-weight:900;color:#0f172a;text-align:right;">{n_total:,}</div>
+        <div style="font-size:0.88rem;font-weight:800;color:#334155;text-align:right;">100%</div>
+        <div style="font-size:0.88rem;color:#94a3b8;text-align:right;"></div>
+        <div></div>
+    </div>""".replace(",", ".")
+
+    st.markdown(
+        f'<div style="margin:0.5rem 0 1.2rem 0;">{_tabla_dist_html}</div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── Sección helper ──
+    def _seccion_alerta(titulo, df_sec, n_sec, estilo_div, icono, expanded=False):
+        st.markdown("---")
+        st.markdown(f"#### {titulo}")
+        if n_sec > 0:
+            st.markdown(
+                f'<div class="alerta-urgente {estilo_div}">'
+                f'<span style="font-size:1.1rem;">{icono}</span>'
+                f'<span>{n_sec:,} registros.</span>'
+                f'</div>'.replace(",", "."),
+                unsafe_allow_html=True,
+            )
+            with st.expander(f"Ver {n_sec:,} registros".replace(",", "."), expanded=expanded):
+                _t2 = tabla_resumen_filtrada(df_sec)
+                st.caption(f"Mostrando {min(_lim2, n_sec):,} de {n_sec:,} registros.".replace(",", "."))
+                st.dataframe(aplicar_estilo_urgencia(_t2.head(_lim2)), use_container_width=True, hide_index=True)
+            c1, c2 = st.columns(2)
+            _slug = titulo.replace(" ","_").replace("/","").replace(">","mas").replace("–","-")[:30]
+            with c1: st.download_button(f"⬇ CSV", data=dataframe_a_csv(tabla_resumen_filtrada(df_sec)), file_name=f"{_slug}.csv", mime="text/csv", use_container_width=True)
+            with c2: st.download_button(f"⬇ Excel", data=dataframe_a_excel(tabla_resumen_filtrada(df_sec)), file_name=f"{_slug}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+        else:
+            st.success(f"No hay registros en «{titulo}» con los filtros actuales.")
+
+    _seccion_alerta("🔴 Vencidos sin recepción",        df_vencidos,   n_venc,  "alerta-roja",    "⚠",  expanded=True)
+    _seccion_alerta("🟠 Próximos a vencer (0–30 días)", df_proximos,   n_prox,  "alerta-naranja", "⏱",  expanded=False)
+
+    # 🟡 Por vencer >30 días (sin clase alerta-*, usa info genérico)
     st.markdown("---")
-    st.markdown("#### 🔴 Vencidos sin recepción")
-    if n_venc > 0:
-        st.markdown(f"""
-        <div class="alerta-urgente alerta-roja">
-            <span style="font-size:1.1rem;">⚠</span>
-            <span>{n_venc:,} registros ya superaron su fecha de vencimiento TAT y no tienen recepción. Requieren gestión inmediata.</span>
-        </div>""".replace(",","."), unsafe_allow_html=True)
-        with st.expander(f"Ver los {n_venc:,} registros vencidos".replace(",","."), expanded=True):
-            _limite = int(st.session_state["f_limite"])
-            st.dataframe(aplicar_estilo_urgencia(df_vencidos.head(_limite)), use_container_width=True, hide_index=True)
-        cv1, cv2 = st.columns(2)
-        with cv1: st.download_button("⬇ CSV · Vencidos", data=dataframe_a_csv(df_vencidos), file_name="vencidos_sin_recepcion.csv", mime="text/csv", use_container_width=True)
-        with cv2: st.download_button("⬇ Excel · Vencidos", data=dataframe_a_excel(df_vencidos), file_name="vencidos_sin_recepcion.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+    st.markdown("#### 🟡 Por vencer sin recepción (>30 días)")
+    if n_mas30 > 0:
+        st.info(f"{n_mas30:,} registros sin recepción con vencimiento en más de 30 días. Sin urgencia inmediata, pero requieren seguimiento preventivo.".replace(",", "."))
+        with st.expander(f"Ver {n_mas30:,} registros por vencer (>30 d)".replace(",", "."), expanded=False):
+            _t30 = tabla_resumen_filtrada(df_mas30_tab2)
+            st.caption(f"Mostrando {min(_lim2, n_mas30):,} de {n_mas30:,} registros.".replace(",", "."))
+            st.dataframe(aplicar_estilo_urgencia(_t30.head(_lim2)), use_container_width=True, hide_index=True)
+        cm1, cm2 = st.columns(2)
+        with cm1: st.download_button("⬇ CSV · Por vencer >30d", data=dataframe_a_csv(tabla_resumen_filtrada(df_mas30_tab2)), file_name="por_vencer_mas30.csv", mime="text/csv", use_container_width=True)
+        with cm2: st.download_button("⬇ Excel · Por vencer >30d", data=dataframe_a_excel(tabla_resumen_filtrada(df_mas30_tab2)), file_name="por_vencer_mas30.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
     else:
-        st.success("No hay registros vencidos sin recepción con los filtros actuales.")
+        st.success("No hay registros por vencer en más de 30 días sin recepción con los filtros actuales.")
 
-    # ── Próximos ──
+    # ── Recepcionados ──
     st.markdown("---")
-    st.markdown("#### 🟠 Próximos a vencer sin recepción (0–30 días)")
-    if n_prox > 0:
-        st.markdown(f"""
-        <div class="alerta-urgente alerta-naranja">
-            <span style="font-size:1.1rem;">⏱</span>
-            <span>{n_prox:,} registros vencen entre hoy y los próximos 30 días y no tienen recepción.</span>
-        </div>""".replace(",","."), unsafe_allow_html=True)
-        with st.expander(f"Ver los {n_prox:,} registros próximos".replace(",","."), expanded=False):
-            _limite = int(st.session_state["f_limite"])
-            st.dataframe(aplicar_estilo_urgencia(df_proximos.head(_limite)), use_container_width=True, hide_index=True)
-        cp1, cp2 = st.columns(2)
-        with cp1: st.download_button("⬇ CSV · Próximos", data=dataframe_a_csv(df_proximos), file_name="proximos_vencer.csv", mime="text/csv", use_container_width=True)
-        with cp2: st.download_button("⬇ Excel · Próximos", data=dataframe_a_excel(df_proximos), file_name="proximos_vencer.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+    st.markdown("#### ✅ Recepcionados")
+    if n_recep > 0:
+        st.success(f"{n_recep:,} registros ya tienen recepción registrada. Se muestran como referencia.".replace(",", "."))
+        with st.expander(f"Ver {n_recep:,} recepcionados".replace(",", "."), expanded=False):
+            _tr = tabla_resumen_filtrada(df_recep_tab2)
+            st.caption(f"Mostrando {min(_lim2, n_recep):,} de {n_recep:,} registros.".replace(",", "."))
+            st.dataframe(aplicar_estilo_urgencia(_tr.head(_lim2)), use_container_width=True, hide_index=True)
+        cr1, cr2 = st.columns(2)
+        with cr1: st.download_button("⬇ CSV · Recepcionados", data=dataframe_a_csv(tabla_resumen_filtrada(df_recep_tab2)), file_name="recepcionados.csv", mime="text/csv", use_container_width=True)
+        with cr2: st.download_button("⬇ Excel · Recepcionados", data=dataframe_a_excel(tabla_resumen_filtrada(df_recep_tab2)), file_name="recepcionados.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
     else:
-        st.success("No hay registros próximos a vencer sin recepción con los filtros actuales.")
+        st.success("No hay recepcionados con los filtros actuales.")
 
-    # ── Sin fecha ──
+    # ── Sin fecha calculable ──
     st.markdown("---")
     st.markdown("#### ⚪ Sin fecha de vencimiento calculable y sin recepción")
     if n_sf > 0:
-        st.info(f"{n_sf:,} registros no entran en el seguimiento TAT porque falta fecha de solicitud, umbral o tipo OC válido. Corrija los datos para habilitarlos.".replace(",","."))
-        with st.expander(f"Ver {n_sf:,} registros sin fecha".replace(",","."), expanded=False):
-            st.dataframe(df_sin_fecha.head(int(st.session_state["f_limite"])), use_container_width=True, hide_index=True)
+        st.info(f"{n_sf:,} registros no entran en el seguimiento TAT: falta fecha de solicitud, umbral o tipo OC válido.".replace(",", "."))
+        with st.expander(f"Ver {n_sf:,} registros sin fecha".replace(",", "."), expanded=False):
+            st.caption(f"Mostrando {min(_lim2, n_sf):,} de {n_sf:,} registros.".replace(",", "."))
+            st.dataframe(df_sin_fecha.head(_lim2), use_container_width=True, hide_index=True)
         csf1, csf2 = st.columns(2)
         with csf1: st.download_button("⬇ CSV · Sin fecha", data=dataframe_a_csv(df_sin_fecha), file_name="sin_fecha_vencimiento.csv", mime="text/csv", use_container_width=True)
         with csf2: st.download_button("⬇ Excel · Sin fecha", data=dataframe_a_excel(df_sin_fecha), file_name="sin_fecha_vencimiento.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
     else:
-        st.success("No hay registros sin fecha de vencimiento calculable y sin recepción con los filtros actuales.")
+        st.success("No hay registros sin fecha calculable y sin recepción con los filtros actuales.")
 
 
 # ══════════════════════════════════════════════════════════
@@ -1981,76 +2071,107 @@ with tab4:
         seleccionado = st.selectbox("Seleccionar pedido", opciones, index=idx_default, format_func=lambda i: labels_sel.get(i, str(i)))
         row = df_exp_base.loc[seleccionado]
 
-        # ── Ficha resumen de campos clave ──
-        CAMPOS_CLAVE = [
-            # (etiqueta, nombre_columna_o_campo_calculado)
-            ("SolPed",                    COL_SOLPED),
-            ("Pedido",                    COL_OC_ME5A),
-            ("Material",                  COL_MATERIAL),
-            ("Descripción",               COL_TEXTO),
-            ("Precio de valoración",      "Precio de valoración"),
-            ("Monto",                     COL_MONTO),
-            ("Cantidad solicitada",       "Cantidad solicitada - ME5A"),
-            ("Unidad de medida",          "Unidad de medida - ME5A"),
-            ("Fecha inicio TAT",          "fecha_inicio_tat"),
-            ("Fecha solicitud",           "fecha_solicitud_final"),
-            ("Fecha vencimiento",         "fecha_vencimiento_texto"),
-            ("Días restantes",            "dias_restantes_texto"),
-            ("Urgencia",                  "dias_hasta_vencimiento"),
-            ("Tiempo transcurrido",       "tiempo_transcurrido_tat"),
-            ("Días transcurridos",        "tiempo_transcurrido_tat_dias"),
-            ("Performance TAT total",     COL_PERF_TAT),
-            ("Última etapa registrada",   "ultima_etapa_registrada"),
-            ("Fecha pendiente",           "fecha_pendiente"),
-            ("Acción sugerida",           "accion_sugerida"),
-        ]
-
-        def _val_campo(row, col):
-            val = row.get(col, np.nan)
+        # ── Ficha estructurada por bloques lógicos ──
+        def _val(r, col):
+            val = r.get(col, np.nan)
             if pd.isna(val): return "-"
             if isinstance(val, pd.Timestamp): return val.strftime("%d-%m-%Y")
             return formato_valor(val)
 
-        # Renderizar en 4 columnas
-        n_cols_ficha = 4
-        ficha_items = [(lbl, _val_campo(row, col)) for lbl, col in CAMPOS_CLAVE if col in row.index or col in [c for _, c in CAMPOS_CLAVE]]
-        # Solo incluir si existe en el row
-        ficha_items = [(lbl, _val_campo(row, col)) for lbl, col in CAMPOS_CLAVE]
+        def _celda(lbl, val, bg="#f8fafc", brd="#e2e8f0", clr="#0f172a", span=1):
+            grid_col = f"span {span}" if span > 1 else ""
+            style_extra = f"grid-column:{grid_col};" if grid_col else ""
+            return (
+                f'<div style="background:{bg};border:1px solid {brd};border-radius:12px;'
+                f'padding:11px 14px;{style_extra}">'
+                f'<div style="font-size:0.65rem;font-weight:700;color:#94a3b8;text-transform:uppercase;'
+                f'letter-spacing:0.05em;margin-bottom:5px;">{escape(lbl)}</div>'
+                f'<div style="font-size:0.95rem;font-weight:700;color:{clr};line-height:1.25;'
+                f'overflow-wrap:anywhere;">{escape(str(val))}</div>'
+                f'</div>'
+            )
 
-        filas_ficha = [ficha_items[i:i+n_cols_ficha] for i in range(0, len(ficha_items), n_cols_ficha)]
-        celdas_html = ""
-        for fila in filas_ficha:
-            celdas_html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px;">'
-            for lbl, val in fila:
-                # Colorear campos de urgencia
-                color_val = "#0f172a"
-                bg_val = "#f8fafc"
-                brd_val = "#e2e8f0"
-                if lbl == "Urgencia":
-                    if val == "Vencido":        bg_val,brd_val,color_val = "#fee2e2","#fecaca","#991b1b"
-                    elif val in ["Vence hoy","1 día"]: bg_val,brd_val,color_val = "#ffedd5","#fed7aa","#9a3412"
-                    elif val in ["2 días","3 días","4 días","5 días","6 días","7 días"]: bg_val,brd_val,color_val = "#fef9c3","#fde68a","#854d0e"
-                elif lbl == "Performance TAT total":
-                    t = str(val).strip().lower()
-                    if t == "cumple":       bg_val,brd_val,color_val = "#dcfce7","#bbf7d0","#166534"
-                    elif t == "no cumple":  bg_val,brd_val,color_val = "#fee2e2","#fecaca","#991b1b"
-                    elif t in ["en proceso","sin datos"]: bg_val,brd_val,color_val = "#fef9c3","#fde68a","#854d0e"
-                celdas_html += (
-                    f'<div style="background:{bg_val};border:1px solid {brd_val};border-radius:12px;padding:10px 13px;">'
-                    f'<div style="font-size:0.67rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">{escape(lbl)}</div>'
-                    f'<div style="font-size:0.94rem;font-weight:700;color:{color_val};line-height:1.2;overflow-wrap:anywhere;">{escape(str(val))}</div>'
-                    f'</div>'
-                )
-            # Rellenar columnas vacías en última fila
-            resto = n_cols_ficha - len(fila)
-            for _ in range(resto):
-                celdas_html += '<div></div>'
-            celdas_html += "</div>"
+        def _urgencia_colors(val):
+            t = str(val).strip()
+            if t == "Vencido":                      return "#fee2e2","#fecaca","#991b1b"
+            if t in ["Vence hoy","1 día"]:          return "#ffedd5","#fed7aa","#9a3412"
+            if t in ["2 días","3 días","4 días","5 días","6 días","7 días"]: return "#fef9c3","#fde68a","#854d0e"
+            return "#f8fafc","#e2e8f0","#0f172a"
+
+        def _perf_colors(val):
+            t = str(val).strip().lower()
+            if t == "cumple":                      return "#dcfce7","#bbf7d0","#166534"
+            if t == "no cumple":                   return "#fee2e2","#fecaca","#991b1b"
+            if t in ["en proceso","sin datos"]:    return "#fef9c3","#fde68a","#854d0e"
+            return "#f8fafc","#e2e8f0","#64748b"
+
+        def _bloque(titulo, celdas_html, borde_color="#e2e8f0"):
+            return (
+                f'<div style="margin-bottom:12px;">'
+                f'<div style="font-size:0.68rem;font-weight:700;color:#94a3b8;text-transform:uppercase;'
+                f'letter-spacing:0.07em;margin-bottom:7px;padding-left:2px;">{escape(titulo)}</div>'
+                f'<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">{celdas_html}</div>'
+                f'</div>'
+            )
+
+        # ─── Bloque 1: Urgencia y estado TAT ───────────────────────────────
+        _urg_val = _val(row, "dias_hasta_vencimiento")
+        _bg_u, _brd_u, _clr_u = _urgencia_colors(_urg_val)
+        _pf_val  = _val(row, COL_PERF_TAT)
+        _bg_p, _brd_p, _clr_p = _perf_colors(_pf_val)
+        _b1 = (
+            _celda("Urgencia",              _urg_val,                           _bg_u,   _brd_u,  _clr_u)
+          + _celda("Días restantes",        _val(row, "dias_restantes_texto"),  "#f8fafc","#e2e8f0","#0f172a")
+          + _celda("Tiempo transcurrido",   _val(row, "tiempo_transcurrido_tat"),"#f8fafc","#e2e8f0","#0f172a")
+          + _celda("Performance TAT total", _pf_val,                            _bg_p,   _brd_p,  _clr_p)
+        )
+
+        # ─── Bloque 2: Fechas clave ────────────────────────────────────────
+        _b2 = (
+            _celda("Fecha solicitud",    _val(row, "fecha_solicitud_final"))
+          + _celda("Fecha inicio TAT",   _val(row, "fecha_inicio_tat"))
+          + _celda("Fecha vencimiento",  _val(row, "fecha_vencimiento_texto"))
+          + _celda("Días transcurridos (num)", _val(row, "tiempo_transcurrido_tat_dias"))
+        )
+
+        # ─── Bloque 3: Identificadores ────────────────────────────────────
+        _b3 = (
+            _celda("Solicitud de pedido", _val(row, COL_SOLPED))
+          + _celda("Pedido / OC",         _val(row, COL_OC_ME5A))
+          + _celda("Material",            _val(row, COL_MATERIAL))
+          + _celda("Descripción",         _val(row, COL_TEXTO))
+        )
+
+        # ─── Bloque 4: Datos económicos ───────────────────────────────────
+        _b4 = (
+            _celda("Monto",               _val(row, COL_MONTO))
+          + _celda("Precio de valoración",_val(row, "Precio de valoración"))
+          + _celda("Cantidad solicitada", _val(row, "Cantidad solicitada - ME5A"))
+          + _celda("Unidad de medida",    _val(row, "Unidad de medida - ME5A"))
+        )
+
+        # ─── Bloque 5: Seguimiento y acción ───────────────────────────────
+        _b5 = (
+            _celda("Última etapa registrada", _val(row, "ultima_etapa_registrada"))
+          + _celda("Fecha pendiente",         _val(row, "fecha_pendiente"))
+          + _celda("Acción sugerida",         _val(row, "accion_sugerida"))
+          + _celda("Causa probable",          _val(row, "causa_probable"))
+        )
+
+        _ficha_html = (
+            _bloque("1 · Urgencia y estado TAT", _b1)
+          + _bloque("2 · Fechas clave",           _b2)
+          + _bloque("3 · Identificadores",        _b3)
+          + _bloque("4 · Datos económicos",       _b4)
+          + _bloque("5 · Seguimiento y acción",   _b5)
+        )
 
         st.markdown(
-            f'<div style="background:#fff;border:1px solid #e2e8f0;border-radius:18px;padding:18px 20px;margin:0.75rem 0;">'
-            f'<div style="font-size:0.78rem;font-weight:700;color:#0f172a;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:14px;">Ficha del pedido seleccionado</div>'
-            f'{celdas_html}'
+            f'<div style="background:#fff;border:1px solid #e2e8f0;border-radius:18px;'
+            f'padding:20px 22px;margin:0.75rem 0;box-shadow:0 1px 4px rgba(15,23,42,0.04);">'
+            f'<div style="font-size:0.78rem;font-weight:700;color:#0f172a;text-transform:uppercase;'
+            f'letter-spacing:0.06em;margin-bottom:16px;">Ficha del pedido seleccionado</div>'
+            f'{_ficha_html}'
             f'</div>',
             unsafe_allow_html=True,
         )
