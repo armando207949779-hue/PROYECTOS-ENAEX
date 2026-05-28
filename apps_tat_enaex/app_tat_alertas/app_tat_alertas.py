@@ -1579,70 +1579,194 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 with tab1:
     resumen = construir_resumen_ejecutivo(df_panel, df_filtrado, hoy)
 
-    COLOR_SEMAFORO = {
-        "Crítico": "#dc2626", "Atención": "#f97316",
-        "Datos incompletos": "#ca8a04", "Controlado": "#16a34a", "Sin datos": "#64748b",
+    SEMAFORO_MAP = {
+        "Crítico":          ("#dc2626", "#fee2e2", "#fecaca", "🔴"),
+        "Atención":         ("#f97316", "#fff7ed", "#fdba74", "🟠"),
+        "Datos incompletos":("#ca8a04", "#fefce8", "#fde68a", "🟡"),
+        "Controlado":       ("#16a34a", "#f0fdf4", "#bbf7d0", "🟢"),
+        "Sin datos":        ("#64748b", "#f8fafc", "#e2e8f0", "⚪"),
     }
-    color = COLOR_SEMAFORO.get(str(resumen.get("semaforo","")), "#2563eb")
+    _sem = str(resumen.get("semaforo","Sin datos"))
+    _sc, _sbg, _sbrd, _sico = SEMAFORO_MAP.get(_sem, ("#2563eb","#eff6ff","#bfdbfe","🔵"))
 
-    st.markdown(f"""
-    <div class="tat-section-card" style="border-left:6px solid {color};margin-bottom:0.5rem;">
-        <div style="font-size:0.72rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">Estado general</div>
-        <div style="font-size:1.4rem;font-weight:700;color:#0f172a;letter-spacing:-0.02em;margin-bottom:6px;">{escape(str(resumen.get('semaforo','Sin datos')))}</div>
-        <div style="font-size:0.94rem;color:#334155;line-height:1.5;margin-bottom:8px;">{escape(str(resumen.get('mensaje','')))}</div>
-        <div style="font-size:0.9rem;font-weight:600;color:#0f172a;">Acción sugerida: {escape(str(resumen.get('accion_sugerida','')))}</div>
-    </div>
-    """, unsafe_allow_html=True)
+    # ── BLOQUE SEMÁFORO ────────────────────────────────────
+    st.markdown(
+        f"""
+        <div style="background:{_sbg};border:1px solid {_sbrd};border-left:8px solid {_sc};
+                    border-radius:18px;padding:20px 24px;margin-bottom:1.1rem;
+                    box-shadow:0 2px 8px rgba(15,23,42,0.05);">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+                <span style="font-size:1.6rem;">{_sico}</span>
+                <div>
+                    <div style="font-size:0.68rem;font-weight:700;color:{_sc};text-transform:uppercase;
+                                letter-spacing:0.08em;margin-bottom:2px;">Estado general del análisis</div>
+                    <div style="font-size:1.5rem;font-weight:800;color:#0f172a;letter-spacing:-0.025em;
+                                line-height:1.1;">{escape(_sem)}</div>
+                </div>
+            </div>
+            <div style="font-size:0.95rem;color:#334155;line-height:1.55;margin-bottom:10px;
+                        padding-left:2px;">{escape(str(resumen.get('mensaje','')))}</div>
+            <div style="background:rgba(255,255,255,0.6);border:1px solid {_sbrd};border-radius:10px;
+                        padding:10px 14px;">
+                <span style="font-size:0.68rem;font-weight:700;color:{_sc};text-transform:uppercase;
+                             letter-spacing:0.07em;">Acción sugerida  </span>
+                <span style="font-size:0.92rem;font-weight:600;color:#0f172a;">{escape(str(resumen.get('accion_sugerida','')))}</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    st.markdown("#### Métricas del filtrado")
-    e1, e2, e3, e4 = st.columns(4)
-    e1.metric("Universo total",       _entero_texto(resumen.get("total_archivo",0)))
-    e2.metric("Analizados",           _entero_texto(resumen.get("total_filtrado",0)), _porcentaje_texto(float(resumen.get("pct_filtrado",0))))
-    e3.metric("Recepcionados",        _entero_texto(resumen.get("recepcionados",0)))
-    e4.metric("Sin recepción",        _entero_texto(resumen.get("sin_recepcion",0)))
+    # ── FILA 1: COBERTURA ─────────────────────────────────
+    st.markdown(
+        '<div style="font-size:0.68rem;font-weight:700;color:#94a3b8;text-transform:uppercase;'
+        'letter-spacing:0.07em;margin:0 0 8px 2px;">Cobertura del análisis</div>',
+        unsafe_allow_html=True,
+    )
+    _pct_f = float(resumen.get("pct_filtrado",0))
+    _pct_r = resumen.get("recepcionados",0) / resumen.get("total_filtrado",1) * 100 if resumen.get("total_filtrado",0) else 0
+    _pct_s = resumen.get("sin_recepcion",0)  / resumen.get("total_filtrado",1) * 100 if resumen.get("total_filtrado",0) else 0
 
-    r1, r2, r3 = st.columns(3)
-    r1.metric("Vencidos sin recepción",   _entero_texto(resumen.get("vencidos_sin_recepcion",0)))
-    r2.metric("Próximos 0-30 días",       _entero_texto(resumen.get("proximos_sin_recepcion",0)))
-    r3.metric("Sin fecha calculable",     _entero_texto(resumen.get("sin_fecha_calculable",0)))
+    cob1, cob2, cob3, cob4 = st.columns(4)
+    cob1.metric("Universo total",    _entero_texto(resumen.get("total_archivo",0)),  "registros en archivo")
+    cob2.metric("Filtrado activo",   _entero_texto(resumen.get("total_filtrado",0)), f"{_pct_f:.1f}% del archivo")
+    cob3.metric("Recepcionados",     _entero_texto(resumen.get("recepcionados",0)),  f"{_pct_r:.1f}% del filtrado")
+    cob4.metric("Sin recepción",     _entero_texto(resumen.get("sin_recepcion",0)),  f"{_pct_s:.1f}% del filtrado")
 
-    st.markdown("#### Focos de riesgo")
-    f1, f2, f3, f4 = st.columns(4)
-    f1.info(f"**Etapa pendiente dominante**\n\n{resumen.get('etapa_critica','-')}")
-    f2.info(f"**Grupo con más riesgo**\n\n{resumen.get('grupo_critico','-')}")
-    f3.info(f"**Centro con más riesgo**\n\n{resumen.get('centro_critico','-')}")
-    f4.info(f"**Solicitante con más riesgo**\n\n{resumen.get('solicitante_critico','-')}")
+    # ── FILA 2: ALERTAS CRÍTICAS ───────────────────────────
+    st.markdown(
+        '<div style="font-size:0.68rem;font-weight:700;color:#94a3b8;text-transform:uppercase;'
+        'letter-spacing:0.07em;margin:14px 0 8px 2px;">Alertas críticas (sin recepción)</div>',
+        unsafe_allow_html=True,
+    )
+    _n_venc = resumen.get("vencidos_sin_recepcion",0)
+    _n_prox = resumen.get("proximos_sin_recepcion",0)
+    _n_sf   = resumen.get("sin_fecha_calculable",0)
+    _n_sp   = resumen.get("solped_sin_pedido",0)
 
-    st.markdown("#### Radiografía del archivo completo")
-    col_rad1, col_rad2 = st.columns(2)
-    with col_rad1:
-        st.metric("Total de registros en archivo", f"{total_archivo:,}".replace(",","."))
+    def _kpi_card(titulo, valor, subtitulo, bg, brd, clr):
+        return (
+            f'<div style="background:{bg};border:1px solid {brd};border-radius:14px;padding:14px 16px;">'
+            f'<div style="font-size:0.65rem;font-weight:700;color:{clr};text-transform:uppercase;'
+            f'letter-spacing:0.06em;margin-bottom:6px;">{escape(titulo)}</div>'
+            f'<div style="font-size:1.55rem;font-weight:800;color:{clr};letter-spacing:-0.02em;'
+            f'line-height:1.1;margin-bottom:5px;">{escape(str(valor))}</div>'
+            f'<div style="font-size:0.78rem;color:#64748b;line-height:1.3;">{escape(subtitulo)}</div>'
+            f'</div>'
+        )
+
+    _kpi_html = (
+        _kpi_card("🔴 Vencidos sin recepción",  _entero_texto(_n_venc), "Superaron el umbral TAT · gestión inmediata", "#fee2e2","#fecaca","#991b1b")
+      + _kpi_card("🟠 Próximos a vencer 0–30d", _entero_texto(_n_prox), "Vencen en menos de 30 días · seguimiento urgente", "#fff7ed","#fdba74","#9a3412")
+      + _kpi_card("⚪ Sin fecha calculable",     _entero_texto(_n_sf),   "Falta solicitud, umbral o tipo OC válido", "#f8fafc","#e2e8f0","#475569")
+      + _kpi_card("📋 SolPed sin pedido",        _entero_texto(_n_sp),   "No tienen OC asociada en el filtrado activo", "#f8fafc","#e2e8f0","#475569")
+    )
+    st.markdown(
+        f'<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:1rem;">{_kpi_html}</div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── DISTRIBUCIÓN VISUAL DEL FILTRADO ──────────────────
+    st.markdown(
+        '<div style="font-size:0.68rem;font-weight:700;color:#94a3b8;text-transform:uppercase;'
+        'letter-spacing:0.07em;margin:4px 0 8px 2px;">Distribución del filtrado activo</div>',
+        unsafe_allow_html=True,
+    )
+    _er_t1  = df_filtrado[COL_ESTADO_RECEPCION_ALERTA].astype(str) if COL_ESTADO_RECEPCION_ALERTA in df_filtrado.columns else pd.Series("Sin recepción", index=df_filtrado.index)
+    _dr_t1  = pd.to_numeric(df_filtrado.get("dias_restantes_int", pd.Series(np.nan, index=df_filtrado.index)), errors="coerce")
+    _sr_t1  = _er_t1.eq("Sin recepción")
+    _grupos_t1 = [
+        ("🔴 Vencidos sin recepción",          int((_sr_t1 & _dr_t1.lt(0)).sum()),                          "#fee2e2","#fecaca","#991b1b"),
+        ("🟠 Próximos a vencer (0–30 días)",   int((_sr_t1 & _dr_t1.between(0,30,inclusive="both")).sum()), "#fff7ed","#fdba74","#9a3412"),
+        ("🟡 Por vencer (>30 días)",            int((_sr_t1 & _dr_t1.gt(30)).sum()),                         "#fefce8","#fde68a","#854d0e"),
+        ("✅ Recepcionados",                    int(_er_t1.eq("Recepcionado").sum()),                         "#f0fdf4","#bbf7d0","#166534"),
+        ("⚪ Sin fecha calculable (sin rec.)",  int((_sr_t1 & _dr_t1.isna()).sum()),                          "#f8fafc","#e2e8f0","#475569"),
+    ]
+    _n_t1 = filtrados; _acum_t1 = 0; _dist_html = ""
+    for _ng1, _cg1, _bg1, _br1, _cl1 in _grupos_t1:
+        _p1 = _cg1 / _n_t1 * 100 if _n_t1 else 0
+        _acum_t1 += _cg1; _pa1 = _acum_t1 / _n_t1 * 100 if _n_t1 else 0
+        _dist_html += (
+            f'<div style="display:grid;grid-template-columns:2.4fr 70px 70px 82px 1fr;align-items:center;gap:10px;'
+            f'padding:9px 14px;background:{_bg1};border:1px solid {_br1};border-radius:11px;margin-bottom:5px;">'
+            f'<div style="font-size:0.88rem;font-weight:600;color:{_cl1};">{_ng1}</div>'
+            f'<div style="font-size:0.98rem;font-weight:800;color:{_cl1};text-align:right;">{_cg1:,}</div>'
+            f'<div style="font-size:0.84rem;color:#64748b;text-align:right;">{_p1:.1f}%</div>'
+            f'<div style="font-size:0.82rem;color:#94a3b8;text-align:right;">{_pa1:.1f}% acum.</div>'
+            f'<div style="background:#e2e8f0;border-radius:99px;height:8px;overflow:hidden;">'
+            f'<div style="background:{_cl1};width:{max(2,_p1):.1f}%;height:100%;border-radius:99px;opacity:0.65;"></div>'
+            f'</div></div>'
+        ).replace(",",".")
+    _otros_t1 = max(0, _n_t1 - _acum_t1)
+    if _otros_t1 > 0:
+        _dist_html += (
+            f'<div style="display:grid;grid-template-columns:2.4fr 70px 70px 82px 1fr;align-items:center;gap:10px;'
+            f'padding:9px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:11px;margin-bottom:5px;">'
+            f'<div style="font-size:0.88rem;font-weight:600;color:#475569;">⬜ Otros</div>'
+            f'<div style="font-size:0.98rem;font-weight:800;color:#475569;text-align:right;">{_otros_t1:,}</div>'
+            f'<div style="font-size:0.84rem;color:#64748b;text-align:right;">{_otros_t1/_n_t1*100:.1f}%</div>'
+            f'<div style="font-size:0.82rem;color:#94a3b8;text-align:right;"></div><div></div></div>'
+        ).replace(",",".")
+    _dist_html += (
+        f'<div style="display:grid;grid-template-columns:2.4fr 70px 70px 82px 1fr;align-items:center;gap:10px;'
+        f'padding:9px 14px;background:#f1f5f9;border:2px solid #94a3b8;border-radius:11px;">'
+        f'<div style="font-size:0.88rem;font-weight:800;color:#0f172a;">TOTAL FILTRADO</div>'
+        f'<div style="font-size:0.98rem;font-weight:900;color:#0f172a;text-align:right;">{_n_t1:,}</div>'
+        f'<div style="font-size:0.84rem;font-weight:700;color:#334155;text-align:right;">100%</div>'
+        f'<div></div><div></div></div>'
+    ).replace(",",".")
+    st.markdown(f'<div style="margin:0 0 1.1rem 0;">{_dist_html}</div>', unsafe_allow_html=True)
+
+    # ── FOCOS DE RIESGO ────────────────────────────────────
+    st.markdown(
+        '<div style="font-size:0.68rem;font-weight:700;color:#94a3b8;text-transform:uppercase;'
+        'letter-spacing:0.07em;margin:4px 0 8px 2px;">Focos de riesgo identificados</div>',
+        unsafe_allow_html=True,
+    )
+    _focos = [
+        ("Etapa pendiente dominante", resumen.get("etapa_critica","-"),     "Hito sin completar más frecuente en pedidos con riesgo"),
+        ("Grupo con más riesgo",      resumen.get("grupo_critico","-"),     "Grupo de compras con mayor concentración de alertas"),
+        ("Centro con más riesgo",     resumen.get("centro_critico","-"),    "Centro operativo con mayor exposición al vencimiento"),
+        ("Solicitante con más riesgo",resumen.get("solicitante_critico","-"),"Solicitante con más pedidos en riesgo de vencer"),
+    ]
+    _focos_html = ""
+    for _ft, _fv, _fd in _focos:
+        _focos_html += (
+            f'<div style="background:#fff;border:1px solid #e2e8f0;border-radius:13px;padding:13px 15px;">'
+            f'<div style="font-size:0.65rem;font-weight:700;color:#94a3b8;text-transform:uppercase;'
+            f'letter-spacing:0.06em;margin-bottom:5px;">{escape(_ft)}</div>'
+            f'<div style="font-size:1.0rem;font-weight:700;color:#0f172a;margin-bottom:4px;">{escape(str(_fv))}</div>'
+            f'<div style="font-size:0.75rem;color:#64748b;line-height:1.35;">{escape(_fd)}</div>'
+            f'</div>'
+        )
+    st.markdown(
+        f'<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:1.1rem;">{_focos_html}</div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── RADIOGRAFÍA DEL ARCHIVO ────────────────────────────
+    st.markdown(
+        '<div style="font-size:0.68rem;font-weight:700;color:#94a3b8;text-transform:uppercase;'
+        'letter-spacing:0.07em;margin:4px 0 8px 2px;">Radiografía del archivo completo</div>',
+        unsafe_allow_html=True,
+    )
+    _rad_c1, _rad_c2 = st.columns([1, 1])
+    with _rad_c1:
+        st.metric("Total en archivo", f"{total_archivo:,}".replace(",","."), "registros cargados")
         if COL_CENTRO in df_panel.columns:
-            centros_dist = df_panel[COL_CENTRO].dropna().astype(str).value_counts().reset_index()
-            centros_dist.columns = ["Centro","Cantidad"]
-            centros_dist["Centro"] = centros_dist["Centro"].map(etiqueta_centro)
-            centros_dist["% total"] = (centros_dist["Cantidad"] / total_archivo * 100).round(1)
-            with st.expander(f"Distribución por centro ({centros_dist['Centro'].nunique()} centros)", expanded=False):
-                st.dataframe(centros_dist, use_container_width=True, hide_index=True)
-    with col_rad2:
+            _cd = df_panel[COL_CENTRO].dropna().astype(str).value_counts().reset_index()
+            _cd.columns = ["Centro","Cantidad"]
+            _cd["Centro"] = _cd["Centro"].map(etiqueta_centro)
+            _cd["% total"] = (_cd["Cantidad"] / total_archivo * 100).round(1)
+            with st.expander(f"Distribución por centro ({_cd['Centro'].nunique()} centros)", expanded=False):
+                st.dataframe(_cd, use_container_width=True, hide_index=True)
+    with _rad_c2:
         if COL_ESTADO_RECEPCION_ALERTA in df_panel.columns:
-            rec_dist = df_panel[COL_ESTADO_RECEPCION_ALERTA].value_counts().reset_index()
-            rec_dist.columns = ["Recepción","Cantidad"]
-            rec_dist["% total"] = (rec_dist["Cantidad"] / total_archivo * 100).round(1)
-            for _, frow in rec_dist.iterrows():
-                label = str(frow["Recepción"])
-                st.metric(label, f"{int(frow['Cantidad']):,}".replace(",","."), f"{frow['% total']:.1f}%")
-
-    st.markdown("#### Conciliación del total filtrado")
-    df_conc = construir_conciliacion(df_filtrado)
-    def estilo_conc(row):
-        g = str(row.get("Grupo","")).lower()
-        base = [""] * len(row)
-        if g == "total filtrado": return ["background-color:#f1f5f9;font-weight:800;border-top:2px solid #94a3b8;"]*len(row)
-        if "vencidos" in g: return ["background-color:#fee2e2;color:#991b1b;font-weight:700;"]*len(row)
-        if "próximos" in g or "proximos" in g: return ["background-color:#ffedd5;color:#9a3412;font-weight:700;"]*len(row)
-        return base
-    st.dataframe(df_conc.style.apply(estilo_conc, axis=1), use_container_width=True, hide_index=True)
+            _rd = df_panel[COL_ESTADO_RECEPCION_ALERTA].value_counts().reset_index()
+            _rd.columns = ["Recepción","Cantidad"]
+            _rd["% total"] = (_rd["Cantidad"] / total_archivo * 100).round(1)
+            for _, _rf in _rd.iterrows():
+                st.metric(str(_rf["Recepción"]), f"{int(_rf['Cantidad']):,}".replace(",","."), f"{_rf['% total']:.1f}% del archivo")
 
 
 # ══════════════════════════════════════════════════════════
@@ -2003,6 +2127,44 @@ with tab4:
         st.markdown("#### Gestión visual de críticos")
         st.caption("Filtra, prioriza y elige el pedido a expeditar. Los filtros aquí solo afectan el selector del expediente.")
 
+        # ── Distribución de los registros filtrados (igual que en Alertas) ──
+        _er_exp = df_exp_base[COL_ESTADO_RECEPCION_ALERTA].astype(str) if COL_ESTADO_RECEPCION_ALERTA in df_exp_base.columns else pd.Series("Sin recepción", index=df_exp_base.index)
+        _dr_exp = pd.to_numeric(df_exp_base.get("dias_restantes_int", pd.Series(np.nan, index=df_exp_base.index)), errors="coerce")
+        _sr_exp = _er_exp.eq("Sin recepción")
+        _gd = [
+            ("🔴 Vencidos sin recepción",          int((_sr_exp & _dr_exp.lt(0)).sum()),  "#fee2e2","#fecaca","#991b1b"),
+            ("🟠 Próximos a vencer (0–30 días)",   int((_sr_exp & _dr_exp.between(0,30,inclusive="both")).sum()), "#fff7ed","#fdba74","#9a3412"),
+            ("🟡 Por vencer (>30 días)",            int((_sr_exp & _dr_exp.gt(30)).sum()), "#fefce8","#fde68a","#854d0e"),
+            ("✅ Recepcionados",                    int(_er_exp.eq("Recepcionado").sum()), "#f0fdf4","#bbf7d0","#166534"),
+            ("⚪ Sin fecha calculable (sin rec.)",  int((_sr_exp & _dr_exp.isna()).sum()), "#f8fafc","#e2e8f0","#475569"),
+        ]
+        _n_gd = len(df_exp_base)
+        _gd_html = ""
+        _acum_gd = 0
+        for _ng, _cg, _bg_g, _br_g, _cl_g in _gd:
+            _p = _cg / _n_gd * 100 if _n_gd else 0
+            _acum_gd += _cg; _pa = _acum_gd / _n_gd * 100 if _n_gd else 0
+            _gd_html += (
+                f'<div style="display:grid;grid-template-columns:2.2fr 70px 70px 80px 1fr;align-items:center;gap:10px;'
+                f'padding:9px 13px;background:{_bg_g};border:1px solid {_br_g};border-radius:11px;margin-bottom:5px;">'
+                f'<div style="font-size:0.86rem;font-weight:600;color:{_cl_g};">{_ng}</div>'
+                f'<div style="font-size:0.95rem;font-weight:800;color:{_cl_g};text-align:right;">{_cg:,}</div>'
+                f'<div style="font-size:0.84rem;color:#64748b;text-align:right;">{_p:.1f}%</div>'
+                f'<div style="font-size:0.82rem;color:#94a3b8;text-align:right;">{_pa:.1f}% acum.</div>'
+                f'<div style="background:#e2e8f0;border-radius:99px;height:7px;overflow:hidden;">'
+                f'<div style="background:{_cl_g};width:{max(2,_p):.1f}%;height:100%;border-radius:99px;opacity:0.65;"></div>'
+                f'</div></div>'
+            ).replace(",",".")
+        _gd_html += (
+            f'<div style="display:grid;grid-template-columns:2.2fr 70px 70px 80px 1fr;align-items:center;gap:10px;'
+            f'padding:9px 13px;background:#f1f5f9;border:2px solid #94a3b8;border-radius:11px;">'
+            f'<div style="font-size:0.86rem;font-weight:800;color:#0f172a;">TOTAL FILTRADO</div>'
+            f'<div style="font-size:0.95rem;font-weight:900;color:#0f172a;text-align:right;">{_n_gd:,}</div>'
+            f'<div style="font-size:0.84rem;font-weight:700;color:#334155;text-align:right;">100%</div>'
+            f'<div></div><div></div></div>'
+        ).replace(",",".")
+        st.markdown(f'<div style="margin:0.5rem 0 1rem 0;">{_gd_html}</div>', unsafe_allow_html=True)
+
         col_g1, col_g2, col_g3, col_g4 = st.columns(4)
         niveles_disp   = sorted(df_exp_base["nivel_alerta"].dropna().astype(str).unique().tolist()) if "nivel_alerta" in df_exp_base.columns else []
         urgencias_disp = [u for u in ["Vencido","Vence hoy","1 día","2 días","3 días","4 días","5 días","6 días","7 días","7 a 30 días","Más de 1 mes","Sin datos"]
@@ -2059,16 +2221,50 @@ with tab4:
         st.markdown("#### Expediente detallado del pedido")
 
         max_sel = 5000
+        n_exp_total  = len(df_exp_base)
+        n_exp_selector = min(max_sel, n_exp_total)
+
+        # ── Contexto de cobertura ──────────────────────────
+        _pct_sel = n_exp_selector / filtrados * 100 if filtrados else 0
+        _pct_exp = n_exp_total / filtrados * 100 if filtrados else 0
+        st.markdown(
+            f"""
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin:0.5rem 0 1rem 0;">
+                <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:13px 16px;">
+                    <div style="font-size:0.65rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">Total en archivo</div>
+                    <div style="font-size:1.35rem;font-weight:800;color:#0f172a;">{total_archivo:,}</div>
+                    <div style="font-size:0.78rem;color:#94a3b8;margin-top:2px;">registros en el archivo cargado</div>
+                </div>
+                <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:13px 16px;">
+                    <div style="font-size:0.65rem;font-weight:700;color:#1e40af;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">Filtrado activo</div>
+                    <div style="font-size:1.35rem;font-weight:800;color:#1e40af;">{n_exp_total:,}
+                        <span style="font-size:0.85rem;font-weight:600;color:#3b82f6;"> ({_pct_exp:.1f}% del archivo)</span>
+                    </div>
+                    <div style="font-size:0.78rem;color:#3b82f6;margin-top:2px;">registros disponibles para expediente</div>
+                </div>
+                <div style="background:#{'fef9c3' if n_exp_selector < n_exp_total else 'f0fdf4'};border:1px solid #{'fde68a' if n_exp_selector < n_exp_total else 'bbf7d0'};border-radius:12px;padding:13px 16px;">
+                    <div style="font-size:0.65rem;font-weight:700;color:#{'854d0e' if n_exp_selector < n_exp_total else '166534'};text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">En el selector</div>
+                    <div style="font-size:1.35rem;font-weight:800;color:#{'854d0e' if n_exp_selector < n_exp_total else '166534'};">{n_exp_selector:,}
+                        <span style="font-size:0.85rem;font-weight:600;"> ({_pct_sel:.1f}% del archivo)</span>
+                    </div>
+                    <div style="font-size:0.78rem;color:#{'ca8a04' if n_exp_selector < n_exp_total else '16a34a'};margin-top:2px;">{'Limitado al máximo del selector — usa filtros para acotar' if n_exp_selector < n_exp_total else 'Todos los registros filtrados disponibles'}</div>
+                </div>
+            </div>
+            """.replace(",", "."),
+            unsafe_allow_html=True,
+        )
+
         opciones = df_exp_base.index.tolist()[:max_sel]
         sugerido = st.session_state.get("exp_sugerido")
         if sugerido in df_exp_base.index and sugerido not in opciones: opciones = [sugerido] + opciones[:-1]
         elif sugerido in opciones: opciones = [sugerido] + [i for i in opciones if i != sugerido]
-        if len(df_exp_base) > max_sel:
-            st.caption(f"Selector muestra los primeros {max_sel:,} de {len(df_exp_base):,} registros.".replace(",","."))
 
         labels_sel  = {idx: construir_label_critico(df_exp_base.loc[idx]) for idx in opciones}
         idx_default = opciones.index(sugerido) if sugerido in opciones else 0
-        seleccionado = st.selectbox("Seleccionar pedido", opciones, index=idx_default, format_func=lambda i: labels_sel.get(i, str(i)))
+        seleccionado = st.selectbox(
+            f"Seleccionar pedido ({n_exp_selector:,} disponibles en selector · {n_exp_total:,} en filtrado · {total_archivo:,} en archivo)".replace(",","."),
+            opciones, index=idx_default, format_func=lambda i: labels_sel.get(i, str(i)),
+        )
         row = df_exp_base.loc[seleccionado]
 
         # ── Ficha estructurada por bloques lógicos ──
