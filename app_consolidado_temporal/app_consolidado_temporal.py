@@ -78,6 +78,146 @@ MESES_ABREV = [
 
 
 # =========================
+# Metadata de fuentes de datos
+# =========================
+
+FUENTES_METADATA = {
+    "Dólar SII": {
+        "institucion": "Servicio de Impuestos Internos (SII)",
+        "descripcion": (
+            "Tipo de cambio del dólar observado publicado mensualmente por el SII. "
+            "Incluye el valor promedio mensual y el último valor observado del mes."
+        ),
+        "url": "https://www.sii.cl/valores_y_fechas/dolar/dolar{anio}.htm",
+        "url_display": "https://www.sii.cl/valores_y_fechas/dolar/",
+        "logica": (
+            "Se accede a la página HTML del SII por año. Se parsean las tablas HTML "
+            "buscando la que contiene columna 'Día' y meses abreviados (≥8 meses). "
+            "Se extrae la fila 'Promedio' y el último día con dato para cada mes."
+        ),
+        "frecuencia": "Mensual",
+        "columnas_generadas": ["Dolar promedio SII", "Dolar ultimo observado SII", "Dolar ultimo dia observado"],
+    },
+    "UTM SII": {
+        "institucion": "Servicio de Impuestos Internos (SII)",
+        "descripcion": (
+            "Unidad Tributaria Mensual (UTM) y Anual (UTA) publicadas por el SII. "
+            "Incluye variaciones mensuales, acumuladas y a 12 meses, además del valor IPC en puntos SII."
+        ),
+        "url": "https://www.sii.cl/valores_y_fechas/utm/utm{anio}.htm",
+        "url_display": "https://www.sii.cl/valores_y_fechas/utm/",
+        "logica": (
+            "Se accede a la página HTML del SII por año. Se parsean las tablas HTML "
+            "buscando la que contiene 'mes', 'utm', 'uta' e 'ipc'. "
+            "Se renombran las 7 primeras columnas con nombres estandarizados."
+        ),
+        "frecuencia": "Mensual",
+        "columnas_generadas": ["UTM", "UTA", "IPC valor puntos SII", "UTM variacion mensual", "UTM variacion acumulado", "UTM variacion 12 meses"],
+    },
+    "IPC INE": {
+        "institucion": "Instituto Nacional de Estadísticas (INE)",
+        "descripcion": (
+            "Índice de Precios al Consumidor (IPC) General publicado por el INE. "
+            "Base anual 2023=100. Incluye variaciones mensuales, acumuladas y a 12 meses."
+        ),
+        "url": "https://www.ine.gob.cl/estadisticas-por-tema/precios-e-inflacion/indice-de-precios-al-consumidor",
+        "url_display": "https://www.ine.gob.cl/estadisticas-por-tema/precios-e-inflacion/indice-de-precios-al-consumidor",
+        "logica": (
+            "Se descarga directamente el archivo Excel 'ipc-xls.xlsx' desde el servidor del INE. "
+            "Si la URL directa falla, se realiza búsqueda automática de enlaces .xls/.xlsx en la página del INE. "
+            "Se busca la hoja que contiene encabezados 'Año', 'Mes' y 'Glosa', y se filtra por Glosa='IPC General'."
+        ),
+        "frecuencia": "Mensual",
+        "columnas_generadas": ["IPC INE indice", "IPC INE variacion mensual", "IPC INE variacion acumulada", "IPC INE variacion 12 meses"],
+    },
+    "ICL INE": {
+        "institucion": "Instituto Nacional de Estadísticas (INE)",
+        "descripcion": (
+            "Índice de Costo Laboral (ICL) publicado por el INE. "
+            "Base anual 2023=100. Mide la evolución del costo total del trabajo para el empleador."
+        ),
+        "url": "https://www.ine.gob.cl/estadisticas-por-tema/mercado-laboral/remuneraciones-y-costos-laborales",
+        "url_display": "https://www.ine.gob.cl/estadisticas-por-tema/mercado-laboral/remuneraciones-y-costos-laborales",
+        "logica": (
+            "Se descarga el archivo Excel 'tabulado_icl.xlsx' desde el servidor del INE. "
+            "Si la URL directa falla, se buscan automáticamente enlaces con 'tabulado_icl' o 'series-base' en la página. "
+            "Se detecta la hoja que contiene columnas 'año', 'mes' e 'índice' (normalizado sin tildes)."
+        ),
+        "frecuencia": "Trimestral / Mensual según publicación",
+        "columnas_generadas": ["ICL INE indice"],
+    },
+    "IR INE": {
+        "institucion": "Instituto Nacional de Estadísticas (INE)",
+        "descripcion": (
+            "Índice de Remuneraciones (IR) publicado por el INE. "
+            "Base anual 2023=100. Mide la evolución de las remuneraciones nominales pagadas."
+        ),
+        "url": "https://www.ine.gob.cl/estadisticas-por-tema/mercado-laboral/remuneraciones-y-costos-laborales",
+        "url_display": "https://www.ine.gob.cl/estadisticas-por-tema/mercado-laboral/remuneraciones-y-costos-laborales",
+        "logica": (
+            "Se descarga el archivo Excel 'tabulado_ir.xlsx' desde el servidor del INE. "
+            "Si la URL directa falla, se priorizan enlaces con 'tabulado_ir' y 'series-base' en la página. "
+            "Se detecta la hoja que contiene columnas 'año', 'mes' e 'índice' (normalizado sin tildes)."
+        ),
+        "frecuencia": "Mensual",
+        "columnas_generadas": ["IR INE indice"],
+    },
+    "MOP": {
+        "institucion": "Ministerio de Obras Públicas (MOP)",
+        "descripcion": (
+            "Índices y precios para el cálculo del reajuste polinómico de contratos MOP. "
+            "Incluye IPC, Índice de Remuneraciones, Petróleo Diesel, Dólar observado "
+            "y Petróleo Diesel refinería CONCÓN."
+        ),
+        "url": "https://planeamiento.mop.gob.cl/indices-y-precios-para-calculo-del-reajuste-polinomico/",
+        "url_display": "https://planeamiento.mop.gob.cl/indices-y-precios-para-calculo-del-reajuste-polinomico/",
+        "logica": (
+            "Se scrapea la página del MOP buscando todos los enlaces a archivos .xls/.xlsx. "
+            "Se infiere el mes y año desde el nombre del archivo (ej: 'planilla_enero_2024.xlsx'). "
+            "Para cada archivo se lee la hoja 'planilla' (o la primera disponible) y se extraen "
+            "los ítems específicos por número de ítem: 1=IPC, 2=Remuneraciones, 3=Diesel, 22=Dólar, 27=Diesel CONCÓN."
+        ),
+        "frecuencia": "Mensual",
+        "columnas_generadas": [
+            "MOP 1 (Índice de precios al consumidor)",
+            "MOP 2 (Índice de remuneraciones)",
+            "MOP 3 (Petróleo Diesel)",
+            "MOP 22 (Dólar observado)",
+            "MOP 27 (Petróleo Diesel refinería CONCÓN)"
+        ],
+    },
+}
+
+# Mapeo columna -> nombre fuente para alertas
+COLUMNA_A_FUENTE = {
+    "Dolar promedio SII": "Dólar SII",
+    "Dolar ultimo observado SII": "Dólar SII",
+    "UTM": "UTM SII",
+    "IPC valor puntos SII": "UTM SII",
+    "IPC INE indice": "IPC INE",
+    "ICL INE indice": "ICL INE",
+    "IR INE indice": "IR INE",
+    "MOP 1 (Índice de precios al consumidor)": "MOP",
+    "MOP 2 (Índice de remuneraciones)": "MOP",
+    "MOP 3 (Petróleo Diesel)": "MOP",
+    "MOP 22 (Dólar observado)": "MOP",
+    "MOP 27 (Petróleo Diesel refinería CONCÓN)": "MOP",
+}
+
+# Columnas clave para alertas (las más usadas en cálculos)
+COLUMNAS_CLAVE_ALERTAS = [
+    "Dolar promedio SII",
+    "UTM",
+    "IPC INE indice",
+    "ICL INE indice",
+    "IR INE indice",
+    "MOP 2 (Índice de remuneraciones)",
+    "MOP 3 (Petróleo Diesel)",
+    "MOP 27 (Petróleo Diesel refinería CONCÓN)",
+]
+
+
+# =========================
 # Logo
 # =========================
 
@@ -1467,6 +1607,319 @@ def crear_excel_consolidado_calculado(df_calculado):
 
 
 # =========================
+# NUEVO: Panel de alertas de disponibilidad
+# =========================
+
+def analizar_alertas_datos(df_calculado, n_meses_recientes=3):
+    """
+    Analiza los últimos N meses del consolidado para detectar valores faltantes
+    en columnas clave. Devuelve una lista de alertas con detalle.
+    """
+    alertas = []
+
+    if df_calculado.empty:
+        return alertas
+
+    df_sorted = df_calculado.sort_values(["Año", "Mes"], ascending=[True, True])
+
+    # Obtenemos los últimos N meses con datos
+    ultimas_filas = df_sorted.tail(n_meses_recientes)
+
+    for _, fila in ultimas_filas.iterrows():
+        anio = int(fila["Año"]) if not pd.isna(fila.get("Año")) else "?"
+        mes = int(fila["Mes"]) if not pd.isna(fila.get("Mes")) else "?"
+        mes_nombre = MESES_NOMBRE.get(mes, str(mes))
+        periodo = f"{mes_nombre} {anio}"
+
+        for columna in COLUMNAS_CLAVE_ALERTAS:
+            if columna not in fila.index:
+                continue
+
+            valor = fila[columna]
+
+            if pd.isna(valor):
+                fuente = COLUMNA_A_FUENTE.get(columna, "Desconocida")
+                metadata = FUENTES_METADATA.get(fuente, {})
+                url_oficial = metadata.get("url_display", "")
+
+                alertas.append({
+                    "periodo": periodo,
+                    "anio": anio,
+                    "mes": mes,
+                    "columna": columna,
+                    "fuente": fuente,
+                    "url_oficial": url_oficial,
+                })
+
+    # Ordenar por período descendente (más reciente primero), luego columna
+    alertas_sorted = sorted(
+        alertas,
+        key=lambda x: (-(x["anio"] if isinstance(x["anio"], int) else 0),
+                       -(x["mes"] if isinstance(x["mes"], int) else 0),
+                       x["columna"])
+    )
+
+    return alertas_sorted
+
+
+def mostrar_panel_alertas(df_calculado, n_meses=3):
+    """
+    Muestra el panel de alertas de disponibilidad de datos.
+    """
+    st.markdown("---")
+    st.subheader("⚠️ Panel de alertas: disponibilidad de datos recientes")
+
+    alertas = analizar_alertas_datos(df_calculado, n_meses_recientes=n_meses)
+
+    col_slider, _ = st.columns([1, 3])
+    with col_slider:
+        n_meses = st.slider(
+            "Meses recientes a revisar",
+            min_value=1,
+            max_value=12,
+            value=n_meses,
+            key="slider_alertas_meses"
+        )
+
+    # Recalcular con el slider
+    alertas = analizar_alertas_datos(df_calculado, n_meses_recientes=n_meses)
+
+    if not alertas:
+        st.success(
+            f"✅ Sin alertas: todos los indicadores clave tienen datos "
+            f"en los últimos {n_meses} mes(es) disponibles."
+        )
+        return
+
+    # Agrupar por período para una presentación más clara
+    periodos = {}
+    for alerta in alertas:
+        p = alerta["periodo"]
+        if p not in periodos:
+            periodos[p] = []
+        periodos[p].append(alerta)
+
+    st.markdown(
+        f"""
+        <div style="
+            background: #FFF3CD;
+            border: 1px solid #FFC107;
+            border-left: 5px solid #FF9800;
+            border-radius: 6px;
+            padding: 14px 18px;
+            margin-bottom: 12px;
+        ">
+            <strong>🔍 Se detectaron {len(alertas)} indicador(es) sin dato
+            en los últimos {n_meses} mes(es) revisados.</strong><br>
+            <span style="font-size:0.92em;">
+            Verifica si la información aún no fue publicada en la fuente oficial,
+            o si hay un problema en la extracción que requiere mantención del código.
+            </span>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    for periodo, items in periodos.items():
+        with st.expander(f"📅 {periodo} — {len(items)} indicador(es) faltante(s)", expanded=True):
+            for item in items:
+                fuente = item["fuente"]
+                columna = item["columna"]
+                url = item["url_oficial"]
+
+                url_html = (
+                    f'<a href="{url}" target="_blank">{url}</a>'
+                    if url else "—"
+                )
+
+                st.markdown(
+                    f"""
+                    <div style="
+                        background: #fff;
+                        border: 1px solid #e0e0e0;
+                        border-radius: 5px;
+                        padding: 10px 14px;
+                        margin-bottom: 8px;
+                        font-size: 0.93em;
+                    ">
+                        <b>🔸 Indicador faltante:</b> <code>{columna}</code><br>
+                        <b>📌 Fuente:</b> {fuente}<br>
+                        <b>🌐 URL oficial para verificar:</b> {url_html}<br>
+                        <br>
+                        <details>
+                            <summary style="cursor:pointer; color:#555;">
+                                ℹ️ ¿Qué verificar?
+                            </summary>
+                            <ul style="margin-top:6px;">
+                                <li>Ingresa a la URL oficial y confirma si el dato del período
+                                    <b>{periodo}</b> ya fue publicado.</li>
+                                <li>Si el dato <b>sí está publicado</b> en la fuente oficial
+                                    pero no aparece aquí → <b>se requiere mantención del código</b>
+                                    (puede haber cambiado la estructura del archivo o la URL).</li>
+                                <li>Si el dato <b>aún no está publicado</b> → esperar la
+                                    publicación oficial y regenerar el consolidado.</li>
+                            </ul>
+                        </details>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
+
+# =========================
+# NUEVO: Gráficos automáticos por indicador
+# =========================
+
+# Agrupaciones de indicadores para los gráficos automáticos
+GRUPOS_GRAFICOS = [
+    {
+        "titulo": "💵 Dólar SII",
+        "columnas": ["Dolar promedio SII", "Dolar ultimo observado SII"],
+        "descripcion": "Evolución del tipo de cambio dólar publicado por el SII.",
+    },
+    {
+        "titulo": "📐 UTM",
+        "columnas": ["UTM"],
+        "descripcion": "Evolución de la Unidad Tributaria Mensual (UTM) del SII.",
+    },
+    {
+        "titulo": "📈 IPC — Comparativa SII vs INE",
+        "columnas": ["IPC valor puntos SII", "IPC INE indice"],
+        "descripcion": "Comparativa del IPC reportado por SII (puntos) vs índice INE (base 2023=100).",
+    },
+    {
+        "titulo": "👷 ICL e IR INE",
+        "columnas": ["ICL INE indice", "IR INE indice"],
+        "descripcion": "Índice de Costo Laboral e Índice de Remuneraciones publicados por el INE.",
+    },
+    {
+        "titulo": "🏗️ MOP — Índices de remuneraciones",
+        "columnas": ["MOP 2 (Índice de remuneraciones)", "Item 2 calculado"],
+        "descripcion": "MOP Ítem 2 (oficial) vs Ítem 2 calculado a partir del ICL INE.",
+    },
+    {
+        "titulo": "⛽ MOP — Petróleo Diesel",
+        "columnas": [
+            "MOP 3 (Petróleo Diesel)",
+            "MOP 27 (Petróleo Diesel refinería CONCÓN)",
+            "Item 3 calculado"
+        ],
+        "descripcion": "MOP Ítems 3 y 27 (Diesel) y el Ítem 3 calculado.",
+    },
+    {
+        "titulo": "🌐 MOP — Dólar observado",
+        "columnas": ["MOP 22 (Dólar observado)"],
+        "descripcion": "Dólar observado según planilla MOP.",
+    },
+    {
+        "titulo": "📊 MOP — IPC",
+        "columnas": ["MOP 1 (Índice de precios al consumidor)"],
+        "descripcion": "Índice de precios al consumidor según planilla MOP.",
+    },
+]
+
+
+def mostrar_graficos_automaticos(df_calculado):
+    """
+    Muestra gráficos individuales por grupo de indicadores, de forma automática.
+    """
+    st.markdown("---")
+    st.subheader("📉 Gráficos temporales por indicador")
+
+    if df_calculado.empty or "Fecha" not in df_calculado.columns:
+        st.info("No hay datos disponibles para graficar.")
+        return
+
+    df_base = df_calculado.set_index("Fecha")
+
+    cols_disponibles = set(df_calculado.columns)
+
+    for grupo in GRUPOS_GRAFICOS:
+        columnas_grupo = [
+            c for c in grupo["columnas"]
+            if c in cols_disponibles
+        ]
+
+        if not columnas_grupo:
+            continue
+
+        # Verificar que al menos una columna tenga datos reales
+        tiene_datos = any(
+            df_calculado[c].notna().any()
+            for c in columnas_grupo
+        )
+
+        if not tiene_datos:
+            continue
+
+        with st.expander(grupo["titulo"], expanded=False):
+            st.caption(grupo["descripcion"])
+
+            df_grafico = df_base[columnas_grupo].dropna(how="all")
+
+            if df_grafico.empty:
+                st.info("Sin datos disponibles para este grupo.")
+                continue
+
+            st.line_chart(df_grafico)
+
+            # Mini tabla de últimos 6 valores
+            ultimos = df_calculado[["Fecha", "Año", "Mes nombre"] + columnas_grupo].tail(6)
+            st.dataframe(
+                ultimos.rename(columns={"Mes nombre": "Mes"}),
+                use_container_width=True,
+                hide_index=True
+            )
+
+
+# =========================
+# NUEVO: Panel de detalle de fuentes
+# =========================
+
+def mostrar_panel_fuentes():
+    """
+    Muestra un expander con el detalle de cada fuente de datos: institución,
+    descripción, URL y lógica de extracción.
+    """
+    st.markdown("---")
+    st.subheader("📚 Origen y lógica de extracción de datos")
+
+    st.markdown(
+        "Detalle de cada fuente de datos utilizada en el consolidado: "
+        "institución responsable, descripción del indicador, URL de origen "
+        "y lógica de extracción automatizada.",
+    )
+
+    for nombre_fuente, meta in FUENTES_METADATA.items():
+        with st.expander(f"🔷 {nombre_fuente}", expanded=False):
+            col1, col2 = st.columns([1, 2])
+
+            with col1:
+                st.markdown(f"**🏛️ Institución**")
+                st.write(meta["institucion"])
+
+                st.markdown(f"**🔁 Frecuencia**")
+                st.write(meta["frecuencia"])
+
+                st.markdown(f"**🔗 URL oficial**")
+                st.markdown(
+                    f'<a href="{meta["url_display"]}" target="_blank">{meta["url_display"]}</a>',
+                    unsafe_allow_html=True
+                )
+
+                st.markdown(f"**📦 Columnas generadas**")
+                for col in meta["columnas_generadas"]:
+                    st.markdown(f"- `{col}`")
+
+            with col2:
+                st.markdown(f"**📝 Descripción**")
+                st.write(meta["descripcion"])
+
+                st.markdown(f"**⚙️ Lógica de extracción**")
+                st.info(meta["logica"])
+
+
+# =========================
 # App Streamlit
 # =========================
 
@@ -1491,6 +1944,9 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
+# Panel de fuentes siempre visible antes de generar
+mostrar_panel_fuentes()
 
 st.markdown("---")
 
@@ -1622,6 +2078,7 @@ if "df_consolidado_temporal" in st.session_state:
                     errors="coerce"
                 )
 
+        # ── 1. Tabla consolidada ──────────────────────────────────────────
         st.subheader("Consolidado con columnas calculadas")
 
         st.dataframe(
@@ -1635,6 +2092,13 @@ if "df_consolidado_temporal" in st.session_state:
             "Item 2 calculado se muestra junto a ICL INE indice, MOP 2 e IR INE indice."
         )
 
+        # ── 2. Panel de alertas ───────────────────────────────────────────
+        mostrar_panel_alertas(df_consolidado_calculado, n_meses=3)
+
+        # ── 3. Gráficos automáticos por indicador ─────────────────────────
+        mostrar_graficos_automaticos(df_consolidado_calculado)
+
+        # ── 4. Gráfico personalizable (mantenemos el original) ────────────
         columnas_graficables = [
             col for col in df_consolidado_calculado.columns
             if col not in [
@@ -1648,7 +2112,8 @@ if "df_consolidado_temporal" in st.session_state:
         ]
 
         if columnas_graficables:
-            st.subheader("Gráfico temporal")
+            st.markdown("---")
+            st.subheader("📊 Gráfico personalizable")
 
             columnas_seleccionadas = st.multiselect(
                 "Selecciona indicadores para graficar",
@@ -1672,6 +2137,8 @@ if "df_consolidado_temporal" in st.session_state:
             else:
                 st.info("Selecciona al menos un indicador para graficar.")
 
+        # ── 5. Descargas ──────────────────────────────────────────────────
+        st.markdown("---")
         col_descarga_1, col_descarga_2 = st.columns(2)
 
         with col_descarga_1:
