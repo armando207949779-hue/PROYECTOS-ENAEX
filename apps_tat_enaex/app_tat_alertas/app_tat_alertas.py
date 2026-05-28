@@ -1434,8 +1434,6 @@ for k, v in _defaults.items():
 # =========================================================
 # SIDEBAR — Filtros
 # =========================================================
-mostrar_logo_sidebar()
-
 with st.sidebar:
     st.markdown("""
     <div style="padding:0 4px 12px 4px;">
@@ -1484,6 +1482,38 @@ df_filtrado = aplicar_filtros_panel(
 )
 filtrados = len(df_filtrado)
 
+
+# ── Logo centrado en cabecera (igual que el original) ──
+def mostrar_logo_principal(ancho: int = 260):
+    logo_path = encontrar_logo()
+    if logo_path is None:
+        return
+    suffix = logo_path.suffix.lower()
+    mime = "image/svg+xml" if suffix == ".svg" else "image/png"
+    raw = logo_path.read_bytes()
+    logo_b64 = base64.b64encode(raw).decode("utf-8")
+    st.markdown(
+        f"""
+        <div style="
+            width:100%;
+            display:flex;
+            justify-content:center;
+            align-items:center;
+            min-height:84px;
+            margin:0 0 16px 0;
+            overflow:visible;
+        ">
+            <img
+                src="data:{mime};base64,{logo_b64}"
+                style="width:{ancho}px;max-width:80%;height:auto;display:block;object-fit:contain;"
+                alt="Logo Enaex"
+            >
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+mostrar_logo_principal()
 
 # =========================================================
 # CABECERA PRINCIPAL
@@ -1628,7 +1658,8 @@ with tab2:
             <span>{n_venc:,} registros ya superaron su fecha de vencimiento TAT y no tienen recepción. Requieren gestión inmediata.</span>
         </div>""".replace(",","."), unsafe_allow_html=True)
         with st.expander(f"Ver los {n_venc:,} registros vencidos".replace(",","."), expanded=True):
-            st.dataframe(aplicar_estilo_urgencia(df_vencidos).head(int(st.session_state["f_limite"])), use_container_width=True, hide_index=True)
+            _limite = int(st.session_state["f_limite"])
+            st.dataframe(aplicar_estilo_urgencia(df_vencidos.head(_limite)), use_container_width=True, hide_index=True)
         cv1, cv2 = st.columns(2)
         with cv1: st.download_button("⬇ CSV · Vencidos", data=dataframe_a_csv(df_vencidos), file_name="vencidos_sin_recepcion.csv", mime="text/csv", use_container_width=True)
         with cv2: st.download_button("⬇ Excel · Vencidos", data=dataframe_a_excel(df_vencidos), file_name="vencidos_sin_recepcion.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
@@ -1645,7 +1676,8 @@ with tab2:
             <span>{n_prox:,} registros vencen entre hoy y los próximos 30 días y no tienen recepción.</span>
         </div>""".replace(",","."), unsafe_allow_html=True)
         with st.expander(f"Ver los {n_prox:,} registros próximos".replace(",","."), expanded=False):
-            st.dataframe(aplicar_estilo_urgencia(df_proximos).head(int(st.session_state["f_limite"])), use_container_width=True, hide_index=True)
+            _limite = int(st.session_state["f_limite"])
+            st.dataframe(aplicar_estilo_urgencia(df_proximos.head(_limite)), use_container_width=True, hide_index=True)
         cp1, cp2 = st.columns(2)
         with cp1: st.download_button("⬇ CSV · Próximos", data=dataframe_a_csv(df_proximos), file_name="proximos_vencer.csv", mime="text/csv", use_container_width=True)
         with cp2: st.download_button("⬇ Excel · Próximos", data=dataframe_a_excel(df_proximos), file_name="proximos_vencer.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
@@ -1687,7 +1719,7 @@ with tab3:
     sp3t.metric("% sin pedido", f"{sin_pedido_t/filtrados*100:.1f}%" if filtrados else "0,0%")
 
     st.markdown("---")
-    st.dataframe(aplicar_estilo_urgencia(tabla_resumen).head(limite), use_container_width=True, hide_index=True)
+    st.dataframe(aplicar_estilo_urgencia(tabla_resumen.head(limite)), use_container_width=True, hide_index=True)
 
     st.markdown("#### Descargas")
     dc1, dc2 = st.columns(2)
