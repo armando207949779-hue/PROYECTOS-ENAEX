@@ -38,7 +38,7 @@ st.set_page_config(
 
 
 # =========================
-# Datos de fuentes
+# Información de Fuentes de Datos
 # =========================
 
 FUENTES_DATOS = {
@@ -49,7 +49,7 @@ FUENTES_DATOS = {
         "frecuencia": "Diaria",
         "actualizacion": "Cada día hábil",
         "variables": ["Dólar Observado"],
-        "rango_datos": "Histórico disponible desde 1990"
+        "rango_datos": "Desde 1990"
     },
     "UTM SII": {
         "descripcion": "Unidad Tributaria Mensual, UTA e IPC valor puntos",
@@ -58,7 +58,7 @@ FUENTES_DATOS = {
         "frecuencia": "Mensual",
         "actualizacion": "Primer día de cada mes",
         "variables": ["UTM", "UTA", "IPC Valor Puntos"],
-        "rango_datos": "Histórico disponible desde 1981"
+        "rango_datos": "Desde 1981"
     },
     "IPC INE": {
         "descripcion": "Índice de Precios al Consumidor General",
@@ -67,7 +67,7 @@ FUENTES_DATOS = {
         "frecuencia": "Mensual",
         "actualizacion": "Últimos días del mes publicado",
         "variables": ["IPC General", "Variación Mensual", "Variación Anual"],
-        "rango_datos": "Histórico disponible desde 1990"
+        "rango_datos": "Desde 1990"
     },
     "ICL INE": {
         "descripcion": "Índice de Costos Laborales y Remuneraciones",
@@ -75,76 +75,64 @@ FUENTES_DATOS = {
         "url_fuente": "https://www.ine.gob.cl/",
         "frecuencia": "Trimestral",
         "actualizacion": "Mes posterior al trimestre",
-        "variables": ["Índice Trimestral", "Variación Trimestral", "Variación Anual"],
-        "rango_datos": "Histórico desde 2009"
+        "variables": ["Índice Trimestral", "Variación Trimestral"],
+        "rango_datos": "Desde 2009"
     },
     "MOP Reajuste Polinómico": {
-        "descripcion": "Índices para cálculo de reajuste polinómico en obras públicas",
+        "descripcion": "Índices para cálculo de reajuste polinómico",
         "fuente": "Ministerio de Obras Públicas (MOP)",
         "url_fuente": "https://www.mop.gob.cl/",
         "frecuencia": "Mensual",
         "actualizacion": "Días posteriores a cierre de mes",
-        "variables": ["Índice Polinómico General", "Componentes por tipo"],
-        "rango_datos": "Histórico desde 1990"
+        "variables": ["Índice Polinómico General"],
+        "rango_datos": "Desde 1990"
     },
     "Savings Bridge": {
         "descripcion": "Análisis de ahorro mediante gráficos Savings Bridge",
         "fuente": "Datos ingresados por el usuario",
         "url_fuente": "N/A",
         "frecuencia": "A demanda",
-        "actualizacion": "Manual del usuario",
-        "variables": ["Customizables según tabla"],
-        "rango_datos": "Definido por el usuario"
+        "actualizacion": "Manual",
+        "variables": ["Customizables"],
+        "rango_datos": "Definido por usuario"
     },
     "Consolidado Temporal": {
-        "descripcion": "Base mensual consolidada de indicadores SII, INE y MOP",
+        "descripcion": "Base consolidada de indicadores SII, INE y MOP",
         "fuente": "SII, INE, MOP",
         "url_fuente": "Ver indicadores individuales",
         "frecuencia": "Mensual",
         "actualizacion": "Cuando se actualizan los indicadores base",
         "variables": ["Dólar", "UTM", "IPC", "ICL", "Índices MOP"],
-        "rango_datos": "Período disponible en todos los indicadores"
+        "rango_datos": "Período disponible"
     }
 }
 
 
 # =========================
-# Datos simulados para ejemplo (reemplazar con lectura real)
+# Funciones auxiliares para mejoras
 # =========================
 
-def obtener_datos_historicos():
+def obtener_datos_temporales():
     """
-    Simula la obtención de datos históricos.
-    REEMPLAZAR con función que lea datos reales de tus bases de datos.
+    REEMPLAZAR esta función con tu lectura real de datos.
+    Debe retornar un DataFrame con columnas: fecha, dolar, utm, ipc, icl
     """
-    # Este es un ejemplo. Conectar con tu función real de lectura de datos
     fechas = pd.date_range(start='2023-01-01', end=datetime.now(), freq='D')
-    
-    datos = pd.DataFrame({
+    df = pd.DataFrame({
         'fecha': fechas,
         'dolar': 500 + (range(len(fechas)) % 100),
         'utm': 60000 + (range(len(fechas)) % 5000),
         'ipc': 120 + (range(len(fechas)) % 10),
+        'icl': 110 + (range(len(fechas)) % 8),
     })
-    
-    return datos
+    return df
 
 
 def detectar_datos_faltantes(df, ultimos_meses=3):
-    """
-    Detecta parámetros faltantes en los últimos meses.
-    
-    Args:
-        df: DataFrame con los datos
-        ultimos_meses: número de meses a revisar
-    
-    Returns:
-        dict con información de datos faltantes
-    """
+    """Detecta parámetros faltantes en los últimos meses"""
     if df.empty:
         return {"error": "No hay datos disponibles"}
     
-    # Obtener fecha límite
     fecha_limite = datetime.now() - timedelta(days=30 * ultimos_meses)
     df_reciente = df[df['fecha'] >= fecha_limite].copy()
     
@@ -152,7 +140,6 @@ def detectar_datos_faltantes(df, ultimos_meses=3):
         return {"error": f"No hay datos en los últimos {ultimos_meses} meses"}
     
     faltantes = {}
-    
     for col in df_reciente.columns:
         if col != 'fecha':
             valores_nulos = df_reciente[col].isna().sum()
@@ -201,7 +188,7 @@ def mostrar_logo_centrado():
 
 
 # =========================
-# Página principal mejorada
+# Página principal
 # =========================
 
 def pagina_inicio():
@@ -224,14 +211,13 @@ def pagina_inicio():
 
     st.markdown("---")
 
-    # SECCIÓN 1: Gráfico Temporal
+    # ===== SECCIÓN: Gráfico Temporal =====
     st.subheader("📊 Gráfico Temporal de Indicadores")
     
     try:
-        df_datos = obtener_datos_historicos()
+        df_datos = obtener_datos_temporales()
         
         if not df_datos.empty:
-            # Selector de variables
             col_grafico1, col_grafico2 = st.columns([3, 1])
             
             with col_grafico2:
@@ -250,11 +236,9 @@ def pagina_inicio():
                 )
             
             with col_grafico1:
-                # Crear gráfico
                 if variables_adicionales:
                     fig = make_subplots(specs=[[{"secondary_y": True}]])
                     
-                    # Variable principal (eje izquierdo)
                     fig.add_trace(
                         go.Scatter(
                             x=df_datos['fecha'],
@@ -266,7 +250,6 @@ def pagina_inicio():
                         secondary_y=False
                     )
                     
-                    # Variables adicionales (eje derecho)
                     colores = ['#ff7f0e', '#2ca02c', '#d62728']
                     for i, var in enumerate(variables_adicionales):
                         fig.add_trace(
@@ -315,18 +298,17 @@ def pagina_inicio():
 
     st.markdown("---")
 
-    # SECCIÓN 2: Alerta de Datos Faltantes
+    # ===== SECCIÓN: Alertas de Datos Faltantes =====
     st.subheader("⚠️ Estado de Datos en Últimos 3 Meses")
     
     try:
-        df_datos = obtener_datos_historicos()
+        df_datos = obtener_datos_temporales()
         faltantes = detectar_datos_faltantes(df_datos, ultimos_meses=3)
         
         if "error" in faltantes:
             st.info(faltantes["error"])
         elif faltantes:
             st.warning(f"Se detectaron {len(faltantes)} parámetro(s) con datos faltantes:")
-            
             for variable, info in faltantes.items():
                 st.error(
                     f"**{variable}**: {info['cantidad']} registros faltantes "
@@ -340,7 +322,6 @@ def pagina_inicio():
 
     st.markdown("---")
 
-    # SECCIÓN 3: Tarjetas informativas
     col1, col2, col3 = st.columns(3)
 
     with col1:
@@ -425,14 +406,13 @@ def pagina_fuentes_datos():
     
     st.markdown(
         """
-        Esta sección contiene información detallada sobre las fuentes de datos,
+        Información detallada sobre las fuentes de datos,
         frecuencia de actualización y variables disponibles en cada indicador.
         """
     )
     
     st.markdown("---")
     
-    # Tabs para cada indicador
     tabs = st.tabs(list(FUENTES_DATOS.keys()))
     
     for tab, (nombre_indicador, info_fuente) in zip(tabs, FUENTES_DATOS.items()):
@@ -441,11 +421,8 @@ def pagina_fuentes_datos():
             
             with col1:
                 st.markdown(f"### {nombre_indicador}")
-                
                 st.markdown(f"**Descripción:** {info_fuente['descripcion']}")
-                
                 st.markdown("---")
-                
                 st.markdown("#### Información de la Fuente")
                 
                 info_col1, info_col2 = st.columns(2)
@@ -461,34 +438,14 @@ def pagina_fuentes_datos():
                         st.markdown(f"[Ir a página oficial]({info_fuente['url_fuente']})")
                 
                 st.markdown("---")
-                
                 st.markdown("#### Variables Disponibles")
                 for i, variable in enumerate(info_fuente['variables'], 1):
                     st.markdown(f"{i}. {variable}")
             
             with col2:
                 st.markdown("#### Resumen")
-                
-                indicador_color = {
-                    "Dólar SII": "🟦",
-                    "UTM SII": "🟩",
-                    "IPC INE": "🟧",
-                    "ICL INE": "🟪",
-                    "MOP Reajuste Polinómico": "🟨",
-                    "Savings Bridge": "🟥",
-                    "Consolidado Temporal": "⬜"
-                }
-                
-                st.metric(
-                    "Estado",
-                    "Activo",
-                    delta=f"{info_fuente['frecuencia'].lower()}"
-                )
-                
-                st.metric(
-                    "Variables",
-                    len(info_fuente['variables'])
-                )
+                st.metric("Estado", "Activo", delta=info_fuente['frecuencia'].lower())
+                st.metric("Variables", len(info_fuente['variables']))
 
 
 # =========================
