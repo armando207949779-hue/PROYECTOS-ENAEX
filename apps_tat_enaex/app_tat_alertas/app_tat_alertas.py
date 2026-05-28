@@ -1704,29 +1704,52 @@ with tab2:
 with tab3:
     tabla_resumen = tabla_resumen_filtrada(df_filtrado)
     limite = int(st.session_state["f_limite"])
+    registros_visibles = min(limite, filtrados)
 
-    st.markdown(f"#### Datos filtrados — {filtrados:,} registros".replace(",","."))
-    st.caption(f"Mostrando {min(limite, filtrados):,} de {filtrados:,} registros. Ajusta las «Filas visibles» en la barra lateral.".replace(",","."))
+    # ── Cabecera informativa ──
+    st.markdown(
+        f"""
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:14px 18px;margin-bottom:1rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+            <div>
+                <div style="font-size:0.72rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:3px;">Vista previa de datos filtrados</div>
+                <div style="font-size:1.05rem;font-weight:700;color:#0f172a;">
+                    Mostrando <span style="color:#2563eb;">{registros_visibles:,}</span> de <span style="color:#0f172a;">{filtrados:,}</span> registros filtrados
+                </div>
+                <div style="font-size:0.8rem;color:#64748b;margin-top:2px;">
+                    {filtrados - registros_visibles:,} registros adicionales disponibles · ajusta «Filas visibles» en la barra lateral para ver más
+                </div>
+            </div>
+            <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:8px 14px;text-align:center;">
+                <div style="font-size:0.68rem;font-weight:700;color:#1e40af;text-transform:uppercase;letter-spacing:0.05em;">Total en archivo</div>
+                <div style="font-size:1.2rem;font-weight:700;color:#1e40af;">{total_archivo:,}</div>
+            </div>
+        </div>
+        """.replace(",", "."),
+        unsafe_allow_html=True,
+    )
 
-    # SolPed sin pedido
-    oc_me5a_t = _serie_texto(df_filtrado, COL_OC_ME5A).str.strip()
-    oc_nme_t  = _serie_texto(df_filtrado, COL_OC_NME).str.strip()
-    sin_pedido_mask_t = oc_me5a_t.str.lower().isin({"","-","nan","none","nat","0","0.0"}) & oc_nme_t.str.lower().isin({"","-","nan","none","nat","0","0.0"})
-    sin_pedido_t = int(sin_pedido_mask_t.sum())
-    sp1t, sp2t, sp3t = st.columns(3)
-    sp1t.metric("SolPed sin pedido",  f"{sin_pedido_t:,}".replace(",","."))
-    sp2t.metric("SolPed con pedido",  f"{filtrados-sin_pedido_t:,}".replace(",","."))
-    sp3t.metric("% sin pedido", f"{sin_pedido_t/filtrados*100:.1f}%" if filtrados else "0,0%")
-
-    st.markdown("---")
     st.dataframe(aplicar_estilo_urgencia(tabla_resumen.head(limite)), use_container_width=True, hide_index=True)
 
     st.markdown("#### Descargas")
+    st.caption("La descarga incluye la totalidad del filtrado, no solo las filas visibles.")
     dc1, dc2 = st.columns(2)
-    with dc1: st.download_button("⬇ CSV · Datos filtrados", data=dataframe_a_csv(tabla_resumen), file_name="control_tat_filtrado.csv", mime="text/csv", use_container_width=True)
+    with dc1:
+        st.download_button(
+            f"⬇ CSV · {filtrados:,} registros filtrados".replace(",","."),
+            data=dataframe_a_csv(tabla_resumen),
+            file_name="control_tat_filtrado.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
     with dc2:
         if st.button("Preparar Excel", use_container_width=True):
-            st.download_button("⬇ Excel · Datos filtrados", data=dataframe_a_excel(tabla_resumen), file_name="control_tat_filtrado.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+            st.download_button(
+                f"⬇ Excel · {filtrados:,} registros filtrados".replace(",","."),
+                data=dataframe_a_excel(tabla_resumen),
+                file_name="control_tat_filtrado.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
 
     with st.expander("Ver filtros aplicados", expanded=False):
         filtros_df = pd.DataFrame([
@@ -1751,33 +1774,157 @@ with tab4:
     if df_filtrado.empty:
         st.info("No hay pedidos disponibles con los filtros actuales.")
     else:
-        # ── Gestión visual de críticos ──
-        st.markdown("#### Gestión visual de pedidos críticos")
-        st.caption("Filtra, prioriza y elige el pedido a expeditar. Los filtros aquí solo afectan el selector del expediente.")
-
         df_exp_base = df_filtrado.copy()
-        # Agregar columnas operativas si no existen
+        # Asegurar columnas operativas
         if "dias_hasta_vencimiento" not in df_exp_base.columns:
             df_exp_base["dias_hasta_vencimiento"] = df_exp_base.apply(clasificar_dias_hasta_vencimiento, axis=1)
         if "accion_sugerida" not in df_exp_base.columns:
             df_exp_base["accion_sugerida"] = df_exp_base.apply(accion_sugerida_fn, axis=1)
+        if "causa_probable" not in df_exp_base.columns:
+            df_exp_base["causa_probable"] = df_exp_base.apply(causa_probable, axis=1)
         if "nivel_alerta" not in df_exp_base.columns:
             df_exp_base["nivel_alerta"] = "Sin datos"
         if "score_riesgo" not in df_exp_base.columns:
             df_exp_base["score_riesgo"] = 0.0
         df_exp_base = ordenar_expediente_critico(df_exp_base)
 
+        # ── Helper para subtabla de prioridad ──
+        def _tabla_prioridad(df_sub: pd.DataFrame) -> pd.DataFrame:
+            cols = columnas_existentes(df_sub, [
+                "dias_hasta_vencimiento", "nivel_alerta", "accion_sugerida",
+                "ultima_etapa_registrada", "fecha_pendiente",
+                COL_ESTADO_RECEPCION_ALERTA, COL_SOLPED, COL_OC_ME5A, COL_POS_SOLPED,
+                COL_CENTRO, COL_GRUPO_COMPRAS,
+                "tiempo_transcurrido_tat", "dias_restantes_texto", "fecha_vencimiento_texto",
+                COL_MATERIAL, COL_TEXTO, COL_MONTO,
+            ])
+            return df_sub[cols].copy().rename(columns={
+                "dias_hasta_vencimiento":      "Urgencia",
+                "nivel_alerta":                "Nivel alerta",
+                "accion_sugerida":             "Acción sugerida",
+                "ultima_etapa_registrada":     "Última etapa",
+                "fecha_pendiente":             "Fecha pendiente",
+                COL_ESTADO_RECEPCION_ALERTA:   "Recepción",
+                COL_SOLPED:                    "SolPed",
+                COL_OC_ME5A:                   "Pedido",
+                COL_POS_SOLPED:                "Posición",
+                COL_CENTRO:                    "Centro",
+                COL_GRUPO_COMPRAS:             "Grupo compras",
+                "tiempo_transcurrido_tat":     "Tiempo transcurrido",
+                "dias_restantes_texto":        "Días restantes",
+                "fecha_vencimiento_texto":     "Fecha vencimiento",
+                COL_MATERIAL:                  "Material",
+                COL_TEXTO:                     "Descripción",
+                COL_MONTO:                     "Monto",
+            })
+
+        def _estilo_prioridad(df_tabla: pd.DataFrame):
+            def color_urgencia(valor):
+                t = str(valor).strip()
+                if t == "Vencido":  return "background-color:#fee2e2;color:#991b1b;font-weight:800;"
+                if t in ["Vence hoy","1 día"]: return "background-color:#ffedd5;color:#9a3412;font-weight:800;"
+                if t in ["2 días","3 días","4 días","5 días","6 días","7 días"]: return "background-color:#fef9c3;color:#854d0e;font-weight:700;"
+                if t == "Sin datos": return "background-color:#f1f5f9;color:#475569;"
+                return ""
+            styler = df_tabla.style
+            if "Urgencia" in df_tabla.columns:
+                styler = styler.map(color_urgencia, subset=["Urgencia"])
+            return styler
+
+        # Máscaras de clasificación
+        _estado_rec = df_exp_base[COL_ESTADO_RECEPCION_ALERTA].astype(str) if COL_ESTADO_RECEPCION_ALERTA in df_exp_base.columns else pd.Series("Sin recepción", index=df_exp_base.index)
+        _dias_exp   = pd.to_numeric(df_exp_base.get("dias_restantes_int", pd.Series(np.nan, index=df_exp_base.index)), errors="coerce")
+        _sin_rec    = _estado_rec.eq("Sin recepción")
+
+        df_venc_exp  = df_exp_base.loc[_sin_rec & _dias_exp.lt(0)].copy()
+        df_prox_exp  = df_exp_base.loc[_sin_rec & _dias_exp.between(0, 30, inclusive="both")].copy()
+        df_mas30_exp = df_exp_base.loc[_sin_rec & _dias_exp.gt(30)].copy()
+
+        n_venc_exp  = len(df_venc_exp)
+        n_prox_exp  = len(df_prox_exp)
+        n_mas30_exp = len(df_mas30_exp)
+
+        # ── Métricas de cabecera ──
+        st.markdown("#### Prioridades operativas del filtrado")
+        ep1, ep2, ep3 = st.columns(3)
+        ep1.metric("🔴 Vencidos sin recepción",        f"{n_venc_exp:,}".replace(",","."))
+        ep2.metric("🟠 Próximos a vencer (0–30 días)", f"{n_prox_exp:,}".replace(",","."))
+        ep3.metric("🟡 Por vencer (>30 días)",          f"{n_mas30_exp:,}".replace(",","."))
+
+        # ── 🔴 Vencidos sin recepción ──
+        st.markdown("---")
+        st.markdown("#### 🔴 Vencidos sin recepción")
+        if n_venc_exp > 0:
+            st.markdown(
+                f'<div class="alerta-urgente alerta-roja">'
+                f'<span style="font-size:1.1rem;">⚠</span>'
+                f'<span>{n_venc_exp:,} registros ya superaron su fecha de vencimiento TAT y no tienen recepción. Requieren gestión inmediata.</span>'
+                f'</div>'.replace(",","."),
+                unsafe_allow_html=True,
+            )
+            with st.expander(f"Ver {n_venc_exp:,} vencidos sin recepción".replace(",","."), expanded=True):
+                limite_exp = int(st.session_state["f_limite"])
+                st.caption(f"Mostrando {min(limite_exp, n_venc_exp):,} de {n_venc_exp:,} registros.".replace(",","."))
+                st.dataframe(_estilo_prioridad(_tabla_prioridad(df_venc_exp).head(limite_exp)), use_container_width=True, hide_index=True)
+            cv1, cv2 = st.columns(2)
+            with cv1: st.download_button("⬇ CSV · Vencidos", data=dataframe_a_csv(_tabla_prioridad(df_venc_exp)), file_name="expediente_vencidos.csv", mime="text/csv", use_container_width=True)
+            with cv2: st.download_button("⬇ Excel · Vencidos", data=dataframe_a_excel(_tabla_prioridad(df_venc_exp)), file_name="expediente_vencidos.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+        else:
+            st.success("No hay registros vencidos sin recepción con los filtros actuales.")
+
+        # ── 🟠 Próximos a vencer sin recepción (0–30 días) ──
+        st.markdown("---")
+        st.markdown("#### 🟠 Próximos a vencer sin recepción (0–30 días)")
+        if n_prox_exp > 0:
+            st.markdown(
+                f'<div class="alerta-urgente alerta-naranja">'
+                f'<span style="font-size:1.1rem;">⏱</span>'
+                f'<span>{n_prox_exp:,} registros vencen entre hoy y los próximos 30 días sin recepción.</span>'
+                f'</div>'.replace(",","."),
+                unsafe_allow_html=True,
+            )
+            with st.expander(f"Ver {n_prox_exp:,} próximos a vencer (0–30 d)".replace(",","."), expanded=False):
+                limite_exp = int(st.session_state["f_limite"])
+                st.caption(f"Mostrando {min(limite_exp, n_prox_exp):,} de {n_prox_exp:,} registros.".replace(",","."))
+                st.dataframe(_estilo_prioridad(_tabla_prioridad(df_prox_exp).head(limite_exp)), use_container_width=True, hide_index=True)
+            cp1, cp2 = st.columns(2)
+            with cp1: st.download_button("⬇ CSV · Próximos 0–30d", data=dataframe_a_csv(_tabla_prioridad(df_prox_exp)), file_name="expediente_proximos_0_30.csv", mime="text/csv", use_container_width=True)
+            with cp2: st.download_button("⬇ Excel · Próximos 0–30d", data=dataframe_a_excel(_tabla_prioridad(df_prox_exp)), file_name="expediente_proximos_0_30.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+        else:
+            st.success("No hay registros próximos a vencer (0–30 días) sin recepción con los filtros actuales.")
+
+        # ── 🟡 Por vencer >30 días ──
+        st.markdown("---")
+        st.markdown("#### 🟡 Por vencer sin recepción (>30 días)")
+        if n_mas30_exp > 0:
+            st.info(f"{n_mas30_exp:,} registros sin recepción con fecha de vencimiento en más de 30 días. Sin urgencia inmediata, pero en seguimiento preventivo.".replace(",","."))
+            with st.expander(f"Ver {n_mas30_exp:,} registros por vencer (>30 d)".replace(",","."), expanded=False):
+                limite_exp = int(st.session_state["f_limite"])
+                st.caption(f"Mostrando {min(limite_exp, n_mas30_exp):,} de {n_mas30_exp:,} registros.".replace(",","."))
+                st.dataframe(_estilo_prioridad(_tabla_prioridad(df_mas30_exp).head(limite_exp)), use_container_width=True, hide_index=True)
+            cm1, cm2 = st.columns(2)
+            with cm1: st.download_button("⬇ CSV · Por vencer >30d", data=dataframe_a_csv(_tabla_prioridad(df_mas30_exp)), file_name="expediente_mas30.csv", mime="text/csv", use_container_width=True)
+            with cm2: st.download_button("⬇ Excel · Por vencer >30d", data=dataframe_a_excel(_tabla_prioridad(df_mas30_exp)), file_name="expediente_mas30.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+        else:
+            st.success("No hay registros por vencer en más de 30 días sin recepción con los filtros actuales.")
+
+        # ── Gestión visual de críticos ──
+        st.markdown("---")
+        st.markdown("#### Gestión visual de críticos")
+        st.caption("Filtra, prioriza y elige el pedido a expeditar. Los filtros aquí solo afectan el selector del expediente.")
+
         col_g1, col_g2, col_g3, col_g4 = st.columns(4)
         niveles_disp   = sorted(df_exp_base["nivel_alerta"].dropna().astype(str).unique().tolist()) if "nivel_alerta" in df_exp_base.columns else []
-        urgencias_disp = [u for u in ["Vencido","Vence hoy","1 día","2 días","3 días","4 días","5 días","6 días","7 días","7 a 30 días","Más de 1 mes","Sin datos"] if u in (df_exp_base["dias_hasta_vencimiento"].dropna().astype(str).unique().tolist() if "dias_hasta_vencimiento" in df_exp_base.columns else [])]
+        urgencias_disp = [u for u in ["Vencido","Vence hoy","1 día","2 días","3 días","4 días","5 días","6 días","7 días","7 a 30 días","Más de 1 mes","Sin datos"]
+                          if u in (df_exp_base["dias_hasta_vencimiento"].dropna().astype(str).unique().tolist() if "dias_hasta_vencimiento" in df_exp_base.columns else [])]
         recep_disp     = sorted(df_exp_base[COL_ESTADO_RECEPCION_ALERTA].dropna().astype(str).unique().tolist()) if COL_ESTADO_RECEPCION_ALERTA in df_exp_base.columns else []
         pend_disp      = sorted(df_exp_base["fecha_pendiente"].dropna().astype(str).unique().tolist()) if "fecha_pendiente" in df_exp_base.columns else []
 
-        with col_g1: g_niveles  = st.multiselect("Nivel alerta",  niveles_disp,   default=[v for v in ["Crítica","Alta"] if v in niveles_disp],  key="g_nivel")
-        with col_g2: g_urgencias= st.multiselect("Urgencia",      urgencias_disp, default=[v for v in ["Vencido","1 día","2 días","7 días"] if v in urgencias_disp], key="g_urgencia")
-        with col_g3: g_recepcion= st.multiselect("Recepción",     recep_disp,     default=[v for v in ["Sin recepción"] if v in recep_disp],      key="g_recepcion")
-        with col_g4: g_pendiente= st.multiselect("Fecha pendiente",pend_disp,     key="g_pendiente")
-        g_top = st.number_input("Máximo a visualizar", min_value=10, max_value=1000, value=100, step=10, key="g_top")
+        with col_g1: g_niveles   = st.multiselect("Nivel alerta",   niveles_disp,   default=[v for v in ["Crítica","Alta"] if v in niveles_disp],  key="g_nivel")
+        with col_g2: g_urgencias = st.multiselect("Urgencia",       urgencias_disp, default=[v for v in ["Vencido","1 día","2 días","7 días"] if v in urgencias_disp], key="g_urgencia")
+        with col_g3: g_recepcion = st.multiselect("Recepción",      recep_disp,     default=[v for v in ["Sin recepción"] if v in recep_disp],      key="g_recepcion")
+        with col_g4: g_pendiente = st.multiselect("Fecha pendiente",pend_disp,      key="g_pendiente")
+        g_top = st.number_input("Máximo a visualizar en tabla", min_value=10, max_value=1000, value=100, step=10, key="g_top")
 
         mask_g = pd.Series(True, index=df_exp_base.index)
         if g_niveles   and "nivel_alerta"            in df_exp_base.columns: mask_g &= df_exp_base["nivel_alerta"].astype(str).isin(g_niveles)
@@ -1788,10 +1935,10 @@ with tab4:
         df_gestion = ordenar_expediente_critico(df_exp_base.loc[mask_g].copy())
 
         mg1, mg2, mg3, mg4 = st.columns(4)
-        mg1.metric("Críticos visualizados",   f"{len(df_gestion):,}".replace(",","."))
-        mg2.metric("Vencidos",                f"{int(df_gestion.get('dias_hasta_vencimiento', pd.Series(dtype=str)).astype(str).eq('Vencido').sum()):,}".replace(",","."))
-        mg3.metric("Sin recepción",           f"{int(df_gestion.get(COL_ESTADO_RECEPCION_ALERTA, pd.Series(dtype=str)).astype(str).eq('Sin recepción').sum()):,}".replace(",","."))
-        mg4.metric("Crítica / Alta",          f"{int(df_gestion.get('nivel_alerta', pd.Series(dtype=str)).astype(str).isin(['Crítica','Alta']).sum()):,}".replace(",","."))
+        mg1.metric("Visualizados",   f"{len(df_gestion):,}".replace(",","."))
+        mg2.metric("Vencidos",       f"{int(df_gestion.get('dias_hasta_vencimiento', pd.Series(dtype=str)).astype(str).eq('Vencido').sum()):,}".replace(",","."))
+        mg3.metric("Sin recepción",  f"{int(df_gestion.get(COL_ESTADO_RECEPCION_ALERTA, pd.Series(dtype=str)).astype(str).eq('Sin recepción').sum()):,}".replace(",","."))
+        mg4.metric("Crítica / Alta", f"{int(df_gestion.get('nivel_alerta', pd.Series(dtype=str)).astype(str).isin(['Crítica','Alta']).sum()):,}".replace(",","."))
 
         if df_gestion.empty:
             st.warning("No hay pedidos con los filtros de gestión aplicados.")
@@ -1799,7 +1946,7 @@ with tab4:
             cols_tabla_gestion = columnas_existentes(df_gestion, [
                 "nivel_alerta","dias_hasta_vencimiento","accion_sugerida","causa_probable",
                 "ultima_etapa_registrada","fecha_pendiente",COL_ESTADO_RECEPCION_ALERTA,
-                COL_SOLPED,COL_OC_ME5A,COL_POS_SOLPED,COL_CENTRO,COL_GRUPO_COMPRAS,COL_MONTO,
+                COL_SOLPED, COL_OC_ME5A, COL_POS_SOLPED, COL_CENTRO, COL_GRUPO_COMPRAS, COL_MONTO,
             ])
             tabla_g = df_gestion.head(int(g_top))[cols_tabla_gestion].copy()
 
@@ -1817,35 +1964,106 @@ with tab4:
             sugerido = df_gestion.index[0] if not df_gestion.empty else None
             if sugerido is not None: st.session_state["exp_sugerido"] = sugerido
 
-        # ── Selector del expediente ──
+        # ══ EXPEDIENTE DETALLADO ══════════════════════════════
         st.markdown("---")
-        st.markdown("#### Expediente detallado")
+        st.markdown("#### Expediente detallado del pedido")
 
         max_sel = 5000
         opciones = df_exp_base.index.tolist()[:max_sel]
         sugerido = st.session_state.get("exp_sugerido")
         if sugerido in df_exp_base.index and sugerido not in opciones: opciones = [sugerido] + opciones[:-1]
         elif sugerido in opciones: opciones = [sugerido] + [i for i in opciones if i != sugerido]
-
         if len(df_exp_base) > max_sel:
-            st.caption(f"Mostrando los primeros {max_sel:,} de {len(df_exp_base):,} registros en el selector.".replace(",","."))
+            st.caption(f"Selector muestra los primeros {max_sel:,} de {len(df_exp_base):,} registros.".replace(",","."))
 
-        labels_sel = {idx: construir_label_critico(df_exp_base.loc[idx]) for idx in opciones}
+        labels_sel  = {idx: construir_label_critico(df_exp_base.loc[idx]) for idx in opciones}
         idx_default = opciones.index(sugerido) if sugerido in opciones else 0
         seleccionado = st.selectbox("Seleccionar pedido", opciones, index=idx_default, format_func=lambda i: labels_sel.get(i, str(i)))
         row = df_exp_base.loc[seleccionado]
 
-        st.markdown(html_critico_seleccionado(row), unsafe_allow_html=True)
-        st.markdown(html_resumen_expediente(row), unsafe_allow_html=True)
+        # ── Ficha resumen de campos clave ──
+        CAMPOS_CLAVE = [
+            # (etiqueta, nombre_columna_o_campo_calculado)
+            ("SolPed",                    COL_SOLPED),
+            ("Pedido",                    COL_OC_ME5A),
+            ("Material",                  COL_MATERIAL),
+            ("Descripción",               COL_TEXTO),
+            ("Precio de valoración",      "Precio de valoración"),
+            ("Monto",                     COL_MONTO),
+            ("Cantidad solicitada",       "Cantidad solicitada - ME5A"),
+            ("Unidad de medida",          "Unidad de medida - ME5A"),
+            ("Fecha inicio TAT",          "fecha_inicio_tat"),
+            ("Fecha solicitud",           "fecha_solicitud_final"),
+            ("Fecha vencimiento",         "fecha_vencimiento_texto"),
+            ("Días restantes",            "dias_restantes_texto"),
+            ("Urgencia",                  "dias_hasta_vencimiento"),
+            ("Tiempo transcurrido",       "tiempo_transcurrido_tat"),
+            ("Días transcurridos",        "tiempo_transcurrido_tat_dias"),
+            ("Performance TAT total",     COL_PERF_TAT),
+            ("Última etapa registrada",   "ultima_etapa_registrada"),
+            ("Fecha pendiente",           "fecha_pendiente"),
+            ("Acción sugerida",           "accion_sugerida"),
+        ]
+
+        def _val_campo(row, col):
+            val = row.get(col, np.nan)
+            if pd.isna(val): return "-"
+            if isinstance(val, pd.Timestamp): return val.strftime("%d-%m-%Y")
+            return formato_valor(val)
+
+        # Renderizar en 4 columnas
+        n_cols_ficha = 4
+        ficha_items = [(lbl, _val_campo(row, col)) for lbl, col in CAMPOS_CLAVE if col in row.index or col in [c for _, c in CAMPOS_CLAVE]]
+        # Solo incluir si existe en el row
+        ficha_items = [(lbl, _val_campo(row, col)) for lbl, col in CAMPOS_CLAVE]
+
+        filas_ficha = [ficha_items[i:i+n_cols_ficha] for i in range(0, len(ficha_items), n_cols_ficha)]
+        celdas_html = ""
+        for fila in filas_ficha:
+            celdas_html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px;">'
+            for lbl, val in fila:
+                # Colorear campos de urgencia
+                color_val = "#0f172a"
+                bg_val = "#f8fafc"
+                brd_val = "#e2e8f0"
+                if lbl == "Urgencia":
+                    if val == "Vencido":        bg_val,brd_val,color_val = "#fee2e2","#fecaca","#991b1b"
+                    elif val in ["Vence hoy","1 día"]: bg_val,brd_val,color_val = "#ffedd5","#fed7aa","#9a3412"
+                    elif val in ["2 días","3 días","4 días","5 días","6 días","7 días"]: bg_val,brd_val,color_val = "#fef9c3","#fde68a","#854d0e"
+                elif lbl == "Performance TAT total":
+                    t = str(val).strip().lower()
+                    if t == "cumple":       bg_val,brd_val,color_val = "#dcfce7","#bbf7d0","#166534"
+                    elif t == "no cumple":  bg_val,brd_val,color_val = "#fee2e2","#fecaca","#991b1b"
+                    elif t in ["en proceso","sin datos"]: bg_val,brd_val,color_val = "#fef9c3","#fde68a","#854d0e"
+                celdas_html += (
+                    f'<div style="background:{bg_val};border:1px solid {brd_val};border-radius:12px;padding:10px 13px;">'
+                    f'<div style="font-size:0.67rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">{escape(lbl)}</div>'
+                    f'<div style="font-size:0.94rem;font-weight:700;color:{color_val};line-height:1.2;overflow-wrap:anywhere;">{escape(str(val))}</div>'
+                    f'</div>'
+                )
+            # Rellenar columnas vacías en última fila
+            resto = n_cols_ficha - len(fila)
+            for _ in range(resto):
+                celdas_html += '<div></div>'
+            celdas_html += "</div>"
+
+        st.markdown(
+            f'<div style="background:#fff;border:1px solid #e2e8f0;border-radius:18px;padding:18px 20px;margin:0.75rem 0;">'
+            f'<div style="font-size:0.78rem;font-weight:700;color:#0f172a;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:14px;">Ficha del pedido seleccionado</div>'
+            f'{celdas_html}'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+        # ── Resto de vistas del expediente ──
         st.markdown(html_avance_actual(row), unsafe_allow_html=True)
         st.markdown(html_linea_pedido(row), unsafe_allow_html=True)
         st.markdown(html_diagrama_tat(row), unsafe_allow_html=True)
-        st.markdown(html_kpis_expediente(row), unsafe_allow_html=True)
 
         st.markdown("#### Etapas de estado detalladas")
         components.html(html_estado_pedido_iframe(row), height=220, scrolling=False)
 
-        with st.expander("Registro completo del pedido", expanded=False):
+        with st.expander("Registro completo del pedido (todos los campos)", expanded=False):
             reg = row.to_frame(name="Valor").reset_index().rename(columns={"index":"Campo"})
             reg["Valor"] = reg["Valor"].apply(formato_valor)
             st.dataframe(reg, use_container_width=True, hide_index=True)
