@@ -1,7 +1,11 @@
 import base64
 from pathlib import Path
+from datetime import datetime, timedelta
 
 import streamlit as st
+import pandas as pd
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 
 # =========================
@@ -31,6 +35,136 @@ st.set_page_config(
     page_icon="🏢",
     layout="wide"
 )
+
+
+# =========================
+# Datos de fuentes
+# =========================
+
+FUENTES_DATOS = {
+    "Dólar SII": {
+        "descripcion": "Tipo de cambio del dólar observado",
+        "fuente": "Servicio de Impuestos Internos (SII)",
+        "url_fuente": "https://www.sii.cl/",
+        "frecuencia": "Diaria",
+        "actualizacion": "Cada día hábil",
+        "variables": ["Dólar Observado"],
+        "rango_datos": "Histórico disponible desde 1990"
+    },
+    "UTM SII": {
+        "descripcion": "Unidad Tributaria Mensual, UTA e IPC valor puntos",
+        "fuente": "Servicio de Impuestos Internos (SII)",
+        "url_fuente": "https://www.sii.cl/",
+        "frecuencia": "Mensual",
+        "actualizacion": "Primer día de cada mes",
+        "variables": ["UTM", "UTA", "IPC Valor Puntos"],
+        "rango_datos": "Histórico disponible desde 1981"
+    },
+    "IPC INE": {
+        "descripcion": "Índice de Precios al Consumidor General",
+        "fuente": "Instituto Nacional de Estadísticas (INE)",
+        "url_fuente": "https://www.ine.gob.cl/",
+        "frecuencia": "Mensual",
+        "actualizacion": "Últimos días del mes publicado",
+        "variables": ["IPC General", "Variación Mensual", "Variación Anual"],
+        "rango_datos": "Histórico disponible desde 1990"
+    },
+    "ICL INE": {
+        "descripcion": "Índice de Costos Laborales y Remuneraciones",
+        "fuente": "Instituto Nacional de Estadísticas (INE)",
+        "url_fuente": "https://www.ine.gob.cl/",
+        "frecuencia": "Trimestral",
+        "actualizacion": "Mes posterior al trimestre",
+        "variables": ["Índice Trimestral", "Variación Trimestral", "Variación Anual"],
+        "rango_datos": "Histórico desde 2009"
+    },
+    "MOP Reajuste Polinómico": {
+        "descripcion": "Índices para cálculo de reajuste polinómico en obras públicas",
+        "fuente": "Ministerio de Obras Públicas (MOP)",
+        "url_fuente": "https://www.mop.gob.cl/",
+        "frecuencia": "Mensual",
+        "actualizacion": "Días posteriores a cierre de mes",
+        "variables": ["Índice Polinómico General", "Componentes por tipo"],
+        "rango_datos": "Histórico desde 1990"
+    },
+    "Savings Bridge": {
+        "descripcion": "Análisis de ahorro mediante gráficos Savings Bridge",
+        "fuente": "Datos ingresados por el usuario",
+        "url_fuente": "N/A",
+        "frecuencia": "A demanda",
+        "actualizacion": "Manual del usuario",
+        "variables": ["Customizables según tabla"],
+        "rango_datos": "Definido por el usuario"
+    },
+    "Consolidado Temporal": {
+        "descripcion": "Base mensual consolidada de indicadores SII, INE y MOP",
+        "fuente": "SII, INE, MOP",
+        "url_fuente": "Ver indicadores individuales",
+        "frecuencia": "Mensual",
+        "actualizacion": "Cuando se actualizan los indicadores base",
+        "variables": ["Dólar", "UTM", "IPC", "ICL", "Índices MOP"],
+        "rango_datos": "Período disponible en todos los indicadores"
+    }
+}
+
+
+# =========================
+# Datos simulados para ejemplo (reemplazar con lectura real)
+# =========================
+
+def obtener_datos_historicos():
+    """
+    Simula la obtención de datos históricos.
+    REEMPLAZAR con función que lea datos reales de tus bases de datos.
+    """
+    # Este es un ejemplo. Conectar con tu función real de lectura de datos
+    fechas = pd.date_range(start='2023-01-01', end=datetime.now(), freq='D')
+    
+    datos = pd.DataFrame({
+        'fecha': fechas,
+        'dolar': 500 + (range(len(fechas)) % 100),
+        'utm': 60000 + (range(len(fechas)) % 5000),
+        'ipc': 120 + (range(len(fechas)) % 10),
+    })
+    
+    return datos
+
+
+def detectar_datos_faltantes(df, ultimos_meses=3):
+    """
+    Detecta parámetros faltantes en los últimos meses.
+    
+    Args:
+        df: DataFrame con los datos
+        ultimos_meses: número de meses a revisar
+    
+    Returns:
+        dict con información de datos faltantes
+    """
+    if df.empty:
+        return {"error": "No hay datos disponibles"}
+    
+    # Obtener fecha límite
+    fecha_limite = datetime.now() - timedelta(days=30 * ultimos_meses)
+    df_reciente = df[df['fecha'] >= fecha_limite].copy()
+    
+    if df_reciente.empty:
+        return {"error": f"No hay datos en los últimos {ultimos_meses} meses"}
+    
+    faltantes = {}
+    
+    for col in df_reciente.columns:
+        if col != 'fecha':
+            valores_nulos = df_reciente[col].isna().sum()
+            if valores_nulos > 0:
+                porcentaje = (valores_nulos / len(df_reciente)) * 100
+                faltantes[col] = {
+                    "cantidad": valores_nulos,
+                    "porcentaje": round(porcentaje, 2),
+                    "total_registros": len(df_reciente)
+                }
+    
+    return faltantes
 
 
 # =========================
@@ -67,7 +201,7 @@ def mostrar_logo_centrado():
 
 
 # =========================
-# Página principal
+# Página principal mejorada
 # =========================
 
 def pagina_inicio():
@@ -90,6 +224,123 @@ def pagina_inicio():
 
     st.markdown("---")
 
+    # SECCIÓN 1: Gráfico Temporal
+    st.subheader("📊 Gráfico Temporal de Indicadores")
+    
+    try:
+        df_datos = obtener_datos_historicos()
+        
+        if not df_datos.empty:
+            # Selector de variables
+            col_grafico1, col_grafico2 = st.columns([3, 1])
+            
+            with col_grafico2:
+                variables_disponibles = [col for col in df_datos.columns if col != 'fecha']
+                variable_principal = st.selectbox(
+                    "Variable principal",
+                    variables_disponibles,
+                    index=0,
+                    key="var_principal"
+                )
+                
+                variables_adicionales = st.multiselect(
+                    "Variables adicionales",
+                    [v for v in variables_disponibles if v != variable_principal],
+                    key="vars_adicionales"
+                )
+            
+            with col_grafico1:
+                # Crear gráfico
+                if variables_adicionales:
+                    fig = make_subplots(specs=[[{"secondary_y": True}]])
+                    
+                    # Variable principal (eje izquierdo)
+                    fig.add_trace(
+                        go.Scatter(
+                            x=df_datos['fecha'],
+                            y=df_datos[variable_principal],
+                            name=variable_principal,
+                            line=dict(color='#1f77b4', width=2),
+                            mode='lines'
+                        ),
+                        secondary_y=False
+                    )
+                    
+                    # Variables adicionales (eje derecho)
+                    colores = ['#ff7f0e', '#2ca02c', '#d62728']
+                    for i, var in enumerate(variables_adicionales):
+                        fig.add_trace(
+                            go.Scatter(
+                                x=df_datos['fecha'],
+                                y=df_datos[var],
+                                name=var,
+                                line=dict(color=colores[i % len(colores)], width=2),
+                                mode='lines'
+                            ),
+                            secondary_y=True
+                        )
+                    
+                    fig.update_layout(
+                        title=f"Evolución: {variable_principal} y otras variables",
+                        height=400,
+                        hovermode='x unified',
+                        template='plotly_white'
+                    )
+                else:
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(
+                        x=df_datos['fecha'],
+                        y=df_datos[variable_principal],
+                        name=variable_principal,
+                        line=dict(color='#1f77b4', width=2),
+                        fill='tozeroy',
+                        fillcolor='rgba(31, 119, 180, 0.2)'
+                    ))
+                    
+                    fig.update_layout(
+                        title=f"Evolución del {variable_principal}",
+                        xaxis_title="Fecha",
+                        yaxis_title=variable_principal,
+                        height=400,
+                        hovermode='x',
+                        template='plotly_white'
+                    )
+                
+                st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No hay datos disponibles para mostrar el gráfico temporal")
+            
+    except Exception as e:
+        st.error(f"Error al cargar gráfico temporal: {e}")
+
+    st.markdown("---")
+
+    # SECCIÓN 2: Alerta de Datos Faltantes
+    st.subheader("⚠️ Estado de Datos en Últimos 3 Meses")
+    
+    try:
+        df_datos = obtener_datos_historicos()
+        faltantes = detectar_datos_faltantes(df_datos, ultimos_meses=3)
+        
+        if "error" in faltantes:
+            st.info(faltantes["error"])
+        elif faltantes:
+            st.warning(f"Se detectaron {len(faltantes)} parámetro(s) con datos faltantes:")
+            
+            for variable, info in faltantes.items():
+                st.error(
+                    f"**{variable}**: {info['cantidad']} registros faltantes "
+                    f"({info['porcentaje']}% de {info['total_registros']} registros)"
+                )
+        else:
+            st.success("✅ Todos los parámetros están completos en los últimos 3 meses")
+            
+    except Exception as e:
+        st.warning(f"No se pudo verificar estado de datos: {e}")
+
+    st.markdown("---")
+
+    # SECCIÓN 3: Tarjetas informativas
     col1, col2, col3 = st.columns(3)
 
     with col1:
@@ -161,6 +412,86 @@ def pagina_inicio():
 
 
 # =========================
+# Página de Fuentes de Datos
+# =========================
+
+def pagina_fuentes_datos():
+    mostrar_logo_centrado()
+    
+    st.markdown(
+        "<h1 style='text-align: center;'>Fuentes de Datos de Indicadores</h1>",
+        unsafe_allow_html=True
+    )
+    
+    st.markdown(
+        """
+        Esta sección contiene información detallada sobre las fuentes de datos,
+        frecuencia de actualización y variables disponibles en cada indicador.
+        """
+    )
+    
+    st.markdown("---")
+    
+    # Tabs para cada indicador
+    tabs = st.tabs(list(FUENTES_DATOS.keys()))
+    
+    for tab, (nombre_indicador, info_fuente) in zip(tabs, FUENTES_DATOS.items()):
+        with tab:
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                st.markdown(f"### {nombre_indicador}")
+                
+                st.markdown(f"**Descripción:** {info_fuente['descripcion']}")
+                
+                st.markdown("---")
+                
+                st.markdown("#### Información de la Fuente")
+                
+                info_col1, info_col2 = st.columns(2)
+                
+                with info_col1:
+                    st.markdown(f"**Organismo:** {info_fuente['fuente']}")
+                    st.markdown(f"**Frecuencia:** {info_fuente['frecuencia']}")
+                    st.markdown(f"**Rango de datos:** {info_fuente['rango_datos']}")
+                
+                with info_col2:
+                    st.markdown(f"**Actualización:** {info_fuente['actualizacion']}")
+                    if info_fuente['url_fuente'] != 'N/A':
+                        st.markdown(f"[Ir a página oficial]({info_fuente['url_fuente']})")
+                
+                st.markdown("---")
+                
+                st.markdown("#### Variables Disponibles")
+                for i, variable in enumerate(info_fuente['variables'], 1):
+                    st.markdown(f"{i}. {variable}")
+            
+            with col2:
+                st.markdown("#### Resumen")
+                
+                indicador_color = {
+                    "Dólar SII": "🟦",
+                    "UTM SII": "🟩",
+                    "IPC INE": "🟧",
+                    "ICL INE": "🟪",
+                    "MOP Reajuste Polinómico": "🟨",
+                    "Savings Bridge": "🟥",
+                    "Consolidado Temporal": "⬜"
+                }
+                
+                st.metric(
+                    "Estado",
+                    "Activo",
+                    delta=f"{info_fuente['frecuencia'].lower()}"
+                )
+                
+                st.metric(
+                    "Variables",
+                    len(info_fuente['variables'])
+                )
+
+
+# =========================
 # Validación rápida de archivos
 # =========================
 
@@ -201,6 +532,13 @@ pagina = st.navigation(
                 title="Inicio",
                 icon="🏠"
             )
+        ],
+        "Información": [
+            st.Page(
+                pagina_fuentes_datos,
+                title="Fuentes de Datos",
+                icon="📚"
+            ),
         ],
         "Consolidado": [
             st.Page(
