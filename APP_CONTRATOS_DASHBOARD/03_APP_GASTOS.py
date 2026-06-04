@@ -1,3 +1,11 @@
+PUEDES AGREGAR Texto breve
+
+EN LA TABLA REGISTROS DEL MES SELECCIONADO?
+
+ES DECIR QUE LA COLUMNA FORME PARTE DE LA TABLA A VISUALIZAR
+
+ACTUALIZAR ESTE CODIGO Y DAMELO COMPLETO ACTUALIZADO EN EL CHAT
+
 # ============================================================
 # 03_APP_GASTOS.py
 # Dashboard de Monitoreo de Contratos ENAEX
