@@ -213,6 +213,12 @@ def formato_usd_largo(x) -> str:
     return f"US$ {x:,.2f}"
 
 
+def formato_usd_millones(x) -> str:
+    if pd.isna(x):
+        x = 0
+    return f"US$ {x / 1_000_000:,.2f} MM"
+
+
 def formato_entero(x) -> str:
     if pd.isna(x):
         x = 0
@@ -559,9 +565,17 @@ monedas_unicas = df_ordenes_filtrado["Moneda"].nunique()
 
 col_kpi1, col_kpi2, col_kpi3, col_kpi4 = st.columns(4)
 with col_kpi1:
-    kpi_card("Gasto total OC", formato_usd_largo(monto_total_oc_usd), "Monto convertido a USD")
+    kpi_card(
+        "Gasto total OC",
+        formato_usd_largo(monto_total_oc_usd),
+        f"Equivalente: {formato_usd_millones(monto_total_oc_usd)}"
+    )
 with col_kpi2:
-    kpi_card("OC tipo 44", formato_usd_largo(monto_oc_tipo_44_usd), f"Participación: {formato_porcentaje(participacion_oc_tipo_44)}")
+    kpi_card(
+        "OC tipo 44",
+        formato_usd_largo(monto_oc_tipo_44_usd),
+        f"{formato_usd_millones(monto_oc_tipo_44_usd)} | Participación: {formato_porcentaje(participacion_oc_tipo_44)}"
+    )
 with col_kpi3:
     kpi_card("N° órdenes", formato_entero(ordenes_unicas), f"Monedas analizadas: {monedas_unicas}")
 with col_kpi4:
@@ -576,6 +590,67 @@ with col_kpi7:
     kpi_card("Periodo desde", str(fecha_inicio), "Fecha documento mínima filtrada")
 with col_kpi8:
     kpi_card("Periodo hasta", str(fecha_fin), "Fecha documento máxima filtrada")
+
+
+# ============================================================
+# Detalle contratos sin información ME5A
+# ============================================================
+
+df_sin_info_me5a = df_contratos_estado_filtrado[
+    df_contratos_estado_filtrado["Estado"] == "Sin información ME5A"
+].copy()
+
+if not df_sin_info_me5a.empty:
+    with st.expander("Ver detalle de contratos no encontrados en ME5A", expanded=False):
+        st.caption(
+            "Estos contratos existen en la base de contratos/categoría, pero no tuvieron coincidencia en ME5A mediante el campo Documento_compras."
+        )
+
+        columnas_sin_me5a = [
+            col for col in [
+                "Contrato",
+                "Gestor_Contrato",
+                "Documento_compras",
+                "Fin_período_validez",
+                "Estado",
+                "Fecha_Analisis",
+            ] if col in df_sin_info_me5a.columns
+        ]
+
+        df_sin_info_me5a_tabla = (
+            df_sin_info_me5a[columnas_sin_me5a]
+            .drop_duplicates()
+            .sort_values(["Gestor_Contrato", "Contrato"])
+            .reset_index(drop=True)
+        )
+
+        col_sin_1, col_sin_2 = st.columns([0.8, 1.2])
+
+        with col_sin_1:
+            df_sin_me5a_resumen = (
+                df_sin_info_me5a_tabla
+                .groupby("Gestor_Contrato", as_index=False)["Contrato"]
+                .nunique()
+                .rename(columns={"Contrato": "Contratos_No_Encontrados_ME5A"})
+                .sort_values("Contratos_No_Encontrados_ME5A", ascending=False)
+            )
+
+            st.markdown("##### Resumen por gestor")
+            st.dataframe(
+                df_sin_me5a_resumen,
+                use_container_width=True,
+                hide_index=True,
+            )
+
+        with col_sin_2:
+            st.markdown("##### Contratos no encontrados")
+            st.dataframe(
+                df_sin_info_me5a_tabla,
+                use_container_width=True,
+                hide_index=True,
+            )
+else:
+    st.success("Todos los contratos filtrados tienen información asociada en ME5A.")
 
 
 # ============================================================
@@ -694,7 +769,11 @@ else:
 
     col_mes1, col_mes2, col_mes3, col_mes4 = st.columns(4)
     with col_mes1:
-        kpi_card("Gasto del mes", formato_usd_largo(monto_mes_usd), f"Mes seleccionado: {mes_seleccionado}")
+        kpi_card(
+            "Gasto del mes",
+            formato_usd_largo(monto_mes_usd),
+            f"{formato_usd_millones(monto_mes_usd)} | Mes seleccionado: {mes_seleccionado}"
+        )
     with col_mes2:
         kpi_card("Órdenes únicas", formato_entero(ordenes_mes), "Documento de compras único")
     with col_mes3:
@@ -1075,26 +1154,48 @@ if df_top_por_vencer.empty:
     st.info("No hay contratos por vencer para los filtros seleccionados.")
 else:
     fig, ax = plt.subplots(figsize=(10, max(5, 0.35 * len(df_top_por_vencer) + 2)))
-    ax.barh(df_top_por_vencer["Gestor_Contrato"], df_top_por_vencer["Contratos_Por_Vencer"])
-    ax.set_title("Contratos por vencer por gestor", fontsize=14, fontweight="bold")
+
+    bars = ax.barh(
+        df_top_por_vencer["Gestor_Contrato"],
+        df_top_por_vencer["Contratos_Por_Vencer"],
+        color="#f59e0b",
+        edgecolor="#d97706",
+        linewidth=0.8,
+    )
+
+    ax.set_title("Contratos por vencer por gestor", fontsize=14, fontweight="bold", pad=14)
     ax.set_xlabel("Recuento de contratos por vencer")
     ax.set_ylabel("Gestor de contrato")
-    ax.grid(axis="x", alpha=0.25)
+
+    ax.grid(False)
+
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_color("#d1d5db")
+    ax.spines["bottom"].set_color("#d1d5db")
+
+    ax.tick_params(axis="x", colors="#374151")
+    ax.tick_params(axis="y", colors="#374151")
     ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
 
     max_por_vencer = df_top_por_vencer["Contratos_Por_Vencer"].max()
-    margen_por_vencer = max(1, max_por_vencer * 0.18)
+    margen_por_vencer = max(1, max_por_vencer * 0.22)
 
     ax.set_xlim(0, max_por_vencer + margen_por_vencer)
 
-    for i, valor in enumerate(df_top_por_vencer["Contratos_Por_Vencer"]):
+    for bar in bars:
+        valor = bar.get_width()
+        y_pos = bar.get_y() + bar.get_height() / 2
+
         ax.text(
-            valor + margen_por_vencer * 0.12,
-            i,
+            valor + margen_por_vencer * 0.08,
+            y_pos,
             str(int(valor)),
             va="center",
+            ha="left",
             fontsize=9,
             fontweight="bold",
+            color="#111827",
         )
 
     fig.tight_layout()
@@ -1146,14 +1247,40 @@ with st.expander("Contratos con estado de vigencia"):
     st.dataframe(df_contratos_estado[columnas_preview].head(500), use_container_width=True, hide_index=True)
 
 with st.expander("Resumen de validación"):
+    monedas_validas = len(monedas_faltantes) == 0
+
+    st.write("**Validación de monedas**")
+
+    col_val_moneda1, col_val_moneda2 = st.columns([0.8, 1.2])
+
+    with col_val_moneda1:
+        if monedas_validas:
+            kpi_card(
+                "Validación monedas",
+                "OK",
+                "Todas las monedas de df_ordenes existen en df_moneda_cambio."
+            )
+        else:
+            kpi_card(
+                "Validación monedas",
+                "Revisar",
+                f"Monedas faltantes: {len(monedas_faltantes)}"
+            )
+
+    with col_val_moneda2:
+        if monedas_validas:
+            st.success("Todas las monedas de df_ordenes existen en df_moneda_cambio.")
+        else:
+            st.warning(
+                "Existen monedas presentes en df_ordenes que no fueron encontradas en df_moneda_cambio."
+            )
+            st.write("Monedas faltantes:")
+            st.write(", ".join(monedas_faltantes))
+
+    st.divider()
+
     st.write("**Validación de contratos**")
     st.write(f"- Total contratos únicos en df_bbdd_x_categoria: {df_contratos_estado['Contrato'].nunique():,.0f}")
     st.write(f"- Contratos únicos cruzados con ME5A: {contratos_cruzados_me5a:,.0f}")
     st.write(f"- Contratos sin información en ME5A: {contratos_sin_me5a:,.0f}")
     st.write(f"- Fecha usada como TODAY(): {pd.Timestamp.today().normalize().date()}")
-
-    st.write("**Validación de monedas**")
-    if monedas_faltantes:
-        st.write("- Monedas faltantes en df_moneda_cambio: " + ", ".join(monedas_faltantes))
-    else:
-        st.write("- Todas las monedas de df_ordenes existen en df_moneda_cambio.")
