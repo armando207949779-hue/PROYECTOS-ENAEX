@@ -548,7 +548,7 @@ eficiencia = ahorro_con_base / base if base != 0 else 0
 
 st.markdown("### Indicadores principales")
 
-kpi_col1, kpi_col2, kpi_col3, kpi_col4, kpi_col5 = st.columns(5)
+kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
 
 with kpi_col1:
     kpi_card("Ahorro Planificado", formato_kusd(ahorro_planificado_total))
@@ -563,6 +563,8 @@ with kpi_col3:
         "Ahorro real dividido por ahorro planificado."
     )
 
+kpi_col4, kpi_col5, kpi_col6 = st.columns(3)
+
 with kpi_col4:
     kpi_card("N° Contratos", f"{n_contratos:,}")
 
@@ -572,6 +574,9 @@ with kpi_col5:
         formato_porcentaje(eficiencia),
         "Ahorro real sobre la línea base válida."
     )
+
+with kpi_col6:
+    kpi_card("Base con línea base", formato_kusd(base), "Suma de LineaBase_kUSD válida")
 
 st.markdown("#### Glosario de indicadores")
 
@@ -716,7 +721,19 @@ else:
             color="#111827"
         )
 
-    ax.legend(loc="lower right", frameon=False)
+    from matplotlib.patches import Patch
+
+    leyenda_cumplimiento = [
+        Patch(facecolor="#16A34A", edgecolor="#16A34A", label="Cumple o supera meta"),
+        Patch(facecolor="#DC2626", edgecolor="#DC2626", label="Bajo la meta"),
+        Patch(facecolor="#E5E7EB", edgecolor="#D1D5DB", label="Meta 100%"),
+    ]
+
+    ax.legend(
+        handles=leyenda_cumplimiento,
+        loc="lower right",
+        frameon=False
+    )
 
     fig.tight_layout()
     st.pyplot(fig, clear_figure=True)
@@ -764,9 +781,9 @@ else:
         df_ahorro_acumulado["Mes_Registro"],
         df_ahorro_acumulado["Ahorro_Real_Mensual_kUSD"],
         width=18,
-        alpha=0.55,
-        color="#F59E0B",
-        edgecolor="#D97706",
+        alpha=0.35,
+        color="#93C5FD",
+        edgecolor="#60A5FA",
         linewidth=0.8,
         label="Mensual"
     )
@@ -780,7 +797,7 @@ else:
         df_ahorro_acumulado["Ahorro_Real_Acumulado_kUSD"],
         marker="o",
         linewidth=2.5,
-        color="#7C3AED",
+        color="#1D4ED8",
         label="Acumulado"
     )
 
@@ -872,8 +889,8 @@ else:
     bars = ax.barh(
         df_top_contratos_plot["Contrato_Label"],
         df_top_contratos_plot["Ahorro_Real_kUSD_num"],
-        color="#0F766E",
-        edgecolor="#115E59",
+        color="#2563EB",
+        edgecolor="#1D4ED8",
         linewidth=0.8
     )
 
@@ -995,17 +1012,17 @@ else:
     ).reset_index(drop=True)
 
     colores_donut = [
-        "#7C3AED",
-        "#F59E0B",
-        "#0F766E",
-        "#DC2626",
-        "#64748B",
+        "#1D4ED8",
+        "#2563EB",
+        "#3B82F6",
+        "#60A5FA",
+        "#93C5FD",
     ]
 
     col_donut, col_tabla_donut = st.columns([0.85, 1.15])
 
     with col_donut:
-        fig, ax = plt.subplots(figsize=(4.6, 4.2))
+        fig, ax = plt.subplots(figsize=(5.8, 4.5))
 
         wedges, texts, autotexts = ax.pie(
             df_donut["Ahorro_Real_Total_kUSD"],
@@ -1045,6 +1062,22 @@ else:
         )
 
         ax.set_aspect("equal")
+
+        leyenda_labels = [
+            f"{row['Tipo_Proceso']} | {row['Ahorro_Real_Total_kUSD']:,.1f} kUSD | {row['Participacion_%']:.1f}%"
+            for _, row in df_donut.iterrows()
+        ]
+
+        ax.legend(
+            wedges,
+            leyenda_labels,
+            title="Tipo de proceso",
+            loc="center left",
+            bbox_to_anchor=(1.02, 0.5),
+            fontsize=8,
+            title_fontsize=9,
+            frameon=False,
+        )
 
         plt.tight_layout(pad=0.5)
         st.pyplot(fig, clear_figure=True)
@@ -1095,23 +1128,11 @@ if df_ahorro_proceso_bar.empty:
 else:
     fig, ax = plt.subplots(figsize=(13, 5.5))
 
-    colores_proceso = {
-        "Licitación": "#7C3AED",
-        "Cotización": "#F59E0B",
-        "Asignación Directa": "#0F766E",
-        "Negociación - Cost Avoidance": "#DC2626",
-    }
-
-    colores_barras_proceso = [
-        colores_proceso.get(tipo, "#64748B")
-        for tipo in df_ahorro_proceso_bar["Tipo_Proceso"]
-    ]
-
     bars = ax.barh(
         df_ahorro_proceso_bar["Tipo_Proceso"],
         df_ahorro_proceso_bar["Ahorro_Real_Total_kUSD"],
-        color=colores_barras_proceso,
-        edgecolor=colores_barras_proceso,
+        color="#2563EB",
+        edgecolor="#1D4ED8",
         linewidth=0.8
     )
 
