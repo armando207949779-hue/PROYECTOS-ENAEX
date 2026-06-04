@@ -1,7 +1,7 @@
 # ============================================================
+# APP_CONTRATOS_DASHBOARD
 # Portal principal ENAEX
 # Dashboard modular por pestañas
-# Cada pestaña llama a un código/app independiente
 # ============================================================
 
 import base64
@@ -10,36 +10,31 @@ from pathlib import Path
 import streamlit as st
 
 
-# =========================
+# ============================================================
 # Rutas del proyecto
-# =========================
+# ============================================================
 
 BASE_DIR = Path(__file__).resolve().parent
-PROJECT_DIR = BASE_DIR.parent
 
-LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
+LOGO_PATH = BASE_DIR / "assets" / "logo.svg"
 
-APP_AHORRO = (
-    PROJECT_DIR
-    / "app_ahorro"
-    / "app_ahorro.py"
-)
+APP_CARGAR_ARCHIVO = BASE_DIR / "APP_CARGAR_ARCHIVO.py"
 
 
-# =========================
+# ============================================================
 # Configuración general
-# =========================
+# ============================================================
 
 st.set_page_config(
-    page_title="Dashboard ENAEX",
+    page_title="Dashboard Contratos ENAEX",
     page_icon="🏢",
     layout="wide"
 )
 
 
-# =========================
+# ============================================================
 # Logo centrado
-# =========================
+# ============================================================
 
 def mostrar_logo_centrado():
     if LOGO_PATH.exists():
@@ -71,23 +66,23 @@ def mostrar_logo_centrado():
         st.warning(f"Logo no encontrado: {LOGO_PATH}")
 
 
-# =========================
-# Página principal
-# =========================
+# ============================================================
+# Página de inicio
+# ============================================================
 
 def pagina_inicio():
     mostrar_logo_centrado()
 
     st.markdown(
-        "<h1 style='text-align: center;'>Dashboard ENAEX</h1>",
+        "<h1 style='text-align: center;'>Dashboard Contratos ENAEX</h1>",
         unsafe_allow_html=True
     )
 
     st.markdown(
         """
         <p style='text-align: center; font-size: 18px;'>
-            Portal principal para integrar aplicaciones analíticas por pestañas.
-            Cada pestaña llamará a un módulo independiente del dashboard.
+            Portal modular para cargar bases, validar información y construir análisis
+            de contratos, órdenes de compra, ahorros, hitos y vencimientos.
         </p>
         """,
         unsafe_allow_html=True
@@ -100,19 +95,30 @@ def pagina_inicio():
     with col1:
         st.info(
             """
-            **AHORRO**
+            **01_CARGA_ARCHIVOS**
 
-            Análisis de ahorro real, ahorro planificado,
-            cumplimiento, eficiencia y acumulados.
+            Carga y validación de las bases locales del dashboard.
+
+            Permite revisar:
+            - Archivos encontrados
+            - DataFrames cargados
+            - Columnas
+            - Tipos de datos
+            - Vista previa
             """
         )
 
     with col2:
         st.info(
             """
-            **Próxima pestaña**
+            **Próximos módulos**
 
-            Espacio reservado para integrar un nuevo módulo.
+            Espacio reservado para incorporar:
+            - Ahorros
+            - Contratos
+            - Hitos
+            - Órdenes de compra
+            - Alertas de vencimiento
             """
         )
 
@@ -121,17 +127,28 @@ def pagina_inicio():
             """
             **Arquitectura modular**
 
-            Cada pestaña se conecta a un archivo Python separado.
+            Cada pestaña se conecta a un archivo Python independiente.
+
+            Esto permite mantener el proyecto ordenado y escalable.
             """
         )
 
+    st.markdown("---")
 
-# =========================
-# Validación rápida de archivos
-# =========================
+    st.success(
+        """
+        Para comenzar, entra a la pestaña **01_CARGA_ARCHIVOS** y carga la carpeta
+        que contiene las bases del dashboard.
+        """
+    )
+
+
+# ============================================================
+# Validación rápida de apps
+# ============================================================
 
 apps_requeridas = {
-    "AHORRO": APP_AHORRO,
+    "01_CARGA_ARCHIVOS": APP_CARGAR_ARCHIVO,
 }
 
 apps_faltantes = {
@@ -141,7 +158,7 @@ apps_faltantes = {
 }
 
 if apps_faltantes:
-    st.error("No se encontraron una o más apps. Revisa los nombres de carpetas y archivos.")
+    st.error("No se encontraron una o más apps requeridas.")
 
     for nombre, ruta in apps_faltantes.items():
         st.write(f"**{nombre}:** `{ruta}`")
@@ -149,9 +166,9 @@ if apps_faltantes:
     st.stop()
 
 
-# =========================
-# Navegación entre apps
-# =========================
+# ============================================================
+# Navegación entre páginas
+# ============================================================
 
 pagina = st.navigation(
     {
@@ -164,15 +181,20 @@ pagina = st.navigation(
             )
         ],
 
-        "Dashboard": [
+        "Carga de datos": [
             st.Page(
-                APP_AHORRO,
-                title="AHORRO",
-                icon="💰",
-                url_path="ahorro"
+                APP_CARGAR_ARCHIVO,
+                title="01_CARGA_ARCHIVOS",
+                icon="📁",
+                url_path="carga_archivos"
             ),
         ],
     }
 )
+
+
+# ============================================================
+# Ejecutar página seleccionada
+# ============================================================
 
 pagina.run()
