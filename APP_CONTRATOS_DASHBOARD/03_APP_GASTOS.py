@@ -29,6 +29,10 @@ BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
 LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
 
+# Cambia este valor cuando ajustes reglas de limpieza/cálculo.
+# Sirve para forzar que st.cache_data recalcule la preparación de datos.
+VERSION_NORMALIZACION_IDS = "v_2026_06_04_limpieza_contratos_coma_00"
+
 
 # ============================================================
 # Estilos
@@ -207,30 +211,36 @@ def limpiar_id_contrato(valor):
     Normaliza IDs de contrato/documento para cruces.
 
     Corrige casos como:
-    - 4600003868.0  -> 4600003868
-    - 4600003868.00 -> 4600003868
-    - 4600003868,0  -> 4600003868
-    - 4600003868,00 -> 4600003868
+    - 4600003868.0
+    - 4600003868.00
+    - 4600003868,0
+    - 4600003868,00
+    - 4.600.003.868
+    - 4,600,003,868
     """
     if pd.isna(valor):
         return pd.NA
 
     s = str(valor).strip()
 
-    if s == "" or s.lower() in ["nan", "none", "null"]:
+    if s == "" or s.lower() in ["nan", "none", "null", "<na>"]:
         return pd.NA
 
     s = s.replace("\u00a0", "").strip()
 
-    # Elimina decimales finales artificiales en identificadores.
+    # Caso específico más importante: IDs con decimal artificial final.
+    # Ejemplos: 4600003868,00 / 4600003868.00 / 4600003868,0 / 4600003868.0
     s = re.sub(r"([,.]0+)$", "", s)
 
-    # Si el ID viene como número con separador de miles, conserva solo dígitos.
-    # Esto evita problemas de formatos como 4.600.003.868.
+    # Si sigue siendo una cadena numérica con separadores, elimina separadores.
+    # Ejemplo: 4.600.003.868 -> 4600003868
     if re.fullmatch(r"[0-9.,]+", s):
-        s_sin_sep = re.sub(r"[.,]", "", s)
-        if s_sin_sep.isdigit():
-            s = s_sin_sep
+        s = re.sub(r"[.,]", "", s)
+
+    # Limpieza final: deja solo dígitos si es un identificador numérico.
+    solo_digitos = re.sub(r"\D", "", s)
+    if solo_digitos:
+        s = solo_digitos
 
     return s
 
@@ -358,7 +368,11 @@ if errores_columnas:
 # ============================================================
 
 @st.cache_data(show_spinner=False)
-def preparar_ordenes_usd(df_ordenes: pd.DataFrame, df_moneda_cambio: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
+def preparar_ordenes_usd(
+    df_ordenes: pd.DataFrame,
+    df_moneda_cambio: pd.DataFrame,
+    version_cache: str,
+) -> tuple[pd.DataFrame, list[str]]:
     df_ordenes_usd = df_ordenes.copy()
     df_cambio = df_moneda_cambio.copy()
 
@@ -390,7 +404,8 @@ def preparar_ordenes_usd(df_ordenes: pd.DataFrame, df_moneda_cambio: pd.DataFram
     )
 
     df_ordenes_usd["Documento_Compras_Texto"] = limpiar_texto_serie(
-        df_ordenes_usd["Documento_compras"], quitar_decimal=True
+        df_ordenes_usd["Documento_compras"],
+        quitar_decimal=True,
     )
 
     df_ordenes_usd["Tipo_Orden_Compra"] = pd.to_numeric(
@@ -432,15 +447,27 @@ def preparar_ordenes_usd(df_ordenes: pd.DataFrame, df_moneda_cambio: pd.DataFram
 
 
 @st.cache_data(show_spinner=False)
-def preparar_contratos_estado(df_bbdd_x_categoria: pd.DataFrame, df_me5a: pd.DataFrame) -> pd.DataFrame:
+def preparar_contratos_estado(
+    df_bbdd_x_categoria: pd.DataFrame,
+    df_me5a: pd.DataFrame,
+    version_cache: str,
+) -> pd.DataFrame:
     df_cat = df_bbdd_x_categoria.copy()
     df_m5 = df_me5a.copy()
 
-    df_cat["Contrato"] = limpiar_texto_serie(df_cat["Contrato"], quitar_decimal=True)
-    df_m5["Documento_compras"] = limpiar_texto_serie(df_m5["Documento_compras"], quitar_decimal=True)
+    # Guardar valores originales solo para trazabilidad.
+    df_cat["Contrato_Original"] = df_cat["Contrato"]
+    df_m5["Documento_Compras_Original_ME5A"] = df_m5["Documento_compras"]
+
+    # Normalización robusta para evitar que 4600003868,00 no cruce contra 4600003868.
+    df_cat["Contrato"] = df_cat["Contrato"].apply(limpiar_id_contrato)
+    df_m5["Documento_compras"] = df_m5["Documento_compras"].apply(limpiar_id_contrato)
 
     df_cat = df_cat.dropna(subset=["Contrato"]).copy()
     df_m5 = df_m5.dropna(subset=["Documento_compras"]).copy()
+
+    df_cat["Contrato"] = df_cat["Contrato"].astype(str).str.strip()
+    df_m5["Documento_compras"] = df_m5["Documento_compras"].astype(str).str.strip()
 
     df_cat["Gestor_Contrato"] = (
         df_cat["Gestor_Contrato"]
@@ -470,7 +497,10 @@ def preparar_contratos_estado(df_bbdd_x_categoria: pd.DataFrame, df_me5a: pd.Dat
     df_m5_contrato = (
         df_m5
         .groupby("Documento_compras", as_index=False)
-        .agg({"Fin_período_validez": "max"})
+        .agg(
+            Fin_período_validez=("Fin_período_validez", "max"),
+            Documento_Compras_Original_ME5A=("Documento_Compras_Original_ME5A", "first"),
+        )
     )
 
     df_m5_contrato["Estado"] = df_m5_contrato["Fin_período_validez"].apply(clasificar_estado)
@@ -485,11 +515,23 @@ def preparar_contratos_estado(df_bbdd_x_categoria: pd.DataFrame, df_me5a: pd.Dat
     df_contratos_estado["Estado"] = df_contratos_estado["Estado"].fillna("Sin información ME5A")
     df_contratos_estado["Fecha_Analisis"] = hoy
 
+    # Reforzar limpieza final del campo mostrado.
+    df_contratos_estado["Contrato"] = df_contratos_estado["Contrato"].apply(limpiar_id_contrato).astype(str)
+
     return df_contratos_estado
 
 
-df_ordenes_usd, monedas_faltantes = preparar_ordenes_usd(_df_ordenes, _df_moneda_cambio)
-df_contratos_estado = preparar_contratos_estado(_df_bbdd_x_categoria, _df_me5a)
+df_ordenes_usd, monedas_faltantes = preparar_ordenes_usd(
+    _df_ordenes,
+    _df_moneda_cambio,
+    VERSION_NORMALIZACION_IDS,
+)
+
+df_contratos_estado = preparar_contratos_estado(
+    _df_bbdd_x_categoria,
+    _df_me5a,
+    VERSION_NORMALIZACION_IDS,
+)
 
 if monedas_faltantes:
     st.warning(
@@ -653,9 +695,13 @@ if not df_sin_info_me5a.empty:
             "Estos contratos existen en la base de contratos/categoría, pero no tuvieron coincidencia en ME5A mediante el campo Documento_compras."
         )
 
+        # Limpieza reforzada antes de mostrar.
+        df_sin_info_me5a["Contrato"] = df_sin_info_me5a["Contrato"].apply(limpiar_id_contrato).astype(str)
+
         columnas_sin_me5a = [
             col for col in [
                 "Contrato",
+                "Contrato_Original",
                 "Gestor_Contrato",
                 "Documento_compras",
                 "Fin_período_validez",
@@ -891,6 +937,7 @@ else:
         columnas_detalle_mes = [
             col for col in [
                 "Documento_compras",
+                "Documento_Compras_Texto",
                 "Fecha_documento",
                 "Moneda",
                 "Precio_neto",
@@ -1351,8 +1398,10 @@ with st.expander("Contratos con estado de vigencia"):
     columnas_preview = [
         col for col in [
             "Contrato",
+            "Contrato_Original",
             "Gestor_Contrato",
             "Documento_compras",
+            "Documento_Compras_Original_ME5A",
             "Fin_período_validez",
             "Estado",
         ] if col in df_contratos_estado.columns
