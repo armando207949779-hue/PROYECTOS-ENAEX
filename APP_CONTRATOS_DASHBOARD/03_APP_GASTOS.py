@@ -831,19 +831,69 @@ else:
 
     with col_donut:
         total_contratos = df_estado_global["Recuento_Contratos"].sum()
-        fig, ax = plt.subplots(figsize=(4.8, 4.4))
-        ax.pie(
+
+        colores_estado = {
+            "Vencido": "#ef4444",
+            "Por Vencer": "#f59e0b",
+            "Vigente": "#22c55e",
+            "Sin fecha": "#94a3b8",
+            "Sin información ME5A": "#64748b",
+        }
+
+        colores_grafico = [
+            colores_estado.get(estado, "#cbd5e1")
+            for estado in df_estado_global["Estado"]
+        ]
+
+        fig, ax = plt.subplots(figsize=(5.8, 4.8))
+
+        wedges, texts, autotexts = ax.pie(
             df_estado_global["Recuento_Contratos"],
             labels=None,
             autopct=lambda p: f"{p:.1f}%" if p >= 3 else "",
             startangle=90,
             pctdistance=0.78,
+            colors=colores_grafico,
             wedgeprops={"width": 0.38, "edgecolor": "white"},
-            textprops={"fontsize": 8},
+            textprops={"fontsize": 8, "fontweight": "bold", "color": "#111827"},
         )
-        ax.text(0, 0.05, f"{total_contratos:,.0f}", ha="center", va="center", fontsize=20, fontweight="bold")
-        ax.text(0, -0.13, "contratos", ha="center", va="center", fontsize=10)
+
+        ax.text(
+            0,
+            0.05,
+            f"{total_contratos:,.0f}",
+            ha="center",
+            va="center",
+            fontsize=20,
+            fontweight="bold",
+        )
+        ax.text(
+            0,
+            -0.13,
+            "contratos",
+            ha="center",
+            va="center",
+            fontsize=10,
+        )
+
         ax.set_title("Distribución global", fontsize=13, fontweight="bold")
+
+        leyenda_labels = [
+            f"{row['Estado']} | {int(row['Recuento_Contratos'])} contratos | {row['Participacion_%']:.1f}%"
+            for _, row in df_estado_global.iterrows()
+        ]
+
+        ax.legend(
+            wedges,
+            leyenda_labels,
+            title="Estado",
+            loc="center left",
+            bbox_to_anchor=(1.02, 0.5),
+            fontsize=8,
+            title_fontsize=9,
+            frameon=False,
+        )
+
         fig.tight_layout()
         st.pyplot(fig, clear_figure=True)
 
@@ -917,25 +967,51 @@ else:
         st.info("No hay datos para construir el mapa de calor.")
     else:
         fig, ax = plt.subplots(figsize=(10, max(6, 0.38 * len(df_heatmap_plot) + 2)))
+
         matriz = df_heatmap_plot.values
-        im = ax.imshow(matriz, aspect="auto")
+
+        im = ax.imshow(
+            matriz,
+            aspect="auto",
+            cmap="YlGnBu",
+        )
 
         ax.set_xticks(np.arange(len(df_heatmap_plot.columns)))
         ax.set_xticklabels(df_heatmap_plot.columns, rotation=45, ha="right")
         ax.set_yticks(np.arange(len(df_heatmap_plot.index)))
         ax.set_yticklabels(df_heatmap_plot.index)
 
-        ax.set_title("Mapa de calor de contratos por gestor y estado", fontsize=14, fontweight="bold")
+        ax.set_title(
+            "Mapa de calor de contratos por gestor y estado",
+            fontsize=14,
+            fontweight="bold",
+        )
         ax.set_xlabel("Estado")
         ax.set_ylabel("Gestor de contrato")
+
+        valor_maximo = matriz.max() if matriz.size > 0 else 0
 
         for i in range(matriz.shape[0]):
             for j in range(matriz.shape[1]):
                 valor = matriz[i, j]
-                if valor > 0:
-                    ax.text(j, i, int(valor), ha="center", va="center", fontsize=9, fontweight="bold")
 
-        fig.colorbar(im, ax=ax, label="Recuento de contratos")
+                if valor > 0:
+                    color_texto = "white" if valor_maximo > 0 and valor >= valor_maximo * 0.65 else "#111827"
+
+                    ax.text(
+                        j,
+                        i,
+                        int(valor),
+                        ha="center",
+                        va="center",
+                        fontsize=9,
+                        fontweight="bold",
+                        color=color_texto,
+                    )
+
+        cbar = fig.colorbar(im, ax=ax)
+        cbar.set_label("Recuento de contratos")
+
         fig.tight_layout()
         st.pyplot(fig, clear_figure=True)
 
