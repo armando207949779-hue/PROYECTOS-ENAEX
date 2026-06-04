@@ -72,16 +72,6 @@ def aplicar_estilo():
                 color: #6B7280;
             }
 
-            .section-card {
-                background-color: #FFFFFF;
-                border: 1px solid #E5E7EB;
-                border-radius: 16px;
-                padding: 22px 24px;
-                margin-top: 18px;
-                margin-bottom: 22px;
-                box-shadow: 0px 2px 8px rgba(0,0,0,0.035);
-            }
-
             .filter-card {
                 background-color: #F9FAFB;
                 border: 1px solid #E5E7EB;
@@ -167,7 +157,7 @@ def convertir_kusd(valor):
     if s == "" or s.lower() in ["nan", "none"]:
         return pd.NA
 
-    # Formato usado previamente: 81.036,00 -> 81.036
+    # Formato usado en la base: 81.036,00 -> 81.036
     if "." in s and "," in s:
         s = s.split(",")[0]
         return pd.to_numeric(s, errors="coerce")
@@ -562,43 +552,42 @@ df_progreso_gestor = df_progreso_gestor.sort_values(
 
 st.markdown("### Cumplimiento por gestor")
 
-with st.container():
-    if df_progreso_gestor.empty:
-        st.info("No hay datos para graficar.")
-    else:
-        fig, ax = plt.subplots(figsize=(13, max(5, len(df_progreso_gestor) * 0.55)))
+if df_progreso_gestor.empty:
+    st.info("No hay datos para graficar.")
+else:
+    fig, ax = plt.subplots(figsize=(13, max(5, len(df_progreso_gestor) * 0.55)))
 
-        ax.barh(
-            df_progreso_gestor["Gestor"],
-            [100] * len(df_progreso_gestor),
-            color="#E0E0E0",
-            label="Meta 100%"
+    ax.barh(
+        df_progreso_gestor["Gestor"],
+        [100] * len(df_progreso_gestor),
+        color="#E0E0E0",
+        label="Meta 100%"
+    )
+
+    ax.barh(
+        df_progreso_gestor["Gestor"],
+        df_progreso_gestor["Cumplimiento_Grafico_%"],
+        color="#1976D2",
+        label="Cumplimiento"
+    )
+
+    ax.axvline(100, linestyle="--", linewidth=1.1, color="black")
+
+    for i, row in df_progreso_gestor.iterrows():
+        texto = (
+            f"{row['Cumplimiento_%']:.1f}% | "
+            f"{row['Ahorro_Real_Total_kUSD']:,.0f} / "
+            f"{row['Ahorro_Planificado_Total_kUSD']:,.0f} kUSD"
         )
+        ax.text(102, i, texto, va="center", fontsize=9)
 
-        ax.barh(
-            df_progreso_gestor["Gestor"],
-            df_progreso_gestor["Cumplimiento_Grafico_%"],
-            color="#1976D2",
-            label="Cumplimiento"
-        )
+    ax.set_xlabel("Cumplimiento [%]")
+    ax.set_xlim(0, 150)
+    ax.grid(axis="x", alpha=0.25)
+    ax.legend(loc="lower right")
 
-        ax.axvline(100, linestyle="--", linewidth=1.1, color="black")
-
-        for i, row in df_progreso_gestor.iterrows():
-            texto = (
-                f"{row['Cumplimiento_%']:.1f}% | "
-                f"{row['Ahorro_Real_Total_kUSD']:,.0f} / "
-                f"{row['Ahorro_Planificado_Total_kUSD']:,.0f} kUSD"
-            )
-            ax.text(102, i, texto, va="center", fontsize=9)
-
-        ax.set_xlabel("Cumplimiento [%]")
-        ax.set_xlim(0, 150)
-        ax.grid(axis="x", alpha=0.25)
-        ax.legend(loc="lower right")
-
-        plt.tight_layout()
-        st.pyplot(fig, clear_figure=True)
+    plt.tight_layout()
+    st.pyplot(fig, clear_figure=True)
 
 st.markdown("---")
 
@@ -784,7 +773,7 @@ df_ahorro_proceso["Ahorro_Real_Total_kUSD"] = (
 
 
 # ============================================================
-# Gráfico: Donut proceso
+# Gráfico: Donut proceso compacto
 # ============================================================
 
 st.markdown("### Participación del ahorro por tipo de proceso")
@@ -798,41 +787,85 @@ if df_donut.empty:
 else:
     total_ahorro = df_donut["Ahorro_Real_Total_kUSD"].sum()
 
-    fig, ax = plt.subplots(figsize=(8, 7))
-
-    wedges, texts, autotexts = ax.pie(
-        df_donut["Ahorro_Real_Total_kUSD"],
-        labels=df_donut["Tipo_Proceso"],
-        autopct=lambda p: f"{p:.1f}%" if p > 0 else "",
-        startangle=90,
-        pctdistance=0.78,
-        wedgeprops={
-            "width": 0.38,
-            "edgecolor": "white"
-        }
+    df_donut["Participacion_%"] = (
+        df_donut["Ahorro_Real_Total_kUSD"] / total_ahorro * 100
     )
 
-    ax.text(
-        0,
-        0.05,
-        f"{total_ahorro:,.0f}",
-        ha="center",
-        va="center",
-        fontsize=18,
-        fontweight="bold"
-    )
+    df_donut = df_donut.sort_values(
+        "Ahorro_Real_Total_kUSD",
+        ascending=False
+    ).reset_index(drop=True)
 
-    ax.text(
-        0,
-        -0.12,
-        "kUSD total",
-        ha="center",
-        va="center",
-        fontsize=10
-    )
+    col_donut, col_tabla_donut = st.columns([0.85, 1.15])
 
-    plt.tight_layout()
-    st.pyplot(fig, clear_figure=True)
+    with col_donut:
+        fig, ax = plt.subplots(figsize=(4.6, 4.2))
+
+        wedges, texts, autotexts = ax.pie(
+            df_donut["Ahorro_Real_Total_kUSD"],
+            labels=None,
+            autopct=lambda p: f"{p:.1f}%" if p >= 3 else "",
+            startangle=90,
+            pctdistance=0.78,
+            wedgeprops={
+                "width": 0.36,
+                "edgecolor": "white"
+            },
+            textprops={
+                "fontsize": 8
+            }
+        )
+
+        ax.text(
+            0,
+            0.05,
+            f"{total_ahorro:,.0f}",
+            ha="center",
+            va="center",
+            fontsize=14,
+            fontweight="bold"
+        )
+
+        ax.text(
+            0,
+            -0.12,
+            "kUSD total",
+            ha="center",
+            va="center",
+            fontsize=8
+        )
+
+        ax.set_aspect("equal")
+
+        plt.tight_layout(pad=0.5)
+        st.pyplot(fig, clear_figure=True)
+
+    with col_tabla_donut:
+        st.markdown("#### Detalle por proceso")
+
+        df_donut_resumen = df_donut[
+            [
+                "Tipo_Proceso",
+                "Ahorro_Real_Total_kUSD",
+                "Participacion_%"
+            ]
+        ].copy()
+
+        df_donut_resumen["Ahorro_Real_Total_kUSD"] = (
+            df_donut_resumen["Ahorro_Real_Total_kUSD"]
+            .map(lambda x: f"{x:,.1f} kUSD")
+        )
+
+        df_donut_resumen["Participacion_%"] = (
+            df_donut_resumen["Participacion_%"]
+            .map(lambda x: f"{x:.1f}%")
+        )
+
+        st.dataframe(
+            df_donut_resumen,
+            use_container_width=True,
+            hide_index=True
+        )
 
 st.markdown("---")
 
