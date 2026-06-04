@@ -17,9 +17,10 @@ import streamlit as st
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
 
-# Códigos ubicados en:
+# Apps ubicadas en:
 # PROYECTOS-ENAEX/APP_CONTRATOS_DASHBOARD/
-APP_CARGAR_ARCHIVO = BASE_DIR / "APP_CARGAR_ARCHIVO.py"
+APP_CARGAR_ARCHIVO = BASE_DIR / "01_APP_CARGAR_ARCHIVO.py"
+APP_AHORRO = BASE_DIR / "02_APP_AHORRO.py"
 
 # Logo ubicado en:
 # PROYECTOS-ENAEX/assets/logo.svg
@@ -116,14 +117,11 @@ def pagina_inicio():
     with col2:
         st.info(
             """
-            **Próximos módulos**
+            **02_AHORRO**
 
-            Espacio reservado para incorporar:
-            - Ahorros
-            - Contratos
-            - Hitos
-            - Órdenes de compra
-            - Alertas de vencimiento
+            Análisis de ahorro planificado, ahorro real,
+            cumplimiento, eficiencia, acumulados y distribución
+            por gestor, contrato y tipo de proceso.
             """
         )
 
@@ -142,8 +140,8 @@ def pagina_inicio():
 
     st.success(
         """
-        Para comenzar, entra a la pestaña **01_CARGA_ARCHIVOS** y carga la carpeta
-        que contiene las bases del dashboard.
+        Para comenzar, entra a **01_CARGA_ARCHIVOS**, carga las bases y luego revisa
+        los indicadores en **02_AHORRO**.
         """
     )
 
@@ -154,6 +152,7 @@ def pagina_inicio():
 
 apps_requeridas = {
     "01_CARGA_ARCHIVOS": APP_CARGAR_ARCHIVO,
+    "02_AHORRO": APP_AHORRO,
 }
 
 apps_faltantes = {
@@ -186,12 +185,18 @@ pagina = st.navigation(
             )
         ],
 
-        "Carga de datos": [
+        "Dashboard": [
             st.Page(
                 APP_CARGAR_ARCHIVO,
                 title="01_CARGA_ARCHIVOS",
                 icon="📁",
                 url_path="carga_archivos"
+            ),
+            st.Page(
+                APP_AHORRO,
+                title="02_AHORRO",
+                icon="💰",
+                url_path="ahorro"
             ),
         ],
     }
