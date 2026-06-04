@@ -625,7 +625,10 @@ else:
 # Gasto mensual
 # ============================================================
 
-section_title("Gasto mensual", "Desglose mensual y evolución del gasto en órdenes de compra.")
+section_title(
+    "Gasto mensual",
+    "Desglose mensual del gasto en órdenes de compra. Selecciona un mes para revisar el detalle de registros."
+)
 
 df_gasto_mensual = (
     df_ordenes_filtrado
@@ -666,40 +669,98 @@ else:
     fig.tight_layout()
     st.pyplot(fig, clear_figure=True)
 
-    fig, ax = plt.subplots(figsize=(15, 6))
-    ax.plot(
-        df_gasto_mensual_plot["AñoMes"],
-        df_gasto_mensual_plot["Gasto_Mensual_USD"],
-        marker="o",
-        linewidth=2.5,
+    st.markdown("#### Detalle del gasto mensual")
+
+    meses_disponibles = df_gasto_mensual_plot["AñoMes"].tolist()
+
+    mes_default_idx = len(meses_disponibles) - 1
+    if not df_gasto_mensual_plot.empty:
+        mes_default_idx = int(df_gasto_mensual_plot["Gasto_Mensual_USD"].idxmax())
+
+    mes_seleccionado = st.selectbox(
+        "Selecciona un mes para visualizar el detalle de registros",
+        options=meses_disponibles,
+        index=mes_default_idx,
     )
-    ax.set_title("Evolución mensual del gasto en órdenes de compra", fontsize=15, fontweight="bold")
-    ax.set_xlabel("Mes")
-    ax.set_ylabel("Gasto mensual [USD]")
-    ax.tick_params(axis="x", rotation=45)
-    ax.grid(axis="y", alpha=0.25)
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(formato_usd_compacto))
 
-    idx_max = df_gasto_mensual_plot["Gasto_Mensual_USD"].idxmax()
-    idx_last = df_gasto_mensual_plot.index[-1]
+    df_detalle_mes = df_ordenes_filtrado[
+        df_ordenes_filtrado["AñoMes"] == mes_seleccionado
+    ].copy()
 
-    for i in sorted(set([idx_max, idx_last])):
-        valor = df_gasto_mensual_plot.loc[i, "Gasto_Mensual_USD"]
-        mes = df_gasto_mensual_plot.loc[i, "AñoMes"]
-        ax.text(
-            i,
-            valor,
-            f"{mes}\n{formato_usd_compacto(valor)}",
-            ha="center",
-            va="bottom",
-            fontsize=9,
-            fontweight="bold",
+    monto_mes_usd = df_detalle_mes["Monto_OC_USD"].sum()
+    ordenes_mes = df_detalle_mes["Documento_Compras_Texto"].nunique()
+    registros_mes = len(df_detalle_mes)
+    monedas_mes = df_detalle_mes["Moneda"].nunique()
+
+    col_mes1, col_mes2, col_mes3, col_mes4 = st.columns(4)
+    with col_mes1:
+        kpi_card("Gasto del mes", formato_usd_largo(monto_mes_usd), f"Mes seleccionado: {mes_seleccionado}")
+    with col_mes2:
+        kpi_card("Órdenes únicas", formato_entero(ordenes_mes), "Documento de compras único")
+    with col_mes3:
+        kpi_card("Registros", formato_entero(registros_mes), "Líneas o registros del mes")
+    with col_mes4:
+        kpi_card("Monedas", formato_entero(monedas_mes), "Monedas presentes en el mes")
+
+    df_resumen_mes_tipo = (
+        df_detalle_mes
+        .groupby("Tipo_Orden_Compra", as_index=False)
+        .agg(
+            Monto_USD=("Monto_OC_USD", "sum"),
+            Ordenes=("Documento_Compras_Texto", "nunique"),
+            Registros=("Documento_Compras_Texto", "count"),
+        )
+        .sort_values("Monto_USD", ascending=False)
+    )
+
+    if not df_resumen_mes_tipo.empty:
+        df_resumen_mes_tipo["Participacion_%"] = (
+            df_resumen_mes_tipo["Monto_USD"] / df_resumen_mes_tipo["Monto_USD"].sum() * 100
+            if df_resumen_mes_tipo["Monto_USD"].sum() != 0
+            else 0
         )
 
-    fig.tight_layout()
-    st.pyplot(fig, clear_figure=True)
+    col_resumen_mes, col_detalle_mes = st.columns([0.9, 1.6])
 
-    with st.expander("Ver tabla de gasto mensual"):
+    with col_resumen_mes:
+        st.markdown("##### Resumen por tipo de OC")
+        st.dataframe(
+            df_resumen_mes_tipo,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    with col_detalle_mes:
+        st.markdown("##### Registros del mes seleccionado")
+
+        columnas_detalle_mes = [
+            col for col in [
+                "Documento_compras",
+                "Fecha_documento",
+                "Moneda",
+                "Precio_neto",
+                "Precio_neto_num",
+                "Factor_USD_por_Unidad",
+                "Precio_neto_USD",
+                "Monto_OC_USD",
+                "Tipo_Orden_Compra",
+                "Participacion_OC",
+            ] if col in df_detalle_mes.columns
+        ]
+
+        df_detalle_mes_tabla = (
+            df_detalle_mes[columnas_detalle_mes]
+            .sort_values("Monto_OC_USD", ascending=False)
+            .reset_index(drop=True)
+        )
+
+        st.dataframe(
+            df_detalle_mes_tabla,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    with st.expander("Ver tabla completa de gasto mensual"):
         st.dataframe(df_gasto_mensual, use_container_width=True, hide_index=True)
 
 
@@ -794,8 +855,20 @@ else:
     ax.legend(title="Estado", bbox_to_anchor=(1.02, 1), loc="upper left")
     ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
 
+    max_total_contratos = df_pivot_estado["Total_Contratos"].max()
+    margen_derecho = max(1, max_total_contratos * 0.18)
+
+    ax.set_xlim(0, max_total_contratos + margen_derecho)
+
     for i, total in enumerate(df_pivot_estado["Total_Contratos"]):
-        ax.text(total + 0.3, i, str(int(total)), va="center", fontsize=9, fontweight="bold")
+        ax.text(
+            total + margen_derecho * 0.12,
+            i,
+            str(int(total)),
+            va="center",
+            fontsize=9,
+            fontweight="bold",
+        )
 
     fig.tight_layout()
     st.pyplot(fig, clear_figure=True)
@@ -902,45 +975,6 @@ else:
 
 
 # ============================================================
-# Contratos por vencer por gestor
-# ============================================================
-
-section_title("Contratos por vencer por gestor", "Contratos cuya fecha de fin de validez ocurre dentro de los próximos tres meses.")
-
-df_por_vencer = df_contratos_estado_filtrado[
-    df_contratos_estado_filtrado["Estado"] == "Por Vencer"
-].copy()
-
-df_top_por_vencer = (
-    df_por_vencer
-    .groupby("Gestor_Contrato", as_index=False)["Contrato"]
-    .nunique()
-    .rename(columns={"Contrato": "Contratos_Por_Vencer"})
-    .sort_values("Contratos_Por_Vencer", ascending=True)
-)
-
-if df_top_por_vencer.empty:
-    st.info("No hay contratos por vencer para los filtros seleccionados.")
-else:
-    fig, ax = plt.subplots(figsize=(10, max(5, 0.35 * len(df_top_por_vencer) + 2)))
-    ax.barh(df_top_por_vencer["Gestor_Contrato"], df_top_por_vencer["Contratos_Por_Vencer"])
-    ax.set_title("Contratos por vencer por gestor", fontsize=14, fontweight="bold")
-    ax.set_xlabel("Recuento de contratos por vencer")
-    ax.set_ylabel("Gestor de contrato")
-    ax.grid(axis="x", alpha=0.25)
-    ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
-
-    for i, valor in enumerate(df_top_por_vencer["Contratos_Por_Vencer"]):
-        ax.text(valor + 0.1, i, str(int(valor)), va="center", fontsize=9, fontweight="bold")
-
-    fig.tight_layout()
-    st.pyplot(fig, clear_figure=True)
-
-    with st.expander("Ver tabla de contratos por vencer"):
-        st.dataframe(df_top_por_vencer, use_container_width=True, hide_index=True)
-
-
-# ============================================================
 # Mapa de calor
 # ============================================================
 
@@ -1017,6 +1051,57 @@ else:
 
         with st.expander("Ver tabla del mapa de calor"):
             st.dataframe(df_heatmap_plot, use_container_width=True)
+
+
+# ============================================================
+# Contratos por vencer por gestor
+# ============================================================
+
+section_title("Contratos por vencer por gestor", "Contratos cuya fecha de fin de validez ocurre dentro de los próximos tres meses.")
+
+df_por_vencer = df_contratos_estado_filtrado[
+    df_contratos_estado_filtrado["Estado"] == "Por Vencer"
+].copy()
+
+df_top_por_vencer = (
+    df_por_vencer
+    .groupby("Gestor_Contrato", as_index=False)["Contrato"]
+    .nunique()
+    .rename(columns={"Contrato": "Contratos_Por_Vencer"})
+    .sort_values("Contratos_Por_Vencer", ascending=True)
+)
+
+if df_top_por_vencer.empty:
+    st.info("No hay contratos por vencer para los filtros seleccionados.")
+else:
+    fig, ax = plt.subplots(figsize=(10, max(5, 0.35 * len(df_top_por_vencer) + 2)))
+    ax.barh(df_top_por_vencer["Gestor_Contrato"], df_top_por_vencer["Contratos_Por_Vencer"])
+    ax.set_title("Contratos por vencer por gestor", fontsize=14, fontweight="bold")
+    ax.set_xlabel("Recuento de contratos por vencer")
+    ax.set_ylabel("Gestor de contrato")
+    ax.grid(axis="x", alpha=0.25)
+    ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
+
+    max_por_vencer = df_top_por_vencer["Contratos_Por_Vencer"].max()
+    margen_por_vencer = max(1, max_por_vencer * 0.18)
+
+    ax.set_xlim(0, max_por_vencer + margen_por_vencer)
+
+    for i, valor in enumerate(df_top_por_vencer["Contratos_Por_Vencer"]):
+        ax.text(
+            valor + margen_por_vencer * 0.12,
+            i,
+            str(int(valor)),
+            va="center",
+            fontsize=9,
+            fontweight="bold",
+        )
+
+    fig.tight_layout()
+    st.pyplot(fig, clear_figure=True)
+
+    with st.expander("Ver tabla de contratos por vencer"):
+        st.dataframe(df_top_por_vencer, use_container_width=True, hide_index=True)
 
 
 # ============================================================
