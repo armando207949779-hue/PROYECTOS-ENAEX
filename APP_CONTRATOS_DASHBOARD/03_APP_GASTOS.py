@@ -6,6 +6,7 @@
 
 from pathlib import Path
 import base64
+import re
 
 import numpy as np
 import pandas as pd
@@ -166,6 +167,19 @@ def section_title(title: str, caption: str | None = None) -> None:
         st.markdown(f"<div class='section-caption'>{caption}</div>", unsafe_allow_html=True)
 
 
+def limpiar_estilo_grafico(ax) -> None:
+    """Aplica formato visual limpio: sin grillas internas y sin bordes superiores/derechos."""
+    ax.grid(False)
+
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_color("#d1d5db")
+    ax.spines["bottom"].set_color("#d1d5db")
+
+    ax.tick_params(axis="x", colors="#374151")
+    ax.tick_params(axis="y", colors="#374151")
+
+
 # ============================================================
 # Utilidades de datos
 # ============================================================
@@ -188,10 +202,44 @@ def convertir_numero(valor):
     return pd.to_numeric(s, errors="coerce")
 
 
+def limpiar_id_contrato(valor):
+    """
+    Normaliza IDs de contrato/documento para cruces.
+
+    Corrige casos como:
+    - 4600003868.0  -> 4600003868
+    - 4600003868.00 -> 4600003868
+    - 4600003868,0  -> 4600003868
+    - 4600003868,00 -> 4600003868
+    """
+    if pd.isna(valor):
+        return pd.NA
+
+    s = str(valor).strip()
+
+    if s == "" or s.lower() in ["nan", "none", "null"]:
+        return pd.NA
+
+    s = s.replace("\u00a0", "").strip()
+
+    # Elimina decimales finales artificiales en identificadores.
+    s = re.sub(r"([,.]0+)$", "", s)
+
+    # Si el ID viene como número con separador de miles, conserva solo dígitos.
+    # Esto evita problemas de formatos como 4.600.003.868.
+    if re.fullmatch(r"[0-9.,]+", s):
+        s_sin_sep = re.sub(r"[.,]", "", s)
+        if s_sin_sep.isdigit():
+            s = s_sin_sep
+
+    return s
+
+
 def limpiar_texto_serie(serie: pd.Series, quitar_decimal: bool = True) -> pd.Series:
-    serie_limpia = serie.astype(str).str.strip()
     if quitar_decimal:
-        serie_limpia = serie_limpia.str.replace(".0", "", regex=False)
+        return serie.apply(limpiar_id_contrato)
+
+    serie_limpia = serie.astype(str).str.strip()
     return serie_limpia.replace(["", "nan", "NaN", "None", "none", "NULL", "null"], pd.NA)
 
 
@@ -273,7 +321,6 @@ if faltantes_df:
     )
     st.stop()
 
-# Copias locales
 _df_moneda_cambio = dataframes["df_moneda_cambio"].copy()
 _df_ordenes = dataframes["df_ordenes"].copy()
 _df_bbdd_x_categoria = dataframes["df_bbdd_x_categoria"].copy()
@@ -671,22 +718,36 @@ if df_gasto_anual.empty:
     st.info("No hay datos para graficar gasto anual.")
 else:
     fig, ax = plt.subplots(figsize=(9, 5))
-    ax.bar(df_gasto_anual["Año"].astype(str), df_gasto_anual["Gasto_Total_USD"])
-    ax.set_title("Total gasto por año", fontsize=14, fontweight="bold")
+
+    bars = ax.bar(
+        df_gasto_anual["Año"].astype(str),
+        df_gasto_anual["Gasto_Total_USD"],
+        color="#2563eb",
+        edgecolor="#1d4ed8",
+        linewidth=0.8,
+    )
+
+    ax.set_title("Total gasto por año", fontsize=14, fontweight="bold", pad=14)
     ax.set_xlabel("Año")
     ax.set_ylabel("Gasto total [USD]")
-    ax.grid(axis="y", alpha=0.25)
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(formato_usd_compacto))
+    limpiar_estilo_grafico(ax)
 
-    for i, valor in enumerate(df_gasto_anual["Gasto_Total_USD"]):
+    max_valor = df_gasto_anual["Gasto_Total_USD"].max()
+    margen_superior = max_valor * 0.18 if max_valor > 0 else 1
+    ax.set_ylim(0, max_valor + margen_superior)
+
+    for bar in bars:
+        valor = bar.get_height()
         ax.text(
-            i,
-            valor,
+            bar.get_x() + bar.get_width() / 2,
+            valor + margen_superior * 0.06,
             formato_usd_compacto(valor),
             ha="center",
             va="bottom",
             fontsize=9,
             fontweight="bold",
+            color="#111827",
         )
 
     fig.tight_layout()
@@ -721,24 +782,39 @@ else:
     top_indices = df_gasto_mensual_plot["Gasto_Mensual_USD"].nlargest(5).index
 
     fig, ax = plt.subplots(figsize=(15, 6))
-    ax.bar(df_gasto_mensual_plot["AñoMes"], df_gasto_mensual_plot["Gasto_Mensual_USD"])
-    ax.set_title("Gasto mensual en órdenes de compra", fontsize=15, fontweight="bold")
+
+    bars = ax.bar(
+        df_gasto_mensual_plot["AñoMes"],
+        df_gasto_mensual_plot["Gasto_Mensual_USD"],
+        color="#2563eb",
+        edgecolor="#1d4ed8",
+        linewidth=0.8,
+    )
+
+    ax.set_title("Gasto mensual en órdenes de compra", fontsize=15, fontweight="bold", pad=14)
     ax.set_xlabel("Mes")
     ax.set_ylabel("Gasto mensual [USD]")
     ax.tick_params(axis="x", rotation=45)
-    ax.grid(axis="y", alpha=0.25)
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(formato_usd_compacto))
+    limpiar_estilo_grafico(ax)
+
+    max_valor = df_gasto_mensual_plot["Gasto_Mensual_USD"].max()
+    margen_superior = max_valor * 0.20 if max_valor > 0 else 1
+    ax.set_ylim(0, max_valor + margen_superior)
 
     for i in top_indices:
+        bar = bars[i]
         valor = df_gasto_mensual_plot.loc[i, "Gasto_Mensual_USD"]
+
         ax.text(
-            i,
-            valor,
+            bar.get_x() + bar.get_width() / 2,
+            valor + margen_superior * 0.05,
             formato_usd_compacto(valor),
             ha="center",
             va="bottom",
             fontsize=9,
             fontweight="bold",
+            color="#111827",
         )
 
     fig.tight_layout()
@@ -869,15 +945,37 @@ if df_tipo_oc.empty:
     st.info("No hay datos para analizar tipos de orden de compra.")
 else:
     fig, ax = plt.subplots(figsize=(11, 5.5))
-    ax.bar(df_tipo_oc["Tipo_Orden_Compra"].astype(str), df_tipo_oc["Monto_OC_USD"])
-    ax.set_title("Gasto por tipo de OC", fontsize=14, fontweight="bold")
+
+    bars = ax.bar(
+        df_tipo_oc["Tipo_Orden_Compra"].astype(str),
+        df_tipo_oc["Monto_OC_USD"],
+        color="#2563eb",
+        edgecolor="#1d4ed8",
+        linewidth=0.8,
+    )
+
+    ax.set_title("Gasto por tipo de OC", fontsize=14, fontweight="bold", pad=14)
     ax.set_xlabel("Tipo de OC")
     ax.set_ylabel("Gasto [USD]")
-    ax.grid(axis="y", alpha=0.25)
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(formato_usd_compacto))
+    limpiar_estilo_grafico(ax)
 
-    for i, valor in enumerate(df_tipo_oc["Monto_OC_USD"]):
-        ax.text(i, valor, formato_usd_compacto(valor), ha="center", va="bottom", fontsize=9, fontweight="bold")
+    max_valor = df_tipo_oc["Monto_OC_USD"].max()
+    margen_superior = max_valor * 0.18 if max_valor > 0 else 1
+    ax.set_ylim(0, max_valor + margen_superior)
+
+    for bar in bars:
+        valor = bar.get_height()
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            valor + margen_superior * 0.06,
+            formato_usd_compacto(valor),
+            ha="center",
+            va="bottom",
+            fontsize=9,
+            fontweight="bold",
+            color="#111827",
+        )
 
     fig.tight_layout()
     st.pyplot(fig, clear_figure=True)
@@ -924,29 +1022,52 @@ else:
     df_pivot_estado = df_pivot_estado.sort_values("Total_Contratos", ascending=True)
     df_plot_estado = df_pivot_estado.drop(columns="Total_Contratos")
 
-    fig, ax = plt.subplots(figsize=(12, max(6, 0.38 * len(df_plot_estado) + 2)))
-    df_plot_estado.plot(kind="barh", stacked=True, ax=ax)
+    colores_estado_barras = {
+        "Vencido": "#ef4444",
+        "Por Vencer": "#f59e0b",
+        "Vigente": "#22c55e",
+        "Sin fecha": "#94a3b8",
+        "Sin información ME5A": "#64748b",
+    }
 
-    ax.set_title("Recuento de contratos por gestor y estado de vigencia", fontsize=14, fontweight="bold")
+    colores_stack = [
+        colores_estado_barras.get(col, "#cbd5e1")
+        for col in df_plot_estado.columns
+    ]
+
+    fig, ax = plt.subplots(figsize=(12, max(6, 0.38 * len(df_plot_estado) + 2)))
+
+    df_plot_estado.plot(
+        kind="barh",
+        stacked=True,
+        ax=ax,
+        color=colores_stack,
+        edgecolor="white",
+        linewidth=0.8,
+    )
+
+    ax.set_title("Recuento de contratos por gestor y estado de vigencia", fontsize=14, fontweight="bold", pad=14)
     ax.set_xlabel("Recuento de contratos")
     ax.set_ylabel("Gestor de contrato")
-    ax.grid(axis="x", alpha=0.25)
-    ax.legend(title="Estado", bbox_to_anchor=(1.02, 1), loc="upper left")
+    ax.legend(title="Estado", bbox_to_anchor=(1.02, 1), loc="upper left", frameon=False)
     ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
+    limpiar_estilo_grafico(ax)
 
     max_total_contratos = df_pivot_estado["Total_Contratos"].max()
-    margen_derecho = max(1, max_total_contratos * 0.18)
+    margen_derecho = max(1, max_total_contratos * 0.22)
 
     ax.set_xlim(0, max_total_contratos + margen_derecho)
 
     for i, total in enumerate(df_pivot_estado["Total_Contratos"]):
         ax.text(
-            total + margen_derecho * 0.12,
+            total + margen_derecho * 0.08,
             i,
             str(int(total)),
             va="center",
+            ha="left",
             fontsize=9,
             fontweight="bold",
+            color="#111827",
         )
 
     fig.tight_layout()
@@ -1166,17 +1287,8 @@ else:
     ax.set_title("Contratos por vencer por gestor", fontsize=14, fontweight="bold", pad=14)
     ax.set_xlabel("Recuento de contratos por vencer")
     ax.set_ylabel("Gestor de contrato")
-
-    ax.grid(False)
-
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.spines["left"].set_color("#d1d5db")
-    ax.spines["bottom"].set_color("#d1d5db")
-
-    ax.tick_params(axis="x", colors="#374151")
-    ax.tick_params(axis="y", colors="#374151")
     ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
+    limpiar_estilo_grafico(ax)
 
     max_por_vencer = df_top_por_vencer["Contratos_Por_Vencer"].max()
     margen_por_vencer = max(1, max_por_vencer * 0.22)
@@ -1222,6 +1334,7 @@ with st.expander("Órdenes convertidas a USD"):
     columnas_preview = [
         col for col in [
             "Documento_compras",
+            "Documento_Compras_Texto",
             "Fecha_documento",
             "Moneda",
             "Precio_neto",
