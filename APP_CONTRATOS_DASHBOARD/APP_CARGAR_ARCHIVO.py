@@ -20,6 +20,8 @@ import streamlit as st
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
 
+# Logo ubicado en:
+# PROYECTOS-ENAEX/assets/logo.svg
 LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
 
 
@@ -190,10 +192,9 @@ def mostrar_resumen_dataframe(nombre_df: str, df: pd.DataFrame) -> None:
         memoria_mb = df.memory_usage(deep=True).sum() / 1024**2
         st.metric("Memoria estimada", f"{memoria_mb:.2f} MB")
 
-    with st.expander("Columnas", expanded=False):
-        st.write(df.columns.tolist())
+    st.dataframe(df.head(30), use_container_width=True)
 
-    with st.expander("Tipos de datos", expanded=False):
+    with st.expander("Columnas y tipos de datos", expanded=False):
         df_tipos = pd.DataFrame({
             "Columna": df.columns,
             "Tipo": df.dtypes.astype(str).values,
@@ -203,8 +204,26 @@ def mostrar_resumen_dataframe(nombre_df: str, df: pd.DataFrame) -> None:
 
         st.dataframe(df_tipos, use_container_width=True)
 
-    with st.expander("Vista previa", expanded=True):
-        st.dataframe(df.head(50), use_container_width=True)
+
+def construir_validacion_archivos(archivos_dict: dict) -> pd.DataFrame:
+    registros = []
+
+    for nombre_df, nombre_archivo in ARCHIVOS_ESPERADOS.items():
+        existe = nombre_archivo in archivos_dict
+
+        peso_kb = None
+        if existe:
+            peso_kb = round(archivos_dict[nombre_archivo].size / 1024, 2)
+
+        registros.append({
+            "dataframe": nombre_df,
+            "archivo": nombre_archivo,
+            "estado": "Encontrado" if existe else "Faltante",
+            "existe": existe,
+            "peso_kb": peso_kb,
+        })
+
+    return pd.DataFrame(registros)
 
 
 # ============================================================
@@ -214,6 +233,9 @@ def mostrar_resumen_dataframe(nombre_df: str, df: pd.DataFrame) -> None:
 if "archivos_subidos" not in st.session_state:
     st.session_state["archivos_subidos"] = {}
 
+if "archivos_confirmados" not in st.session_state:
+    st.session_state["archivos_confirmados"] = False
+
 if "dataframes_cargados" not in st.session_state:
     st.session_state["dataframes_cargados"] = {}
 
@@ -222,6 +244,9 @@ if "config_carga" not in st.session_state:
 
 if "df_validacion_archivos" not in st.session_state:
     st.session_state["df_validacion_archivos"] = pd.DataFrame()
+
+if "carga_completada" not in st.session_state:
+    st.session_state["carga_completada"] = False
 
 
 # ============================================================
@@ -255,14 +280,13 @@ st.subheader("1. Selección de archivos")
 
 st.info(
     """
-    Selecciona los archivos de la carpeta de bases del dashboard.
-
+    Selecciona los archivos desde la carpeta local del dashboard.
     En la ventana de selección, entra a la carpeta y selecciona todos los archivos requeridos.
     """
 )
 
 archivos_seleccionados = st.file_uploader(
-    "Seleccionar archivos de la carpeta",
+    "Seleccionar archivos",
     type=["csv", "xlsx", "xls"],
     accept_multiple_files=True
 )
@@ -284,9 +308,11 @@ with col_limpiar:
 
 if limpiar_sesion:
     st.session_state["archivos_subidos"] = {}
+    st.session_state["archivos_confirmados"] = False
     st.session_state["dataframes_cargados"] = {}
     st.session_state["config_carga"] = {}
     st.session_state["df_validacion_archivos"] = pd.DataFrame()
+    st.session_state["carga_completada"] = False
     st.success("Carga limpiada correctamente.")
     st.rerun()
 
@@ -300,41 +326,26 @@ if confirmar_archivos:
         }
 
         st.session_state["archivos_subidos"] = archivos_dict
+        st.session_state["archivos_confirmados"] = True
+        st.session_state["carga_completada"] = False
 
-        registros = []
-
-        for nombre_df, nombre_archivo in ARCHIVOS_ESPERADOS.items():
-            existe = nombre_archivo in archivos_dict
-
-            peso_kb = None
-            if existe:
-                peso_kb = round(archivos_dict[nombre_archivo].size / 1024, 2)
-
-            registros.append({
-                "dataframe": nombre_df,
-                "archivo": nombre_archivo,
-                "estado": "Encontrado" if existe else "Faltante",
-                "existe": existe,
-                "peso_kb": peso_kb,
-            })
-
-        df_validacion = pd.DataFrame(registros)
+        df_validacion = construir_validacion_archivos(archivos_dict)
         st.session_state["df_validacion_archivos"] = df_validacion
 
-        st.success("Archivos confirmados correctamente.")
+        st.success("Archivos seleccionados confirmados correctamente.")
 
 
 # ============================================================
-# 2. Validación de archivos
+# 2. Validación de archivos subidos
 # ============================================================
 
-st.subheader("2. Validación de archivos esperados")
+st.subheader("2. Validación de archivos subidos")
 
-df_validacion = st.session_state["df_validacion_archivos"]
-
-if df_validacion.empty:
+if not st.session_state["archivos_confirmados"]:
     st.warning("Primero debes seleccionar y confirmar los archivos.")
     st.stop()
+
+df_validacion = st.session_state["df_validacion_archivos"]
 
 st.dataframe(
     df_validacion[
@@ -374,13 +385,13 @@ else:
 
 
 # ============================================================
-# 3. Carga de bases
+# 3. Botón de carga de archivos
 # ============================================================
 
-st.subheader("3. Carga de bases")
+st.subheader("3. Carga de archivos")
 
 cargar_bases = st.button(
-    "Cargar bases disponibles",
+    "Cargar archivos",
     type="primary",
     use_container_width=True
 )
@@ -437,11 +448,12 @@ if cargar_bases:
 
     st.session_state["dataframes_cargados"] = dataframes_cargados
     st.session_state["config_carga"] = config_carga
+    st.session_state["carga_completada"] = True
 
     estado_carga.empty()
 
     if dataframes_cargados:
-        st.success(f"Carga completada. Se cargaron {len(dataframes_cargados)} bases correctamente.")
+        st.success(f"Archivos cargados correctamente. Se cargaron {len(dataframes_cargados)} DataFrames.")
 
     if errores_carga:
         st.error("Algunos archivos no pudieron cargarse.")
@@ -452,13 +464,13 @@ if cargar_bases:
 # 4. Resumen general de carga
 # ============================================================
 
-st.subheader("4. Resumen general de bases cargadas")
+st.subheader("4. Resumen general de DataFrames cargados")
 
 dataframes_cargados = st.session_state["dataframes_cargados"]
 config_carga = st.session_state["config_carga"]
 
 if not dataframes_cargados:
-    st.info("Todavía no hay bases cargadas.")
+    st.info("Presiona **Cargar archivos** para crear los DataFrames.")
 else:
     df_resumen_carga = pd.DataFrame.from_dict(
         config_carga,
@@ -491,30 +503,25 @@ else:
 
 
 # ============================================================
-# 5. Visualización opcional de DataFrames
+# 5. Vista previa de DataFrames
 # ============================================================
 
-st.subheader("5. Visualización opcional de DataFrames")
+st.subheader("5. Vista previa de DataFrames")
 
 if not dataframes_cargados:
-    st.info("Carga las bases para visualizar su contenido.")
+    st.info("Los DataFrames aparecerán aquí después de cargarlos.")
 else:
-    mostrar_dataframes = st.checkbox(
-        "Mostrar visor de DataFrames",
-        value=False
+    st.success("Vista previa disponible para validar visualmente la carga de cada DataFrame.")
+
+    mostrar_vistas = st.checkbox(
+        "Mostrar vistas previas de todos los DataFrames",
+        value=True
     )
 
-    if mostrar_dataframes:
-        nombre_seleccionado = st.selectbox(
-            "Selecciona un DataFrame",
-            options=list(dataframes_cargados.keys())
-        )
-
-        df_seleccionado = dataframes_cargados[nombre_seleccionado]
-
-        st.markdown(f"### `{nombre_seleccionado}`")
-
-        mostrar_resumen_dataframe(nombre_seleccionado, df_seleccionado)
+    if mostrar_vistas:
+        for nombre_df, df in dataframes_cargados.items():
+            with st.expander(f"{nombre_df} | {df.shape[0]:,} filas x {df.shape[1]:,} columnas", expanded=True):
+                mostrar_resumen_dataframe(nombre_df, df)
 
 
 # ============================================================
@@ -525,7 +532,7 @@ st.subheader("6. Uso de bases en otros módulos")
 
 st.info(
     """
-    Las bases cargadas quedan disponibles en memoria de sesión:
+    Los DataFrames cargados quedan disponibles en memoria de sesión:
 
     `st.session_state["dataframes_cargados"]`
 
