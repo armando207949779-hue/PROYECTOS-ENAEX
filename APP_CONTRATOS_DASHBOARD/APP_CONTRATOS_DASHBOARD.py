@@ -15,10 +15,15 @@ import streamlit as st
 # ============================================================
 
 BASE_DIR = Path(__file__).resolve().parent
+PROJECT_DIR = BASE_DIR.parent
 
-LOGO_PATH = BASE_DIR / "assets" / "logo.svg"
-
+# Códigos ubicados en:
+# PROYECTOS-ENAEX/APP_CONTRATOS_DASHBOARD/
 APP_CARGAR_ARCHIVO = BASE_DIR / "APP_CARGAR_ARCHIVO.py"
+
+# Logo ubicado en:
+# PROYECTOS-ENAEX/assets/logo.svg
+LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
 
 
 # ============================================================
