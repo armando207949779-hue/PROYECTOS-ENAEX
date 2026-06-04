@@ -21,6 +21,7 @@ PROJECT_DIR = BASE_DIR.parent
 # PROYECTOS-ENAEX/APP_CONTRATOS_DASHBOARD/
 APP_CARGAR_ARCHIVO = BASE_DIR / "01_APP_CARGAR_ARCHIVO.py"
 APP_AHORRO = BASE_DIR / "02_APP_AHORRO.py"
+APP_GASTOS = BASE_DIR / "03_APP_GASTOS.py"
 
 # Logo ubicado en:
 # PROYECTOS-ENAEX/assets/logo.svg
@@ -128,11 +129,11 @@ def pagina_inicio():
     with col3:
         st.info(
             """
-            **Arquitectura modular**
+            **03_GASTOS**
 
-            Cada pestaña se conecta a un archivo Python independiente.
-
-            Esto permite mantener el proyecto ordenado y escalable.
+            Análisis de órdenes de compra, gasto anual,
+            gasto mensual, conversión a USD, participación
+            de OC tipo 44 y estado de vigencia de contratos.
             """
         )
 
@@ -141,7 +142,7 @@ def pagina_inicio():
     st.success(
         """
         Para comenzar, entra a **01_CARGA_ARCHIVOS**, carga las bases y luego revisa
-        los indicadores en **02_AHORRO**.
+        los indicadores en **02_AHORRO** y **03_GASTOS**.
         """
     )
 
@@ -153,6 +154,7 @@ def pagina_inicio():
 apps_requeridas = {
     "01_CARGA_ARCHIVOS": APP_CARGAR_ARCHIVO,
     "02_AHORRO": APP_AHORRO,
+    "03_GASTOS": APP_GASTOS,
 }
 
 apps_faltantes = {
@@ -197,6 +199,12 @@ pagina = st.navigation(
                 title="02_AHORRO",
                 icon="💰",
                 url_path="ahorro"
+            ),
+            st.Page(
+                APP_GASTOS,
+                title="03_GASTOS",
+                icon="📊",
+                url_path="gastos"
             ),
         ],
     }
