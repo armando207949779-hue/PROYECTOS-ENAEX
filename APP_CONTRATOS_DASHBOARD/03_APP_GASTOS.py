@@ -1,11 +1,3 @@
-PUEDES AGREGAR Texto breve
-
-EN LA TABLA REGISTROS DEL MES SELECCIONADO?
-
-ES DECIR QUE LA COLUMNA FORME PARTE DE LA TABLA A VISUALIZAR
-
-ACTUALIZAR ESTE CODIGO Y DAMELO COMPLETO ACTUALIZADO EN EL CHAT
-
 # ============================================================
 # 03_APP_GASTOS.py
 # Dashboard de Monitoreo de Contratos ENAEX
@@ -236,16 +228,11 @@ def limpiar_id_contrato(valor):
 
     s = s.replace("\u00a0", "").strip()
 
-    # Caso específico más importante: IDs con decimal artificial final.
-    # Ejemplos: 4600003868,00 / 4600003868.00 / 4600003868,0 / 4600003868.0
     s = re.sub(r"([,.]0+)$", "", s)
 
-    # Si sigue siendo una cadena numérica con separadores, elimina separadores.
-    # Ejemplo: 4.600.003.868 -> 4600003868
     if re.fullmatch(r"[0-9.,]+", s):
         s = re.sub(r"[.,]", "", s)
 
-    # Limpieza final: deja solo dígitos si es un identificador numérico.
     solo_digitos = re.sub(r"\D", "", s)
     if solo_digitos:
         s = solo_digitos
@@ -463,11 +450,9 @@ def preparar_contratos_estado(
     df_cat = df_bbdd_x_categoria.copy()
     df_m5 = df_me5a.copy()
 
-    # Guardar valores originales solo para trazabilidad.
     df_cat["Contrato_Original"] = df_cat["Contrato"]
     df_m5["Documento_Compras_Original_ME5A"] = df_m5["Documento_compras"]
 
-    # Normalización robusta para evitar que 4600003868,00 no cruce contra 4600003868.
     df_cat["Contrato"] = df_cat["Contrato"].apply(limpiar_id_contrato)
     df_m5["Documento_compras"] = df_m5["Documento_compras"].apply(limpiar_id_contrato)
 
@@ -522,8 +507,6 @@ def preparar_contratos_estado(
 
     df_contratos_estado["Estado"] = df_contratos_estado["Estado"].fillna("Sin información ME5A")
     df_contratos_estado["Fecha_Analisis"] = hoy
-
-    # Reforzar limpieza final del campo mostrado.
     df_contratos_estado["Contrato"] = df_contratos_estado["Contrato"].apply(limpiar_id_contrato).astype(str)
 
     return df_contratos_estado
@@ -703,7 +686,6 @@ if not df_sin_info_me5a.empty:
             "Estos contratos existen en la base de contratos/categoría, pero no tuvieron coincidencia en ME5A mediante el campo Documento_compras."
         )
 
-        # Limpieza reforzada antes de mostrar.
         df_sin_info_me5a["Contrato"] = df_sin_info_me5a["Contrato"].apply(limpiar_id_contrato).astype(str)
 
         columnas_sin_me5a = [
@@ -947,6 +929,7 @@ else:
                 "Documento_compras",
                 "Documento_Compras_Texto",
                 "Fecha_documento",
+                "Texto breve",
                 "Moneda",
                 "Precio_neto",
                 "Precio_neto_num",
@@ -1391,6 +1374,7 @@ with st.expander("Órdenes convertidas a USD"):
             "Documento_compras",
             "Documento_Compras_Texto",
             "Fecha_documento",
+            "Texto breve",
             "Moneda",
             "Precio_neto",
             "Precio_neto_num",
