@@ -1,12 +1,13 @@
 # ============================================================
 # APP_CARGAR_ARCHIVO.py
 # 01_CARGA_ARCHIVOS
-# Carga, validación y visualización preliminar de bases locales
+# Carga, validación y visualización de archivos seleccionados
 # ============================================================
 
 from pathlib import Path
 import base64
 import time
+from io import BytesIO
 
 import pandas as pd
 import streamlit as st
@@ -19,9 +20,18 @@ import streamlit as st
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
 
-# Logo ubicado en:
-# PROYECTOS-ENAEX/assets/logo.svg
 LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
+
+
+# ============================================================
+# Configuración general
+# ============================================================
+
+st.set_page_config(
+    page_title="01_CARGA_ARCHIVOS",
+    page_icon="📁",
+    layout="wide"
+)
 
 
 # ============================================================
@@ -95,7 +105,9 @@ def limpiar_columnas(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def leer_csv_robusto(ruta: Path) -> tuple[pd.DataFrame, dict]:
+def leer_csv_robusto(uploaded_file) -> tuple[pd.DataFrame, dict]:
+    contenido = uploaded_file.getvalue()
+
     encodings = ["utf-8-sig", "latin1", "cp1252", "ISO-8859-1"]
     separadores = [",", ";", "\t", "|"]
 
@@ -107,7 +119,7 @@ def leer_csv_robusto(ruta: Path) -> tuple[pd.DataFrame, dict]:
         for sep in separadores:
             try:
                 temp = pd.read_csv(
-                    ruta,
+                    BytesIO(contenido),
                     encoding=encoding,
                     sep=sep,
                     engine="python",
@@ -129,7 +141,7 @@ def leer_csv_robusto(ruta: Path) -> tuple[pd.DataFrame, dict]:
                 continue
 
     if mejor_df is None:
-        raise ValueError(f"No se pudo leer correctamente el archivo CSV: {ruta.name}")
+        raise ValueError(f"No se pudo leer correctamente el archivo CSV: {uploaded_file.name}")
 
     mejor_df = mejor_df.dropna(axis=1, how="all")
     mejor_df = limpiar_columnas(mejor_df)
@@ -137,8 +149,10 @@ def leer_csv_robusto(ruta: Path) -> tuple[pd.DataFrame, dict]:
     return mejor_df, mejor_config
 
 
-def leer_excel(ruta: Path) -> tuple[pd.DataFrame, dict]:
-    df = pd.read_excel(ruta)
+def leer_excel(uploaded_file) -> tuple[pd.DataFrame, dict]:
+    contenido = uploaded_file.getvalue()
+
+    df = pd.read_excel(BytesIO(contenido))
     df = df.dropna(axis=1, how="all")
     df = limpiar_columnas(df)
 
@@ -150,54 +164,17 @@ def leer_excel(ruta: Path) -> tuple[pd.DataFrame, dict]:
     return df, config
 
 
-@st.cache_data(show_spinner=False)
-def cargar_archivo(ruta_str: str) -> tuple[pd.DataFrame, dict]:
-    ruta = Path(ruta_str)
-    extension = ruta.suffix.lower()
+def cargar_archivo(uploaded_file) -> tuple[pd.DataFrame, dict]:
+    nombre = uploaded_file.name
+    extension = Path(nombre).suffix.lower()
 
     if extension == ".csv":
-        return leer_csv_robusto(ruta)
+        return leer_csv_robusto(uploaded_file)
 
     if extension in [".xlsx", ".xls"]:
-        return leer_excel(ruta)
+        return leer_excel(uploaded_file)
 
-    raise ValueError(f"Formato no soportado: {ruta.name}")
-
-
-def obtener_info_archivo(ruta: Path) -> dict:
-    if not ruta.exists():
-        return {
-            "archivo": ruta.name,
-            "existe": False,
-            "peso_kb": None,
-            "ruta": str(ruta)
-        }
-
-    return {
-        "archivo": ruta.name,
-        "existe": True,
-        "peso_kb": round(ruta.stat().st_size / 1024, 2),
-        "ruta": str(ruta)
-    }
-
-
-def construir_validacion_archivos(ruta_carpeta: Path) -> pd.DataFrame:
-    registros = []
-
-    for nombre_df, archivo in ARCHIVOS_ESPERADOS.items():
-        ruta_archivo = ruta_carpeta / archivo
-        info = obtener_info_archivo(ruta_archivo)
-        info["dataframe"] = nombre_df
-        registros.append(info)
-
-    df_validacion = pd.DataFrame(registros)
-
-    df_validacion["estado"] = df_validacion["existe"].map({
-        True: "Encontrado",
-        False: "Faltante"
-    })
-
-    return df_validacion
+    raise ValueError(f"Formato no soportado: {nombre}")
 
 
 def mostrar_resumen_dataframe(nombre_df: str, df: pd.DataFrame) -> None:
@@ -234,8 +211,8 @@ def mostrar_resumen_dataframe(nombre_df: str, df: pd.DataFrame) -> None:
 # Estado de sesión
 # ============================================================
 
-if "ruta_carpeta_confirmada" not in st.session_state:
-    st.session_state["ruta_carpeta_confirmada"] = None
+if "archivos_subidos" not in st.session_state:
+    st.session_state["archivos_subidos"] = {}
 
 if "dataframes_cargados" not in st.session_state:
     st.session_state["dataframes_cargados"] = {}
@@ -271,31 +248,30 @@ st.markdown("---")
 
 
 # ============================================================
-# 1. Selección de carpeta
+# 1. Selección de archivos
 # ============================================================
 
-st.subheader("1. Selección de carpeta")
+st.subheader("1. Selección de archivos")
 
 st.info(
     """
-    Ingresa la ruta local de la carpeta que contiene las bases.
-    Luego presiona **Confirmar carpeta** para validar los archivos esperados.
+    Selecciona los archivos de la carpeta de bases del dashboard.
+
+    En la ventana de selección, entra a la carpeta y selecciona todos los archivos requeridos.
     """
 )
 
-ruta_default = r"C:\Users\enrique.brun.aep\Downloads\BBDD_DASHBOARD_MONITOREO_CONTRATOS"
-
-ruta_carpeta_input = st.text_input(
-    "Ruta de carpeta",
-    value=ruta_default,
-    placeholder=r"C:\Users\usuario\Downloads\BBDD_DASHBOARD_MONITOREO_CONTRATOS"
+archivos_seleccionados = st.file_uploader(
+    "Seleccionar archivos de la carpeta",
+    type=["csv", "xlsx", "xls"],
+    accept_multiple_files=True
 )
 
 col_confirmar, col_limpiar = st.columns([1, 1])
 
 with col_confirmar:
-    confirmar_carpeta = st.button(
-        "Confirmar carpeta",
+    confirmar_archivos = st.button(
+        "Confirmar archivos seleccionados",
         type="primary",
         use_container_width=True
     )
@@ -307,29 +283,45 @@ with col_limpiar:
     )
 
 if limpiar_sesion:
-    st.session_state["ruta_carpeta_confirmada"] = None
+    st.session_state["archivos_subidos"] = {}
     st.session_state["dataframes_cargados"] = {}
     st.session_state["config_carga"] = {}
     st.session_state["df_validacion_archivos"] = pd.DataFrame()
     st.success("Carga limpiada correctamente.")
     st.rerun()
 
-if confirmar_carpeta:
-    ruta_carpeta = Path(ruta_carpeta_input)
-
-    if not ruta_carpeta.exists():
-        st.error(f"La carpeta no existe: {ruta_carpeta}")
-
-    elif not ruta_carpeta.is_dir():
-        st.error(f"La ruta ingresada no corresponde a una carpeta: {ruta_carpeta}")
-
+if confirmar_archivos:
+    if not archivos_seleccionados:
+        st.error("No se seleccionaron archivos.")
     else:
-        st.session_state["ruta_carpeta_confirmada"] = str(ruta_carpeta)
+        archivos_dict = {
+            archivo.name: archivo
+            for archivo in archivos_seleccionados
+        }
 
-        df_validacion = construir_validacion_archivos(ruta_carpeta)
+        st.session_state["archivos_subidos"] = archivos_dict
+
+        registros = []
+
+        for nombre_df, nombre_archivo in ARCHIVOS_ESPERADOS.items():
+            existe = nombre_archivo in archivos_dict
+
+            peso_kb = None
+            if existe:
+                peso_kb = round(archivos_dict[nombre_archivo].size / 1024, 2)
+
+            registros.append({
+                "dataframe": nombre_df,
+                "archivo": nombre_archivo,
+                "estado": "Encontrado" if existe else "Faltante",
+                "existe": existe,
+                "peso_kb": peso_kb,
+            })
+
+        df_validacion = pd.DataFrame(registros)
         st.session_state["df_validacion_archivos"] = df_validacion
 
-        st.success(f"Carpeta confirmada correctamente: {ruta_carpeta}")
+        st.success("Archivos confirmados correctamente.")
 
 
 # ============================================================
@@ -338,19 +330,11 @@ if confirmar_carpeta:
 
 st.subheader("2. Validación de archivos esperados")
 
-ruta_confirmada = st.session_state["ruta_carpeta_confirmada"]
-
-if ruta_confirmada is None:
-    st.warning("Primero debes confirmar una carpeta.")
-    st.stop()
-
-ruta_carpeta = Path(ruta_confirmada)
-
 df_validacion = st.session_state["df_validacion_archivos"]
 
 if df_validacion.empty:
-    df_validacion = construir_validacion_archivos(ruta_carpeta)
-    st.session_state["df_validacion_archivos"] = df_validacion
+    st.warning("Primero debes seleccionar y confirmar los archivos.")
+    st.stop()
 
 st.dataframe(
     df_validacion[
@@ -359,7 +343,6 @@ st.dataframe(
             "archivo",
             "estado",
             "peso_kb",
-            "ruta"
         ]
     ],
     use_container_width=True
@@ -403,32 +386,39 @@ cargar_bases = st.button(
 )
 
 if cargar_bases:
+    archivos_subidos = st.session_state["archivos_subidos"]
+
     dataframes_cargados = {}
     config_carga = {}
     errores_carga = []
 
     archivos_disponibles = [
-        (nombre_df, archivo)
-        for nombre_df, archivo in ARCHIVOS_ESPERADOS.items()
-        if (ruta_carpeta / archivo).exists()
+        (nombre_df, nombre_archivo)
+        for nombre_df, nombre_archivo in ARCHIVOS_ESPERADOS.items()
+        if nombre_archivo in archivos_subidos
     ]
 
     total_disponibles = len(archivos_disponibles)
 
+    if total_disponibles == 0:
+        st.error("No hay archivos disponibles para cargar.")
+        st.stop()
+
     progress_bar = st.progress(0)
     estado_carga = st.empty()
 
-    for i, (nombre_df, archivo) in enumerate(archivos_disponibles, start=1):
-        ruta_archivo = ruta_carpeta / archivo
+    for i, (nombre_df, nombre_archivo) in enumerate(archivos_disponibles, start=1):
+        archivo = archivos_subidos[nombre_archivo]
 
-        estado_carga.info(f"Cargando {archivo} ({i}/{total_disponibles})...")
+        estado_carga.info(f"Cargando {nombre_archivo} ({i}/{total_disponibles})...")
 
         try:
-            df, config = cargar_archivo(str(ruta_archivo))
+            df, config = cargar_archivo(archivo)
 
             dataframes_cargados[nombre_df] = df
+
             config_carga[nombre_df] = {
-                "archivo": archivo,
+                "archivo": nombre_archivo,
                 "filas": df.shape[0],
                 "columnas": df.shape[1],
                 "encoding": config.get("encoding"),
@@ -438,7 +428,7 @@ if cargar_bases:
         except Exception as e:
             errores_carga.append({
                 "dataframe": nombre_df,
-                "archivo": archivo,
+                "archivo": nombre_archivo,
                 "error": str(e),
             })
 
