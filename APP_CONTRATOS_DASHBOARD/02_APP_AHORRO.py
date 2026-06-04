@@ -86,7 +86,7 @@ def aplicar_estilo():
                 border: 1px solid #E5E7EB;
                 border-radius: 16px;
                 padding: 16px 18px;
-                min-height: 108px;
+                min-height: 128px;
                 margin-bottom: 12px;
             }
 
@@ -100,7 +100,18 @@ def aplicar_estilo():
             .info-text {
                 font-size: 0.88rem;
                 color: #4B5563;
-                line-height: 1.35;
+                line-height: 1.38;
+            }
+
+            .formula-text {
+                margin-top: 8px;
+                font-size: 0.84rem;
+                font-weight: 700;
+                color: #111827;
+                background: #FFFFFF;
+                border: 1px solid #E5E7EB;
+                border-radius: 10px;
+                padding: 8px 10px;
             }
 
             h1, h2, h3 {
@@ -155,12 +166,15 @@ def kpi_card(titulo, valor, subtitulo=None):
     )
 
 
-def info_card(titulo, texto):
+def info_card(titulo, texto, formula=None):
+    formula_html = f"<div class='formula-text'>{formula}</div>" if formula else ""
+
     st.markdown(
         f"""
         <div class="info-card">
             <div class="info-title">{titulo}</div>
             <div class="info-text">{texto}</div>
+            {formula_html}
         </div>
         """,
         unsafe_allow_html=True
@@ -586,14 +600,16 @@ with col_info1:
     info_card(
         "% Cumplimiento",
         "Mide qué porcentaje del ahorro planificado se ha logrado con el ahorro real registrado. "
-        "Un valor igual o superior a 100% indica que la meta fue alcanzada o superada."
+        "Un valor igual o superior a 100% indica que la meta fue alcanzada o superada.",
+        "Fórmula: (Ahorro Real / Ahorro Planificado) × 100"
     )
 
 with col_info2:
     info_card(
         "% Eficiencia",
         "Mide la relación entre el ahorro real y la línea base de los contratos con línea base válida. "
-        "Permite entender cuánto ahorro se obtuvo respecto del monto base negociado."
+        "Permite entender cuánto ahorro se obtuvo respecto del monto base negociado.",
+        "Fórmula: (Ahorro Real con línea base válida / Línea Base válida) × 100"
     )
 
 st.markdown("---")
@@ -1011,14 +1027,6 @@ else:
         ascending=False
     ).reset_index(drop=True)
 
-    colores_donut = [
-        "#1D4ED8",
-        "#2563EB",
-        "#3B82F6",
-        "#60A5FA",
-        "#93C5FD",
-    ]
-
     col_donut, col_tabla_donut = st.columns([0.85, 1.15])
 
     with col_donut:
@@ -1030,7 +1038,6 @@ else:
             autopct=lambda p: f"{p:.1f}%" if p >= 3 else "",
             startangle=90,
             pctdistance=0.78,
-            colors=colores_donut[:len(df_donut)],
             wedgeprops={
                 "width": 0.36,
                 "edgecolor": "white"
