@@ -70,6 +70,7 @@ def aplicar_estilo():
                 margin-top: 8px;
                 font-size: 0.78rem;
                 color: #6B7280;
+                line-height: 1.25;
             }
 
             .filter-card {
@@ -78,6 +79,28 @@ def aplicar_estilo():
                 border-radius: 16px;
                 padding: 18px 20px;
                 margin-bottom: 18px;
+            }
+
+            .info-card {
+                background-color: #F8FAFC;
+                border: 1px solid #E5E7EB;
+                border-radius: 16px;
+                padding: 16px 18px;
+                min-height: 108px;
+                margin-bottom: 12px;
+            }
+
+            .info-title {
+                font-size: 0.95rem;
+                font-weight: 800;
+                color: #111827;
+                margin-bottom: 6px;
+            }
+
+            .info-text {
+                font-size: 0.88rem;
+                color: #4B5563;
+                line-height: 1.35;
             }
 
             h1, h2, h3 {
@@ -132,13 +155,24 @@ def kpi_card(titulo, valor, subtitulo=None):
     )
 
 
+def info_card(titulo, texto):
+    st.markdown(
+        f"""
+        <div class="info-card">
+            <div class="info-title">{titulo}</div>
+            <div class="info-text">{texto}</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
 def limpiar_estilo_grafico(ax) -> None:
     """
-    Aplica formato visual limpio a los gráficos:
+    Aplica formato visual limpio:
     - Sin grillas internas.
     - Sin bordes superior y derecho.
     - Bordes izquierdo/inferior suaves.
-    - Ticks en gris oscuro.
     """
     ax.grid(False)
 
@@ -514,7 +548,7 @@ eficiencia = ahorro_con_base / base if base != 0 else 0
 
 st.markdown("### Indicadores principales")
 
-kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
+kpi_col1, kpi_col2, kpi_col3, kpi_col4, kpi_col5 = st.columns(5)
 
 with kpi_col1:
     kpi_card("Ahorro Planificado", formato_kusd(ahorro_planificado_total))
@@ -523,18 +557,39 @@ with kpi_col2:
     kpi_card("Ahorro Real", formato_kusd(ahorro_real_total))
 
 with kpi_col3:
-    kpi_card("% Cumplimiento", formato_porcentaje(cumplimiento))
-
-kpi_col4, kpi_col5, kpi_col6 = st.columns(3)
+    kpi_card(
+        "% Cumplimiento",
+        formato_porcentaje(cumplimiento),
+        "Ahorro real dividido por ahorro planificado."
+    )
 
 with kpi_col4:
     kpi_card("N° Contratos", f"{n_contratos:,}")
 
 with kpi_col5:
-    kpi_card("% Eficiencia", formato_porcentaje(eficiencia))
+    kpi_card(
+        "% Eficiencia",
+        formato_porcentaje(eficiencia),
+        "Ahorro real sobre la línea base válida."
+    )
 
-with kpi_col6:
-    kpi_card("Base con línea base", formato_kusd(base), "Suma de LineaBase_kUSD válida")
+st.markdown("#### Glosario de indicadores")
+
+col_info1, col_info2 = st.columns(2)
+
+with col_info1:
+    info_card(
+        "% Cumplimiento",
+        "Mide qué porcentaje del ahorro planificado se ha logrado con el ahorro real registrado. "
+        "Un valor igual o superior a 100% indica que la meta fue alcanzada o superada."
+    )
+
+with col_info2:
+    info_card(
+        "% Eficiencia",
+        "Mide la relación entre el ahorro real y la línea base de los contratos con línea base válida. "
+        "Permite entender cuánto ahorro se obtuvo respecto del monto base negociado."
+    )
 
 st.markdown("---")
 
@@ -607,11 +662,16 @@ else:
         label="Meta 100%"
     )
 
+    colores_cumplimiento = [
+        "#16A34A" if valor >= 100 else "#DC2626"
+        for valor in df_progreso_gestor["Cumplimiento_%"]
+    ]
+
     ax.barh(
         df_progreso_gestor["Gestor"],
         df_progreso_gestor["Cumplimiento_Grafico_%"],
-        color="#2563EB",
-        edgecolor="#1D4ED8",
+        color=colores_cumplimiento,
+        edgecolor=colores_cumplimiento,
         linewidth=0.8,
         label="Cumplimiento"
     )
@@ -625,7 +685,7 @@ else:
     )
 
     max_cumplimiento = df_progreso_gestor["Cumplimiento_%"].max()
-    limite_x = max(150, min(max_cumplimiento + 35, 220))
+    limite_x = max(150, min(max_cumplimiento + 35, 240))
 
     ax.set_xlim(0, limite_x)
     ax.set_xlabel("Cumplimiento [%]")
@@ -704,9 +764,9 @@ else:
         df_ahorro_acumulado["Mes_Registro"],
         df_ahorro_acumulado["Ahorro_Real_Mensual_kUSD"],
         width=18,
-        alpha=0.35,
-        color="#93C5FD",
-        edgecolor="#60A5FA",
+        alpha=0.55,
+        color="#F59E0B",
+        edgecolor="#D97706",
         linewidth=0.8,
         label="Mensual"
     )
@@ -720,7 +780,7 @@ else:
         df_ahorro_acumulado["Ahorro_Real_Acumulado_kUSD"],
         marker="o",
         linewidth=2.5,
-        color="#1D4ED8",
+        color="#7C3AED",
         label="Acumulado"
     )
 
@@ -812,8 +872,8 @@ else:
     bars = ax.barh(
         df_top_contratos_plot["Contrato_Label"],
         df_top_contratos_plot["Ahorro_Real_kUSD_num"],
-        color="#2563EB",
-        edgecolor="#1D4ED8",
+        color="#0F766E",
+        edgecolor="#115E59",
         linewidth=0.8
     )
 
@@ -845,6 +905,41 @@ else:
 
     fig.tight_layout()
     st.pyplot(fig, clear_figure=True)
+
+    st.markdown("#### Detalle de registros del Top contratos")
+
+    contratos_top_labels = df_top_contratos_plot["Contrato_Label"].tolist()
+
+    df_detalle_top_contratos = df_top_contratos[
+        df_top_contratos["Contrato_Label"].isin(contratos_top_labels)
+    ].copy()
+
+    columnas_detalle_top = [
+        col for col in [
+            "Fecha_Registro",
+            "Gestor",
+            "Categoria",
+            "Contratista",
+            "Tipo_Proceso",
+            "LineaBase_kUSD",
+            "Ahorro_Real_kUSD",
+            "LineaBase_kUSD_num",
+            "Ahorro_Real_kUSD_num",
+            "Contrato_Label",
+        ] if col in df_detalle_top_contratos.columns
+    ]
+
+    df_detalle_top_contratos = (
+        df_detalle_top_contratos[columnas_detalle_top]
+        .sort_values("Ahorro_Real_kUSD_num", ascending=False)
+        .reset_index(drop=True)
+    )
+
+    st.dataframe(
+        df_detalle_top_contratos,
+        use_container_width=True,
+        hide_index=True
+    )
 
 st.markdown("---")
 
@@ -899,6 +994,14 @@ else:
         ascending=False
     ).reset_index(drop=True)
 
+    colores_donut = [
+        "#7C3AED",
+        "#F59E0B",
+        "#0F766E",
+        "#DC2626",
+        "#64748B",
+    ]
+
     col_donut, col_tabla_donut = st.columns([0.85, 1.15])
 
     with col_donut:
@@ -910,12 +1013,15 @@ else:
             autopct=lambda p: f"{p:.1f}%" if p >= 3 else "",
             startangle=90,
             pctdistance=0.78,
+            colors=colores_donut[:len(df_donut)],
             wedgeprops={
                 "width": 0.36,
                 "edgecolor": "white"
             },
             textprops={
-                "fontsize": 8
+                "fontsize": 8,
+                "fontweight": "bold",
+                "color": "#111827",
             }
         )
 
@@ -989,11 +1095,23 @@ if df_ahorro_proceso_bar.empty:
 else:
     fig, ax = plt.subplots(figsize=(13, 5.5))
 
+    colores_proceso = {
+        "Licitación": "#7C3AED",
+        "Cotización": "#F59E0B",
+        "Asignación Directa": "#0F766E",
+        "Negociación - Cost Avoidance": "#DC2626",
+    }
+
+    colores_barras_proceso = [
+        colores_proceso.get(tipo, "#64748B")
+        for tipo in df_ahorro_proceso_bar["Tipo_Proceso"]
+    ]
+
     bars = ax.barh(
         df_ahorro_proceso_bar["Tipo_Proceso"],
         df_ahorro_proceso_bar["Ahorro_Real_Total_kUSD"],
-        color="#2563EB",
-        edgecolor="#1D4ED8",
+        color=colores_barras_proceso,
+        edgecolor=colores_barras_proceso,
         linewidth=0.8
     )
 
