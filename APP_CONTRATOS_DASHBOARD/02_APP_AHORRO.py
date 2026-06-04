@@ -22,8 +22,82 @@ LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
 
 
 # ============================================================
-# Funciones visuales
+# Estilo visual
 # ============================================================
+
+def aplicar_estilo():
+    st.markdown(
+        """
+        <style>
+            .block-container {
+                padding-top: 2.8rem;
+                padding-bottom: 2.5rem;
+                max-width: 1550px;
+            }
+
+            .kpi-card {
+                background-color: #FFFFFF;
+                border: 1px solid #E5E7EB;
+                border-radius: 16px;
+                padding: 20px 18px;
+                min-height: 118px;
+                box-shadow: 0px 2px 8px rgba(0,0,0,0.045);
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                margin-bottom: 10px;
+            }
+
+            .kpi-title {
+                font-size: 0.90rem;
+                color: #4B5563;
+                font-weight: 600;
+                margin-bottom: 8px;
+                white-space: normal;
+                line-height: 1.25;
+            }
+
+            .kpi-value {
+                font-size: 1.50rem;
+                color: #111827;
+                font-weight: 800;
+                line-height: 1.15;
+                white-space: normal;
+                word-break: break-word;
+            }
+
+            .kpi-subtitle {
+                margin-top: 8px;
+                font-size: 0.78rem;
+                color: #6B7280;
+            }
+
+            .section-card {
+                background-color: #FFFFFF;
+                border: 1px solid #E5E7EB;
+                border-radius: 16px;
+                padding: 22px 24px;
+                margin-top: 18px;
+                margin-bottom: 22px;
+                box-shadow: 0px 2px 8px rgba(0,0,0,0.035);
+            }
+
+            .filter-card {
+                background-color: #F9FAFB;
+                border: 1px solid #E5E7EB;
+                border-radius: 16px;
+                padding: 18px 20px;
+                margin-bottom: 18px;
+            }
+
+            h1, h2, h3 {
+                letter-spacing: -0.02em;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
 
 def mostrar_logo_centrado():
     if LOGO_PATH.exists():
@@ -37,12 +111,13 @@ def mostrar_logo_centrado():
                 display: flex;
                 justify-content: center;
                 align-items: center;
-                margin-top: 8px;
-                margin-bottom: 12px;
+                margin-top: 26px;
+                margin-bottom: 18px;
+                padding-top: 8px;
             ">
                 <img
                     src="data:image/svg+xml;base64,{logo_base64}"
-                    style="width: 220px; display: block;"
+                    style="width: 240px; display: block;"
                 >
             </div>
             """,
@@ -67,63 +142,8 @@ def kpi_card(titulo, valor, subtitulo=None):
     )
 
 
-def aplicar_estilo():
-    st.markdown(
-        """
-        <style>
-            .block-container {
-                padding-top: 1.5rem;
-                padding-bottom: 2rem;
-                max-width: 1500px;
-            }
-
-            .kpi-card {
-                background-color: #FFFFFF;
-                border: 1px solid #E5E7EB;
-                border-radius: 14px;
-                padding: 18px 16px;
-                min-height: 115px;
-                box-shadow: 0px 2px 6px rgba(0,0,0,0.04);
-                display: flex;
-                flex-direction: column;
-                justify-content: center;
-            }
-
-            .kpi-title {
-                font-size: 0.88rem;
-                color: #4B5563;
-                font-weight: 600;
-                margin-bottom: 8px;
-                white-space: normal;
-                line-height: 1.2;
-            }
-
-            .kpi-value {
-                font-size: 1.55rem;
-                color: #111827;
-                font-weight: 800;
-                line-height: 1.15;
-                white-space: normal;
-                word-break: break-word;
-            }
-
-            .kpi-subtitle {
-                margin-top: 8px;
-                font-size: 0.78rem;
-                color: #6B7280;
-            }
-
-            h1, h2, h3 {
-                letter-spacing: -0.02em;
-            }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
-
-
 # ============================================================
-# Funciones de cálculo
+# Funciones auxiliares
 # ============================================================
 
 def formato_kusd(valor):
@@ -147,12 +167,12 @@ def convertir_kusd(valor):
     if s == "" or s.lower() in ["nan", "none"]:
         return pd.NA
 
-    # Caso base definido: 81.036,00 -> 81.036
+    # Formato usado previamente: 81.036,00 -> 81.036
     if "." in s and "," in s:
         s = s.split(",")[0]
         return pd.to_numeric(s, errors="coerce")
 
-    # Caso: 7,27 -> 7.27
+    # Formato: 7,27 -> 7.27
     if "," in s:
         s = s.replace(",", ".")
         return pd.to_numeric(s, errors="coerce")
@@ -361,44 +381,55 @@ df_real["Gestor"] = df_real["Gestor"].fillna("Sin gestor")
 
 
 # ============================================================
-# Filtros
+# Filtros en encabezado
 # ============================================================
 
-st.sidebar.header("Filtros")
+st.markdown("### Filtros")
 
-gestores_disponibles = sorted(df_real["Gestor"].dropna().unique().tolist())
-procesos_disponibles = sorted(df_real["Tipo_Proceso"].dropna().unique().tolist())
+with st.container():
+    st.markdown("<div class='filter-card'>", unsafe_allow_html=True)
 
-fechas_validas = df_real["Fecha_Registro"].dropna()
+    gestores_disponibles = sorted(df_real["Gestor"].dropna().unique().tolist())
+    procesos_disponibles = sorted(df_real["Tipo_Proceso"].dropna().unique().tolist())
 
-if not fechas_validas.empty:
-    fecha_min = fechas_validas.min().date()
-    fecha_max = fechas_validas.max().date()
-else:
-    fecha_min = None
-    fecha_max = None
+    fechas_validas = df_real["Fecha_Registro"].dropna()
 
-gestores_filtro = st.sidebar.multiselect(
-    "Gestor",
-    options=gestores_disponibles,
-    default=gestores_disponibles
-)
+    if not fechas_validas.empty:
+        fecha_min = fechas_validas.min().date()
+        fecha_max = fechas_validas.max().date()
+    else:
+        fecha_min = None
+        fecha_max = None
 
-procesos_filtro = st.sidebar.multiselect(
-    "Tipo de proceso",
-    options=procesos_disponibles,
-    default=procesos_disponibles
-)
+    col_f1, col_f2, col_f3 = st.columns([1.15, 1.15, 0.9])
 
-if fecha_min and fecha_max:
-    rango_fechas = st.sidebar.date_input(
-        "Rango Fecha Registro",
-        value=(fecha_min, fecha_max),
-        min_value=fecha_min,
-        max_value=fecha_max
-    )
-else:
-    rango_fechas = None
+    with col_f1:
+        gestores_filtro = st.multiselect(
+            "Gestor",
+            options=gestores_disponibles,
+            default=gestores_disponibles
+        )
+
+    with col_f2:
+        procesos_filtro = st.multiselect(
+            "Tipo de proceso",
+            options=procesos_disponibles,
+            default=procesos_disponibles
+        )
+
+    with col_f3:
+        if fecha_min and fecha_max:
+            rango_fechas = st.date_input(
+                "Rango Fecha Registro",
+                value=(fecha_min, fecha_max),
+                min_value=fecha_min,
+                max_value=fecha_max
+            )
+        else:
+            rango_fechas = None
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
 
 df_real_filtrado = df_real.copy()
 
@@ -450,35 +481,35 @@ eficiencia = ahorro_con_base / base if base != 0 else 0
 # KPIs
 # ============================================================
 
-st.subheader("1. Indicadores principales")
+st.markdown("### Indicadores principales")
 
-fila1_col1, fila1_col2, fila1_col3 = st.columns(3)
+kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
 
-with fila1_col1:
+with kpi_col1:
     kpi_card("Ahorro Planificado", formato_kusd(ahorro_planificado_total))
 
-with fila1_col2:
+with kpi_col2:
     kpi_card("Ahorro Real", formato_kusd(ahorro_real_total))
 
-with fila1_col3:
+with kpi_col3:
     kpi_card("% Cumplimiento", formato_porcentaje(cumplimiento))
 
-fila2_col1, fila2_col2, fila2_col3 = st.columns(3)
+kpi_col4, kpi_col5, kpi_col6 = st.columns(3)
 
-with fila2_col1:
+with kpi_col4:
     kpi_card("N° Contratos", f"{n_contratos:,}")
 
-with fila2_col2:
+with kpi_col5:
     kpi_card("% Eficiencia", formato_porcentaje(eficiencia))
 
-with fila2_col3:
+with kpi_col6:
     kpi_card("Base con línea base", formato_kusd(base), "Suma de LineaBase_kUSD válida")
 
 st.markdown("---")
 
 
 # ============================================================
-# Tablas agregadas para gráficos
+# Tablas agregadas
 # ============================================================
 
 df_plan_gestor = (
@@ -526,20 +557,16 @@ df_progreso_gestor = df_progreso_gestor.sort_values(
 
 
 # ============================================================
-# Sección 2: Cumplimiento y evolución
+# Gráfico: Cumplimiento por gestor
 # ============================================================
 
-st.subheader("2. Cumplimiento y evolución del ahorro")
+st.markdown("### Cumplimiento por gestor")
 
-col_g1, col_g2 = st.columns([1.05, 1.15])
-
-with col_g1:
-    st.markdown("#### Cumplimiento por gestor")
-
+with st.container():
     if df_progreso_gestor.empty:
         st.info("No hay datos para graficar.")
     else:
-        fig, ax = plt.subplots(figsize=(8, max(4, len(df_progreso_gestor) * 0.45)))
+        fig, ax = plt.subplots(figsize=(13, max(5, len(df_progreso_gestor) * 0.55)))
 
         ax.barh(
             df_progreso_gestor["Gestor"],
@@ -558,96 +585,17 @@ with col_g1:
         ax.axvline(100, linestyle="--", linewidth=1.1, color="black")
 
         for i, row in df_progreso_gestor.iterrows():
-            texto = f"{row['Cumplimiento_%']:.1f}%"
-            ax.text(102, i, texto, va="center", fontsize=8)
+            texto = (
+                f"{row['Cumplimiento_%']:.1f}% | "
+                f"{row['Ahorro_Real_Total_kUSD']:,.0f} / "
+                f"{row['Ahorro_Planificado_Total_kUSD']:,.0f} kUSD"
+            )
+            ax.text(102, i, texto, va="center", fontsize=9)
 
         ax.set_xlabel("Cumplimiento [%]")
-        ax.set_xlim(0, 125)
+        ax.set_xlim(0, 150)
         ax.grid(axis="x", alpha=0.25)
-        ax.legend(loc="lower right", fontsize=8)
-
-        plt.tight_layout()
-        st.pyplot(fig, clear_figure=True)
-
-with col_g2:
-    st.markdown("#### Ahorro real mensual y acumulado")
-
-    df_acum = df_real_filtrado.copy()
-
-    df_acum["Mes_Registro"] = (
-        df_acum["Fecha_Registro"]
-        .dt.to_period("M")
-        .dt.to_timestamp()
-    )
-
-    df_ahorro_acumulado = (
-        df_acum
-        .dropna(subset=["Mes_Registro"])
-        .groupby("Mes_Registro", as_index=False)["Ahorro_Real_kUSD_num"]
-        .sum()
-        .rename(columns={"Ahorro_Real_kUSD_num": "Ahorro_Real_Mensual_kUSD"})
-        .sort_values("Mes_Registro")
-    )
-
-    if df_ahorro_acumulado.empty:
-        st.info("No hay datos mensuales para visualizar.")
-    else:
-        df_ahorro_acumulado["Ahorro_Real_Acumulado_kUSD"] = (
-            df_ahorro_acumulado["Ahorro_Real_Mensual_kUSD"].cumsum()
-        )
-
-        df_ahorro_acumulado["AñoMes"] = (
-            df_ahorro_acumulado["Mes_Registro"].dt.strftime("%Y-%m")
-        )
-
-        fig, ax1 = plt.subplots(figsize=(8.5, 4.8))
-
-        ax1.bar(
-            df_ahorro_acumulado["Mes_Registro"],
-            df_ahorro_acumulado["Ahorro_Real_Mensual_kUSD"],
-            width=18,
-            alpha=0.30,
-            label="Mensual"
-        )
-
-        ax1.set_ylabel("Mensual [kUSD]")
-        ax1.grid(axis="y", alpha=0.25)
-
-        ax2 = ax1.twinx()
-
-        ax2.plot(
-            df_ahorro_acumulado["Mes_Registro"],
-            df_ahorro_acumulado["Ahorro_Real_Acumulado_kUSD"],
-            marker="o",
-            linewidth=2.3,
-            label="Acumulado"
-        )
-
-        ax2.set_ylabel("Acumulado [kUSD]")
-
-        ultimo_mes = df_ahorro_acumulado["Mes_Registro"].iloc[-1]
-        ultimo_valor = df_ahorro_acumulado["Ahorro_Real_Acumulado_kUSD"].iloc[-1]
-
-        ax2.annotate(
-            f"{ultimo_valor:,.1f} kUSD",
-            xy=(ultimo_mes, ultimo_valor),
-            xytext=(10, 15),
-            textcoords="offset points",
-            fontsize=9,
-            fontweight="bold",
-            arrowprops=dict(arrowstyle="->", lw=1.0)
-        )
-
-        ax1.set_xlabel("Mes")
-        ax1.set_xticks(df_ahorro_acumulado["Mes_Registro"])
-        ax1.set_xticklabels(df_ahorro_acumulado["AñoMes"], rotation=45, ha="right", fontsize=8)
-
-        ax1.yaxis.set_major_formatter(mticker.StrMethodFormatter("{x:,.0f}"))
-        ax2.yaxis.set_major_formatter(mticker.StrMethodFormatter("{x:,.0f}"))
-
-        handles1, labels1 = ax1.get_legend_handles_labels()
-        handles2, labels2 = ax2.get_legend_handles_labels()
-        ax1.legend(handles1 + handles2, labels1 + labels2, loc="upper left", fontsize=8)
+        ax.legend(loc="lower right")
 
         plt.tight_layout()
         st.pyplot(fig, clear_figure=True)
@@ -656,156 +604,251 @@ st.markdown("---")
 
 
 # ============================================================
-# Sección 3: Top contratos y proceso
+# Gráfico: Evolución mensual y acumulada
 # ============================================================
 
-st.subheader("3. Distribución del ahorro")
+st.markdown("### Ahorro real mensual y acumulado")
 
-col_g3, col_g4 = st.columns([1.15, 1])
+df_acum = df_real_filtrado.copy()
 
-with col_g3:
-    st.markdown("#### Top contratos por ahorro real")
+df_acum["Mes_Registro"] = (
+    df_acum["Fecha_Registro"]
+    .dt.to_period("M")
+    .dt.to_timestamp()
+)
 
-    top_n = st.slider(
-        "Cantidad de contratos a mostrar",
-        min_value=5,
-        max_value=20,
-        value=10,
-        key="top_contratos_slider"
+df_ahorro_acumulado = (
+    df_acum
+    .dropna(subset=["Mes_Registro"])
+    .groupby("Mes_Registro", as_index=False)["Ahorro_Real_kUSD_num"]
+    .sum()
+    .rename(columns={"Ahorro_Real_kUSD_num": "Ahorro_Real_Mensual_kUSD"})
+    .sort_values("Mes_Registro")
+)
+
+if df_ahorro_acumulado.empty:
+    st.info("No hay datos mensuales para visualizar.")
+else:
+    df_ahorro_acumulado["Ahorro_Real_Acumulado_kUSD"] = (
+        df_ahorro_acumulado["Ahorro_Real_Mensual_kUSD"].cumsum()
     )
 
-    df_top_contratos = df_real_filtrado.copy()
-
-    df_top_contratos["Categoria"] = df_top_contratos["Categoria"].fillna("Sin categoría")
-    df_top_contratos["Contratista"] = df_top_contratos["Contratista"].fillna("Sin contratista")
-
-    df_top_contratos["Contrato_Label"] = (
-        df_top_contratos["Contratista"].astype(str).str.strip()
-        + " | "
-        + df_top_contratos["Categoria"].astype(str).str.strip()
+    df_ahorro_acumulado["AñoMes"] = (
+        df_ahorro_acumulado["Mes_Registro"].dt.strftime("%Y-%m")
     )
 
-    df_top_contratos_plot = (
-        df_top_contratos
-        .dropna(subset=["Ahorro_Real_kUSD_num"])
-        .sort_values("Ahorro_Real_kUSD_num", ascending=False)
-        .head(top_n)
-        .sort_values("Ahorro_Real_kUSD_num", ascending=True)
-        .reset_index(drop=True)
+    fig, ax1 = plt.subplots(figsize=(13, 5.8))
+
+    ax1.bar(
+        df_ahorro_acumulado["Mes_Registro"],
+        df_ahorro_acumulado["Ahorro_Real_Mensual_kUSD"],
+        width=18,
+        alpha=0.30,
+        label="Mensual"
     )
 
-    if df_top_contratos_plot.empty:
-        st.info("No hay contratos para visualizar.")
-    else:
-        fig, ax = plt.subplots(figsize=(8.5, max(4.5, top_n * 0.40)))
+    ax1.set_ylabel("Mensual [kUSD]")
+    ax1.grid(axis="y", alpha=0.25)
 
-        ax.barh(
-            df_top_contratos_plot["Contrato_Label"],
-            df_top_contratos_plot["Ahorro_Real_kUSD_num"],
-            color="#1976D2"
-        )
+    ax2 = ax1.twinx()
 
-        ax.set_xlabel("Ahorro Real [kUSD]")
-        ax.grid(axis="x", alpha=0.3)
-
-        max_valor = df_top_contratos_plot["Ahorro_Real_kUSD_num"].max()
-
-        for i, valor in enumerate(df_top_contratos_plot["Ahorro_Real_kUSD_num"]):
-            ax.text(
-                valor + max_valor * 0.01,
-                i,
-                f"{valor:,.1f}",
-                va="center",
-                fontsize=8
-            )
-
-        plt.tight_layout()
-        st.pyplot(fig, clear_figure=True)
-
-with col_g4:
-    st.markdown("#### Participación por tipo de proceso")
-
-    df_proc = df_real_filtrado.copy()
-
-    df_dim_proceso["Tipo_Proceso"] = limpiar_texto_columna(df_dim_proceso["Tipo_Proceso"])
-
-    df_ahorro_proceso = (
-        df_proc
-        .groupby("Tipo_Proceso", as_index=False)["Ahorro_Real_kUSD_num"]
-        .sum()
-        .rename(columns={"Ahorro_Real_kUSD_num": "Ahorro_Real_Total_kUSD"})
+    ax2.plot(
+        df_ahorro_acumulado["Mes_Registro"],
+        df_ahorro_acumulado["Ahorro_Real_Acumulado_kUSD"],
+        marker="o",
+        linewidth=2.5,
+        label="Acumulado"
     )
 
-    df_ahorro_proceso = (
-        df_dim_proceso
-        .merge(df_ahorro_proceso, on="Tipo_Proceso", how="left")
+    ax2.set_ylabel("Acumulado [kUSD]")
+
+    ultimo_mes = df_ahorro_acumulado["Mes_Registro"].iloc[-1]
+    ultimo_valor = df_ahorro_acumulado["Ahorro_Real_Acumulado_kUSD"].iloc[-1]
+
+    ax2.annotate(
+        f"{ultimo_valor:,.1f} kUSD",
+        xy=(ultimo_mes, ultimo_valor),
+        xytext=(12, 18),
+        textcoords="offset points",
+        fontsize=10,
+        fontweight="bold",
+        arrowprops=dict(arrowstyle="->", lw=1.0)
     )
 
-    df_ahorro_proceso["Ahorro_Real_Total_kUSD"] = (
-        df_ahorro_proceso["Ahorro_Real_Total_kUSD"]
-        .fillna(0)
+    ax1.set_xlabel("Mes")
+    ax1.set_xticks(df_ahorro_acumulado["Mes_Registro"])
+    ax1.set_xticklabels(df_ahorro_acumulado["AñoMes"], rotation=45, ha="right")
+
+    ax1.yaxis.set_major_formatter(mticker.StrMethodFormatter("{x:,.0f}"))
+    ax2.yaxis.set_major_formatter(mticker.StrMethodFormatter("{x:,.0f}"))
+
+    handles1, labels1 = ax1.get_legend_handles_labels()
+    handles2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(handles1 + handles2, labels1 + labels2, loc="upper left")
+
+    plt.tight_layout()
+    st.pyplot(fig, clear_figure=True)
+
+st.markdown("---")
+
+
+# ============================================================
+# Gráfico: Top contratos
+# ============================================================
+
+st.markdown("### Top contratos por ahorro real")
+
+top_n = st.slider(
+    "Cantidad de contratos a mostrar",
+    min_value=5,
+    max_value=20,
+    value=10,
+    key="top_contratos_slider"
+)
+
+df_top_contratos = df_real_filtrado.copy()
+
+df_top_contratos["Categoria"] = df_top_contratos["Categoria"].fillna("Sin categoría")
+df_top_contratos["Contratista"] = df_top_contratos["Contratista"].fillna("Sin contratista")
+
+df_top_contratos["Contrato_Label"] = (
+    df_top_contratos["Contratista"].astype(str).str.strip()
+    + " | "
+    + df_top_contratos["Categoria"].astype(str).str.strip()
+)
+
+df_top_contratos_plot = (
+    df_top_contratos
+    .dropna(subset=["Ahorro_Real_kUSD_num"])
+    .sort_values("Ahorro_Real_kUSD_num", ascending=False)
+    .head(top_n)
+    .sort_values("Ahorro_Real_kUSD_num", ascending=True)
+    .reset_index(drop=True)
+)
+
+if df_top_contratos_plot.empty:
+    st.info("No hay contratos para visualizar.")
+else:
+    fig, ax = plt.subplots(figsize=(13, max(5, top_n * 0.48)))
+
+    ax.barh(
+        df_top_contratos_plot["Contrato_Label"],
+        df_top_contratos_plot["Ahorro_Real_kUSD_num"],
+        color="#1976D2"
     )
 
-    df_donut = df_ahorro_proceso[
-        df_ahorro_proceso["Ahorro_Real_Total_kUSD"] > 0
-    ].copy()
+    ax.set_xlabel("Ahorro Real [kUSD]")
+    ax.grid(axis="x", alpha=0.3)
 
-    if df_donut.empty:
-        st.info("No hay datos positivos para el gráfico.")
-    else:
-        total_ahorro = df_donut["Ahorro_Real_Total_kUSD"].sum()
+    max_valor = df_top_contratos_plot["Ahorro_Real_kUSD_num"].max()
 
-        fig, ax = plt.subplots(figsize=(6, 5.3))
-
-        wedges, texts, autotexts = ax.pie(
-            df_donut["Ahorro_Real_Total_kUSD"],
-            labels=df_donut["Tipo_Proceso"],
-            autopct=lambda p: f"{p:.1f}%" if p > 0 else "",
-            startangle=90,
-            pctdistance=0.78,
-            wedgeprops={
-                "width": 0.38,
-                "edgecolor": "white"
-            }
-        )
-
+    for i, valor in enumerate(df_top_contratos_plot["Ahorro_Real_kUSD_num"]):
         ax.text(
-            0,
-            0.05,
-            f"{total_ahorro:,.0f}",
-            ha="center",
-            va="center",
-            fontsize=16,
-            fontweight="bold"
-        )
-
-        ax.text(
-            0,
-            -0.12,
-            "kUSD total",
-            ha="center",
+            valor + max_valor * 0.01,
+            i,
+            f"{valor:,.1f}",
             va="center",
             fontsize=9
         )
 
-        plt.tight_layout()
-        st.pyplot(fig, clear_figure=True)
+    plt.tight_layout()
+    st.pyplot(fig, clear_figure=True)
 
 st.markdown("---")
 
 
 # ============================================================
-# Sección 4: Ahorro por proceso en barras
+# Tipo de proceso
 # ============================================================
 
-st.subheader("4. Ahorro real por tipo de proceso")
+df_proc = df_real_filtrado.copy()
+
+df_dim_proceso["Tipo_Proceso"] = limpiar_texto_columna(df_dim_proceso["Tipo_Proceso"])
+
+df_ahorro_proceso = (
+    df_proc
+    .groupby("Tipo_Proceso", as_index=False)["Ahorro_Real_kUSD_num"]
+    .sum()
+    .rename(columns={"Ahorro_Real_kUSD_num": "Ahorro_Real_Total_kUSD"})
+)
+
+df_ahorro_proceso = (
+    df_dim_proceso
+    .merge(df_ahorro_proceso, on="Tipo_Proceso", how="left")
+)
+
+df_ahorro_proceso["Ahorro_Real_Total_kUSD"] = (
+    df_ahorro_proceso["Ahorro_Real_Total_kUSD"]
+    .fillna(0)
+)
+
+
+# ============================================================
+# Gráfico: Donut proceso
+# ============================================================
+
+st.markdown("### Participación del ahorro por tipo de proceso")
+
+df_donut = df_ahorro_proceso[
+    df_ahorro_proceso["Ahorro_Real_Total_kUSD"] > 0
+].copy()
+
+if df_donut.empty:
+    st.info("No hay datos positivos para el gráfico.")
+else:
+    total_ahorro = df_donut["Ahorro_Real_Total_kUSD"].sum()
+
+    fig, ax = plt.subplots(figsize=(8, 7))
+
+    wedges, texts, autotexts = ax.pie(
+        df_donut["Ahorro_Real_Total_kUSD"],
+        labels=df_donut["Tipo_Proceso"],
+        autopct=lambda p: f"{p:.1f}%" if p > 0 else "",
+        startangle=90,
+        pctdistance=0.78,
+        wedgeprops={
+            "width": 0.38,
+            "edgecolor": "white"
+        }
+    )
+
+    ax.text(
+        0,
+        0.05,
+        f"{total_ahorro:,.0f}",
+        ha="center",
+        va="center",
+        fontsize=18,
+        fontweight="bold"
+    )
+
+    ax.text(
+        0,
+        -0.12,
+        "kUSD total",
+        ha="center",
+        va="center",
+        fontsize=10
+    )
+
+    plt.tight_layout()
+    st.pyplot(fig, clear_figure=True)
+
+st.markdown("---")
+
+
+# ============================================================
+# Gráfico: Barras proceso
+# ============================================================
+
+st.markdown("### Ahorro real por tipo de proceso")
 
 df_ahorro_proceso_bar = df_ahorro_proceso.sort_values(
     "Ahorro_Real_Total_kUSD",
     ascending=True
 ).reset_index(drop=True)
 
-fig, ax = plt.subplots(figsize=(12, 4.8))
+fig, ax = plt.subplots(figsize=(13, 5.5))
 
 ax.barh(
     df_ahorro_proceso_bar["Tipo_Proceso"],
@@ -832,13 +875,14 @@ if max_valor > 0:
 plt.tight_layout()
 st.pyplot(fig, clear_figure=True)
 
-
-# ============================================================
-# Sección 5: Tablas de apoyo
-# ============================================================
-
 st.markdown("---")
-st.subheader("5. Tablas de apoyo")
+
+
+# ============================================================
+# Tablas de apoyo
+# ============================================================
+
+st.markdown("### Tablas de apoyo")
 
 with st.expander("Ver tabla de cumplimiento por gestor", expanded=False):
     st.dataframe(df_progreso_gestor, use_container_width=True)
