@@ -132,6 +132,47 @@ def kpi_card(titulo, valor, subtitulo=None):
     )
 
 
+def limpiar_estilo_grafico(ax) -> None:
+    """
+    Aplica formato visual limpio a los gráficos:
+    - Sin grillas internas.
+    - Sin bordes superior y derecho.
+    - Bordes izquierdo/inferior suaves.
+    - Ticks en gris oscuro.
+    """
+    ax.grid(False)
+
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_color("#D1D5DB")
+    ax.spines["bottom"].set_color("#D1D5DB")
+
+    ax.tick_params(axis="x", colors="#374151")
+    ax.tick_params(axis="y", colors="#374151")
+
+
+def limpiar_estilo_grafico_doble_eje(ax1, ax2) -> None:
+    """
+    Aplica estilo limpio para gráficos con doble eje.
+    """
+    ax1.grid(False)
+    ax2.grid(False)
+
+    ax1.spines["top"].set_visible(False)
+    ax1.spines["right"].set_visible(False)
+    ax1.spines["left"].set_color("#D1D5DB")
+    ax1.spines["bottom"].set_color("#D1D5DB")
+
+    ax2.spines["top"].set_visible(False)
+    ax2.spines["left"].set_visible(False)
+    ax2.spines["right"].set_color("#D1D5DB")
+    ax2.spines["bottom"].set_color("#D1D5DB")
+
+    ax1.tick_params(axis="x", colors="#374151")
+    ax1.tick_params(axis="y", colors="#374151")
+    ax2.tick_params(axis="y", colors="#374151")
+
+
 # ============================================================
 # Funciones auxiliares
 # ============================================================
@@ -560,18 +601,37 @@ else:
     ax.barh(
         df_progreso_gestor["Gestor"],
         [100] * len(df_progreso_gestor),
-        color="#E0E0E0",
+        color="#E5E7EB",
+        edgecolor="#D1D5DB",
+        linewidth=0.8,
         label="Meta 100%"
     )
 
     ax.barh(
         df_progreso_gestor["Gestor"],
         df_progreso_gestor["Cumplimiento_Grafico_%"],
-        color="#1976D2",
+        color="#2563EB",
+        edgecolor="#1D4ED8",
+        linewidth=0.8,
         label="Cumplimiento"
     )
 
-    ax.axvline(100, linestyle="--", linewidth=1.1, color="black")
+    ax.axvline(
+        100,
+        linestyle="--",
+        linewidth=1.1,
+        color="#111827",
+        alpha=0.8
+    )
+
+    max_cumplimiento = df_progreso_gestor["Cumplimiento_%"].max()
+    limite_x = max(150, min(max_cumplimiento + 35, 220))
+
+    ax.set_xlim(0, limite_x)
+    ax.set_xlabel("Cumplimiento [%]")
+    ax.set_title("Cumplimiento por gestor", fontsize=14, fontweight="bold", pad=14)
+
+    limpiar_estilo_grafico(ax)
 
     for i, row in df_progreso_gestor.iterrows():
         texto = (
@@ -579,14 +639,26 @@ else:
             f"{row['Ahorro_Real_Total_kUSD']:,.0f} / "
             f"{row['Ahorro_Planificado_Total_kUSD']:,.0f} kUSD"
         )
-        ax.text(102, i, texto, va="center", fontsize=9)
 
-    ax.set_xlabel("Cumplimiento [%]")
-    ax.set_xlim(0, 150)
-    ax.grid(axis="x", alpha=0.25)
-    ax.legend(loc="lower right")
+        posicion_texto = min(
+            max(row["Cumplimiento_Grafico_%"], 100) + 3,
+            limite_x - 5
+        )
 
-    plt.tight_layout()
+        ax.text(
+            posicion_texto,
+            i,
+            texto,
+            va="center",
+            ha="left",
+            fontsize=9,
+            fontweight="bold",
+            color="#111827"
+        )
+
+    ax.legend(loc="lower right", frameon=False)
+
+    fig.tight_layout()
     st.pyplot(fig, clear_figure=True)
 
 st.markdown("---")
@@ -628,16 +700,18 @@ else:
 
     fig, ax1 = plt.subplots(figsize=(13, 5.8))
 
-    ax1.bar(
+    bars = ax1.bar(
         df_ahorro_acumulado["Mes_Registro"],
         df_ahorro_acumulado["Ahorro_Real_Mensual_kUSD"],
         width=18,
-        alpha=0.30,
+        alpha=0.35,
+        color="#93C5FD",
+        edgecolor="#60A5FA",
+        linewidth=0.8,
         label="Mensual"
     )
 
     ax1.set_ylabel("Mensual [kUSD]")
-    ax1.grid(axis="y", alpha=0.25)
 
     ax2 = ax1.twinx()
 
@@ -646,6 +720,7 @@ else:
         df_ahorro_acumulado["Ahorro_Real_Acumulado_kUSD"],
         marker="o",
         linewidth=2.5,
+        color="#1D4ED8",
         label="Acumulado"
     )
 
@@ -654,16 +729,28 @@ else:
     ultimo_mes = df_ahorro_acumulado["Mes_Registro"].iloc[-1]
     ultimo_valor = df_ahorro_acumulado["Ahorro_Real_Acumulado_kUSD"].iloc[-1]
 
+    max_mensual = df_ahorro_acumulado["Ahorro_Real_Mensual_kUSD"].max()
+    max_acumulado = df_ahorro_acumulado["Ahorro_Real_Acumulado_kUSD"].max()
+
+    margen_mensual = max_mensual * 0.20 if max_mensual > 0 else 1
+    margen_acumulado = max_acumulado * 0.22 if max_acumulado > 0 else 1
+
+    ax1.set_ylim(0, max_mensual + margen_mensual)
+    ax2.set_ylim(0, max_acumulado + margen_acumulado)
+
     ax2.annotate(
         f"{ultimo_valor:,.1f} kUSD",
         xy=(ultimo_mes, ultimo_valor),
-        xytext=(12, 18),
+        xytext=(-10, 22),
         textcoords="offset points",
         fontsize=10,
         fontweight="bold",
-        arrowprops=dict(arrowstyle="->", lw=1.0)
+        color="#111827",
+        ha="right",
+        arrowprops=dict(arrowstyle="->", lw=1.0, color="#111827")
     )
 
+    ax1.set_title("Ahorro real mensual y acumulado", fontsize=14, fontweight="bold", pad=14)
     ax1.set_xlabel("Mes")
     ax1.set_xticks(df_ahorro_acumulado["Mes_Registro"])
     ax1.set_xticklabels(df_ahorro_acumulado["AñoMes"], rotation=45, ha="right")
@@ -671,11 +758,13 @@ else:
     ax1.yaxis.set_major_formatter(mticker.StrMethodFormatter("{x:,.0f}"))
     ax2.yaxis.set_major_formatter(mticker.StrMethodFormatter("{x:,.0f}"))
 
+    limpiar_estilo_grafico_doble_eje(ax1, ax2)
+
     handles1, labels1 = ax1.get_legend_handles_labels()
     handles2, labels2 = ax2.get_legend_handles_labels()
-    ax1.legend(handles1 + handles2, labels1 + labels2, loc="upper left")
+    ax1.legend(handles1 + handles2, labels1 + labels2, loc="upper left", frameon=False)
 
-    plt.tight_layout()
+    fig.tight_layout()
     st.pyplot(fig, clear_figure=True)
 
 st.markdown("---")
@@ -720,27 +809,41 @@ if df_top_contratos_plot.empty:
 else:
     fig, ax = plt.subplots(figsize=(13, max(5, top_n * 0.48)))
 
-    ax.barh(
+    bars = ax.barh(
         df_top_contratos_plot["Contrato_Label"],
         df_top_contratos_plot["Ahorro_Real_kUSD_num"],
-        color="#1976D2"
+        color="#2563EB",
+        edgecolor="#1D4ED8",
+        linewidth=0.8
     )
 
+    ax.set_title("Top contratos por ahorro real", fontsize=14, fontweight="bold", pad=14)
     ax.set_xlabel("Ahorro Real [kUSD]")
-    ax.grid(axis="x", alpha=0.3)
+    ax.xaxis.set_major_formatter(mticker.StrMethodFormatter("{x:,.0f}"))
+
+    limpiar_estilo_grafico(ax)
 
     max_valor = df_top_contratos_plot["Ahorro_Real_kUSD_num"].max()
+    margen_derecho = max(max_valor * 0.22, 1)
 
-    for i, valor in enumerate(df_top_contratos_plot["Ahorro_Real_kUSD_num"]):
+    ax.set_xlim(0, max_valor + margen_derecho)
+
+    for bar in bars:
+        valor = bar.get_width()
+        y_pos = bar.get_y() + bar.get_height() / 2
+
         ax.text(
-            valor + max_valor * 0.01,
-            i,
-            f"{valor:,.1f}",
+            valor + margen_derecho * 0.08,
+            y_pos,
+            f"{valor:,.1f} kUSD",
             va="center",
-            fontsize=9
+            ha="left",
+            fontsize=9,
+            fontweight="bold",
+            color="#111827"
         )
 
-    plt.tight_layout()
+    fig.tight_layout()
     st.pyplot(fig, clear_figure=True)
 
 st.markdown("---")
@@ -881,32 +984,48 @@ df_ahorro_proceso_bar = df_ahorro_proceso.sort_values(
     ascending=True
 ).reset_index(drop=True)
 
-fig, ax = plt.subplots(figsize=(13, 5.5))
+if df_ahorro_proceso_bar.empty:
+    st.info("No hay datos para graficar ahorro por tipo de proceso.")
+else:
+    fig, ax = plt.subplots(figsize=(13, 5.5))
 
-ax.barh(
-    df_ahorro_proceso_bar["Tipo_Proceso"],
-    df_ahorro_proceso_bar["Ahorro_Real_Total_kUSD"],
-    color="#1976D2"
-)
+    bars = ax.barh(
+        df_ahorro_proceso_bar["Tipo_Proceso"],
+        df_ahorro_proceso_bar["Ahorro_Real_Total_kUSD"],
+        color="#2563EB",
+        edgecolor="#1D4ED8",
+        linewidth=0.8
+    )
 
-ax.set_xlabel("Ahorro Real Total [kUSD]")
-ax.grid(axis="x", alpha=0.25)
-ax.xaxis.set_major_formatter(mticker.StrMethodFormatter("{x:,.0f}"))
+    ax.set_title("Ahorro real por tipo de proceso", fontsize=14, fontweight="bold", pad=14)
+    ax.set_xlabel("Ahorro Real Total [kUSD]")
+    ax.xaxis.set_major_formatter(mticker.StrMethodFormatter("{x:,.0f}"))
 
-max_valor = df_ahorro_proceso_bar["Ahorro_Real_Total_kUSD"].max()
+    limpiar_estilo_grafico(ax)
 
-if max_valor > 0:
-    for i, valor in enumerate(df_ahorro_proceso_bar["Ahorro_Real_Total_kUSD"]):
-        ax.text(
-            valor + max_valor * 0.02,
-            i,
-            f"{valor:,.1f} kUSD",
-            va="center",
-            fontsize=9
-        )
+    max_valor = df_ahorro_proceso_bar["Ahorro_Real_Total_kUSD"].max()
+    margen_derecho = max(max_valor * 0.22, 1)
 
-plt.tight_layout()
-st.pyplot(fig, clear_figure=True)
+    ax.set_xlim(0, max_valor + margen_derecho)
+
+    if max_valor > 0:
+        for bar in bars:
+            valor = bar.get_width()
+            y_pos = bar.get_y() + bar.get_height() / 2
+
+            ax.text(
+                valor + margen_derecho * 0.08,
+                y_pos,
+                f"{valor:,.1f} kUSD",
+                va="center",
+                ha="left",
+                fontsize=9,
+                fontweight="bold",
+                color="#111827"
+            )
+
+    fig.tight_layout()
+    st.pyplot(fig, clear_figure=True)
 
 st.markdown("---")
 
