@@ -344,18 +344,67 @@ def formatear_fecha(fecha: date) -> str:
     return fecha.strftime("%Y-%m-%d")
 
 
-def calcular_rango_default() -> tuple[date, date]:
-    """Rango por defecto: últimos 24 meses hasta hoy."""
-    hasta = date.today()
-    desde = hasta - timedelta(days=730)
-    return desde, hasta
+def obtener_meses() -> dict[str, int]:
+    """Devuelve diccionario de meses en español."""
+    return {
+        "Enero": 1,
+        "Febrero": 2,
+        "Marzo": 3,
+        "Abril": 4,
+        "Mayo": 5,
+        "Junio": 6,
+        "Julio": 7,
+        "Agosto": 8,
+        "Septiembre": 9,
+        "Octubre": 10,
+        "Noviembre": 11,
+        "Diciembre": 12,
+    }
+
+
+def ultimo_dia_mes(anio: int, mes: int) -> date:
+    """Devuelve el último día de un mes."""
+    if mes == 12:
+        return date(anio, 12, 31)
+
+    primer_dia_mes_siguiente = date(anio, mes + 1, 1)
+    return primer_dia_mes_siguiente - timedelta(days=1)
+
+
+def construir_rango_desde_anios_meses(
+    anio_desde: int,
+    anio_hasta: int,
+    mes_desde: int,
+    mes_hasta: int,
+) -> tuple[date, date]:
+    """
+    Construye fecha desde y fecha hasta usando año y mes.
+
+    - Fecha desde: primer día del mes desde.
+    - Fecha hasta: último día del mes hasta.
+    - Si la fecha hasta supera la fecha actual, se ajusta a hoy.
+    """
+
+    fecha_desde = date(anio_desde, mes_desde, 1)
+    fecha_hasta = ultimo_dia_mes(anio_hasta, mes_hasta)
+
+    if fecha_hasta > date.today():
+        fecha_hasta = date.today()
+
+    return fecha_desde, fecha_hasta
 
 
 def validar_rango_fechas(fecha_desde: date, fecha_hasta: date) -> None:
     """Valida que el rango de fechas sea correcto."""
 
     if fecha_desde > fecha_hasta:
-        st.error("La fecha desde no puede ser mayor que la fecha hasta.")
+        st.error(
+            """
+            El rango seleccionado no es válido.
+
+            Revisa que el año/mes inicial no sea posterior al año/mes final.
+            """
+        )
         st.stop()
 
     if fecha_hasta > date.today():
@@ -593,7 +642,17 @@ def crear_resumen_ultimos_valores(df_historico: pd.DataFrame) -> pd.DataFrame:
 
     df_resumen = (
         df_ok.sort_values("fecha")
-        .groupby(["codigo", "nombre", "grupo", "frecuencia", "unidad", "seriesId"], as_index=False)
+        .groupby(
+            [
+                "codigo",
+                "nombre",
+                "grupo",
+                "frecuencia",
+                "unidad",
+                "seriesId",
+            ],
+            as_index=False,
+        )
         .tail(1)
         .reset_index(drop=True)
     )
@@ -747,8 +806,6 @@ def main() -> None:
     # Panel de consulta
     # --------------------------------------------------------
 
-    fecha_desde_default, fecha_hasta_default = calcular_rango_default()
-
     col_grupo, col_indicador = st.columns([1, 2])
 
     with col_grupo:
@@ -784,20 +841,59 @@ def main() -> None:
     else:
         codigos_seleccionados = [opciones_indicadores[opcion_indicador]]
 
-    col_desde, col_hasta, col_total = st.columns([1, 1, 1])
+    # --------------------------------------------------------
+    # Selector de rango por años y meses
+    # --------------------------------------------------------
 
-    with col_desde:
-        fecha_desde = st.date_input(
-            "Fecha desde",
-            value=fecha_desde_default,
-            max_value=date.today(),
+    meses = obtener_meses()
+    nombres_meses = list(meses.keys())
+
+    anio_actual = date.today().year
+
+    anio_minimo = 2010
+    anio_maximo = max(2026, anio_actual)
+
+    anios_disponibles = list(range(anio_minimo, anio_maximo + 1))
+
+    anio_desde_default = 2024
+    anio_hasta_default = 2026
+
+    if anio_desde_default not in anios_disponibles:
+        anio_desde_default = anios_disponibles[0]
+
+    if anio_hasta_default not in anios_disponibles:
+        anio_hasta_default = anio_actual
+
+    col_anio_desde, col_anio_hasta, col_mes_desde, col_mes_hasta, col_total = st.columns(
+        [1, 1, 1, 1, 1]
+    )
+
+    with col_anio_desde:
+        anio_desde = st.selectbox(
+            "Año desde",
+            options=anios_disponibles,
+            index=anios_disponibles.index(anio_desde_default),
         )
 
-    with col_hasta:
-        fecha_hasta = st.date_input(
-            "Fecha hasta",
-            value=fecha_hasta_default,
-            max_value=date.today(),
+    with col_anio_hasta:
+        anio_hasta = st.selectbox(
+            "Año hasta",
+            options=anios_disponibles,
+            index=anios_disponibles.index(anio_hasta_default),
+        )
+
+    with col_mes_desde:
+        mes_desde_nombre = st.selectbox(
+            "Mes desde",
+            options=nombres_meses,
+            index=0,  # Enero
+        )
+
+    with col_mes_hasta:
+        mes_hasta_nombre = st.selectbox(
+            "Mes hasta",
+            options=nombres_meses,
+            index=11,  # Diciembre
         )
 
     with col_total:
@@ -806,7 +902,21 @@ def main() -> None:
             len(codigos_seleccionados),
         )
 
+    fecha_desde, fecha_hasta = construir_rango_desde_anios_meses(
+        anio_desde=anio_desde,
+        anio_hasta=anio_hasta,
+        mes_desde=meses[mes_desde_nombre],
+        mes_hasta=meses[mes_hasta_nombre],
+    )
+
     validar_rango_fechas(fecha_desde, fecha_hasta)
+
+    st.info(
+        f"""
+        Rango seleccionado: **{fecha_desde.strftime("%Y-%m-%d")}**
+        hasta **{fecha_hasta.strftime("%Y-%m-%d")}**.
+        """
+    )
 
     st.markdown("---")
 
@@ -832,7 +942,7 @@ def main() -> None:
     if not consultar:
         st.success(
             """
-            Selecciona un grupo, un indicador y un rango de fechas.
+            Selecciona un grupo, un indicador y un rango de años/meses.
             Luego presiona **Consultar Banco Central**.
             """
         )
