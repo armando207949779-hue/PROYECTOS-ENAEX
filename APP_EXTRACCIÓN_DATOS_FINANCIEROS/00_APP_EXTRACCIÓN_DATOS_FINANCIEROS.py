@@ -20,8 +20,9 @@ PROJECT_DIR = BASE_DIR.parent
 # Este archivo está en:
 # PROYECTOS-ENAEX/APP_EXTRACCIÓN_DATOS_FINANCIEROS/
 #
-# Por eso la app de monedas está en la MISMA carpeta:
+# Por eso las apps están en la MISMA carpeta:
 APP_MONEDAS_BANCO_CENTRAL = BASE_DIR / "01_APP_MONEDAS_BANCO_CENTRAL.py"
+APP_INDICADORES_FINANCIEROS = BASE_DIR / "02_APP_INDICADORES_FINANCIEROS_BANCO_CENTRAL.py"
 
 # Logo ubicado en:
 # PROYECTOS-ENAEX/assets/logo.svg
@@ -122,16 +123,19 @@ def pagina_inicio() -> None:
     with col2:
         st.info(
             """
-            **Próximos módulos**
+            **02_INDICADORES_FINANCIEROS_BANCO_CENTRAL**
 
-            Este portal puede ampliarse con nuevas pestañas para:
+            Consulta series temporales desde la BDE del Banco Central.
 
+            Permite revisar:
+            - Dólar observado diario, mensual y anual
+            - UF
+            - UTM
             - IPC
             - ICL
             - IR
-            - MOP
-            - ENAP
-            - Series financieras adicionales
+            - Histórico por rango de fechas
+            - Últimos valores disponibles
             """
         )
 
@@ -139,8 +143,10 @@ def pagina_inicio() -> None:
 
     st.success(
         """
-        Para comenzar, entra a **Data Cambio Dólar Monedas Banco Central**
-        y selecciona la fecha de consulta.
+        Para comenzar, entra a una de las pestañas disponibles en **Datos Financieros**:
+
+        - **Data Cambio Dólar Monedas Banco Central**
+        - **Indicadores Financieros Banco Central**
         """
     )
 
@@ -151,6 +157,7 @@ def pagina_inicio() -> None:
 
 apps_requeridas = {
     "01_APP_MONEDAS_BANCO_CENTRAL": APP_MONEDAS_BANCO_CENTRAL,
+    "02_APP_INDICADORES_FINANCIEROS_BANCO_CENTRAL": APP_INDICADORES_FINANCIEROS,
 }
 
 apps_faltantes = {
@@ -189,6 +196,12 @@ pagina = st.navigation(
                 title="Data Cambio Dólar Monedas Banco Central",
                 icon="💱",
                 url_path="data_cambio_dolar_monedas_banco_central",
+            ),
+            st.Page(
+                APP_INDICADORES_FINANCIEROS,
+                title="Indicadores Financieros Banco Central",
+                icon="📈",
+                url_path="indicadores_financieros_banco_central",
             ),
         ],
     }
