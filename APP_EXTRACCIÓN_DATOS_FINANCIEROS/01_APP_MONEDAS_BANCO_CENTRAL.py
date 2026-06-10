@@ -32,7 +32,7 @@ LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
 # ============================================================
 
 st.set_page_config(
-    page_title="Monedas Banco Central ENAEX",
+    page_title="Monedas Banco Central",
     page_icon="💱",
     layout="wide",
 )
@@ -551,6 +551,7 @@ def main() -> None:
         "<h1 style='text-align: center;'>Monedas Banco Central</h1>",
         unsafe_allow_html=True,
     )
+
     st.markdown(
         """
         <p style='text-align: center; font-size: 18px;'>
@@ -741,9 +742,12 @@ def main() -> None:
         """
     )
 
+    # Orden actualizado:
+    # Primero codigo y luego descripcion
     df_detalle = df_monedas[
         [
             "codigo",
+            "descripcion",
             "fecha",
             "valor_bde",
             "lectura_bde",
@@ -751,7 +755,6 @@ def main() -> None:
             "equivalencia_usd",
             "lectura_usd",
             "tipo_conversion",
-            "descripcion",
             "seriesId",
             "estado",
         ]
@@ -760,6 +763,11 @@ def main() -> None:
     df_detalle["valor_bde"] = df_detalle["valor_bde"].round(9)
     df_detalle["valor_clp_por_unidad"] = df_detalle["valor_clp_por_unidad"].round(9)
     df_detalle["equivalencia_usd"] = df_detalle["equivalencia_usd"].round(9)
+
+    df_detalle = df_detalle.sort_values(
+        by=["codigo", "descripcion"],
+        ascending=[True, True],
+    ).reset_index(drop=True)
 
     st.dataframe(
         df_detalle,
