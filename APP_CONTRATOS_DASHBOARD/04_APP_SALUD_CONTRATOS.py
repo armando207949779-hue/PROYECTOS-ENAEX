@@ -29,7 +29,7 @@ BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
 LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
 
-VERSION_NORMALIZACION_IDS = "v_2026_06_10_separacion_gastos_salud_contratos"
+VERSION_NORMALIZACION_IDS = "v_2026_06_10_cobertura_me5a_me3n_salud_contratos"
 
 
 # ============================================================
@@ -335,7 +335,7 @@ st.markdown(
 st.markdown(
     """
     <div class='subtitle'>
-        Estado de vigencia, cobertura ME5A y contratos por vencer por gestor.
+        Estado de vigencia, cobertura ME5A, cobertura ME3N y contratos por vencer por gestor.
     </div>
     """,
     unsafe_allow_html=True,
@@ -350,6 +350,7 @@ dataframes = st.session_state["dataframes_cargados"]
 DATAFRAMES_REQUERIDOS = [
     "df_bbdd_x_categoria",
     "df_me5a",
+    "df_ordenes",
 ]
 
 faltantes_df = [
@@ -368,6 +369,7 @@ if faltantes_df:
 
 _df_bbdd_x_categoria = dataframes["df_bbdd_x_categoria"].copy()
 _df_me5a = dataframes["df_me5a"].copy()
+_df_ordenes = dataframes["df_ordenes"].copy()
 
 columnas_requeridas = {
     "df_bbdd_x_categoria": [
@@ -377,6 +379,9 @@ columnas_requeridas = {
     "df_me5a": [
         "Documento_compras",
         "Fin_período_validez",
+    ],
+    "df_ordenes": [
+        "Documento_compras",
     ],
 }
 
@@ -390,6 +395,11 @@ validaciones = {
         _df_me5a,
         columnas_requeridas["df_me5a"],
         "df_me5a",
+    ),
+    "df_ordenes": validar_columnas(
+        _df_ordenes,
+        columnas_requeridas["df_ordenes"],
+        "df_ordenes",
     ),
 }
 
@@ -409,33 +419,44 @@ if errores_columnas:
 
 
 # ============================================================
-# Preparación: contratos y estado de vigencia
+# Preparación: contratos, ME5A, ME3N y estado de vigencia
 # ============================================================
 
 @st.cache_data(show_spinner=False)
 def preparar_contratos_estado(
     df_bbdd_x_categoria: pd.DataFrame,
     df_me5a: pd.DataFrame,
+    df_ordenes: pd.DataFrame,
     version_cache: str,
 ) -> pd.DataFrame:
     """
     Prepara la base consolidada de contratos y clasifica
     su estado de vigencia.
+
+    Además valida:
+    - Cobertura ME5A usando df_me5a["Documento_compras"]
+    - Cobertura ME3N usando df_ordenes["Documento_compras"]
     """
     df_cat = df_bbdd_x_categoria.copy()
     df_m5 = df_me5a.copy()
+    df_o = df_ordenes.copy()
 
     df_cat["Contrato_Original"] = df_cat["Contrato"]
+
     df_m5["Documento_Compras_Original_ME5A"] = df_m5["Documento_compras"]
+    df_o["Documento_Compras_Original_ME3N"] = df_o["Documento_compras"]
 
     df_cat["Contrato"] = df_cat["Contrato"].apply(limpiar_id_contrato)
     df_m5["Documento_compras"] = df_m5["Documento_compras"].apply(limpiar_id_contrato)
+    df_o["Documento_compras"] = df_o["Documento_compras"].apply(limpiar_id_contrato)
 
     df_cat = df_cat.dropna(subset=["Contrato"]).copy()
     df_m5 = df_m5.dropna(subset=["Documento_compras"]).copy()
+    df_o = df_o.dropna(subset=["Documento_compras"]).copy()
 
     df_cat["Contrato"] = df_cat["Contrato"].astype(str).str.strip()
     df_m5["Documento_compras"] = df_m5["Documento_compras"].astype(str).str.strip()
+    df_o["Documento_compras"] = df_o["Documento_compras"].astype(str).str.strip()
 
     df_cat["Gestor_Contrato"] = (
         df_cat["Gestor_Contrato"]
@@ -455,7 +476,7 @@ def preparar_contratos_estado(
     hoy = pd.Timestamp.today().normalize()
 
     def clasificar_estado(fecha_fin):
-        """Clasifica el contrato según la fecha de fin."""
+        """Clasifica el contrato según la fecha de fin ME5A."""
         if pd.isna(fecha_fin):
             return "Sin fecha"
 
@@ -490,16 +511,58 @@ def preparar_contratos_estado(
         .apply(clasificar_estado)
     )
 
+    df_m5_contrato = df_m5_contrato.rename(
+        columns={
+            "Documento_compras": "Documento_compras_ME5A",
+        }
+    )
+
+    df_o_contrato = (
+        df_o
+        .groupby("Documento_compras", as_index=False)
+        .agg(
+            Documento_Compras_Original_ME3N=(
+                "Documento_Compras_Original_ME3N",
+                "first",
+            ),
+        )
+    )
+
+    df_o_contrato = df_o_contrato.rename(
+        columns={
+            "Documento_compras": "Documento_compras_ME3N",
+        }
+    )
+
     df_contratos_estado = df_cat.merge(
         df_m5_contrato,
         left_on="Contrato",
-        right_on="Documento_compras",
+        right_on="Documento_compras_ME5A",
+        how="left",
+    )
+
+    df_contratos_estado = df_contratos_estado.merge(
+        df_o_contrato,
+        left_on="Contrato",
+        right_on="Documento_compras_ME3N",
         how="left",
     )
 
     df_contratos_estado["Estado"] = (
         df_contratos_estado["Estado"]
         .fillna("Sin información ME5A")
+    )
+
+    df_contratos_estado["Validacion_Cobertura_ME5A"] = np.where(
+        df_contratos_estado["Documento_compras_ME5A"].notna(),
+        "Con cobertura ME5A",
+        "Sin cobertura ME5A",
+    )
+
+    df_contratos_estado["Validacion_Cobertura_ME3N"] = np.where(
+        df_contratos_estado["Documento_compras_ME3N"].notna(),
+        "Con cobertura ME3N",
+        "Sin cobertura ME3N",
     )
 
     df_contratos_estado["Fecha_Analisis"] = hoy
@@ -516,6 +579,7 @@ def preparar_contratos_estado(
 df_contratos_estado = preparar_contratos_estado(
     _df_bbdd_x_categoria,
     _df_me5a,
+    _df_ordenes,
     VERSION_NORMALIZACION_IDS,
 )
 
@@ -569,14 +633,30 @@ recuento_contratos = (
 
 contratos_cruzados_me5a = (
     df_contratos_estado_filtrado[
-        df_contratos_estado_filtrado["Documento_compras"].notna()
+        df_contratos_estado_filtrado["Documento_compras_ME5A"].notna()
     ]["Contrato"]
     .nunique()
 )
 
 contratos_sin_me5a = (
     df_contratos_estado_filtrado[
-        df_contratos_estado_filtrado["Estado"] == "Sin información ME5A"
+        df_contratos_estado_filtrado["Validacion_Cobertura_ME5A"]
+        == "Sin cobertura ME5A"
+    ]["Contrato"]
+    .nunique()
+)
+
+contratos_cruzados_me3n = (
+    df_contratos_estado_filtrado[
+        df_contratos_estado_filtrado["Documento_compras_ME3N"].notna()
+    ]["Contrato"]
+    .nunique()
+)
+
+contratos_sin_me3n = (
+    df_contratos_estado_filtrado[
+        df_contratos_estado_filtrado["Validacion_Cobertura_ME3N"]
+        == "Sin cobertura ME3N"
     ]["Contrato"]
     .nunique()
 )
@@ -586,26 +666,6 @@ contratos_por_vencer = (
         df_contratos_estado_filtrado["Estado"] == "Por Vencer"
     ]["Contrato"]
     .nunique()
-)
-
-
-# ============================================================
-# Validación de cobertura ME5A
-# ============================================================
-
-section_title(
-    "Validación de cobertura ME5A",
-    (
-        "Revisión de contratos que no encontraron coincidencia "
-        "mediante el campo Documento_compras."
-    ),
-)
-
-df_sin_info_me5a = (
-    df_contratos_estado_filtrado[
-        df_contratos_estado_filtrado["Estado"] == "Sin información ME5A"
-    ]
-    .copy()
 )
 
 cobertura_me5a = (
@@ -620,13 +680,38 @@ sin_cobertura_me5a = (
     else 0
 )
 
-col_cobertura_1, col_cobertura_2, col_cobertura_3 = st.columns(3)
+cobertura_me3n = (
+    contratos_cruzados_me3n / recuento_contratos
+    if recuento_contratos > 0
+    else 0
+)
+
+sin_cobertura_me3n = (
+    contratos_sin_me3n / recuento_contratos
+    if recuento_contratos > 0
+    else 0
+)
+
+
+# ============================================================
+# Validación de cobertura ME5A y ME3N
+# ============================================================
+
+section_title(
+    "Validación de cobertura ME5A y ME3N",
+    (
+        "Revisión de contratos con coincidencia en ME5A y en ME3N / 02_Ordenes "
+        "mediante el campo Documento_compras."
+    ),
+)
+
+col_cobertura_1, col_cobertura_2, col_cobertura_3, col_cobertura_4, col_cobertura_5 = st.columns(5)
 
 with col_cobertura_1:
     kpi_card(
         "Contratos analizados",
         formato_entero(recuento_contratos),
-        "Contratos únicos según los filtros seleccionados",
+        "Contratos únicos según filtros",
     )
 
 with col_cobertura_2:
@@ -642,6 +727,33 @@ with col_cobertura_3:
         formato_porcentaje(sin_cobertura_me5a),
         f"{formato_entero(contratos_sin_me5a)} contratos sin coincidencia",
     )
+
+with col_cobertura_4:
+    kpi_card(
+        "Cobertura ME3N",
+        formato_porcentaje(cobertura_me3n),
+        f"{formato_entero(contratos_cruzados_me3n)} contratos con coincidencia",
+    )
+
+with col_cobertura_5:
+    kpi_card(
+        "Sin cobertura ME3N",
+        formato_porcentaje(sin_cobertura_me3n),
+        f"{formato_entero(contratos_sin_me3n)} contratos sin coincidencia",
+    )
+
+
+# ============================================================
+# Detalle sin cobertura ME5A
+# ============================================================
+
+df_sin_info_me5a = (
+    df_contratos_estado_filtrado[
+        df_contratos_estado_filtrado["Validacion_Cobertura_ME5A"]
+        == "Sin cobertura ME5A"
+    ]
+    .copy()
+)
 
 if df_sin_info_me5a.empty:
     st.success("Todos los contratos filtrados tienen información asociada en ME5A.")
@@ -659,9 +771,13 @@ else:
             "Contrato",
             "Contrato_Original",
             "Gestor_Contrato",
-            "Documento_compras",
+            "Documento_compras_ME5A",
+            "Documento_Compras_Original_ME5A",
             "Fin_período_validez",
             "Estado",
+            "Validacion_Cobertura_ME5A",
+            "Documento_compras_ME3N",
+            "Validacion_Cobertura_ME3N",
             "Fecha_Analisis",
         ]
         if columna in df_sin_info_me5a.columns
@@ -727,12 +843,134 @@ else:
                     "Contrato": st.column_config.TextColumn("Contrato"),
                     "Contrato_Original": st.column_config.TextColumn("Contrato original"),
                     "Gestor_Contrato": st.column_config.TextColumn("Gestor de contrato"),
-                    "Documento_compras": st.column_config.TextColumn("Documento de compras"),
+                    "Documento_compras_ME5A": st.column_config.TextColumn("Documento compras ME5A"),
+                    "Documento_Compras_Original_ME5A": st.column_config.TextColumn("Documento original ME5A"),
                     "Fin_período_validez": st.column_config.DateColumn(
                         "Fecha fin",
                         format="DD/MM/YYYY",
                     ),
                     "Estado": st.column_config.TextColumn("Estado"),
+                    "Validacion_Cobertura_ME5A": st.column_config.TextColumn("Validación ME5A"),
+                    "Documento_compras_ME3N": st.column_config.TextColumn("Documento compras ME3N"),
+                    "Validacion_Cobertura_ME3N": st.column_config.TextColumn("Validación ME3N"),
+                    "Fecha_Analisis": st.column_config.DateColumn(
+                        "Fecha de análisis",
+                        format="DD/MM/YYYY",
+                    ),
+                },
+            )
+
+
+# ============================================================
+# Detalle sin cobertura ME3N
+# ============================================================
+
+df_sin_info_me3n = (
+    df_contratos_estado_filtrado[
+        df_contratos_estado_filtrado["Validacion_Cobertura_ME3N"]
+        == "Sin cobertura ME3N"
+    ]
+    .copy()
+)
+
+if df_sin_info_me3n.empty:
+    st.success("Todos los contratos filtrados tienen información asociada en ME3N / 02_Ordenes.")
+
+else:
+    df_sin_info_me3n["Contrato"] = (
+        df_sin_info_me3n["Contrato"]
+        .apply(limpiar_id_contrato)
+        .astype(str)
+    )
+
+    columnas_sin_me3n = [
+        columna
+        for columna in [
+            "Contrato",
+            "Contrato_Original",
+            "Gestor_Contrato",
+            "Documento_compras_ME3N",
+            "Documento_Compras_Original_ME3N",
+            "Validacion_Cobertura_ME3N",
+            "Documento_compras_ME5A",
+            "Fin_período_validez",
+            "Estado",
+            "Validacion_Cobertura_ME5A",
+            "Fecha_Analisis",
+        ]
+        if columna in df_sin_info_me3n.columns
+    ]
+
+    df_sin_info_me3n_tabla = (
+        df_sin_info_me3n[columnas_sin_me3n]
+        .drop_duplicates()
+        .sort_values(["Gestor_Contrato", "Contrato"])
+        .reset_index(drop=True)
+    )
+
+    df_sin_info_me3n_resumen = (
+        df_sin_info_me3n_tabla
+        .groupby("Gestor_Contrato", as_index=False)["Contrato"]
+        .nunique()
+        .rename(
+            columns={
+                "Contrato": "Contratos_No_Encontrados_ME3N",
+            }
+        )
+        .sort_values(
+            "Contratos_No_Encontrados_ME3N",
+            ascending=False,
+        )
+        .reset_index(drop=True)
+    )
+
+    st.warning(
+        f"Se identificaron {contratos_sin_me3n:,.0f} contratos "
+        "sin coincidencia en ME3N / 02_Ordenes."
+    )
+
+    with st.expander(
+        "Ver detalle de contratos no encontrados en ME3N / 02_Ordenes",
+        expanded=False,
+    ):
+        st.caption(
+            "Estos contratos existen en la base de contratos/categoría, "
+            "pero no tuvieron coincidencia en 02_Ordenes mediante el campo "
+            "Documento_compras."
+        )
+
+        col_sin_1, col_sin_2 = st.columns([0.8, 1.2])
+
+        with col_sin_1:
+            st.markdown("##### Resumen por gestor")
+
+            st.dataframe(
+                df_sin_info_me3n_resumen,
+                use_container_width=True,
+                hide_index=True,
+            )
+
+        with col_sin_2:
+            st.markdown("##### Contratos no encontrados")
+
+            st.dataframe(
+                df_sin_info_me3n_tabla,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Contrato": st.column_config.TextColumn("Contrato"),
+                    "Contrato_Original": st.column_config.TextColumn("Contrato original"),
+                    "Gestor_Contrato": st.column_config.TextColumn("Gestor de contrato"),
+                    "Documento_compras_ME3N": st.column_config.TextColumn("Documento compras ME3N"),
+                    "Documento_Compras_Original_ME3N": st.column_config.TextColumn("Documento original ME3N"),
+                    "Validacion_Cobertura_ME3N": st.column_config.TextColumn("Validación ME3N"),
+                    "Documento_compras_ME5A": st.column_config.TextColumn("Documento compras ME5A"),
+                    "Fin_período_validez": st.column_config.DateColumn(
+                        "Fecha fin ME5A",
+                        format="DD/MM/YYYY",
+                    ),
+                    "Estado": st.column_config.TextColumn("Estado ME5A"),
+                    "Validacion_Cobertura_ME5A": st.column_config.TextColumn("Validación ME5A"),
                     "Fecha_Analisis": st.column_config.DateColumn(
                         "Fecha de análisis",
                         format="DD/MM/YYYY",
@@ -750,7 +988,7 @@ section_title(
     "Resumen ejecutivo de cobertura y vigencia contractual.",
 )
 
-col_kpi1, col_kpi2, col_kpi3, col_kpi4 = st.columns(4)
+col_kpi1, col_kpi2, col_kpi3, col_kpi4, col_kpi5 = st.columns(5)
 
 with col_kpi1:
     kpi_card(
@@ -768,12 +1006,22 @@ with col_kpi2:
 
 with col_kpi3:
     kpi_card(
-        "Sin información ME5A",
-        formato_entero(contratos_sin_me5a),
-        "Contratos no encontrados en ME5A",
+        "Contratos con ME3N",
+        formato_entero(contratos_cruzados_me3n),
+        "Cruce contra 02_Ordenes",
     )
 
 with col_kpi4:
+    kpi_card(
+        "Sin ME5A / ME3N",
+        (
+            f"{formato_entero(contratos_sin_me5a)} / "
+            f"{formato_entero(contratos_sin_me3n)}"
+        ),
+        "Contratos sin coincidencia",
+    )
+
+with col_kpi5:
     kpi_card(
         "Por vencer",
         formato_entero(contratos_por_vencer),
@@ -1290,10 +1538,14 @@ else:
             "Contrato",
             "Contrato_Original",
             "Gestor_Contrato",
-            "Documento_compras",
+            "Documento_compras_ME5A",
             "Documento_Compras_Original_ME5A",
+            "Documento_compras_ME3N",
+            "Documento_Compras_Original_ME3N",
             "Fin_período_validez",
             "Estado",
+            "Validacion_Cobertura_ME5A",
+            "Validacion_Cobertura_ME3N",
             "Fecha_Analisis",
         ]
         if columna in df_detalle_gestor_estado.columns
@@ -1423,15 +1675,21 @@ else:
                 "Contrato": st.column_config.TextColumn("Contrato"),
                 "Contrato_Original": st.column_config.TextColumn("Contrato original"),
                 "Gestor_Contrato": st.column_config.TextColumn("Gestor de contrato"),
-                "Documento_compras": st.column_config.TextColumn("Documento de compras"),
+                "Documento_compras_ME5A": st.column_config.TextColumn("Documento compras ME5A"),
                 "Documento_Compras_Original_ME5A": st.column_config.TextColumn(
                     "Documento original ME5A"
+                ),
+                "Documento_compras_ME3N": st.column_config.TextColumn("Documento compras ME3N"),
+                "Documento_Compras_Original_ME3N": st.column_config.TextColumn(
+                    "Documento original ME3N"
                 ),
                 "Fin_período_validez": st.column_config.DateColumn(
                     "Fecha fin de validez",
                     format="DD/MM/YYYY",
                 ),
                 "Estado": st.column_config.TextColumn("Estado"),
+                "Validacion_Cobertura_ME5A": st.column_config.TextColumn("Validación ME5A"),
+                "Validacion_Cobertura_ME3N": st.column_config.TextColumn("Validación ME3N"),
                 "Fecha_Analisis": st.column_config.DateColumn(
                     "Fecha de análisis",
                     format="DD/MM/YYYY",
@@ -1664,8 +1922,12 @@ else:
             for columna in [
                 "Contrato",
                 "Gestor_Contrato",
+                "Documento_compras_ME5A",
+                "Documento_compras_ME3N",
                 "Fin_período_validez",
                 "Estado",
+                "Validacion_Cobertura_ME5A",
+                "Validacion_Cobertura_ME3N",
             ]
             if columna in df_por_vencer.columns
         ]
@@ -1690,11 +1952,15 @@ else:
             column_config={
                 "Contrato": st.column_config.TextColumn("Contrato"),
                 "Gestor_Contrato": st.column_config.TextColumn("Gestor de contrato"),
+                "Documento_compras_ME5A": st.column_config.TextColumn("Documento compras ME5A"),
+                "Documento_compras_ME3N": st.column_config.TextColumn("Documento compras ME3N"),
                 "Fin_período_validez": st.column_config.DateColumn(
                     "Fecha fin",
                     format="DD/MM/YYYY",
                 ),
                 "Estado": st.column_config.TextColumn("Estado"),
+                "Validacion_Cobertura_ME5A": st.column_config.TextColumn("Validación ME5A"),
+                "Validacion_Cobertura_ME3N": st.column_config.TextColumn("Validación ME3N"),
             },
         )
 
@@ -1712,7 +1978,7 @@ section_title(
 )
 
 with st.expander(
-    "Contratos con estado de vigencia",
+    "Contratos con estado de vigencia y validaciones ME5A / ME3N",
     expanded=False,
 ):
     columnas_preview = [
@@ -1721,10 +1987,14 @@ with st.expander(
             "Contrato",
             "Contrato_Original",
             "Gestor_Contrato",
-            "Documento_compras",
+            "Documento_compras_ME5A",
             "Documento_Compras_Original_ME5A",
+            "Documento_compras_ME3N",
+            "Documento_Compras_Original_ME3N",
             "Fin_período_validez",
             "Estado",
+            "Validacion_Cobertura_ME5A",
+            "Validacion_Cobertura_ME3N",
             "Fecha_Analisis",
         ]
         if columna in df_contratos_estado_filtrado.columns
@@ -1767,15 +2037,21 @@ with st.expander(
             "Contrato": st.column_config.TextColumn("Contrato"),
             "Contrato_Original": st.column_config.TextColumn("Contrato original"),
             "Gestor_Contrato": st.column_config.TextColumn("Gestor de contrato"),
-            "Documento_compras": st.column_config.TextColumn("Documento de compras"),
+            "Documento_compras_ME5A": st.column_config.TextColumn("Documento compras ME5A"),
             "Documento_Compras_Original_ME5A": st.column_config.TextColumn(
                 "Documento original ME5A"
+            ),
+            "Documento_compras_ME3N": st.column_config.TextColumn("Documento compras ME3N"),
+            "Documento_Compras_Original_ME3N": st.column_config.TextColumn(
+                "Documento original ME3N"
             ),
             "Fin_período_validez": st.column_config.DateColumn(
                 "Fecha fin",
                 format="DD/MM/YYYY",
             ),
             "Estado": st.column_config.TextColumn("Estado"),
+            "Validacion_Cobertura_ME5A": st.column_config.TextColumn("Validación ME5A"),
+            "Validacion_Cobertura_ME3N": st.column_config.TextColumn("Validación ME3N"),
             "Fecha_Analisis": st.column_config.DateColumn(
                 "Fecha de análisis",
                 format="DD/MM/YYYY",
@@ -1823,6 +2099,26 @@ with st.expander(
     st.write(
         "- Participación sin información ME5A: "
         f"{sin_cobertura_me5a:.2%}"
+    )
+
+    st.write(
+        "- Contratos filtrados cruzados con ME3N / 02_Ordenes: "
+        f"{contratos_cruzados_me3n:,.0f}"
+    )
+
+    st.write(
+        "- Cobertura ME3N / 02_Ordenes sobre contratos filtrados: "
+        f"{cobertura_me3n:.2%}"
+    )
+
+    st.write(
+        "- Contratos filtrados sin información en ME3N / 02_Ordenes: "
+        f"{contratos_sin_me3n:,.0f}"
+    )
+
+    st.write(
+        "- Participación sin información ME3N / 02_Ordenes: "
+        f"{sin_cobertura_me3n:.2%}"
     )
 
     st.write(
