@@ -28,7 +28,7 @@ BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
 LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
 
-VERSION_NORMALIZACION_IDS = "v_2026_06_10_separacion_gastos_salud_contratos"
+VERSION_NORMALIZACION_IDS = "v_2026_06_10_formato_montos_sin_decimales"
 
 # ============================================================
 # Estilos
@@ -245,33 +245,97 @@ def limpiar_texto_serie(serie: pd.Series, quitar_decimal: bool = True) -> pd.Ser
 
 
 def formato_usd_compacto(x, pos=None) -> str:
+    """Formato compacto para gráficos, siempre sin decimales."""
     if pd.isna(x):
-        return "$0"
+        return "US$ 0"
     if abs(x) >= 1_000_000_000:
-        return f"${x/1_000_000_000:.1f}B"
+        return f"US$ {x / 1_000_000_000:,.0f} B".replace(",", ".")
     if abs(x) >= 1_000_000:
-        return f"${x/1_000_000:.1f}M"
+        return f"US$ {x / 1_000_000:,.0f} MM".replace(",", ".")
     if abs(x) >= 1_000:
-        return f"${x/1_000:.0f}K"
-    return f"${x:,.0f}"
+        return f"US$ {x / 1_000:,.0f} K".replace(",", ".")
+    return f"US$ {x:,.0f}".replace(",", ".")
+
+
+def formato_numero_sin_decimales(x) -> str:
+    """Número entero con punto como separador de miles."""
+    if pd.isna(x):
+        x = 0
+    return f"{int(round(float(x))):,}".replace(",", ".")
 
 
 def formato_usd_largo(x) -> str:
-    if pd.isna(x):
-        x = 0
-    return f"US$ {x:,.2f}"
+    """Monto USD completo, con separación de miles y sin decimales."""
+    return f"US$ {formato_numero_sin_decimales(x)}"
 
 
 def formato_usd_millones(x) -> str:
+    """Monto expresado en millones de USD, conservando dos decimales."""
     if pd.isna(x):
         x = 0
-    return f"US$ {x / 1_000_000:,.2f} MM"
+    valor_mm = f"{float(x) / 1_000_000:,.2f}"
+    valor_mm = valor_mm.replace(",", "X").replace(".", ",").replace("X", ".")
+    return f"US$ {valor_mm} MM"
 
 
 def formato_entero(x) -> str:
-    if pd.isna(x):
-        x = 0
-    return f"{int(round(x)):,.0f}"
+    return formato_numero_sin_decimales(x)
+
+
+def formato_fecha(fecha) -> str:
+    """Fecha homogénea en formato DD-MM-AAAA."""
+    return pd.Timestamp(fecha).strftime("%d-%m-%Y")
+
+
+def formatear_tabla_valores(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Prepara una copia exclusivamente visual de una tabla.
+
+    Los importes y valores financieros se muestran con separación de miles
+    y sin decimales, sin modificar los datos numéricos usados en cálculos.
+    """
+    df_visual = df.copy()
+
+    columnas_monetarias = {
+        "precio_neto",
+        "precio_neto_num",
+        "precio_neto_usd",
+        "monto_oc_usd",
+        "monto_usd",
+        "gasto_total_usd",
+        "gasto_mensual_usd",
+        "valor_clp_por_unidad",
+        "factor_usd_por_unidad",
+    }
+
+    for columna in df_visual.columns:
+        nombre = columna.lower()
+
+        if nombre in columnas_monetarias:
+            serie_num = df_visual[columna].apply(convertir_numero)
+            usa_prefijo_usd = "usd" in nombre and "factor" not in nombre
+            df_visual[columna] = serie_num.apply(
+                lambda valor: (
+                    "" if pd.isna(valor)
+                    else (
+                        f"US$ {formato_numero_sin_decimales(valor)}"
+                        if usa_prefijo_usd
+                        else formato_numero_sin_decimales(valor)
+                    )
+                )
+            )
+
+        elif nombre in {"participacion", "participacion_oc"}:
+            df_visual[columna] = pd.to_numeric(
+                df_visual[columna], errors="coerce"
+            ).apply(lambda valor: "" if pd.isna(valor) else formato_porcentaje(valor))
+
+        elif nombre == "participacion_%":
+            df_visual[columna] = pd.to_numeric(
+                df_visual[columna], errors="coerce"
+            ).apply(lambda valor: "" if pd.isna(valor) else f"{valor:.2f}%")
+
+    return df_visual
 
 
 def formato_porcentaje(x) -> str:
@@ -523,19 +587,19 @@ col_kpi1, col_kpi2, col_kpi3, col_kpi4 = st.columns(4)
 with col_kpi1:
     kpi_card(
         "Gasto total OC",
-        formato_usd_largo(monto_total_oc_usd),
-        f"Equivalente: {formato_usd_millones(monto_total_oc_usd)}",
+        formato_usd_millones(monto_total_oc_usd),
+        f"Equivalente: {formato_usd_largo(monto_total_oc_usd)}",
     )
 with col_kpi2:
     kpi_card(
         "OC tipo 44",
-        formato_usd_largo(monto_oc_tipo_44_usd),
-        f"{formato_usd_millones(monto_oc_tipo_44_usd)} | Participación: {formato_porcentaje(participacion_oc_tipo_44)}",
+        formato_usd_millones(monto_oc_tipo_44_usd),
+        f"Equivalente: {formato_usd_largo(monto_oc_tipo_44_usd)} | Participación: {formato_porcentaje(participacion_oc_tipo_44)}",
     )
 with col_kpi3:
     kpi_card("N° órdenes", formato_entero(ordenes_unicas), f"Monedas analizadas: {monedas_unicas}")
 with col_kpi4:
-    kpi_card("Periodo analizado", f"{fecha_inicio}", f"Hasta {fecha_fin}")
+    kpi_card("Periodo analizado", formato_fecha(fecha_inicio), f"Hasta: {formato_fecha(fecha_fin)}")
 
 # ============================================================
 # Gasto anual
@@ -591,7 +655,7 @@ else:
     st.pyplot(fig, clear_figure=True)
 
     with st.expander("Ver tabla de gasto anual"):
-        st.dataframe(df_gasto_anual, use_container_width=True, hide_index=True)
+        st.dataframe(formatear_tabla_valores(df_gasto_anual), use_container_width=True, hide_index=True)
 
 
 # ============================================================
@@ -684,8 +748,8 @@ else:
     with col_mes1:
         kpi_card(
             "Gasto del mes",
-            formato_usd_largo(monto_mes_usd),
-            f"{formato_usd_millones(monto_mes_usd)} | Mes seleccionado: {mes_seleccionado}"
+            formato_usd_millones(monto_mes_usd),
+            f"Equivalente: {formato_usd_largo(monto_mes_usd)} | Mes seleccionado: {mes_seleccionado}"
         )
     with col_mes2:
         kpi_card("Órdenes únicas", formato_entero(ordenes_mes), "Documento de compras único")
@@ -717,7 +781,7 @@ else:
     with col_resumen_mes:
         st.markdown("##### Resumen por tipo de OC")
         st.dataframe(
-            df_resumen_mes_tipo,
+            formatear_tabla_valores(df_resumen_mes_tipo),
             use_container_width=True,
             hide_index=True,
         )
@@ -749,13 +813,13 @@ else:
         )
 
         st.dataframe(
-            df_detalle_mes_tabla,
+            formatear_tabla_valores(df_detalle_mes_tabla),
             use_container_width=True,
             hide_index=True,
         )
 
     with st.expander("Ver tabla completa de gasto mensual"):
-        st.dataframe(df_gasto_mensual, use_container_width=True, hide_index=True)
+        st.dataframe(formatear_tabla_valores(df_gasto_mensual), use_container_width=True, hide_index=True)
 
 
 # ============================================================
@@ -820,7 +884,7 @@ else:
     st.pyplot(fig, clear_figure=True)
 
     with st.expander("Ver tabla por tipo de OC"):
-        st.dataframe(df_tipo_oc, use_container_width=True, hide_index=True)
+        st.dataframe(formatear_tabla_valores(df_tipo_oc), use_container_width=True, hide_index=True)
 
 
 # ============================================================
@@ -845,7 +909,7 @@ with st.expander("Órdenes convertidas a USD"):
         ] if col in df_ordenes_usd.columns
     ]
     st.dataframe(
-        df_ordenes_usd[columnas_preview].head(500),
+        formatear_tabla_valores(df_ordenes_usd[columnas_preview].head(500)),
         use_container_width=True,
         hide_index=True,
     )
