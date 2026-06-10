@@ -35,6 +35,7 @@ st.set_page_config(
     page_title="Indicadores Financieros Banco Central",
     page_icon="📈",
     layout="wide",
+    initial_sidebar_state="expanded",
 )
 
 
@@ -50,10 +51,6 @@ URL_BDE = "https://si3.bcentral.cl/SieteRestWS/SieteRestWS.ashx"
 # ============================================================
 
 SERIES_INDICADORES = {
-    # ========================================================
-    # DÓLAR OBSERVADO / TIPO DE CAMBIO
-    # ========================================================
-
     "USD_DIARIO": {
         "seriesId": "F073.TCO.PRE.Z.D",
         "nombre": "Dólar observado diario",
@@ -62,7 +59,6 @@ SERIES_INDICADORES = {
         "unidad": "CLP por USD",
         "descripcion_corta": "Tipo de cambio nominal diario, dólar observado.",
     },
-
     "USD_MENSUAL": {
         "seriesId": "F073.TCO.PRE.HIST.M",
         "nombre": "Dólar observado mensual histórico",
@@ -71,7 +67,6 @@ SERIES_INDICADORES = {
         "unidad": "CLP por USD",
         "descripcion_corta": "Promedio mensual histórico del dólar observado.",
     },
-
     "USD_ANUAL": {
         "seriesId": "F073.TCO.PRE.Z.A",
         "nombre": "Dólar observado anual",
@@ -80,11 +75,6 @@ SERIES_INDICADORES = {
         "unidad": "CLP por USD",
         "descripcion_corta": "Serie anual del dólar observado.",
     },
-
-    # ========================================================
-    # UF / UTM
-    # ========================================================
-
     "UF": {
         "seriesId": "F073.UFF.PRE.Z.D",
         "nombre": "Unidad de Fomento",
@@ -93,7 +83,6 @@ SERIES_INDICADORES = {
         "unidad": "CLP por UF",
         "descripcion_corta": "Valor diario de la Unidad de Fomento.",
     },
-
     "UTM": {
         "seriesId": "F073.UTR.PRE.Z.M",
         "nombre": "Unidad Tributaria Mensual",
@@ -102,11 +91,6 @@ SERIES_INDICADORES = {
         "unidad": "CLP por UTM",
         "descripcion_corta": "Valor mensual de la Unidad Tributaria Mensual.",
     },
-
-    # ========================================================
-    # IPC
-    # ========================================================
-
     "IPC": {
         "seriesId": "F074.IPC.IND.Z.2023.C.M",
         "nombre": "IPC general",
@@ -115,7 +99,6 @@ SERIES_INDICADORES = {
         "unidad": "Índice base 2023=100",
         "descripcion_corta": "Índice de Precios al Consumidor general.",
     },
-
     "IPC_VAR_MENSUAL": {
         "seriesId": "F074.IPC.VAR.Z.2023.C.M",
         "nombre": "IPC variación mensual",
@@ -124,7 +107,6 @@ SERIES_INDICADORES = {
         "unidad": "Porcentaje",
         "descripcion_corta": "Variación mensual del IPC.",
     },
-
     "IPC_VAR_ANUAL": {
         "seriesId": "F074.IPC.VAR.Z.Z.C.A",
         "nombre": "IPC variación anual",
@@ -133,11 +115,6 @@ SERIES_INDICADORES = {
         "unidad": "Porcentaje",
         "descripcion_corta": "Variación anual histórica del IPC.",
     },
-
-    # ========================================================
-    # ICL - ÍNDICE DE COSTOS LABORALES
-    # ========================================================
-
     "ICL": {
         "seriesId": "G049.CMH.IND.INE23.Z.M",
         "nombre": "Índice de Costos Laborales",
@@ -146,7 +123,6 @@ SERIES_INDICADORES = {
         "unidad": "Índice base 2023=100",
         "descripcion_corta": "ICL referencial INE, base 2023=100.",
     },
-
     "ICL_EMPALMADA": {
         "seriesId": "G049.CMH.IND.INE23.NE.M",
         "nombre": "Índice de Costos Laborales empalmada",
@@ -155,7 +131,6 @@ SERIES_INDICADORES = {
         "unidad": "Índice base 2023=100",
         "descripcion_corta": "ICL empalmado INE, base 2023=100.",
     },
-
     "ICL_VAR_ANUAL": {
         "seriesId": "G049.CMH.V12.INE23.Z.M",
         "nombre": "ICL variación anual",
@@ -164,7 +139,6 @@ SERIES_INDICADORES = {
         "unidad": "Porcentaje",
         "descripcion_corta": "Variación en 12 meses del ICL.",
     },
-
     "ICL_VAR_MENSUAL": {
         "seriesId": "G049.CMH.VAR.INE23.Z.M",
         "nombre": "ICL variación mensual",
@@ -173,11 +147,6 @@ SERIES_INDICADORES = {
         "unidad": "Porcentaje",
         "descripcion_corta": "Variación mensual del ICL.",
     },
-
-    # ========================================================
-    # IR - ÍNDICE DE REMUNERACIONES
-    # ========================================================
-
     "IR": {
         "seriesId": "G049.RMM.IND.INE23.Z.M",
         "nombre": "Índice de Remuneraciones nominal",
@@ -186,7 +155,6 @@ SERIES_INDICADORES = {
         "unidad": "Índice base 2023=100",
         "descripcion_corta": "IR nominal referencial INE, base 2023=100.",
     },
-
     "IR_EMPALMADA": {
         "seriesId": "G049.RMM.IND.INE23.NE.M",
         "nombre": "Índice de Remuneraciones nominal empalmada",
@@ -195,7 +163,6 @@ SERIES_INDICADORES = {
         "unidad": "Índice base 2023=100",
         "descripcion_corta": "IR nominal empalmado INE, base 2023=100.",
     },
-
     "IR_REAL": {
         "seriesId": "G049.RMM.IND.INE23.82.M",
         "nombre": "Índice real de remuneraciones",
@@ -204,7 +171,6 @@ SERIES_INDICADORES = {
         "unidad": "Índice real",
         "descripcion_corta": "IR real referencial INE.",
     },
-
     "IR_REAL_EMPALMADA": {
         "seriesId": "G049.RMM.IND.INE23.R.M",
         "nombre": "Índice real de remuneraciones empalmada",
@@ -213,7 +179,6 @@ SERIES_INDICADORES = {
         "unidad": "Índice real",
         "descripcion_corta": "IR real empalmado INE.",
     },
-
     "IR_VAR_ANUAL": {
         "seriesId": "G049.RMM.V12.INE23.Z.M",
         "nombre": "IR variación anual",
@@ -222,7 +187,6 @@ SERIES_INDICADORES = {
         "unidad": "Porcentaje",
         "descripcion_corta": "Variación en 12 meses del IR nominal.",
     },
-
     "IR_VAR_MENSUAL": {
         "seriesId": "G049.RMM.VAR.INE23.Z.M",
         "nombre": "IR variación mensual",
@@ -301,8 +265,8 @@ def obtener_credenciales() -> tuple[str, str]:
 
             Debes configurar:
 
-            [bde]  
-            user = "TU_USUARIO"  
+            [bde]
+            user = "TU_USUARIO"
             password = "TU_CLAVE"
             """
         )
@@ -410,6 +374,89 @@ def validar_rango_fechas(fecha_desde: date, fecha_hasta: date) -> None:
     if fecha_hasta > date.today():
         st.error("La fecha hasta no puede ser posterior a hoy.")
         st.stop()
+
+
+def formato_valor(valor: float, unidad: str) -> str:
+    """Formatea un valor según unidad."""
+
+    if pd.isna(valor):
+        return "-"
+
+    if "CLP" in unidad:
+        return f"{valor:,.2f}"
+
+    if "Porcentaje" in unidad:
+        return f"{valor:,.4f}%"
+
+    return f"{valor:,.4f}"
+
+
+# ============================================================
+# Selección de indicadores con checkbox
+# ============================================================
+
+def obtener_codigos_dolar() -> list[str]:
+    """Indicadores marcados por defecto."""
+    return [
+        codigo
+        for codigo, meta in SERIES_INDICADORES.items()
+        if meta["grupo"] == "Dólar observado"
+    ]
+
+
+def seleccionar_indicadores_con_checkboxes(
+    df_catalogo: pd.DataFrame,
+) -> list[str]:
+    """
+    Permite seleccionar indicadores usando checkboxes.
+
+    Por defecto quedan marcados los indicadores de dólar observado.
+    """
+
+    st.subheader("Selección de indicadores")
+
+    st.caption(
+        """
+        Por defecto quedan marcados los indicadores de dólar observado.
+        Puedes marcar UF, UTM, IPC, ICL, IR u otros indicadores adicionales.
+        """
+    )
+
+    codigos_dolar = obtener_codigos_dolar()
+    codigos_seleccionados = []
+
+    grupos = sorted(df_catalogo["grupo"].unique().tolist())
+
+    for grupo in grupos:
+        df_grupo = df_catalogo[df_catalogo["grupo"] == grupo].copy()
+
+        expanded = grupo == "Dólar observado"
+
+        with st.expander(f"{grupo}", expanded=expanded):
+            for row in df_grupo.itertuples(index=False):
+                codigo = row.codigo
+                nombre = row.nombre
+                frecuencia = row.frecuencia
+                unidad = row.unidad
+                descripcion = row.descripcion_corta
+
+                marcado_default = codigo in codigos_dolar
+
+                seleccionado = st.checkbox(
+                    label=f"{codigo} - {nombre}",
+                    value=marcado_default,
+                    key=f"chk_indicador_{codigo}",
+                    help=f"{descripcion} | Frecuencia: {frecuencia} | Unidad: {unidad}",
+                )
+
+                if seleccionado:
+                    codigos_seleccionados.append(codigo)
+
+    if not codigos_seleccionados:
+        st.warning("Debes seleccionar al menos un indicador.")
+        st.stop()
+
+    return codigos_seleccionados
 
 
 # ============================================================
@@ -713,6 +760,190 @@ def crear_resumen_estadistico(df_historico: pd.DataFrame) -> pd.DataFrame:
     return resumen
 
 
+def crear_resumen_calidad_datos(df_historico: pd.DataFrame) -> pd.DataFrame:
+    """
+    Resume estados de consulta por indicador.
+    """
+
+    if df_historico.empty:
+        return pd.DataFrame()
+
+    resumen = (
+        df_historico.groupby(
+            ["codigo", "nombre", "grupo", "frecuencia", "unidad", "estado"],
+            as_index=False,
+        )
+        .agg(
+            registros=("codigo", "count"),
+            fecha_min=("fecha", "min"),
+            fecha_max=("fecha", "max"),
+        )
+        .sort_values(["grupo", "codigo", "estado"])
+        .reset_index(drop=True)
+    )
+
+    return resumen
+
+
+# ============================================================
+# Gráficos
+# ============================================================
+
+def preparar_pivot_serie_temporal(df_ok: pd.DataFrame) -> pd.DataFrame:
+    """
+    Convierte histórico largo a matriz fecha x indicador.
+    """
+
+    df_plot = df_ok.copy()
+    df_plot["fecha"] = pd.to_datetime(df_plot["fecha"])
+    df_plot = df_plot.sort_values(["fecha", "codigo"])
+
+    pivot = df_plot.pivot_table(
+        index="fecha",
+        columns="codigo",
+        values="valor",
+        aggfunc="mean",
+    )
+
+    pivot = pivot.sort_index()
+
+    return pivot
+
+
+def preparar_base_100(df_ok: pd.DataFrame) -> pd.DataFrame:
+    """
+    Normaliza cada indicador a base 100 usando su primer valor disponible.
+    Esto permite comparar indicadores con distintas unidades.
+    """
+
+    df_base = df_ok[
+        (df_ok["estado"] == "OK")
+        & df_ok["fecha"].notna()
+        & df_ok["valor"].notna()
+    ].copy()
+
+    if df_base.empty:
+        return pd.DataFrame()
+
+    df_base = df_base.sort_values(["codigo", "fecha"])
+
+    primeros = (
+        df_base.groupby("codigo", as_index=False)
+        .first()[["codigo", "valor"]]
+        .rename(columns={"valor": "valor_inicial"})
+    )
+
+    df_base = df_base.merge(primeros, on="codigo", how="left")
+
+    df_base = df_base[
+        df_base["valor_inicial"].notna()
+        & (df_base["valor_inicial"] != 0)
+    ].copy()
+
+    df_base["valor_base_100"] = (
+        df_base["valor"] / df_base["valor_inicial"]
+    ) * 100
+
+    pivot_base_100 = df_base.pivot_table(
+        index="fecha",
+        columns="codigo",
+        values="valor_base_100",
+        aggfunc="mean",
+    )
+
+    pivot_base_100 = pivot_base_100.sort_index()
+
+    return pivot_base_100
+
+
+def mostrar_graficos_series_temporales(df_ok: pd.DataFrame) -> None:
+    """
+    Muestra gráficos de serie temporal para todos los indicadores seleccionados.
+    """
+
+    st.subheader("Gráficos de series temporales")
+
+    if df_ok.empty:
+        st.warning("No hay datos válidos para graficar.")
+        return
+
+    tab_base_100, tab_por_unidad, tab_matriz = st.tabs(
+        [
+            "Comparativo base 100",
+            "Valores originales por unidad",
+            "Matriz temporal",
+        ]
+    )
+
+    with tab_base_100:
+        st.caption(
+            """
+            Este gráfico normaliza cada indicador a 100 en su primer dato disponible.
+            Es ideal para comparar tendencias aunque las unidades sean distintas.
+            """
+        )
+
+        pivot_base_100 = preparar_base_100(df_ok)
+
+        if pivot_base_100.empty:
+            st.warning("No fue posible construir el gráfico base 100.")
+        else:
+            st.line_chart(
+                pivot_base_100,
+                use_container_width=True,
+            )
+
+    with tab_por_unidad:
+        st.caption(
+            """
+            Los valores originales se grafican agrupados por unidad.
+            Esto evita mezclar escalas incompatibles en un mismo eje.
+            """
+        )
+
+        unidades = sorted(df_ok["unidad"].dropna().unique().tolist())
+
+        for unidad in unidades:
+            df_unidad = df_ok[df_ok["unidad"] == unidad].copy()
+
+            if df_unidad.empty:
+                continue
+
+            codigos_unidad = sorted(df_unidad["codigo"].unique().tolist())
+
+            with st.expander(
+                f"{unidad} | {len(codigos_unidad)} indicador(es)",
+                expanded=True,
+            ):
+                pivot_unidad = preparar_pivot_serie_temporal(df_unidad)
+
+                if pivot_unidad.empty:
+                    st.warning(f"No hay datos para graficar unidad: {unidad}")
+                else:
+                    st.line_chart(
+                        pivot_unidad,
+                        use_container_width=True,
+                    )
+
+    with tab_matriz:
+        st.caption(
+            """
+            Matriz fecha x indicador con valores originales.
+            Útil para revisar rápidamente datos faltantes y comparar observaciones.
+            """
+        )
+
+        pivot_original = preparar_pivot_serie_temporal(df_ok)
+
+        if pivot_original.empty:
+            st.warning("No fue posible construir la matriz temporal.")
+        else:
+            st.dataframe(
+                pivot_original.round(6),
+                use_container_width=True,
+            )
+
+
 # ============================================================
 # Exportación Excel
 # ============================================================
@@ -721,7 +952,10 @@ def dataframe_a_excel(
     df_historico: pd.DataFrame,
     df_ultimos: pd.DataFrame,
     df_resumen: pd.DataFrame,
+    df_calidad: pd.DataFrame,
     df_catalogo: pd.DataFrame,
+    df_base_100: pd.DataFrame,
+    df_matriz_original: pd.DataFrame,
 ) -> bytes:
     """Genera un archivo Excel en memoria con varias hojas."""
 
@@ -746,32 +980,33 @@ def dataframe_a_excel(
             sheet_name="Resumen_Estadistico",
         )
 
+        df_calidad.to_excel(
+            writer,
+            index=False,
+            sheet_name="Calidad_Datos",
+        )
+
         df_catalogo.to_excel(
             writer,
             index=False,
             sheet_name="Catalogo_Indicadores",
         )
 
+        if not df_base_100.empty:
+            df_base_100.to_excel(
+                writer,
+                index=True,
+                sheet_name="Serie_Base_100",
+            )
+
+        if not df_matriz_original.empty:
+            df_matriz_original.to_excel(
+                writer,
+                index=True,
+                sheet_name="Matriz_Original",
+            )
+
     return output.getvalue()
-
-
-# ============================================================
-# Formateadores
-# ============================================================
-
-def formato_valor(valor: float, unidad: str) -> str:
-    """Formatea un valor según unidad."""
-
-    if pd.isna(valor):
-        return "-"
-
-    if "CLP" in unidad:
-        return f"{valor:,.2f}"
-
-    if "Porcentaje" in unidad:
-        return f"{valor:,.4f}%"
-
-    return f"{valor:,.4f}"
 
 
 # ============================================================
@@ -789,8 +1024,7 @@ def main() -> None:
     st.markdown(
         """
         <p style='text-align: center; font-size: 18px;'>
-            Consulta temporal de dólar observado, UF, UTM, IPC, ICL e IR
-            desde la BDE del Banco Central de Chile.
+            Consulta, compara y descarga indicadores financieros del Banco Central de Chile.
         </p>
         """,
         unsafe_allow_html=True,
@@ -803,47 +1037,10 @@ def main() -> None:
     df_catalogo = obtener_catalogo_indicadores()
 
     # --------------------------------------------------------
-    # Panel de consulta
+    # Sidebar: configuración de rango temporal
     # --------------------------------------------------------
 
-    col_grupo, col_indicador = st.columns([1, 2])
-
-    with col_grupo:
-        grupos_disponibles = ["Todos"] + sorted(df_catalogo["grupo"].unique().tolist())
-
-        grupo_seleccionado = st.selectbox(
-            "Grupo de indicadores",
-            options=grupos_disponibles,
-            index=0,
-        )
-
-    if grupo_seleccionado == "Todos":
-        df_catalogo_filtrado = df_catalogo.copy()
-    else:
-        df_catalogo_filtrado = df_catalogo[
-            df_catalogo["grupo"] == grupo_seleccionado
-        ].copy()
-
-    opciones_indicadores = {
-        f"{row.codigo} - {row.nombre}": row.codigo
-        for row in df_catalogo_filtrado.itertuples(index=False)
-    }
-
-    with col_indicador:
-        opcion_indicador = st.selectbox(
-            "Seleccionar indicador",
-            options=["Todos los indicadores del grupo"] + list(opciones_indicadores.keys()),
-            index=0,
-        )
-
-    if opcion_indicador == "Todos los indicadores del grupo":
-        codigos_seleccionados = df_catalogo_filtrado["codigo"].tolist()
-    else:
-        codigos_seleccionados = [opciones_indicadores[opcion_indicador]]
-
-    # --------------------------------------------------------
-    # Selector de rango por años y meses
-    # --------------------------------------------------------
+    st.sidebar.header("Configuración de consulta")
 
     meses = obtener_meses()
     nombres_meses = list(meses.keys())
@@ -864,43 +1061,40 @@ def main() -> None:
     if anio_hasta_default not in anios_disponibles:
         anio_hasta_default = anio_actual
 
-    col_anio_desde, col_anio_hasta, col_mes_desde, col_mes_hasta, col_total = st.columns(
-        [1, 1, 1, 1, 1]
-    )
+    with st.sidebar:
+        st.subheader("Rango temporal")
 
-    with col_anio_desde:
-        anio_desde = st.selectbox(
-            "Año desde",
-            options=anios_disponibles,
-            index=anios_disponibles.index(anio_desde_default),
-        )
+        col_sb_1, col_sb_2 = st.columns(2)
 
-    with col_anio_hasta:
-        anio_hasta = st.selectbox(
-            "Año hasta",
-            options=anios_disponibles,
-            index=anios_disponibles.index(anio_hasta_default),
-        )
+        with col_sb_1:
+            anio_desde = st.selectbox(
+                "Año desde",
+                options=anios_disponibles,
+                index=anios_disponibles.index(anio_desde_default),
+            )
 
-    with col_mes_desde:
-        mes_desde_nombre = st.selectbox(
-            "Mes desde",
-            options=nombres_meses,
-            index=0,  # Enero
-        )
+        with col_sb_2:
+            anio_hasta = st.selectbox(
+                "Año hasta",
+                options=anios_disponibles,
+                index=anios_disponibles.index(anio_hasta_default),
+            )
 
-    with col_mes_hasta:
-        mes_hasta_nombre = st.selectbox(
-            "Mes hasta",
-            options=nombres_meses,
-            index=11,  # Diciembre
-        )
+        col_sb_3, col_sb_4 = st.columns(2)
 
-    with col_total:
-        st.metric(
-            "Indicadores seleccionados",
-            len(codigos_seleccionados),
-        )
+        with col_sb_3:
+            mes_desde_nombre = st.selectbox(
+                "Mes desde",
+                options=nombres_meses,
+                index=0,
+            )
+
+        with col_sb_4:
+            mes_hasta_nombre = st.selectbox(
+                "Mes hasta",
+                options=nombres_meses,
+                index=11,
+            )
 
     fecha_desde, fecha_hasta = construir_rango_desde_anios_meses(
         anio_desde=anio_desde,
@@ -911,22 +1105,62 @@ def main() -> None:
 
     validar_rango_fechas(fecha_desde, fecha_hasta)
 
-    st.info(
-        f"""
-        Rango seleccionado: **{fecha_desde.strftime("%Y-%m-%d")}**
-        hasta **{fecha_hasta.strftime("%Y-%m-%d")}**.
-        """
-    )
+    # --------------------------------------------------------
+    # Selección de indicadores
+    # --------------------------------------------------------
+
+    col_sel, col_info = st.columns([2, 1])
+
+    with col_sel:
+        codigos_seleccionados = seleccionar_indicadores_con_checkboxes(
+            df_catalogo=df_catalogo,
+        )
+
+    with col_info:
+        st.subheader("Resumen de selección")
+
+        st.metric(
+            "Indicadores seleccionados",
+            len(codigos_seleccionados),
+        )
+
+        st.metric(
+            "Desde",
+            fecha_desde.strftime("%Y-%m-%d"),
+        )
+
+        st.metric(
+            "Hasta",
+            fecha_hasta.strftime("%Y-%m-%d"),
+        )
+
+        df_seleccion = df_catalogo[
+            df_catalogo["codigo"].isin(codigos_seleccionados)
+        ].copy()
+
+        st.dataframe(
+            df_seleccion[
+                [
+                    "codigo",
+                    "nombre",
+                    "grupo",
+                    "frecuencia",
+                    "unidad",
+                ]
+            ],
+            use_container_width=True,
+            hide_index=True,
+        )
 
     st.markdown("---")
 
     # --------------------------------------------------------
-    # Catálogo visible
+    # Catálogo completo
     # --------------------------------------------------------
 
-    with st.expander("Ver catálogo de indicadores disponibles", expanded=False):
+    with st.expander("Ver catálogo completo de indicadores disponibles", expanded=False):
         st.dataframe(
-            df_catalogo_filtrado,
+            df_catalogo,
             use_container_width=True,
             hide_index=True,
         )
@@ -942,8 +1176,8 @@ def main() -> None:
     if not consultar:
         st.success(
             """
-            Selecciona un grupo, un indicador y un rango de años/meses.
-            Luego presiona **Consultar Banco Central**.
+            Selecciona los indicadores con checkbox y presiona
+            **Consultar Banco Central** para cargar las series temporales.
             """
         )
         return
@@ -974,11 +1208,12 @@ def main() -> None:
             progress_callback=actualizar_progreso,
         )
 
-        progress_text.info("Construyendo resúmenes...")
+        progress_text.info("Construyendo resúmenes, matrices y gráficos...")
         progress_bar.progress(90)
 
         df_ultimos = crear_resumen_ultimos_valores(df_historico)
         df_resumen = crear_resumen_estadistico(df_historico)
+        df_calidad = crear_resumen_calidad_datos(df_historico)
 
         progress_bar.progress(100)
         progress_text.success("Consulta finalizada correctamente.")
@@ -1008,8 +1243,9 @@ def main() -> None:
     total_indicadores_ok = df_ok["codigo"].nunique()
     fecha_min = df_ok["fecha"].min()
     fecha_max = df_ok["fecha"].max()
+    grupos_consultados = df_ok["grupo"].nunique()
 
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
 
     col1.metric(
         "Indicadores con datos",
@@ -1017,19 +1253,32 @@ def main() -> None:
     )
 
     col2.metric(
+        "Grupos",
+        grupos_consultados,
+    )
+
+    col3.metric(
         "Observaciones",
         total_observaciones,
     )
 
-    col3.metric(
+    col4.metric(
         "Fecha mínima",
         fecha_min.strftime("%Y-%m-%d"),
     )
 
-    col4.metric(
+    col5.metric(
         "Fecha máxima",
         fecha_max.strftime("%Y-%m-%d"),
     )
+
+    st.markdown("---")
+
+    # --------------------------------------------------------
+    # Gráficos
+    # --------------------------------------------------------
+
+    mostrar_graficos_series_temporales(df_ok)
 
     st.markdown("---")
 
@@ -1040,7 +1289,12 @@ def main() -> None:
     st.subheader("Últimos valores disponibles por indicador")
 
     df_ultimos_mostrar = df_ultimos.copy()
-    df_ultimos_mostrar["valor"] = df_ultimos_mostrar["valor"].round(6)
+
+    if not df_ultimos_mostrar.empty:
+        df_ultimos_mostrar["valor"] = pd.to_numeric(
+            df_ultimos_mostrar["valor"],
+            errors="coerce",
+        ).round(6)
 
     st.dataframe(
         df_ultimos_mostrar,
@@ -1048,42 +1302,12 @@ def main() -> None:
         hide_index=True,
     )
 
-    # --------------------------------------------------------
-    # Gráfico temporal
-    # --------------------------------------------------------
-
     st.markdown("---")
-    st.subheader("Serie temporal")
-
-    if df_ok["codigo"].nunique() == 1:
-        codigo_unico = df_ok["codigo"].iloc[0]
-        nombre_unico = df_ok["nombre"].iloc[0]
-        unidad_unica = df_ok["unidad"].iloc[0]
-
-        df_grafico = df_ok[["fecha", "valor"]].copy()
-        df_grafico = df_grafico.sort_values("fecha")
-        df_grafico = df_grafico.set_index("fecha")
-
-        st.caption(f"{codigo_unico} - {nombre_unico} | Unidad: {unidad_unica}")
-
-        st.line_chart(
-            df_grafico,
-            use_container_width=True,
-        )
-
-    else:
-        st.info(
-            """
-            Para visualizar un gráfico temporal, selecciona un solo indicador.
-            Si consultas varios indicadores, se muestra la tabla histórica consolidada.
-            """
-        )
 
     # --------------------------------------------------------
     # Histórico completo
     # --------------------------------------------------------
 
-    st.markdown("---")
     st.subheader("Histórico consultado")
 
     df_historico_mostrar = df_historico.copy()
@@ -1098,11 +1322,12 @@ def main() -> None:
         hide_index=True,
     )
 
+    st.markdown("---")
+
     # --------------------------------------------------------
     # Resumen estadístico
     # --------------------------------------------------------
 
-    st.markdown("---")
     st.subheader("Resumen estadístico")
 
     df_resumen_mostrar = df_resumen.copy()
@@ -1116,7 +1341,10 @@ def main() -> None:
 
     for columna in columnas_redondear:
         if columna in df_resumen_mostrar.columns:
-            df_resumen_mostrar[columna] = df_resumen_mostrar[columna].round(6)
+            df_resumen_mostrar[columna] = pd.to_numeric(
+                df_resumen_mostrar[columna],
+                errors="coerce",
+            ).round(6)
 
     st.dataframe(
         df_resumen_mostrar,
@@ -1124,12 +1352,37 @@ def main() -> None:
         hide_index=True,
     )
 
+    st.markdown("---")
+
+    # --------------------------------------------------------
+    # Calidad de datos
+    # --------------------------------------------------------
+
+    st.subheader("Calidad de datos")
+
+    st.caption(
+        """
+        Esta tabla permite revisar si alguna serie no devolvió datos,
+        tuvo error de consulta o quedó sin observaciones válidas.
+        """
+    )
+
+    st.dataframe(
+        df_calidad,
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.markdown("---")
+
     # --------------------------------------------------------
     # Descargas
     # --------------------------------------------------------
 
-    st.markdown("---")
     st.subheader("Descargar resultados")
+
+    df_base_100 = preparar_base_100(df_ok)
+    df_matriz_original = preparar_pivot_serie_temporal(df_ok)
 
     col_csv, col_excel = st.columns(2)
 
@@ -1151,7 +1404,10 @@ def main() -> None:
         df_historico=df_historico,
         df_ultimos=df_ultimos,
         df_resumen=df_resumen,
+        df_calidad=df_calidad,
         df_catalogo=df_catalogo,
+        df_base_100=df_base_100,
+        df_matriz_original=df_matriz_original,
     )
 
     with col_excel:
@@ -1179,12 +1435,12 @@ def main() -> None:
         """
         **Notas de interpretación**
 
-        - `USD_DIARIO` corresponde al dólar observado diario en CLP por USD.
-        - `USD_MENSUAL` corresponde al dólar observado mensual histórico.
-        - `USD_ANUAL` corresponde al dólar observado anual.
-        - `UF` y `UTM` están expresadas en CLP por unidad.
-        - `IPC`, `ICL` e `IR` son índices o variaciones según la serie seleccionada.
+        - Los indicadores de dólar observado quedan marcados por defecto.
+        - Puedes seleccionar indicadores adicionales usando los checkboxes.
+        - El gráfico **base 100** permite comparar tendencias entre indicadores con unidades distintas.
+        - Los gráficos de **valores originales por unidad** evitan mezclar escalas incompatibles.
         - Algunas series son diarias, otras mensuales y otras anuales, por lo que no todas tendrán observaciones todos los días.
+        - Si una serie no aparece en el gráfico, revisa la sección **Calidad de datos**.
         """
     )
 
