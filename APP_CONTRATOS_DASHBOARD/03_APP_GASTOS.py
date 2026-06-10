@@ -29,7 +29,7 @@ BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
 LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
 
-VERSION_NORMALIZACION_IDS = "v_2026_06_10_gastos_consolidado_02"
+VERSION_NORMALIZACION_IDS = "v_2026_06_10_gastos_me2n_oc_ordenes"
 
 
 # ============================================================
@@ -426,7 +426,7 @@ st.markdown(
 st.markdown(
     """
     <div class='subtitle'>
-        Análisis de órdenes de compra y gasto convertido a USD.
+        Análisis de órdenes de compra ME2N y gasto convertido a USD.
     </div>
     """,
     unsafe_allow_html=True,
@@ -445,7 +445,7 @@ dataframes = st.session_state[
 
 DATAFRAMES_REQUERIDOS = [
     "df_moneda_cambio",
-    "df_ordenes",
+    "df_me2n_oc_ordenes",
 ]
 
 faltantes_df = [
@@ -467,12 +467,12 @@ _df_moneda_cambio = dataframes[
     "df_moneda_cambio"
 ].copy()
 
-_df_ordenes = dataframes[
-    "df_ordenes"
+_df_me2n_oc_ordenes = dataframes[
+    "df_me2n_oc_ordenes"
 ].copy()
 
 columnas_requeridas = {
-    "df_ordenes": [
+    "df_me2n_oc_ordenes": [
         "Documento_compras",
         "Fecha_documento",
         "Moneda",
@@ -487,10 +487,10 @@ columnas_requeridas = {
 }
 
 validaciones = {
-    "df_ordenes": validar_columnas(
-        _df_ordenes,
+    "df_me2n_oc_ordenes": validar_columnas(
+        _df_me2n_oc_ordenes,
         columnas_requeridas[
-            "df_ordenes"
+            "df_me2n_oc_ordenes"
         ],
     ),
     "df_moneda_cambio": validar_columnas(
@@ -519,17 +519,17 @@ if errores_columnas:
 
 
 # ============================================================
-# Preparación de órdenes en USD
+# Preparación de órdenes ME2N en USD
 # ============================================================
 
 @st.cache_data(show_spinner=False)
 def preparar_ordenes_usd(
-    df_ordenes: pd.DataFrame,
+    df_me2n_oc_ordenes: pd.DataFrame,
     df_moneda_cambio: pd.DataFrame,
     version_cache: str,
 ) -> tuple[pd.DataFrame, list[str]]:
     df_ordenes_usd = (
-        df_ordenes.copy()
+        df_me2n_oc_ordenes.copy()
     )
 
     df_cambio = (
@@ -738,7 +738,7 @@ def preparar_ordenes_usd(
 
 df_ordenes_usd, monedas_faltantes = (
     preparar_ordenes_usd(
-        _df_ordenes,
+        _df_me2n_oc_ordenes,
         _df_moneda_cambio,
         VERSION_NORMALIZACION_IDS,
     )
@@ -1777,7 +1777,7 @@ with st.expander(
     )
 
 with st.expander(
-    "Órdenes convertidas a USD"
+    "Órdenes ME2N convertidas a USD"
 ):
     columnas_preview = [
         col
@@ -1850,12 +1850,12 @@ with st.expander(
 ):
     if not monedas_faltantes:
         st.success(
-            "Todas las monedas de df_ordenes "
+            "Todas las monedas de df_me2n_oc_ordenes "
             "existen en df_moneda_cambio."
         )
     else:
         st.warning(
-            "Hay monedas de df_ordenes que no fueron "
+            "Hay monedas de df_me2n_oc_ordenes que no fueron "
             "encontradas en df_moneda_cambio."
         )
 
