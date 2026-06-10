@@ -8,6 +8,7 @@ import base64
 from pathlib import Path
 from datetime import date, timedelta
 from io import BytesIO
+from typing import Callable
 
 import pandas as pd
 import requests
@@ -213,6 +214,7 @@ def consultar_serie_bde(
             }
 
         df = pd.DataFrame(obs)
+
         df["fecha"] = pd.to_datetime(
             df["indexDateString"],
             format="%d-%m-%Y",
@@ -263,12 +265,24 @@ def consultar_monedas_bde(
     user: str,
     password: str,
     fecha_consulta: date,
+    progress_callback: Callable[[int, int, str], None] | None = None,
 ) -> pd.DataFrame:
-    """Consulta todas las monedas definidas."""
+    """
+    Consulta todas las monedas definidas.
+
+    progress_callback recibe:
+    - índice actual
+    - total de series
+    - código de moneda/indicador
+    """
 
     resultados = []
+    total = len(SERIES_MONEDAS)
 
-    for codigo, series_id in SERIES_MONEDAS.items():
+    for i, (codigo, series_id) in enumerate(SERIES_MONEDAS.items(), start=1):
+        if progress_callback is not None:
+            progress_callback(i, total, codigo)
+
         resultado = consultar_serie_bde(
             user=user,
             password=password,
@@ -508,6 +522,25 @@ def dataframe_a_excel(
 
 
 # ============================================================
+# Formateadores
+# ============================================================
+
+def formato_entero_clp(valor: float) -> str:
+    """Formatea valores CLP como entero."""
+    return f"{valor:,.0f} CLP"
+
+
+def formato_entero_usd(valor: float) -> str:
+    """Formatea valores USD como entero."""
+    return f"{valor:,.0f} USD"
+
+
+def formato_usd_observado(valor: float) -> str:
+    """Formatea USD observado con 2 decimales."""
+    return f"{valor:,.2f} CLP"
+
+
+# ============================================================
 # Página principal
 # ============================================================
 
@@ -576,15 +609,38 @@ def main() -> None:
         )
         return
 
+    # --------------------------------------------------------
+    # Barra de progreso de consulta
+    # --------------------------------------------------------
+
+    st.subheader("Progreso de consulta")
+
+    progress_bar = st.progress(0)
+    progress_text = st.empty()
+
+    def actualizar_progreso(actual: int, total: int, codigo: str) -> None:
+        porcentaje = int((actual / total) * 100)
+        progress_bar.progress(porcentaje)
+        progress_text.info(
+            f"Consultando {codigo}... {actual} de {total} series procesadas ({porcentaje}%)."
+        )
+
     with st.spinner("Consultando datos en Banco Central..."):
         df_base = consultar_monedas_bde(
             user=user,
             password=password,
             fecha_consulta=fecha_consulta,
+            progress_callback=actualizar_progreso,
         )
+
+        progress_text.info("Calculando equivalencias en CLP y USD...")
+        progress_bar.progress(90)
 
         df_monedas = calcular_equivalencias(df_base)
         df_conversion = crear_tabla_conversion(df_monedas)
+
+        progress_bar.progress(100)
+        progress_text.success("Consulta finalizada correctamente.")
 
     # --------------------------------------------------------
     # KPIs principales
@@ -617,21 +673,23 @@ def main() -> None:
 
     col1, col2, col3, col4 = st.columns(4)
 
+    # USD observado queda con decimales
     col1.metric(
         "USD observado",
-        f"{dolar_clp:,.2f} CLP",
+        formato_usd_observado(dolar_clp),
     )
 
+    # Indicadores restantes como enteros
     col2.metric(
         "UF",
-        f"{uf_clp:,.2f} CLP",
-        f"{uf_usd:,.3f} USD",
+        formato_entero_clp(uf_clp),
+        formato_entero_usd(uf_usd),
     )
 
     col3.metric(
         "UTM",
-        f"{utm_clp:,.2f} CLP",
-        f"{utm_usd:,.3f} USD",
+        formato_entero_clp(utm_clp),
+        formato_entero_usd(utm_usd),
     )
 
     col4.metric(
