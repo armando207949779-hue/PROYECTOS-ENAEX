@@ -29,9 +29,7 @@ BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
 LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
 
-VERSION_NORMALIZACION_IDS = (
-    "v_2026_06_10_separacion_gastos_salud_contratos"
-)
+VERSION_NORMALIZACION_IDS = "v_2026_06_10_separacion_gastos_salud_contratos"
 
 
 # ============================================================
@@ -140,28 +138,19 @@ def render_logo() -> None:
     if not LOGO_PATH.exists():
         return
 
-    svg_b64 = base64.b64encode(
-        LOGO_PATH.read_bytes()
-    ).decode("utf-8")
+    svg_b64 = base64.b64encode(LOGO_PATH.read_bytes()).decode("utf-8")
 
     st.markdown(
         f"""
         <div class="enaex-logo-wrapper">
-            <img
-                src="data:image/svg+xml;base64,{svg_b64}"
-                alt="ENAEX Logo"
-            >
+            <img src="data:image/svg+xml;base64,{svg_b64}" alt="ENAEX Logo">
         </div>
         """,
         unsafe_allow_html=True,
     )
 
 
-def kpi_card(
-    label: str,
-    value: str,
-    help_text: str = "",
-) -> None:
+def kpi_card(label: str, value: str, help_text: str = "") -> None:
     """Tarjeta KPI personalizada."""
     st.markdown(
         f"""
@@ -175,10 +164,7 @@ def kpi_card(
     )
 
 
-def section_title(
-    title: str,
-    caption: str | None = None,
-) -> None:
+def section_title(title: str, caption: str | None = None) -> None:
     """Renderiza título y descripción de sección."""
     st.markdown(
         f"<div class='section-title'>{title}</div>",
@@ -210,23 +196,13 @@ def limpiar_estilo_grafico(ax) -> None:
 # ============================================================
 
 def convertir_numero(valor):
-    """
-    Convierte números con formatos:
-
-    - 1.234,56
-    - 1234,56
-    - 1234.56
-    """
+    """Convierte números con formatos 1.234,56 / 1234,56 / 1234.56."""
     if pd.isna(valor):
         return np.nan
 
     s = str(valor).strip()
 
-    if s == "" or s.lower() in [
-        "nan",
-        "none",
-        "null",
-    ]:
+    if s == "" or s.lower() in ["nan", "none", "null"]:
         return np.nan
 
     if "." in s and "," in s:
@@ -234,18 +210,14 @@ def convertir_numero(valor):
     elif "," in s:
         s = s.replace(",", ".")
 
-    return pd.to_numeric(
-        s,
-        errors="coerce",
-    )
+    return pd.to_numeric(s, errors="coerce")
 
 
 def limpiar_id_contrato(valor):
     """
-    Normaliza IDs de contrato o documento para cruces.
+    Normaliza IDs de contrato/documento para cruces.
 
     Corrige casos como:
-
     - 4600003868.0
     - 4600003868.00
     - 4600003868,0
@@ -258,34 +230,16 @@ def limpiar_id_contrato(valor):
 
     s = str(valor).strip()
 
-    if s == "" or s.lower() in [
-        "nan",
-        "none",
-        "null",
-        "<na>",
-    ]:
+    if s == "" or s.lower() in ["nan", "none", "null", "<na>"]:
         return pd.NA
 
     s = s.replace("\u00a0", "").strip()
-
-    s = re.sub(
-        r"([,.]0+)$",
-        "",
-        s,
-    )
+    s = re.sub(r"([,.]0+)$", "", s)
 
     if re.fullmatch(r"[0-9.,]+", s):
-        s = re.sub(
-            r"[.,]",
-            "",
-            s,
-        )
+        s = re.sub(r"[.,]", "", s)
 
-    solo_digitos = re.sub(
-        r"\D",
-        "",
-        s,
-    )
+    solo_digitos = re.sub(r"\D", "", s)
 
     if solo_digitos:
         s = solo_digitos
@@ -301,30 +255,15 @@ def limpiar_texto_serie(
     if quitar_decimal:
         return serie.apply(limpiar_id_contrato)
 
-    serie_limpia = (
-        serie
-        .astype(str)
-        .str.strip()
-    )
+    serie_limpia = serie.astype(str).str.strip()
 
     return serie_limpia.replace(
-        [
-            "",
-            "nan",
-            "NaN",
-            "None",
-            "none",
-            "NULL",
-            "null",
-        ],
+        ["", "nan", "NaN", "None", "none", "NULL", "null"],
         pd.NA,
     )
 
 
-def formato_usd_compacto(
-    x,
-    pos=None,
-) -> str:
+def formato_usd_compacto(x, pos=None) -> str:
     """Formato monetario abreviado."""
     if pd.isna(x):
         return "$0"
@@ -379,11 +318,7 @@ def validar_columnas(
     nombre_df: str,
 ) -> list[str]:
     """Retorna las columnas faltantes."""
-    return [
-        columna
-        for columna in columnas
-        if columna not in df.columns
-    ]
+    return [columna for columna in columnas if columna not in df.columns]
 
 
 # ============================================================
@@ -393,29 +328,21 @@ def validar_columnas(
 render_logo()
 
 st.markdown(
-    """
-    <div class='main-title'>
-        Salud y vigencia de contratos
-    </div>
-    """,
+    "<div class='main-title'>Salud y vigencia de contratos</div>",
     unsafe_allow_html=True,
 )
 
 st.markdown(
     """
     <div class='subtitle'>
-        Estado de vigencia, cobertura ME5A y contratos
-        por vencer por gestor.
+        Estado de vigencia, cobertura ME5A y contratos por vencer por gestor.
     </div>
     """,
     unsafe_allow_html=True,
 )
 
 if "dataframes_cargados" not in st.session_state:
-    st.warning(
-        "Primero debes cargar los archivos en la pestaña "
-        "01_CARGA_ARCHIVOS."
-    )
+    st.warning("Primero debes cargar los archivos en la pestaña 01_CARGA_ARCHIVOS.")
     st.stop()
 
 dataframes = st.session_state["dataframes_cargados"]
@@ -435,18 +362,12 @@ if faltantes_df:
     st.error(
         "Faltan DataFrames requeridos para esta pestaña: "
         + ", ".join(faltantes_df)
-        + ". Vuelve a cargar los archivos en "
-        "01_CARGA_ARCHIVOS."
+        + ". Vuelve a cargar los archivos en 01_CARGA_ARCHIVOS."
     )
     st.stop()
 
-_df_bbdd_x_categoria = dataframes[
-    "df_bbdd_x_categoria"
-].copy()
-
-_df_me5a = dataframes[
-    "df_me5a"
-].copy()
+_df_bbdd_x_categoria = dataframes["df_bbdd_x_categoria"].copy()
+_df_me5a = dataframes["df_me5a"].copy()
 
 columnas_requeridas = {
     "df_bbdd_x_categoria": [
@@ -479,9 +400,7 @@ errores_columnas = [
 ]
 
 if errores_columnas:
-    st.error(
-        "Hay columnas faltantes en los archivos cargados:"
-    )
+    st.error("Hay columnas faltantes en los archivos cargados:")
 
     for error in errores_columnas:
         st.write(f"- {error}")
@@ -507,59 +426,23 @@ def preparar_contratos_estado(
     df_m5 = df_me5a.copy()
 
     df_cat["Contrato_Original"] = df_cat["Contrato"]
+    df_m5["Documento_Compras_Original_ME5A"] = df_m5["Documento_compras"]
 
-    df_m5[
-        "Documento_Compras_Original_ME5A"
-    ] = df_m5["Documento_compras"]
+    df_cat["Contrato"] = df_cat["Contrato"].apply(limpiar_id_contrato)
+    df_m5["Documento_compras"] = df_m5["Documento_compras"].apply(limpiar_id_contrato)
 
-    df_cat["Contrato"] = (
-        df_cat["Contrato"]
-        .apply(limpiar_id_contrato)
-    )
+    df_cat = df_cat.dropna(subset=["Contrato"]).copy()
+    df_m5 = df_m5.dropna(subset=["Documento_compras"]).copy()
 
-    df_m5["Documento_compras"] = (
-        df_m5["Documento_compras"]
-        .apply(limpiar_id_contrato)
-    )
-
-    df_cat = (
-        df_cat
-        .dropna(subset=["Contrato"])
-        .copy()
-    )
-
-    df_m5 = (
-        df_m5
-        .dropna(subset=["Documento_compras"])
-        .copy()
-    )
-
-    df_cat["Contrato"] = (
-        df_cat["Contrato"]
-        .astype(str)
-        .str.strip()
-    )
-
-    df_m5["Documento_compras"] = (
-        df_m5["Documento_compras"]
-        .astype(str)
-        .str.strip()
-    )
+    df_cat["Contrato"] = df_cat["Contrato"].astype(str).str.strip()
+    df_m5["Documento_compras"] = df_m5["Documento_compras"].astype(str).str.strip()
 
     df_cat["Gestor_Contrato"] = (
         df_cat["Gestor_Contrato"]
         .astype(str)
         .str.strip()
         .replace(
-            [
-                "",
-                "nan",
-                "NaN",
-                "None",
-                "none",
-                "NULL",
-                "null",
-            ],
+            ["", "nan", "NaN", "None", "none", "NULL", "null"],
             "Sin gestor",
         )
     )
@@ -592,15 +475,9 @@ def preparar_contratos_estado(
 
     df_m5_contrato = (
         df_m5
-        .groupby(
-            "Documento_compras",
-            as_index=False,
-        )
+        .groupby("Documento_compras", as_index=False)
         .agg(
-            Fin_período_validez=(
-                "Fin_período_validez",
-                "max",
-            ),
+            Fin_período_validez=("Fin_período_validez", "max"),
             Documento_Compras_Original_ME5A=(
                 "Documento_Compras_Original_ME5A",
                 "first",
@@ -609,9 +486,7 @@ def preparar_contratos_estado(
     )
 
     df_m5_contrato["Estado"] = (
-        df_m5_contrato[
-            "Fin_período_validez"
-        ]
+        df_m5_contrato["Fin_período_validez"]
         .apply(clasificar_estado)
     )
 
@@ -645,9 +520,7 @@ df_contratos_estado = preparar_contratos_estado(
 )
 
 if df_contratos_estado.empty:
-    st.warning(
-        "No hay contratos válidos para analizar."
-    )
+    st.warning("No hay contratos válidos para analizar.")
     st.stop()
 
 
@@ -657,16 +530,11 @@ if df_contratos_estado.empty:
 
 section_title(
     "Filtros",
-    (
-        "Selecciona uno o más gestores para actualizar "
-        "el análisis contractual."
-    ),
+    "Selecciona uno o más gestores para actualizar el análisis contractual.",
 )
 
 gestores_disponibles = sorted(
-    df_contratos_estado[
-        "Gestor_Contrato"
-    ]
+    df_contratos_estado["Gestor_Contrato"]
     .dropna()
     .unique()
     .tolist()
@@ -682,18 +550,12 @@ with st.container(border=True):
 if gestores_sel:
     df_contratos_estado_filtrado = (
         df_contratos_estado[
-            df_contratos_estado[
-                "Gestor_Contrato"
-            ].isin(gestores_sel)
+            df_contratos_estado["Gestor_Contrato"].isin(gestores_sel)
         ]
         .copy()
     )
 else:
-    df_contratos_estado_filtrado = (
-        df_contratos_estado
-        .iloc[0:0]
-        .copy()
-    )
+    df_contratos_estado_filtrado = df_contratos_estado.iloc[0:0].copy()
 
 
 # ============================================================
@@ -701,38 +563,31 @@ else:
 # ============================================================
 
 recuento_contratos = (
-    df_contratos_estado_filtrado[
-        "Contrato"
-    ]
+    df_contratos_estado_filtrado["Contrato"]
     .nunique()
 )
 
 contratos_cruzados_me5a = (
     df_contratos_estado_filtrado[
-        df_contratos_estado_filtrado[
-            "Documento_compras"
-        ].notna()
+        df_contratos_estado_filtrado["Documento_compras"].notna()
     ]["Contrato"]
     .nunique()
 )
 
 contratos_sin_me5a = (
     df_contratos_estado_filtrado[
-        df_contratos_estado_filtrado[
-            "Estado"
-        ] == "Sin información ME5A"
+        df_contratos_estado_filtrado["Estado"] == "Sin información ME5A"
     ]["Contrato"]
     .nunique()
 )
 
 contratos_por_vencer = (
     df_contratos_estado_filtrado[
-        df_contratos_estado_filtrado[
-            "Estado"
-        ] == "Por Vencer"
+        df_contratos_estado_filtrado["Estado"] == "Por Vencer"
     ]["Contrato"]
     .nunique()
 )
+
 
 # ============================================================
 # Validación de cobertura ME5A
@@ -741,16 +596,14 @@ contratos_por_vencer = (
 section_title(
     "Validación de cobertura ME5A",
     (
-        "Revisión de contratos que no encontraron "
-        "coincidencia mediante el campo Documento_compras."
+        "Revisión de contratos que no encontraron coincidencia "
+        "mediante el campo Documento_compras."
     ),
 )
 
 df_sin_info_me5a = (
     df_contratos_estado_filtrado[
-        df_contratos_estado_filtrado[
-            "Estado"
-        ] == "Sin información ME5A"
+        df_contratos_estado_filtrado["Estado"] == "Sin información ME5A"
     ]
     .copy()
 )
@@ -780,29 +633,18 @@ with col_cobertura_2:
     kpi_card(
         "Cobertura ME5A",
         formato_porcentaje(cobertura_me5a),
-        (
-            f"{formato_entero(contratos_cruzados_me5a)} "
-            "contratos con coincidencia"
-        ),
+        f"{formato_entero(contratos_cruzados_me5a)} contratos con coincidencia",
     )
 
 with col_cobertura_3:
     kpi_card(
         "Sin cobertura ME5A",
         formato_porcentaje(sin_cobertura_me5a),
-        (
-            f"{formato_entero(contratos_sin_me5a)} "
-            "contratos sin coincidencia"
-        ),
+        f"{formato_entero(contratos_sin_me5a)} contratos sin coincidencia",
     )
 
 if df_sin_info_me5a.empty:
-    st.success(
-        (
-            "Todos los contratos filtrados tienen "
-            "información asociada en ME5A."
-        )
-    )
+    st.success("Todos los contratos filtrados tienen información asociada en ME5A.")
 
 else:
     df_sin_info_me5a["Contrato"] = (
@@ -826,29 +668,19 @@ else:
     ]
 
     df_sin_info_me5a_tabla = (
-        df_sin_info_me5a[
-            columnas_sin_me5a
-        ]
+        df_sin_info_me5a[columnas_sin_me5a]
         .drop_duplicates()
-        .sort_values(
-            [
-                "Gestor_Contrato",
-                "Contrato",
-            ]
-        )
+        .sort_values(["Gestor_Contrato", "Contrato"])
         .reset_index(drop=True)
     )
 
     df_sin_info_me5a_resumen = (
         df_sin_info_me5a_tabla
-        .groupby(
-            "Gestor_Contrato",
-            as_index=False,
-        )["Contrato"]
+        .groupby("Gestor_Contrato", as_index=False)["Contrato"]
         .nunique()
         .rename(
             columns={
-                "Contrato": "Contratos_No_Encontrados_ME5A"
+                "Contrato": "Contratos_No_Encontrados_ME5A",
             }
         )
         .sort_values(
@@ -859,11 +691,8 @@ else:
     )
 
     st.warning(
-        (
-            f"Se identificaron "
-            f"{contratos_sin_me5a:,.0f} contratos "
-            "sin coincidencia en ME5A."
-        )
+        f"Se identificaron {contratos_sin_me5a:,.0f} contratos "
+        "sin coincidencia en ME5A."
     )
 
     with st.expander(
@@ -871,22 +700,15 @@ else:
         expanded=False,
     ):
         st.caption(
-            (
-                "Estos contratos existen en la base de "
-                "contratos/categoría, pero no tuvieron "
-                "coincidencia en ME5A mediante el campo "
-                "Documento_compras."
-            )
+            "Estos contratos existen en la base de contratos/categoría, "
+            "pero no tuvieron coincidencia en ME5A mediante el campo "
+            "Documento_compras."
         )
 
-        col_sin_1, col_sin_2 = st.columns(
-            [0.8, 1.2]
-        )
+        col_sin_1, col_sin_2 = st.columns([0.8, 1.2])
 
         with col_sin_1:
-            st.markdown(
-                "##### Resumen por gestor"
-            )
+            st.markdown("##### Resumen por gestor")
 
             st.dataframe(
                 df_sin_info_me5a_resumen,
@@ -895,50 +717,37 @@ else:
             )
 
         with col_sin_2:
-            st.markdown(
-                "##### Contratos no encontrados"
-            )
+            st.markdown("##### Contratos no encontrados")
 
             st.dataframe(
                 df_sin_info_me5a_tabla,
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "Contrato": st.column_config.TextColumn(
-                        "Contrato"
-                    ),
-                    "Contrato_Original": st.column_config.TextColumn(
-                        "Contrato original"
-                    ),
-                    "Gestor_Contrato": st.column_config.TextColumn(
-                        "Gestor de contrato"
-                    ),
-                    "Documento_compras": st.column_config.TextColumn(
-                        "Documento de compras"
-                    ),
+                    "Contrato": st.column_config.TextColumn("Contrato"),
+                    "Contrato_Original": st.column_config.TextColumn("Contrato original"),
+                    "Gestor_Contrato": st.column_config.TextColumn("Gestor de contrato"),
+                    "Documento_compras": st.column_config.TextColumn("Documento de compras"),
                     "Fin_período_validez": st.column_config.DateColumn(
                         "Fecha fin",
                         format="DD/MM/YYYY",
                     ),
-                    "Estado": st.column_config.TextColumn(
-                        "Estado"
-                    ),
+                    "Estado": st.column_config.TextColumn("Estado"),
                     "Fecha_Analisis": st.column_config.DateColumn(
                         "Fecha de análisis",
                         format="DD/MM/YYYY",
                     ),
                 },
             )
+
+
 # ============================================================
 # Indicadores principales
 # ============================================================
 
 section_title(
     "Indicadores principales",
-    (
-        "Resumen ejecutivo de cobertura y vigencia "
-        "contractual."
-    ),
+    "Resumen ejecutivo de cobertura y vigencia contractual.",
 )
 
 col_kpi1, col_kpi2, col_kpi3, col_kpi4 = st.columns(4)
@@ -968,10 +777,7 @@ with col_kpi4:
     kpi_card(
         "Por vencer",
         formato_entero(contratos_por_vencer),
-        (
-            "Vencimiento dentro de los próximos "
-            "tres meses"
-        ),
+        "Vencimiento dentro de los próximos tres meses",
     )
 
 
@@ -997,33 +803,16 @@ colores_estado = {
 
 df_recuento_estado = (
     df_contratos_estado_filtrado
-    .groupby(
-        [
-            "Gestor_Contrato",
-            "Estado",
-        ],
-        as_index=False,
-    )["Contrato"]
+    .groupby(["Gestor_Contrato", "Estado"], as_index=False)["Contrato"]
     .nunique()
-    .rename(
-        columns={
-            "Contrato": "Recuento_Contratos"
-        }
-    )
+    .rename(columns={"Contrato": "Recuento_Contratos"})
 )
 
 df_estado_global = (
     df_contratos_estado_filtrado
-    .groupby(
-        "Estado",
-        as_index=False,
-    )["Contrato"]
+    .groupby("Estado", as_index=False)["Contrato"]
     .nunique()
-    .rename(
-        columns={
-            "Contrato": "Recuento_Contratos"
-        }
-    )
+    .rename(columns={"Contrato": "Recuento_Contratos"})
 )
 
 mapa_orden_estados = {
@@ -1040,40 +829,23 @@ df_estado_global["Orden_Estado"] = (
 df_estado_global = (
     df_estado_global
     .sort_values(
-        [
-            "Orden_Estado",
-            "Recuento_Contratos",
-        ],
-        ascending=[
-            True,
-            False,
-        ],
+        ["Orden_Estado", "Recuento_Contratos"],
+        ascending=[True, False],
     )
     .drop(columns="Orden_Estado")
     .reset_index(drop=True)
 )
 
-total_estado_global = (
-    df_estado_global[
-        "Recuento_Contratos"
-    ]
-    .sum()
-)
+total_estado_global = df_estado_global["Recuento_Contratos"].sum()
 
 if total_estado_global > 0:
-    df_estado_global[
-        "Participacion_%"
-    ] = (
-        df_estado_global[
-            "Recuento_Contratos"
-        ]
+    df_estado_global["Participacion_%"] = (
+        df_estado_global["Recuento_Contratos"]
         / total_estado_global
         * 100
     )
 else:
-    df_estado_global[
-        "Participacion_%"
-    ] = 0.0
+    df_estado_global["Participacion_%"] = 0.0
 
 
 # ============================================================
@@ -1082,50 +854,26 @@ else:
 
 section_title(
     "Distribución global de contratos por estado",
-    (
-        "Panorama general de la vigencia contractual "
-        "para los gestores seleccionados."
-    ),
+    "Panorama general de la vigencia contractual para los gestores seleccionados.",
 )
 
 if df_estado_global.empty:
-    st.info(
-        "No hay datos para graficar la distribución "
-        "global por estado."
-    )
+    st.info("No hay datos para graficar la distribución global por estado.")
 else:
-    col_donut, col_tabla = st.columns(
-        [
-            0.95,
-            1.05,
-        ]
-    )
+    col_donut, col_tabla = st.columns([0.95, 1.05])
 
     with col_donut:
         colores_grafico = [
-            colores_estado.get(
-                estado,
-                "#cbd5e1",
-            )
-            for estado in df_estado_global[
-                "Estado"
-            ]
+            colores_estado.get(estado, "#cbd5e1")
+            for estado in df_estado_global["Estado"]
         ]
 
-        fig, ax = plt.subplots(
-            figsize=(6.3, 5.1)
-        )
+        fig, ax = plt.subplots(figsize=(6.3, 5.1))
 
         wedges, _, _ = ax.pie(
-            df_estado_global[
-                "Recuento_Contratos"
-            ],
+            df_estado_global["Recuento_Contratos"],
             labels=None,
-            autopct=lambda porcentaje: (
-                f"{porcentaje:.1f}%"
-                if porcentaje >= 3
-                else ""
-            ),
+            autopct=lambda porcentaje: f"{porcentaje:.1f}%" if porcentaje >= 3 else "",
             startangle=90,
             counterclock=False,
             pctdistance=0.79,
@@ -1184,10 +932,7 @@ else:
             leyenda_labels,
             title="Estado",
             loc="center left",
-            bbox_to_anchor=(
-                1.00,
-                0.5,
-            ),
+            bbox_to_anchor=(1.00, 0.5),
             fontsize=8.5,
             title_fontsize=9.5,
             frameon=False,
@@ -1196,48 +941,23 @@ else:
         ax.axis("equal")
         fig.tight_layout()
 
-        st.pyplot(
-            fig,
-            clear_figure=True,
-        )
+        st.pyplot(fig, clear_figure=True)
 
     with col_tabla:
-        df_estado_global_tabla = (
-            df_estado_global.copy()
-        )
+        df_estado_global_tabla = df_estado_global.copy()
 
-        df_estado_global_tabla[
-            "Participación"
-        ] = (
-            df_estado_global_tabla[
-                "Participacion_%"
-            ]
-            .map(
-                lambda valor: (
-                    f"{valor:.1f}%"
-                )
-            )
+        df_estado_global_tabla["Participación"] = (
+            df_estado_global_tabla["Participacion_%"]
+            .map(lambda valor: f"{valor:.1f}%")
         )
 
         df_estado_global_tabla = (
             df_estado_global_tabla
-            .rename(
-                columns={
-                    "Recuento_Contratos": "Contratos",
-                }
-            )
-            [
-                [
-                    "Estado",
-                    "Contratos",
-                    "Participación",
-                ]
-            ]
+            .rename(columns={"Recuento_Contratos": "Contratos"})
+            [["Estado", "Contratos", "Participación"]]
         )
 
-        st.markdown(
-            "##### Resumen por estado"
-        )
+        st.markdown("##### Resumen por estado")
 
         st.dataframe(
             df_estado_global_tabla,
@@ -1252,16 +972,11 @@ else:
 
 section_title(
     "Contratos por gestor y estado de vigencia",
-    (
-        "Desglose de la situación contractual para "
-        "cada gestor seleccionado."
-    ),
+    "Desglose de la situación contractual para cada gestor seleccionado.",
 )
 
 if df_recuento_estado.empty:
-    st.info(
-        "No hay contratos para los gestores seleccionados."
-    )
+    st.info("No hay contratos para los gestores seleccionados.")
 else:
     df_pivot_estado = (
         df_recuento_estado
@@ -1280,53 +995,24 @@ else:
         if estado in df_pivot_estado.columns
     ]
 
-    df_pivot_estado = (
-        df_pivot_estado[
-            columnas_presentes
-        ]
-    )
-
-    df_pivot_estado[
-        "Total_Contratos"
-    ] = (
-        df_pivot_estado
-        .sum(axis=1)
-    )
+    df_pivot_estado = df_pivot_estado[columnas_presentes]
+    df_pivot_estado["Total_Contratos"] = df_pivot_estado.sum(axis=1)
 
     df_pivot_estado = (
         df_pivot_estado
-        .sort_values(
-            "Total_Contratos",
-            ascending=True,
-        )
+        .sort_values("Total_Contratos", ascending=True)
     )
 
-    df_plot_estado = (
-        df_pivot_estado
-        .drop(
-            columns="Total_Contratos"
-        )
-    )
+    df_plot_estado = df_pivot_estado.drop(columns="Total_Contratos")
 
     colores_stack = [
-        colores_estado.get(
-            columna,
-            "#cbd5e1",
-        )
+        colores_estado.get(columna, "#cbd5e1")
         for columna in df_plot_estado.columns
     ]
 
-    altura_figura = max(
-        6,
-        0.38 * len(df_plot_estado) + 2,
-    )
+    altura_figura = max(6, 0.38 * len(df_plot_estado) + 2)
 
-    fig, ax = plt.subplots(
-        figsize=(
-            12,
-            altura_figura,
-        )
-    )
+    fig, ax = plt.subplots(figsize=(12, altura_figura))
 
     df_plot_estado.plot(
         kind="barh",
@@ -1344,54 +1030,31 @@ else:
         pad=14,
     )
 
-    ax.set_xlabel(
-        "Recuento de contratos"
-    )
-
-    ax.set_ylabel(
-        "Gestor de contrato"
-    )
+    ax.set_xlabel("Recuento de contratos")
+    ax.set_ylabel("Gestor de contrato")
 
     ax.legend(
         title="Estado",
-        bbox_to_anchor=(
-            1.02,
-            1,
-        ),
+        bbox_to_anchor=(1.02, 1),
         loc="upper left",
         frameon=False,
     )
 
     ax.xaxis.set_major_locator(
-        mticker.MaxNLocator(
-            integer=True
-        )
+        mticker.MaxNLocator(integer=True)
     )
 
     limpiar_estilo_grafico(ax)
 
-    max_total_contratos = (
-        df_pivot_estado[
-            "Total_Contratos"
-        ]
-        .max()
-    )
-
-    margen_derecho = max(
-        1,
-        max_total_contratos * 0.22,
-    )
+    max_total_contratos = df_pivot_estado["Total_Contratos"].max()
+    margen_derecho = max(1, max_total_contratos * 0.22)
 
     ax.set_xlim(
         0,
         max_total_contratos + margen_derecho,
     )
 
-    for indice, total in enumerate(
-        df_pivot_estado[
-            "Total_Contratos"
-        ]
-    ):
+    for indice, total in enumerate(df_pivot_estado["Total_Contratos"]):
         ax.text(
             total + margen_derecho * 0.08,
             indice,
@@ -1405,10 +1068,7 @@ else:
 
     fig.tight_layout()
 
-    st.pyplot(
-        fig,
-        clear_figure=True,
-    )
+    st.pyplot(fig, clear_figure=True)
 
     with st.expander(
         "Ver tabla de contratos por gestor y estado",
@@ -1422,51 +1082,32 @@ else:
 
 
     # ========================================================
-    # Detalle interactivo por gestor y estado
+    # Detalle interactivo por gestor, estado y rango
     # ========================================================
 
     section_title(
         "Detalle de contratos por gestor y estado",
         (
-            "Selecciona un gestor y un estado para revisar "
-            "los contratos que componen el recuento anterior."
+            "Selecciona un gestor y un estado para revisar los contratos "
+            "que componen el recuento anterior. Si seleccionas Por Vencer, "
+            "puedes elegir el rango de vencimiento."
         ),
     )
 
-    # --------------------------------------------------------
-    # Gestor predeterminado: gestor con más contratos únicos
-    # dentro de los filtros generales seleccionados.
-    # --------------------------------------------------------
-
     df_totales_gestor_detalle = (
         df_contratos_estado_filtrado
-        .groupby(
-            "Gestor_Contrato",
-            as_index=False,
-        )["Contrato"]
+        .groupby("Gestor_Contrato", as_index=False)["Contrato"]
         .nunique()
-        .rename(
-            columns={
-                "Contrato": "Total_Contratos"
-            }
-        )
+        .rename(columns={"Contrato": "Total_Contratos"})
         .sort_values(
-            [
-                "Total_Contratos",
-                "Gestor_Contrato",
-            ],
-            ascending=[
-                False,
-                True,
-            ],
+            ["Total_Contratos", "Gestor_Contrato"],
+            ascending=[False, True],
         )
         .reset_index(drop=True)
     )
 
     gestores_detalle = (
-        df_totales_gestor_detalle[
-            "Gestor_Contrato"
-        ]
+        df_totales_gestor_detalle["Gestor_Contrato"]
         .tolist()
     )
 
@@ -1477,14 +1118,11 @@ else:
     )
 
     indice_gestor_default = (
-        gestores_detalle.index(
-            gestor_mas_contratos
-        )
+        gestores_detalle.index(gestor_mas_contratos)
         if gestor_mas_contratos in gestores_detalle
         else 0
     )
 
-    # El estado predeterminado siempre es "Por Vencer".
     estados_detalle = orden_estados.copy()
 
     indice_estado_default = (
@@ -1493,10 +1131,15 @@ else:
         else 0
     )
 
+    rangos_vencimiento = [
+        "Hasta 3 meses",
+        "3 a 6 meses",
+        "6 a 12 meses",
+        "Superior a 1 año",
+    ]
+
     with st.container(border=True):
-        col_selector_gestor, col_selector_estado = (
-            st.columns(2)
-        )
+        col_selector_gestor, col_selector_estado, col_selector_rango = st.columns(3)
 
         with col_selector_gestor:
             gestor_detalle_sel = st.selectbox(
@@ -1514,21 +1157,132 @@ else:
                 key="selector_estado_detalle_gestor",
             )
 
-    df_detalle_gestor_estado = (
-        df_contratos_estado_filtrado[
-            (
-                df_contratos_estado_filtrado[
-                    "Gestor_Contrato"
-                ] == gestor_detalle_sel
+        with col_selector_rango:
+            if estado_detalle_sel == "Por Vencer":
+                rango_vencimiento_sel = st.selectbox(
+                    "Rango de vencimiento",
+                    options=rangos_vencimiento,
+                    index=0,
+                    key="selector_rango_vencimiento_detalle",
+                )
+            else:
+                rango_vencimiento_sel = None
+
+                st.selectbox(
+                    "Rango de vencimiento",
+                    options=["No aplica para este estado"],
+                    index=0,
+                    disabled=True,
+                    key="selector_rango_vencimiento_no_aplica",
+                )
+
+    hoy_detalle = pd.Timestamp.today().normalize()
+
+    fecha_limite_3m = hoy_detalle + pd.DateOffset(months=3)
+    fecha_limite_6m = hoy_detalle + pd.DateOffset(months=6)
+    fecha_limite_12m = hoy_detalle + pd.DateOffset(months=12)
+
+    if estado_detalle_sel == "Por Vencer":
+        df_detalle_gestor_estado = (
+            df_contratos_estado_filtrado[
+                (
+                    df_contratos_estado_filtrado["Gestor_Contrato"]
+                    == gestor_detalle_sel
+                )
+                & (
+                    df_contratos_estado_filtrado["Fin_período_validez"]
+                    .notna()
+                )
+                & (
+                    df_contratos_estado_filtrado["Fin_período_validez"]
+                    >= hoy_detalle
+                )
+            ]
+            .copy()
+        )
+
+        if rango_vencimiento_sel == "Hasta 3 meses":
+            df_detalle_gestor_estado = (
+                df_detalle_gestor_estado[
+                    df_detalle_gestor_estado["Fin_período_validez"]
+                    <= fecha_limite_3m
+                ]
+                .copy()
             )
-            & (
-                df_contratos_estado_filtrado[
-                    "Estado"
-                ] == estado_detalle_sel
+
+            descripcion_rango = (
+                f"vencen desde hoy hasta {fecha_limite_3m.date()}"
             )
-        ]
-        .copy()
-    )
+
+        elif rango_vencimiento_sel == "3 a 6 meses":
+            df_detalle_gestor_estado = (
+                df_detalle_gestor_estado[
+                    (
+                        df_detalle_gestor_estado["Fin_período_validez"]
+                        > fecha_limite_3m
+                    )
+                    & (
+                        df_detalle_gestor_estado["Fin_período_validez"]
+                        <= fecha_limite_6m
+                    )
+                ]
+                .copy()
+            )
+
+            descripcion_rango = (
+                f"vencen después de {fecha_limite_3m.date()} "
+                f"y hasta {fecha_limite_6m.date()}"
+            )
+
+        elif rango_vencimiento_sel == "6 a 12 meses":
+            df_detalle_gestor_estado = (
+                df_detalle_gestor_estado[
+                    (
+                        df_detalle_gestor_estado["Fin_período_validez"]
+                        > fecha_limite_6m
+                    )
+                    & (
+                        df_detalle_gestor_estado["Fin_período_validez"]
+                        <= fecha_limite_12m
+                    )
+                ]
+                .copy()
+            )
+
+            descripcion_rango = (
+                f"vencen después de {fecha_limite_6m.date()} "
+                f"y hasta {fecha_limite_12m.date()}"
+            )
+
+        else:
+            df_detalle_gestor_estado = (
+                df_detalle_gestor_estado[
+                    df_detalle_gestor_estado["Fin_período_validez"]
+                    > fecha_limite_12m
+                ]
+                .copy()
+            )
+
+            descripcion_rango = (
+                f"vencen después de {fecha_limite_12m.date()}"
+            )
+
+    else:
+        df_detalle_gestor_estado = (
+            df_contratos_estado_filtrado[
+                (
+                    df_contratos_estado_filtrado["Gestor_Contrato"]
+                    == gestor_detalle_sel
+                )
+                & (
+                    df_contratos_estado_filtrado["Estado"]
+                    == estado_detalle_sel
+                )
+            ]
+            .copy()
+        )
+
+        descripcion_rango = "sin filtro adicional de rango"
 
     columnas_detalle_gestor_estado = [
         columna
@@ -1542,14 +1296,11 @@ else:
             "Estado",
             "Fecha_Analisis",
         ]
-        if columna
-        in df_detalle_gestor_estado.columns
+        if columna in df_detalle_gestor_estado.columns
     ]
 
     df_detalle_gestor_estado_tabla = (
-        df_detalle_gestor_estado[
-            columnas_detalle_gestor_estado
-        ]
+        df_detalle_gestor_estado[columnas_detalle_gestor_estado]
         .drop_duplicates()
     )
 
@@ -1559,8 +1310,7 @@ else:
             "Fin_período_validez",
             "Contrato",
         ]
-        if columna
-        in df_detalle_gestor_estado_tabla.columns
+        if columna in df_detalle_gestor_estado_tabla.columns
     ]
 
     if columnas_orden_detalle:
@@ -1579,17 +1329,14 @@ else:
     )
 
     contratos_detalle_seleccion = (
-        df_detalle_gestor_estado[
-            "Contrato"
-        ]
+        df_detalle_gestor_estado["Contrato"]
         .nunique()
     )
 
     total_contratos_gestor_seleccionado = (
         df_contratos_estado_filtrado[
-            df_contratos_estado_filtrado[
-                "Gestor_Contrato"
-            ] == gestor_detalle_sel
+            df_contratos_estado_filtrado["Gestor_Contrato"]
+            == gestor_detalle_sel
         ]["Contrato"]
         .nunique()
     )
@@ -1601,9 +1348,7 @@ else:
         else 0
     )
 
-    col_detalle_kpi_1, col_detalle_kpi_2, col_detalle_kpi_3 = (
-        st.columns(3)
-    )
+    col_detalle_kpi_1, col_detalle_kpi_2, col_detalle_kpi_3 = st.columns(3)
 
     with col_detalle_kpi_1:
         kpi_card(
@@ -1619,15 +1364,17 @@ else:
         kpi_card(
             "Estado seleccionado",
             estado_detalle_sel,
-            "Clasificación de vigencia contractual",
+            (
+                rango_vencimiento_sel
+                if estado_detalle_sel == "Por Vencer"
+                else "Clasificación de vigencia contractual"
+            ),
         )
 
     with col_detalle_kpi_3:
         kpi_card(
             "Contratos encontrados",
-            formato_entero(
-                contratos_detalle_seleccion
-            ),
+            formato_entero(contratos_detalle_seleccion),
             (
                 f"{formato_porcentaje(participacion_estado_gestor)} "
                 "del total del gestor"
@@ -1635,69 +1382,59 @@ else:
         )
 
     if df_detalle_gestor_estado_tabla.empty:
-        st.info(
-            (
-                f"No existen contratos para el gestor "
-                f"“{gestor_detalle_sel}” con estado "
-                f"“{estado_detalle_sel}”."
+        if estado_detalle_sel == "Por Vencer":
+            st.info(
+                (
+                    f"No existen contratos para el gestor “{gestor_detalle_sel}” "
+                    f"en el rango “{rango_vencimiento_sel}”."
+                )
             )
-        )
+        else:
+            st.info(
+                (
+                    f"No existen contratos para el gestor “{gestor_detalle_sel}” "
+                    f"con estado “{estado_detalle_sel}”."
+                )
+            )
+
     else:
-        st.caption(
-            (
-                f"Detalle de {contratos_detalle_seleccion:,.0f} "
-                f"contratos únicos del gestor "
-                f"“{gestor_detalle_sel}” clasificados como "
-                f"“{estado_detalle_sel}”."
+        if estado_detalle_sel == "Por Vencer":
+            st.caption(
+                (
+                    f"Detalle de {contratos_detalle_seleccion:,.0f} contratos "
+                    f"únicos del gestor “{gestor_detalle_sel}” que "
+                    f"{descripcion_rango}."
+                )
             )
-        )
+        else:
+            st.caption(
+                (
+                    f"Detalle de {contratos_detalle_seleccion:,.0f} contratos "
+                    f"únicos del gestor “{gestor_detalle_sel}” clasificados "
+                    f"como “{estado_detalle_sel}”."
+                )
+            )
 
         st.dataframe(
             df_detalle_gestor_estado_tabla,
             use_container_width=True,
             hide_index=True,
             column_config={
-                "Contrato": (
-                    st.column_config.TextColumn(
-                        "Contrato"
-                    )
+                "Contrato": st.column_config.TextColumn("Contrato"),
+                "Contrato_Original": st.column_config.TextColumn("Contrato original"),
+                "Gestor_Contrato": st.column_config.TextColumn("Gestor de contrato"),
+                "Documento_compras": st.column_config.TextColumn("Documento de compras"),
+                "Documento_Compras_Original_ME5A": st.column_config.TextColumn(
+                    "Documento original ME5A"
                 ),
-                "Contrato_Original": (
-                    st.column_config.TextColumn(
-                        "Contrato original"
-                    )
+                "Fin_período_validez": st.column_config.DateColumn(
+                    "Fecha fin de validez",
+                    format="DD/MM/YYYY",
                 ),
-                "Gestor_Contrato": (
-                    st.column_config.TextColumn(
-                        "Gestor de contrato"
-                    )
-                ),
-                "Documento_compras": (
-                    st.column_config.TextColumn(
-                        "Documento de compras"
-                    )
-                ),
-                "Documento_Compras_Original_ME5A": (
-                    st.column_config.TextColumn(
-                        "Documento original ME5A"
-                    )
-                ),
-                "Fin_período_validez": (
-                    st.column_config.DateColumn(
-                        "Fecha fin de validez",
-                        format="DD/MM/YYYY",
-                    )
-                ),
-                "Estado": (
-                    st.column_config.TextColumn(
-                        "Estado"
-                    )
-                ),
-                "Fecha_Analisis": (
-                    st.column_config.DateColumn(
-                        "Fecha de análisis",
-                        format="DD/MM/YYYY",
-                    )
+                "Estado": st.column_config.TextColumn("Estado"),
+                "Fecha_Analisis": st.column_config.DateColumn(
+                    "Fecha de análisis",
+                    format="DD/MM/YYYY",
                 ),
             },
         )
@@ -1710,15 +1447,13 @@ else:
 section_title(
     "Mapa de calor de contratos por gestor y estado",
     (
-        "Comparación visual para detectar concentraciones "
-        "de contratos y estados críticos."
+        "Comparación visual para detectar concentraciones de contratos "
+        "y estados críticos."
     ),
 )
 
 if df_recuento_estado.empty:
-    st.info(
-        "No hay datos para construir el mapa de calor."
-    )
+    st.info("No hay datos para construir el mapa de calor.")
 else:
     df_heatmap_pivot = (
         df_recuento_estado
@@ -1737,46 +1472,22 @@ else:
         if estado in df_heatmap_pivot.columns
     ]
 
-    df_heatmap_pivot = (
-        df_heatmap_pivot[
-            columnas_presentes
-        ]
-    )
-
-    df_heatmap_pivot["Total"] = (
-        df_heatmap_pivot
-        .sum(axis=1)
-    )
+    df_heatmap_pivot = df_heatmap_pivot[columnas_presentes]
+    df_heatmap_pivot["Total"] = df_heatmap_pivot.sum(axis=1)
 
     df_heatmap_pivot = (
         df_heatmap_pivot
-        .sort_values(
-            "Total",
-            ascending=False,
-        )
+        .sort_values("Total", ascending=False)
     )
 
-    df_heatmap_plot = (
-        df_heatmap_pivot
-        .drop(columns="Total")
-    )
+    df_heatmap_plot = df_heatmap_pivot.drop(columns="Total")
 
     if df_heatmap_plot.empty:
-        st.info(
-            "No hay datos para construir el mapa de calor."
-        )
+        st.info("No hay datos para construir el mapa de calor.")
     else:
-        altura_figura = max(
-            6,
-            0.38 * len(df_heatmap_plot) + 2,
-        )
+        altura_figura = max(6, 0.38 * len(df_heatmap_plot) + 2)
 
-        fig, ax = plt.subplots(
-            figsize=(
-                10.5,
-                altura_figura,
-            )
-        )
+        fig, ax = plt.subplots(figsize=(10.5, altura_figura))
 
         matriz = df_heatmap_plot.values
 
@@ -1786,27 +1497,15 @@ else:
             cmap="YlGnBu",
         )
 
-        ax.set_xticks(
-            np.arange(
-                len(df_heatmap_plot.columns)
-            )
-        )
-
+        ax.set_xticks(np.arange(len(df_heatmap_plot.columns)))
         ax.set_xticklabels(
             df_heatmap_plot.columns,
             rotation=35,
             ha="right",
         )
 
-        ax.set_yticks(
-            np.arange(
-                len(df_heatmap_plot.index)
-            )
-        )
-
-        ax.set_yticklabels(
-            df_heatmap_plot.index
-        )
+        ax.set_yticks(np.arange(len(df_heatmap_plot.index)))
+        ax.set_yticklabels(df_heatmap_plot.index)
 
         ax.set_title(
             "Concentración de contratos por gestor y estado",
@@ -1818,31 +1517,16 @@ else:
         ax.set_xlabel("Estado")
         ax.set_ylabel("Gestor de contrato")
 
-        valor_maximo = (
-            matriz.max()
-            if matriz.size > 0
-            else 0
-        )
+        valor_maximo = matriz.max() if matriz.size > 0 else 0
 
-        for fila in range(
-            matriz.shape[0]
-        ):
-            for columna in range(
-                matriz.shape[1]
-            ):
-                valor = matriz[
-                    fila,
-                    columna,
-                ]
+        for fila in range(matriz.shape[0]):
+            for columna in range(matriz.shape[1]):
+                valor = matriz[fila, columna]
 
                 if valor > 0:
                     color_texto = (
                         "white"
-                        if (
-                            valor_maximo > 0
-                            and valor
-                            >= valor_maximo * 0.65
-                        )
+                        if valor_maximo > 0 and valor >= valor_maximo * 0.65
                         else "#111827"
                     )
 
@@ -1857,21 +1541,12 @@ else:
                         color=color_texto,
                     )
 
-        cbar = fig.colorbar(
-            im,
-            ax=ax,
-        )
-
-        cbar.set_label(
-            "Recuento de contratos"
-        )
+        cbar = fig.colorbar(im, ax=ax)
+        cbar.set_label("Recuento de contratos")
 
         fig.tight_layout()
 
-        st.pyplot(
-            fig,
-            clear_figure=True,
-        )
+        st.pyplot(fig, clear_figure=True)
 
         with st.expander(
             "Ver tabla del mapa de calor",
@@ -1891,107 +1566,59 @@ else:
 section_title(
     "Contratos por vencer por gestor",
     (
-        "Foco de riesgo: contratos cuya fecha de fin "
-        "ocurre dentro de los próximos tres meses."
+        "Foco de riesgo: contratos cuya fecha de fin ocurre dentro "
+        "de los próximos tres meses."
     ),
 )
 
 df_por_vencer = (
     df_contratos_estado_filtrado[
-        df_contratos_estado_filtrado[
-            "Estado"
-        ] == "Por Vencer"
+        df_contratos_estado_filtrado["Estado"] == "Por Vencer"
     ]
     .copy()
 )
 
 df_top_por_vencer = (
     df_por_vencer
-    .groupby(
-        "Gestor_Contrato",
-        as_index=False,
-    )["Contrato"]
+    .groupby("Gestor_Contrato", as_index=False)["Contrato"]
     .nunique()
-    .rename(
-        columns={
-            "Contrato": "Contratos_Por_Vencer"
-        }
-    )
-    .sort_values(
-        "Contratos_Por_Vencer",
-        ascending=True,
-    )
+    .rename(columns={"Contrato": "Contratos_Por_Vencer"})
+    .sort_values("Contratos_Por_Vencer", ascending=True)
 )
 
 if df_top_por_vencer.empty:
-    st.info(
-        (
-            "No hay contratos por vencer para "
-            "los filtros seleccionados."
-        )
-    )
+    st.info("No hay contratos por vencer para los filtros seleccionados.")
 else:
-    altura_figura = max(
-        5,
-        0.35 * len(df_top_por_vencer) + 2,
-    )
+    altura_figura = max(5, 0.35 * len(df_top_por_vencer) + 2)
 
-    fig, ax = plt.subplots(
-        figsize=(
-            10,
-            altura_figura,
-        )
-    )
+    fig, ax = plt.subplots(figsize=(10, altura_figura))
 
     bars = ax.barh(
-        df_top_por_vencer[
-            "Gestor_Contrato"
-        ],
-        df_top_por_vencer[
-            "Contratos_Por_Vencer"
-        ],
+        df_top_por_vencer["Gestor_Contrato"],
+        df_top_por_vencer["Contratos_Por_Vencer"],
         color="#f59e0b",
         edgecolor="#d97706",
         linewidth=0.8,
     )
 
     ax.set_title(
-        (
-            "Contratos por vencer durante "
-            "los próximos tres meses"
-        ),
+        "Contratos por vencer durante los próximos tres meses",
         fontsize=14,
         fontweight="bold",
         pad=14,
     )
 
-    ax.set_xlabel(
-        "Recuento de contratos por vencer"
-    )
-
-    ax.set_ylabel(
-        "Gestor de contrato"
-    )
+    ax.set_xlabel("Recuento de contratos por vencer")
+    ax.set_ylabel("Gestor de contrato")
 
     ax.xaxis.set_major_locator(
-        mticker.MaxNLocator(
-            integer=True
-        )
+        mticker.MaxNLocator(integer=True)
     )
 
     limpiar_estilo_grafico(ax)
 
-    max_por_vencer = (
-        df_top_por_vencer[
-            "Contratos_Por_Vencer"
-        ]
-        .max()
-    )
-
-    margen_por_vencer = max(
-        1,
-        max_por_vencer * 0.22,
-    )
+    max_por_vencer = df_top_por_vencer["Contratos_Por_Vencer"].max()
+    margen_por_vencer = max(1, max_por_vencer * 0.22)
 
     ax.set_xlim(
         0,
@@ -2000,11 +1627,7 @@ else:
 
     for bar in bars:
         valor = bar.get_width()
-
-        posicion_y = (
-            bar.get_y()
-            + bar.get_height() / 2
-        )
+        posicion_y = bar.get_y() + bar.get_height() / 2
 
         ax.text(
             valor + margen_por_vencer * 0.08,
@@ -2019,10 +1642,7 @@ else:
 
     fig.tight_layout()
 
-    st.pyplot(
-        fig,
-        clear_figure=True,
-    )
+    st.pyplot(fig, clear_figure=True)
 
     with st.expander(
         "Ver resumen de contratos por vencer",
@@ -2030,10 +1650,7 @@ else:
     ):
         st.dataframe(
             df_top_por_vencer
-            .sort_values(
-                "Contratos_Por_Vencer",
-                ascending=False,
-            ),
+            .sort_values("Contratos_Por_Vencer", ascending=False),
             use_container_width=True,
             hide_index=True,
         )
@@ -2054,9 +1671,7 @@ else:
         ]
 
         df_detalle_por_vencer = (
-            df_por_vencer[
-                columnas_detalle_vencimiento
-            ]
+            df_por_vencer[columnas_detalle_vencimiento]
             .drop_duplicates()
             .sort_values(
                 [
@@ -2073,27 +1688,13 @@ else:
             use_container_width=True,
             hide_index=True,
             column_config={
-                "Contrato": (
-                    st.column_config.TextColumn(
-                        "Contrato"
-                    )
+                "Contrato": st.column_config.TextColumn("Contrato"),
+                "Gestor_Contrato": st.column_config.TextColumn("Gestor de contrato"),
+                "Fin_período_validez": st.column_config.DateColumn(
+                    "Fecha fin",
+                    format="DD/MM/YYYY",
                 ),
-                "Gestor_Contrato": (
-                    st.column_config.TextColumn(
-                        "Gestor de contrato"
-                    )
-                ),
-                "Fin_período_validez": (
-                    st.column_config.DateColumn(
-                        "Fecha fin",
-                        format="DD/MM/YYYY",
-                    )
-                ),
-                "Estado": (
-                    st.column_config.TextColumn(
-                        "Estado"
-                    )
-                ),
+                "Estado": st.column_config.TextColumn("Estado"),
             },
         )
 
@@ -2105,8 +1706,8 @@ else:
 section_title(
     "Tablas de apoyo",
     (
-        "Máximo nivel de detalle para revisar cruces, "
-        "estados y validaciones contractuales."
+        "Máximo nivel de detalle para revisar cruces, estados "
+        "y validaciones contractuales."
     ),
 )
 
@@ -2126,8 +1727,7 @@ with st.expander(
             "Estado",
             "Fecha_Analisis",
         ]
-        if columna
-        in df_contratos_estado_filtrado.columns
+        if columna in df_contratos_estado_filtrado.columns
     ]
 
     columnas_orden_preview = [
@@ -2141,19 +1741,12 @@ with st.expander(
     ]
 
     df_preview = (
-        df_contratos_estado_filtrado[
-            columnas_preview
-        ]
+        df_contratos_estado_filtrado[columnas_preview]
         .drop_duplicates()
     )
 
     if columnas_orden_preview:
-        df_preview = (
-            df_preview
-            .sort_values(
-                columnas_orden_preview
-            )
-        )
+        df_preview = df_preview.sort_values(columnas_orden_preview)
 
     df_preview = (
         df_preview
@@ -2162,11 +1755,8 @@ with st.expander(
     )
 
     st.caption(
-        (
-            "La tabla muestra como máximo 500 registros "
-            "correspondientes a los filtros actualmente "
-            "seleccionados."
-        )
+        "La tabla muestra como máximo 500 registros correspondientes "
+        "a los filtros actualmente seleccionados."
     )
 
     st.dataframe(
@@ -2174,47 +1764,21 @@ with st.expander(
         use_container_width=True,
         hide_index=True,
         column_config={
-            "Contrato": (
-                st.column_config.TextColumn(
-                    "Contrato"
-                )
+            "Contrato": st.column_config.TextColumn("Contrato"),
+            "Contrato_Original": st.column_config.TextColumn("Contrato original"),
+            "Gestor_Contrato": st.column_config.TextColumn("Gestor de contrato"),
+            "Documento_compras": st.column_config.TextColumn("Documento de compras"),
+            "Documento_Compras_Original_ME5A": st.column_config.TextColumn(
+                "Documento original ME5A"
             ),
-            "Contrato_Original": (
-                st.column_config.TextColumn(
-                    "Contrato original"
-                )
+            "Fin_período_validez": st.column_config.DateColumn(
+                "Fecha fin",
+                format="DD/MM/YYYY",
             ),
-            "Gestor_Contrato": (
-                st.column_config.TextColumn(
-                    "Gestor de contrato"
-                )
-            ),
-            "Documento_compras": (
-                st.column_config.TextColumn(
-                    "Documento de compras"
-                )
-            ),
-            "Documento_Compras_Original_ME5A": (
-                st.column_config.TextColumn(
-                    "Documento original ME5A"
-                )
-            ),
-            "Fin_período_validez": (
-                st.column_config.DateColumn(
-                    "Fecha fin",
-                    format="DD/MM/YYYY",
-                )
-            ),
-            "Estado": (
-                st.column_config.TextColumn(
-                    "Estado"
-                )
-            ),
-            "Fecha_Analisis": (
-                st.column_config.DateColumn(
-                    "Fecha de análisis",
-                    format="DD/MM/YYYY",
-                )
+            "Estado": st.column_config.TextColumn("Estado"),
+            "Fecha_Analisis": st.column_config.DateColumn(
+                "Fecha de análisis",
+                format="DD/MM/YYYY",
             ),
         },
     )
@@ -2223,12 +1787,7 @@ with st.expander(
     "Resumen de validación",
     expanded=False,
 ):
-    total_base = (
-        df_contratos_estado[
-            "Contrato"
-        ]
-        .nunique()
-    )
+    total_base = df_contratos_estado["Contrato"].nunique()
 
     porcentaje_por_vencer = (
         contratos_por_vencer / recuento_contratos
@@ -2237,66 +1796,46 @@ with st.expander(
     )
 
     st.write(
-        (
-            "- Total contratos únicos en "
-            "df_bbdd_x_categoria: "
-            f"{total_base:,.0f}"
-        )
+        "- Total contratos únicos en df_bbdd_x_categoria: "
+        f"{total_base:,.0f}"
     )
 
     st.write(
-        (
-            "- Contratos únicos filtrados: "
-            f"{recuento_contratos:,.0f}"
-        )
+        "- Contratos únicos filtrados: "
+        f"{recuento_contratos:,.0f}"
     )
 
     st.write(
-        (
-            "- Contratos filtrados cruzados con ME5A: "
-            f"{contratos_cruzados_me5a:,.0f}"
-        )
+        "- Contratos filtrados cruzados con ME5A: "
+        f"{contratos_cruzados_me5a:,.0f}"
     )
 
     st.write(
-        (
-            "- Cobertura ME5A sobre contratos filtrados: "
-            f"{cobertura_me5a:.2%}"
-        )
+        "- Cobertura ME5A sobre contratos filtrados: "
+        f"{cobertura_me5a:.2%}"
     )
 
     st.write(
-        (
-            "- Contratos filtrados sin información "
-            "en ME5A: "
-            f"{contratos_sin_me5a:,.0f}"
-        )
+        "- Contratos filtrados sin información en ME5A: "
+        f"{contratos_sin_me5a:,.0f}"
     )
 
     st.write(
-        (
-            "- Participación sin información ME5A: "
-            f"{sin_cobertura_me5a:.2%}"
-        )
+        "- Participación sin información ME5A: "
+        f"{sin_cobertura_me5a:.2%}"
     )
 
     st.write(
-        (
-            "- Contratos filtrados por vencer: "
-            f"{contratos_por_vencer:,.0f}"
-        )
+        "- Contratos filtrados por vencer: "
+        f"{contratos_por_vencer:,.0f}"
     )
 
     st.write(
-        (
-            "- Participación de contratos por vencer: "
-            f"{porcentaje_por_vencer:.2%}"
-        )
+        "- Participación de contratos por vencer: "
+        f"{porcentaje_por_vencer:.2%}"
     )
 
     st.write(
-        (
-            "- Fecha usada como TODAY(): "
-            f"{pd.Timestamp.today().normalize().date()}"
-        )
+        "- Fecha usada como TODAY(): "
+        f"{pd.Timestamp.today().normalize().date()}"
     )
