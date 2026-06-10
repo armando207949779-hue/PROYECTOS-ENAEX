@@ -1,5 +1,5 @@
 # ============================================================
-# APP_EXTRACCIÓN_DATOS_FINANCIEROS
+# 00_APP_EXTRACCIÓN_DATOS_FINANCIEROS
 # Portal principal ENAEX
 # Dashboard modular de datos financieros
 # ============================================================
@@ -17,11 +17,11 @@ import streamlit as st
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
 
-# App ubicada en:
+# Este archivo está en:
 # PROYECTOS-ENAEX/APP_EXTRACCIÓN_DATOS_FINANCIEROS/
-APP_MONEDAS_BANCO_CENTRAL = (
-    BASE_DIR / "APP_EXTRACCIÓN_DATOS_FINANCIEROS" / "01_APP_MONEDAS_BANCO_CENTRAL.py"
-)
+#
+# Por eso la app de monedas está en la MISMA carpeta:
+APP_MONEDAS_BANCO_CENTRAL = BASE_DIR / "01_APP_MONEDAS_BANCO_CENTRAL.py"
 
 # Logo ubicado en:
 # PROYECTOS-ENAEX/assets/logo.svg
