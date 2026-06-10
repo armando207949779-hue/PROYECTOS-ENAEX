@@ -734,7 +734,6 @@ contratos_por_vencer = (
     .nunique()
 )
 
-
 # ============================================================
 # Validación de cobertura ME5A
 # ============================================================
@@ -768,9 +767,7 @@ sin_cobertura_me5a = (
     else 0
 )
 
-col_cobertura_1, col_cobertura_2, col_cobertura_3 = (
-    st.columns(3)
-)
+col_cobertura_1, col_cobertura_2, col_cobertura_3 = st.columns(3)
 
 with col_cobertura_1:
     kpi_card(
@@ -806,6 +803,7 @@ if df_sin_info_me5a.empty:
             "información asociada en ME5A."
         )
     )
+
 else:
     df_sin_info_me5a["Contrato"] = (
         df_sin_info_me5a["Contrato"]
@@ -841,7 +839,7 @@ else:
         .reset_index(drop=True)
     )
 
-    df_sin_me5a_resumen = (
+    df_sin_info_me5a_resumen = (
         df_sin_info_me5a_tabla
         .groupby(
             "Gestor_Contrato",
@@ -850,22 +848,21 @@ else:
         .nunique()
         .rename(
             columns={
-                "Contrato": (
-                    "Contratos_No_Encontrados_ME5A"
-                )
+                "Contrato": "Contratos_No_Encontrados_ME5A"
             }
         )
         .sort_values(
             "Contratos_No_Encontrados_ME5A",
             ascending=False,
         )
+        .reset_index(drop=True)
     )
 
     st.warning(
         (
             f"Se identificaron "
             f"{contratos_sin_me5a:,.0f} contratos "
-            f"sin coincidencia en ME5A."
+            "sin coincidencia en ME5A."
         )
     )
 
@@ -883,10 +880,7 @@ else:
         )
 
         col_sin_1, col_sin_2 = st.columns(
-            [
-                0.8,
-                1.2,
-            ]
+            [0.8, 1.2]
         )
 
         with col_sin_1:
@@ -910,42 +904,31 @@ else:
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "Contrato": (
-                        st.column_config.TextColumn(
-                            "Contrato"
-                        )
+                    "Contrato": st.column_config.TextColumn(
+                        "Contrato"
                     ),
-                    "Contrato_Original": (
-                        st.column_config.TextColumn(
-                            "Contrato original"
-                        )
+                    "Contrato_Original": st.column_config.TextColumn(
+                        "Contrato original"
                     ),
-                    "Gestor_Contrato": (
-                        st.column_config.TextColumn(
-                            "Gestor de contrato"
-                        )
+                    "Gestor_Contrato": st.column_config.TextColumn(
+                        "Gestor de contrato"
                     ),
-                    "Documento_compras": (
-                        st.column_config.TextColumn(
-                            "Documento de compras"
-                        )
+                    "Documento_compras": st.column_config.TextColumn(
+                        "Documento de compras"
                     ),
-                    "Fin_período_validez": (
-                        st.column_config.DateColumn(
-                            "Fecha fin",
-                            format="DD/MM/YYYY",
-                        )
+                    "Fin_período_validez": st.column_config.DateColumn(
+                        "Fecha fin",
+                        format="DD/MM/YYYY",
                     ),
-                    "Fecha_Analisis": (
-                        st.column_config.DateColumn(
-                            "Fecha de análisis",
-                            format="DD/MM/YYYY",
-                        )
+                    "Estado": st.column_config.TextColumn(
+                        "Estado"
+                    ),
+                    "Fecha_Analisis": st.column_config.DateColumn(
+                        "Fecha de análisis",
+                        format="DD/MM/YYYY",
                     ),
                 },
             )
-
-
 # ============================================================
 # Indicadores principales
 # ============================================================
