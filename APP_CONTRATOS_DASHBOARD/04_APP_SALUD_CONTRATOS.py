@@ -604,9 +604,7 @@ def preparar_contratos_estado(
     hoy = pd.Timestamp.today().normalize()
 
     def clasificar_estado(fecha_fin):
-        """
-        Clasifica el contrato según la fecha de fin.
-        """
+        """Clasifica el contrato según la fecha de fin."""
         if pd.isna(fecha_fin):
             return "Sin fecha"
 
@@ -733,16 +731,8 @@ else:
 
 
 # ============================================================
-# KPIs
+# Cálculo de indicadores
 # ============================================================
-
-section_title(
-    "Indicadores principales",
-    (
-        "Resumen ejecutivo de cobertura y vigencia "
-        "contractual."
-    ),
-)
 
 recuento_contratos = (
     df_contratos_estado_filtrado[
@@ -776,6 +766,231 @@ contratos_por_vencer = (
         ] == "Por Vencer"
     ]["Contrato"]
     .nunique()
+)
+
+
+# ============================================================
+# Validación de cobertura ME5A
+# ============================================================
+
+section_title(
+    "Validación de cobertura ME5A",
+    (
+        "Revisión de contratos que no encontraron "
+        "coincidencia mediante el campo Documento_compras."
+    ),
+)
+
+df_sin_info_me5a = (
+    df_contratos_estado_filtrado[
+        df_contratos_estado_filtrado[
+            "Estado"
+        ] == "Sin información ME5A"
+    ]
+    .copy()
+)
+
+cobertura_me5a = (
+    contratos_cruzados_me5a / recuento_contratos
+    if recuento_contratos > 0
+    else 0
+)
+
+sin_cobertura_me5a = (
+    contratos_sin_me5a / recuento_contratos
+    if recuento_contratos > 0
+    else 0
+)
+
+col_cobertura_1, col_cobertura_2, col_cobertura_3 = st.columns(3)
+
+with col_cobertura_1:
+    kpi_card(
+        "Contratos analizados",
+        formato_entero(recuento_contratos),
+        "Contratos únicos según los filtros seleccionados",
+    )
+
+with col_cobertura_2:
+    kpi_card(
+        "Cobertura ME5A",
+        formato_porcentaje(cobertura_me5a),
+        (
+            f"{formato_entero(contratos_cruzados_me5a)} "
+            "contratos con coincidencia"
+        ),
+    )
+
+with col_cobertura_3:
+    kpi_card(
+        "Sin cobertura ME5A",
+        formato_porcentaje(sin_cobertura_me5a),
+        (
+            f"{formato_entero(contratos_sin_me5a)} "
+            "contratos sin coincidencia"
+        ),
+    )
+
+if df_sin_info_me5a.empty:
+    st.success(
+        (
+            "Todos los contratos filtrados tienen "
+            "información asociada en ME5A."
+        )
+    )
+else:
+    df_sin_info_me5a["Contrato"] = (
+        df_sin_info_me5a["Contrato"]
+        .apply(limpiar_id_contrato)
+        .astype(str)
+    )
+
+    columnas_sin_me5a = [
+        columna
+        for columna in [
+            "Contrato",
+            "Contrato_Original",
+            "Gestor_Contrato",
+            "Documento_compras",
+            "Fin_período_validez",
+            "Estado",
+            "Fecha_Analisis",
+        ]
+        if columna in df_sin_info_me5a.columns
+    ]
+
+    df_sin_info_me5a_tabla = (
+        df_sin_info_me5a[
+            columnas_sin_me5a
+        ]
+        .drop_duplicates()
+        .sort_values(
+            [
+                "Gestor_Contrato",
+                "Contrato",
+            ]
+        )
+        .reset_index(drop=True)
+    )
+
+    df_sin_me5a_resumen = (
+        df_sin_info_me5a_tabla
+        .groupby(
+            "Gestor_Contrato",
+            as_index=False,
+        )["Contrato"]
+        .nunique()
+        .rename(
+            columns={
+                "Contrato": (
+                    "Contratos_No_Encontrados_ME5A"
+                )
+            }
+        )
+        .sort_values(
+            "Contratos_No_Encontrados_ME5A",
+            ascending=False,
+        )
+    )
+
+    st.warning(
+        (
+            f"Se identificaron "
+            f"{contratos_sin_me5a:,.0f} contratos "
+            f"sin coincidencia en ME5A."
+        )
+    )
+
+    with st.expander(
+        (
+            "Ver detalle de contratos no "
+            "encontrados en ME5A"
+        ),
+        expanded=False,
+    ):
+        st.caption(
+            (
+                "Estos contratos existen en la base de "
+                "contratos/categoría, pero no tuvieron "
+                "coincidencia en ME5A mediante el campo "
+                "Documento_compras."
+            )
+        )
+
+        col_sin_1, col_sin_2 = st.columns(
+            [
+                0.8,
+                1.2,
+            ]
+        )
+
+        with col_sin_1:
+            st.markdown(
+                "##### Resumen por gestor"
+            )
+
+            st.dataframe(
+                df_sin_me5a_resumen,
+                use_container_width=True,
+                hide_index=True,
+            )
+
+        with col_sin_2:
+            st.markdown(
+                "##### Contratos no encontrados"
+            )
+
+            st.dataframe(
+                df_sin_info_me5a_tabla,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Contrato": (
+                        st.column_config.TextColumn(
+                            "Contrato"
+                        )
+                    ),
+                    "Contrato_Original": (
+                        st.column_config.TextColumn(
+                            "Contrato original"
+                        )
+                    ),
+                    "Gestor_Contrato": (
+                        st.column_config.TextColumn(
+                            "Gestor de contrato"
+                        )
+                    ),
+                    "Documento_compras": (
+                        st.column_config.TextColumn(
+                            "Documento de compras"
+                        )
+                    ),
+                    "Fin_período_validez": (
+                        st.column_config.DateColumn(
+                            "Fecha fin",
+                            format="DD/MM/YYYY",
+                        )
+                    ),
+                    "Fecha_Analisis": (
+                        st.column_config.DateColumn(
+                            "Fecha de análisis",
+                            format="DD/MM/YYYY",
+                        )
+                    ),
+                },
+            )
+
+
+# ============================================================
+# Indicadores principales
+# ============================================================
+
+section_title(
+    "Indicadores principales",
+    (
+        "Resumen ejecutivo de cobertura y vigencia "
+        "contractual."
+    ),
 )
 
 col_kpi1, col_kpi2, col_kpi3, col_kpi4 = st.columns(4)
@@ -926,11 +1141,11 @@ else:
 
 
 # ============================================================
-# 1. Distribución global por estado
+# Distribución global por estado
 # ============================================================
 
 section_title(
-    "1. Distribución global de contratos por estado",
+    "Distribución global de contratos por estado",
     (
         "Panorama general de la vigencia contractual "
         "para los gestores seleccionados."
@@ -1101,11 +1316,11 @@ else:
 
 
 # ============================================================
-# 2. Contratos por gestor y estado
+# Contratos por gestor y estado
 # ============================================================
 
 section_title(
-    "2. Contratos por gestor y estado de vigencia",
+    "Contratos por gestor y estado de vigencia",
     (
         "Desglose de la situación contractual para "
         "cada gestor seleccionado."
@@ -1290,11 +1505,11 @@ else:
 
 
 # ============================================================
-# 3. Mapa de calor por gestor y estado
+# Mapa de calor por gestor y estado
 # ============================================================
 
 section_title(
-    "3. Mapa de calor de contratos por gestor y estado",
+    "Mapa de calor de contratos por gestor y estado",
     (
         "Comparación visual para detectar "
         "concentraciones de contratos y estados críticos."
@@ -1493,11 +1708,11 @@ else:
 
 
 # ============================================================
-# 4. Contratos por vencer por gestor
+# Contratos por vencer por gestor
 # ============================================================
 
 section_title(
-    "4. Contratos por vencer por gestor",
+    "Contratos por vencer por gestor",
     (
         "Foco de riesgo: contratos cuya fecha de fin "
         "ocurre dentro de los próximos tres meses."
@@ -1720,182 +1935,11 @@ else:
 
 
 # ============================================================
-# 5. Validación de cobertura ME5A
+# Tablas de apoyo y validaciones
 # ============================================================
 
 section_title(
-    "5. Validación de cobertura ME5A",
-    (
-        "Revisión específica de contratos que no "
-        "encontraron coincidencia en Documento_compras."
-    ),
-)
-
-df_sin_info_me5a = (
-    df_contratos_estado_filtrado[
-        df_contratos_estado_filtrado[
-            "Estado"
-        ] == "Sin información ME5A"
-    ]
-    .copy()
-)
-
-if df_sin_info_me5a.empty:
-    st.success(
-        (
-            "Todos los contratos filtrados tienen "
-            "información asociada en ME5A."
-        )
-    )
-else:
-    df_sin_info_me5a["Contrato"] = (
-        df_sin_info_me5a["Contrato"]
-        .apply(limpiar_id_contrato)
-        .astype(str)
-    )
-
-    columnas_sin_me5a = [
-        columna
-        for columna in [
-            "Contrato",
-            "Contrato_Original",
-            "Gestor_Contrato",
-            "Documento_compras",
-            "Fin_período_validez",
-            "Estado",
-            "Fecha_Analisis",
-        ]
-        if columna in df_sin_info_me5a.columns
-    ]
-
-    df_sin_info_me5a_tabla = (
-        df_sin_info_me5a[
-            columnas_sin_me5a
-        ]
-        .drop_duplicates()
-        .sort_values(
-            [
-                "Gestor_Contrato",
-                "Contrato",
-            ]
-        )
-        .reset_index(drop=True)
-    )
-
-    df_sin_me5a_resumen = (
-        df_sin_info_me5a_tabla
-        .groupby(
-            "Gestor_Contrato",
-            as_index=False,
-        )["Contrato"]
-        .nunique()
-        .rename(
-            columns={
-                "Contrato": (
-                    "Contratos_No_Encontrados_ME5A"
-                )
-            }
-        )
-        .sort_values(
-            "Contratos_No_Encontrados_ME5A",
-            ascending=False,
-        )
-    )
-
-    st.warning(
-        (
-            f"Se identificaron "
-            f"{contratos_sin_me5a:,.0f} contratos "
-            f"sin coincidencia en ME5A."
-        )
-    )
-
-    with st.expander(
-        (
-            "Ver detalle de contratos no "
-            "encontrados en ME5A"
-        ),
-        expanded=False,
-    ):
-        st.caption(
-            (
-                "Estos contratos existen en la base de "
-                "contratos/categoría, pero no tuvieron "
-                "coincidencia en ME5A mediante el campo "
-                "Documento_compras."
-            )
-        )
-
-        col_sin_1, col_sin_2 = st.columns(
-            [
-                0.8,
-                1.2,
-            ]
-        )
-
-        with col_sin_1:
-            st.markdown(
-                "##### Resumen por gestor"
-            )
-
-            st.dataframe(
-                df_sin_me5a_resumen,
-                use_container_width=True,
-                hide_index=True,
-            )
-
-        with col_sin_2:
-            st.markdown(
-                "##### Contratos no encontrados"
-            )
-
-            st.dataframe(
-                df_sin_info_me5a_tabla,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Contrato": (
-                        st.column_config.TextColumn(
-                            "Contrato"
-                        )
-                    ),
-                    "Contrato_Original": (
-                        st.column_config.TextColumn(
-                            "Contrato original"
-                        )
-                    ),
-                    "Gestor_Contrato": (
-                        st.column_config.TextColumn(
-                            "Gestor de contrato"
-                        )
-                    ),
-                    "Documento_compras": (
-                        st.column_config.TextColumn(
-                            "Documento de compras"
-                        )
-                    ),
-                    "Fin_período_validez": (
-                        st.column_config.DateColumn(
-                            "Fecha fin",
-                            format="DD/MM/YYYY",
-                        )
-                    ),
-                    "Fecha_Analisis": (
-                        st.column_config.DateColumn(
-                            "Fecha de análisis",
-                            format="DD/MM/YYYY",
-                        )
-                    ),
-                },
-            )
-
-
-# ============================================================
-# 6. Tablas de apoyo y validaciones
-# ============================================================
-
-section_title(
-    "6. Tablas de apoyo",
+    "Tablas de apoyo",
     (
         "Máximo nivel de detalle para revisar cruces, "
         "estados y validaciones contractuales."
@@ -2022,22 +2066,8 @@ with st.expander(
         .nunique()
     )
 
-    cobertura_me5a = (
-        contratos_cruzados_me5a
-        / recuento_contratos
-        if recuento_contratos > 0
-        else 0
-    )
-
     porcentaje_por_vencer = (
         contratos_por_vencer
-        / recuento_contratos
-        if recuento_contratos > 0
-        else 0
-    )
-
-    porcentaje_sin_me5a = (
-        contratos_sin_me5a
         / recuento_contratos
         if recuento_contratos > 0
         else 0
@@ -2083,7 +2113,7 @@ with st.expander(
     st.write(
         (
             "- Participación sin información ME5A: "
-            f"{porcentaje_sin_me5a:.2%}"
+            f"{sin_cobertura_me5a:.2%}"
         )
     )
 
