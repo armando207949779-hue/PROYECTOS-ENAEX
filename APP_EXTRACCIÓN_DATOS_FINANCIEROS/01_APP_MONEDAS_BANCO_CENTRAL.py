@@ -548,10 +548,9 @@ def main() -> None:
     mostrar_logo_centrado()
 
     st.markdown(
-        "<h1 style='text-align: center;'>Monedas Banco Central ENAEX</h1>",
+        "<h1 style='text-align: center;'>Monedas Banco Central</h1>",
         unsafe_allow_html=True,
     )
-
     st.markdown(
         """
         <p style='text-align: center; font-size: 18px;'>
