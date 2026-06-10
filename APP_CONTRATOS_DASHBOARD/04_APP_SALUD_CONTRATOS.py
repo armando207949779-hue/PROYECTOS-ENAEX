@@ -29,7 +29,7 @@ BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
 LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
 
-VERSION_NORMALIZACION_IDS = "v_2026_06_10_cobertura_me3n_me2n_independiente"
+VERSION_NORMALIZACION_IDS = "v_2026_06_10_cobertura_me3n"
 
 
 # ============================================================
@@ -335,7 +335,7 @@ st.markdown(
 st.markdown(
     """
     <div class='subtitle'>
-        Estado de vigencia, cobertura ME3N, cobertura ME2N y contratos por vencer por gestor.
+        Estado de vigencia, cobertura ME3N y contratos por vencer por gestor.
     </div>
     """,
     unsafe_allow_html=True,
@@ -350,7 +350,6 @@ dataframes = st.session_state["dataframes_cargados"]
 DATAFRAMES_REQUERIDOS = [
     "df_bbdd_x_categoria",
     "df_me3n",
-    "df_me2n_oc_ordenes",
 ]
 
 faltantes_df = [
@@ -369,7 +368,6 @@ if faltantes_df:
 
 _df_bbdd_x_categoria = dataframes["df_bbdd_x_categoria"].copy()
 _df_me3n = dataframes["df_me3n"].copy()
-_df_me2n_oc_ordenes = dataframes["df_me2n_oc_ordenes"].copy()
 
 columnas_requeridas = {
     "df_bbdd_x_categoria": [
@@ -379,9 +377,6 @@ columnas_requeridas = {
     "df_me3n": [
         "Documento_compras",
         "Fin_período_validez",
-    ],
-    "df_me2n_oc_ordenes": [
-        "Documento_compras",
     ],
 }
 
@@ -395,11 +390,6 @@ validaciones = {
         _df_me3n,
         columnas_requeridas["df_me3n"],
         "df_me3n",
-    ),
-    "df_me2n_oc_ordenes": validar_columnas(
-        _df_me2n_oc_ordenes,
-        columnas_requeridas["df_me2n_oc_ordenes"],
-        "df_me2n_oc_ordenes",
     ),
 }
 
@@ -419,33 +409,25 @@ if errores_columnas:
 
 
 # ============================================================
-# Preparación: contratos, estado ME3N y cobertura ME2N independiente
+# Preparación: contratos, estado y cobertura ME3N
 # ============================================================
 
 @st.cache_data(show_spinner=False)
 def preparar_contratos_estado(
     df_bbdd_x_categoria: pd.DataFrame,
     df_me3n: pd.DataFrame,
-    df_me2n_oc_ordenes: pd.DataFrame,
     version_cache: str,
 ) -> pd.DataFrame:
     """
     Prepara la base consolidada de contratos.
 
-    Cruces independientes:
-    - ME3N:
-        df_bbdd_x_categoria["Contrato"]
-        contra df_me3n["Documento_compras"]
-        para vigencia y cobertura ME3N.
-
-    - ME2N / OC Órdenes:
-        df_bbdd_x_categoria["Contrato"]
-        contra valores únicos de df_me2n_oc_ordenes["Documento_compras"]
-        para cobertura ME2N independiente.
+    Cruce:
+    - df_bbdd_x_categoria["Contrato"]
+      contra df_me3n["Documento_compras"]
+      para vigencia y cobertura ME3N.
     """
     df_cat = df_bbdd_x_categoria.copy()
     df_m3n = df_me3n.copy()
-    df_me2n = df_me2n_oc_ordenes.copy()
 
     # ----------------------------
     # Base contratos / categoría
@@ -466,7 +448,7 @@ def preparar_contratos_estado(
     )
 
     # ----------------------------
-    # ME3N independiente
+    # ME3N
     # ----------------------------
     df_m3n["Documento_Compras_Original_ME3N"] = df_m3n["Documento_compras"]
     df_m3n["Documento_compras"] = df_m3n["Documento_compras"].apply(limpiar_id_contrato)
@@ -523,27 +505,7 @@ def preparar_contratos_estado(
     )
 
     # ----------------------------
-    # ME2N / OC Órdenes independiente
-    # Solo valores únicos de Documento_compras
-    # ----------------------------
-    df_me2n["Documento_Compras_Original_ME2N"] = df_me2n["Documento_compras"]
-    df_me2n["Documento_compras"] = df_me2n["Documento_compras"].apply(limpiar_id_contrato)
-    df_me2n = df_me2n.dropna(subset=["Documento_compras"]).copy()
-    df_me2n["Documento_compras"] = df_me2n["Documento_compras"].astype(str).str.strip()
-
-    df_me2n_unicos = (
-        df_me2n[["Documento_compras", "Documento_Compras_Original_ME2N"]]
-        .drop_duplicates(subset=["Documento_compras"])
-        .rename(
-            columns={
-                "Documento_compras": "Documento_compras_ME2N",
-            }
-        )
-        .reset_index(drop=True)
-    )
-
-    # ----------------------------
-    # Merge ME3N independiente
+    # Merge ME3N
     # ----------------------------
     df_contratos_estado = df_cat.merge(
         df_m3n_contrato,
@@ -563,22 +525,6 @@ def preparar_contratos_estado(
         "Sin cobertura ME3N",
     )
 
-    # ----------------------------
-    # Merge ME2N independiente
-    # ----------------------------
-    df_contratos_estado = df_contratos_estado.merge(
-        df_me2n_unicos,
-        left_on="Contrato",
-        right_on="Documento_compras_ME2N",
-        how="left",
-    )
-
-    df_contratos_estado["Validacion_Cobertura_ME2N"] = np.where(
-        df_contratos_estado["Documento_compras_ME2N"].notna(),
-        "Con cobertura ME2N",
-        "Sin cobertura ME2N",
-    )
-
     df_contratos_estado["Fecha_Analisis"] = hoy
 
     df_contratos_estado["Contrato"] = (
@@ -593,7 +539,6 @@ def preparar_contratos_estado(
 df_contratos_estado = preparar_contratos_estado(
     _df_bbdd_x_categoria,
     _df_me3n,
-    _df_me2n_oc_ordenes,
     VERSION_NORMALIZACION_IDS,
 )
 
@@ -660,21 +605,6 @@ contratos_sin_me3n = (
     .nunique()
 )
 
-contratos_cruzados_me2n = (
-    df_contratos_estado_filtrado[
-        df_contratos_estado_filtrado["Documento_compras_ME2N"].notna()
-    ]["Contrato"]
-    .nunique()
-)
-
-contratos_sin_me2n = (
-    df_contratos_estado_filtrado[
-        df_contratos_estado_filtrado["Validacion_Cobertura_ME2N"]
-        == "Sin cobertura ME2N"
-    ]["Contrato"]
-    .nunique()
-)
-
 contratos_por_vencer = (
     df_contratos_estado_filtrado[
         df_contratos_estado_filtrado["Estado"] == "Por Vencer"
@@ -694,32 +624,20 @@ sin_cobertura_me3n = (
     else 0
 )
 
-cobertura_me2n = (
-    contratos_cruzados_me2n / recuento_contratos
-    if recuento_contratos > 0
-    else 0
-)
-
-sin_cobertura_me2n = (
-    contratos_sin_me2n / recuento_contratos
-    if recuento_contratos > 0
-    else 0
-)
-
 
 # ============================================================
-# Validación de cobertura ME3N y ME2N
+# Validación de cobertura ME3N
 # ============================================================
 
 section_title(
-    "Validación de cobertura ME3N y ME2N",
+    "Validación de cobertura ME3N",
     (
-        "ME3N y ME2N se validan de forma independiente contra la base "
-        "df_bbdd_x_categoria usando el identificador de contrato/documento."
+        "ME3N se valida contra la base df_bbdd_x_categoria "
+        "usando el identificador de contrato/documento."
     ),
 )
 
-col_cobertura_1, col_cobertura_2, col_cobertura_3, col_cobertura_4, col_cobertura_5 = st.columns(5)
+col_cobertura_1, col_cobertura_2, col_cobertura_3 = st.columns(3)
 
 with col_cobertura_1:
     kpi_card(
@@ -740,20 +658,6 @@ with col_cobertura_3:
         "Sin cobertura ME3N",
         formato_porcentaje(sin_cobertura_me3n),
         f"{formato_entero(contratos_sin_me3n)} contratos sin coincidencia",
-    )
-
-with col_cobertura_4:
-    kpi_card(
-        "Cobertura ME2N",
-        formato_porcentaje(cobertura_me2n),
-        f"{formato_entero(contratos_cruzados_me2n)} contratos con coincidencia",
-    )
-
-with col_cobertura_5:
-    kpi_card(
-        "Sin cobertura ME2N",
-        formato_porcentaje(sin_cobertura_me2n),
-        f"{formato_entero(contratos_sin_me2n)} contratos sin coincidencia",
     )
 
 
@@ -871,113 +775,6 @@ else:
 
 
 # ============================================================
-# Detalle sin cobertura ME2N independiente
-# ============================================================
-
-df_sin_info_me2n = (
-    df_contratos_estado_filtrado[
-        df_contratos_estado_filtrado["Validacion_Cobertura_ME2N"]
-        == "Sin cobertura ME2N"
-    ]
-    .copy()
-)
-
-if df_sin_info_me2n.empty:
-    st.success("Todos los contratos filtrados tienen información asociada en ME2N / 02_ME2N_Ordenes.")
-
-else:
-    df_sin_info_me2n["Contrato"] = (
-        df_sin_info_me2n["Contrato"]
-        .apply(limpiar_id_contrato)
-        .astype(str)
-    )
-
-    columnas_sin_me2n = [
-        columna
-        for columna in [
-            "Contrato",
-            "Contrato_Original",
-            "Gestor_Contrato",
-            "Documento_compras_ME2N",
-            "Documento_Compras_Original_ME2N",
-            "Validacion_Cobertura_ME2N",
-            "Fecha_Analisis",
-        ]
-        if columna in df_sin_info_me2n.columns
-    ]
-
-    df_sin_info_me2n_tabla = (
-        df_sin_info_me2n[columnas_sin_me2n]
-        .drop_duplicates()
-        .sort_values(["Gestor_Contrato", "Contrato"])
-        .reset_index(drop=True)
-    )
-
-    df_sin_info_me2n_resumen = (
-        df_sin_info_me2n_tabla
-        .groupby("Gestor_Contrato", as_index=False)["Contrato"]
-        .nunique()
-        .rename(
-            columns={
-                "Contrato": "Contratos_No_Encontrados_ME2N",
-            }
-        )
-        .sort_values(
-            "Contratos_No_Encontrados_ME2N",
-            ascending=False,
-        )
-        .reset_index(drop=True)
-    )
-
-    st.warning(
-        f"Se identificaron {contratos_sin_me2n:,.0f} contratos "
-        "sin coincidencia en ME2N / 02_ME2N_Ordenes."
-    )
-
-    with st.expander(
-        "Ver detalle de contratos no encontrados en ME2N / 02_ME2N_Ordenes",
-        expanded=False,
-    ):
-        st.caption(
-            "Validación independiente: estos contratos existen en df_bbdd_x_categoria, "
-            "pero no tuvieron coincidencia contra los valores únicos de "
-            "df_me2n_oc_ordenes['Documento_compras']."
-        )
-
-        col_sin_1, col_sin_2 = st.columns([0.8, 1.2])
-
-        with col_sin_1:
-            st.markdown("##### Resumen por gestor")
-
-            st.dataframe(
-                df_sin_info_me2n_resumen,
-                use_container_width=True,
-                hide_index=True,
-            )
-
-        with col_sin_2:
-            st.markdown("##### Contratos no encontrados en ME2N")
-
-            st.dataframe(
-                df_sin_info_me2n_tabla,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Contrato": st.column_config.TextColumn("Contrato"),
-                    "Contrato_Original": st.column_config.TextColumn("Contrato original"),
-                    "Gestor_Contrato": st.column_config.TextColumn("Gestor de contrato"),
-                    "Documento_compras_ME2N": st.column_config.TextColumn("Documento compras ME2N"),
-                    "Documento_Compras_Original_ME2N": st.column_config.TextColumn("Documento original ME2N"),
-                    "Validacion_Cobertura_ME2N": st.column_config.TextColumn("Validación ME2N"),
-                    "Fecha_Analisis": st.column_config.DateColumn(
-                        "Fecha de análisis",
-                        format="DD/MM/YYYY",
-                    ),
-                },
-            )
-
-
-# ============================================================
 # Indicadores principales
 # ============================================================
 
@@ -986,7 +783,7 @@ section_title(
     "Resumen ejecutivo de cobertura y vigencia contractual.",
 )
 
-col_kpi1, col_kpi2, col_kpi3, col_kpi4, col_kpi5 = st.columns(5)
+col_kpi1, col_kpi2, col_kpi3, col_kpi4 = st.columns(4)
 
 with col_kpi1:
     kpi_card(
@@ -999,27 +796,17 @@ with col_kpi2:
     kpi_card(
         "Contratos con ME3N",
         formato_entero(contratos_cruzados_me3n),
-        "Cruce independiente ME3N",
+        "Cruce contra ME3N",
     )
 
 with col_kpi3:
     kpi_card(
-        "Contratos con ME2N",
-        formato_entero(contratos_cruzados_me2n),
-        "Cruce independiente 02_ME2N_Ordenes",
-    )
-
-with col_kpi4:
-    kpi_card(
-        "Sin ME3N / ME2N",
-        (
-            f"{formato_entero(contratos_sin_me3n)} / "
-            f"{formato_entero(contratos_sin_me2n)}"
-        ),
+        "Sin ME3N",
+        formato_entero(contratos_sin_me3n),
         "Contratos sin coincidencia",
     )
 
-with col_kpi5:
+with col_kpi4:
     kpi_card(
         "Por vencer",
         formato_entero(contratos_por_vencer),
@@ -1541,7 +1328,6 @@ else:
             "Fin_período_validez",
             "Estado",
             "Validacion_Cobertura_ME3N",
-            "Validacion_Cobertura_ME2N",
             "Fecha_Analisis",
         ]
         if columna in df_detalle_gestor_estado.columns
@@ -1681,7 +1467,6 @@ else:
                 ),
                 "Estado": st.column_config.TextColumn("Estado"),
                 "Validacion_Cobertura_ME3N": st.column_config.TextColumn("Validación ME3N"),
-                "Validacion_Cobertura_ME2N": st.column_config.TextColumn("Validación ME2N"),
                 "Fecha_Analisis": st.column_config.DateColumn(
                     "Fecha de análisis",
                     format="DD/MM/YYYY",
@@ -1918,7 +1703,6 @@ else:
                 "Fin_período_validez",
                 "Estado",
                 "Validacion_Cobertura_ME3N",
-                "Validacion_Cobertura_ME2N",
             ]
             if columna in df_por_vencer.columns
         ]
@@ -1950,7 +1734,6 @@ else:
                 ),
                 "Estado": st.column_config.TextColumn("Estado"),
                 "Validacion_Cobertura_ME3N": st.column_config.TextColumn("Validación ME3N"),
-                "Validacion_Cobertura_ME2N": st.column_config.TextColumn("Validación ME2N"),
             },
         )
 
@@ -1979,12 +1762,9 @@ with st.expander(
             "Gestor_Contrato",
             "Documento_compras_ME3N",
             "Documento_Compras_Original_ME3N",
-            "Documento_compras_ME2N",
-            "Documento_Compras_Original_ME2N",
             "Fin_período_validez",
             "Estado",
             "Validacion_Cobertura_ME3N",
-            "Validacion_Cobertura_ME2N",
             "Fecha_Analisis",
         ]
         if columna in df_contratos_estado_filtrado.columns
@@ -2031,17 +1811,12 @@ with st.expander(
             "Documento_Compras_Original_ME3N": st.column_config.TextColumn(
                 "Documento original ME3N"
             ),
-            "Documento_compras_ME2N": st.column_config.TextColumn("Documento compras ME2N"),
-            "Documento_Compras_Original_ME2N": st.column_config.TextColumn(
-                "Documento original ME2N"
-            ),
             "Fin_período_validez": st.column_config.DateColumn(
                 "Fecha fin",
                 format="DD/MM/YYYY",
             ),
             "Estado": st.column_config.TextColumn("Estado"),
             "Validacion_Cobertura_ME3N": st.column_config.TextColumn("Validación ME3N"),
-            "Validacion_Cobertura_ME2N": st.column_config.TextColumn("Validación ME2N"),
             "Fecha_Analisis": st.column_config.DateColumn(
                 "Fecha de análisis",
                 format="DD/MM/YYYY",
@@ -2089,26 +1864,6 @@ with st.expander(
     st.write(
         "- Participación sin información ME3N: "
         f"{sin_cobertura_me3n:.2%}"
-    )
-
-    st.write(
-        "- Contratos filtrados cruzados con ME2N / 02_ME2N_Ordenes: "
-        f"{contratos_cruzados_me2n:,.0f}"
-    )
-
-    st.write(
-        "- Cobertura ME2N / 02_ME2N_Ordenes sobre contratos filtrados: "
-        f"{cobertura_me2n:.2%}"
-    )
-
-    st.write(
-        "- Contratos filtrados sin información en ME2N / 02_ME2N_Ordenes: "
-        f"{contratos_sin_me2n:,.0f}"
-    )
-
-    st.write(
-        "- Participación sin información ME2N / 02_ME2N_Ordenes: "
-        f"{sin_cobertura_me2n:.2%}"
     )
 
     st.write(
