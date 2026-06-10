@@ -22,6 +22,7 @@ PROJECT_DIR = BASE_DIR.parent
 APP_CARGAR_ARCHIVO = BASE_DIR / "01_APP_CARGAR_ARCHIVO.py"
 APP_AHORRO = BASE_DIR / "02_APP_AHORRO.py"
 APP_GASTOS = BASE_DIR / "03_APP_GASTOS.py"
+APP_SALUD_CONTRATOS = BASE_DIR / "04_APP_SALUD_CONTRATOS.py"
 
 # Logo ubicado en:
 # PROYECTOS-ENAEX/assets/logo.svg
@@ -35,7 +36,7 @@ LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
 st.set_page_config(
     page_title="Dashboard Contratos ENAEX",
     page_icon="🏢",
-    layout="wide"
+    layout="wide",
 )
 
 
@@ -43,7 +44,8 @@ st.set_page_config(
 # Logo centrado
 # ============================================================
 
-def mostrar_logo_centrado():
+def mostrar_logo_centrado() -> None:
+    """Muestra el logo corporativo centrado en la página de inicio."""
     if LOGO_PATH.exists():
         logo_svg = LOGO_PATH.read_text(encoding="utf-8")
 
@@ -64,10 +66,11 @@ def mostrar_logo_centrado():
                 <img
                     src="data:image/svg+xml;base64,{logo_base64}"
                     style="width: 260px; display: block;"
+                    alt="ENAEX"
                 >
             </div>
             """,
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
     else:
         st.warning(f"Logo no encontrado: {LOGO_PATH}")
@@ -77,12 +80,12 @@ def mostrar_logo_centrado():
 # Página de inicio
 # ============================================================
 
-def pagina_inicio():
+def pagina_inicio() -> None:
     mostrar_logo_centrado()
 
     st.markdown(
         "<h1 style='text-align: center;'>Dashboard Contratos ENAEX</h1>",
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
 
     st.markdown(
@@ -92,12 +95,12 @@ def pagina_inicio():
             de contratos, órdenes de compra, ahorros, hitos y vencimientos.
         </p>
         """,
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
 
     st.markdown("---")
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
 
     with col1:
         st.info(
@@ -126,14 +129,27 @@ def pagina_inicio():
             """
         )
 
+    col3, col4 = st.columns(2)
+
     with col3:
         st.info(
             """
             **03_GASTOS**
 
             Análisis de órdenes de compra, gasto anual,
-            gasto mensual, conversión a USD, participación
-            de OC tipo 44 y estado de vigencia de contratos.
+            gasto mensual, conversión a USD y participación
+            según tipo de orden de compra.
+            """
+        )
+
+    with col4:
+        st.info(
+            """
+            **04_SALUD_CONTRATOS**
+
+            Análisis de vigencia contractual, contratos vencidos,
+            próximos a vencer, cobertura ME5A y distribución
+            de contratos por gestor y estado.
             """
         )
 
@@ -141,8 +157,10 @@ def pagina_inicio():
 
     st.success(
         """
-        Para comenzar, entra a **01_CARGA_ARCHIVOS**, carga las bases y luego revisa
-        los indicadores en **02_AHORRO** y **03_GASTOS**.
+        Para comenzar, entra a **01_CARGA_ARCHIVOS** y carga las bases.
+
+        Luego revisa los módulos **02_AHORRO**, **03_GASTOS**
+        y **04_SALUD_CONTRATOS**.
         """
     )
 
@@ -155,6 +173,7 @@ apps_requeridas = {
     "01_CARGA_ARCHIVOS": APP_CARGAR_ARCHIVO,
     "02_AHORRO": APP_AHORRO,
     "03_GASTOS": APP_GASTOS,
+    "04_SALUD_CONTRATOS": APP_SALUD_CONTRATOS,
 }
 
 apps_faltantes = {
@@ -183,7 +202,7 @@ pagina = st.navigation(
                 pagina_inicio,
                 title="Inicio",
                 icon="🏠",
-                url_path="inicio"
+                url_path="inicio",
             )
         ],
 
@@ -192,19 +211,25 @@ pagina = st.navigation(
                 APP_CARGAR_ARCHIVO,
                 title="01_CARGA_ARCHIVOS",
                 icon="📁",
-                url_path="carga_archivos"
+                url_path="carga_archivos",
             ),
             st.Page(
                 APP_AHORRO,
                 title="02_AHORRO",
                 icon="💰",
-                url_path="ahorro"
+                url_path="ahorro",
             ),
             st.Page(
                 APP_GASTOS,
                 title="03_GASTOS",
                 icon="📊",
-                url_path="gastos"
+                url_path="gastos",
+            ),
+            st.Page(
+                APP_SALUD_CONTRATOS,
+                title="04_SALUD_CONTRATOS",
+                icon="🩺",
+                url_path="salud_contratos",
             ),
         ],
     }
