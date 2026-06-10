@@ -8,11 +8,12 @@ from pathlib import Path
 import base64
 import re
 
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 import numpy as np
 import pandas as pd
 import streamlit as st
-import matplotlib.pyplot as plt
-import matplotlib.ticker as mticker
+
 
 # ============================================================
 # Configuración general
@@ -28,7 +29,8 @@ BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
 LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
 
-VERSION_NORMALIZACION_IDS = "v_2026_06_10_separacion_gastos_salud_contratos"
+VERSION_NORMALIZACION_IDS = "v_2026_06_10_gastos_consolidado_02"
+
 
 # ============================================================
 # Estilos
@@ -136,19 +138,29 @@ def render_logo() -> None:
     if not LOGO_PATH.exists():
         return
 
-    svg_b64 = base64.b64encode(LOGO_PATH.read_bytes()).decode("utf-8")
+    svg_b64 = base64.b64encode(
+        LOGO_PATH.read_bytes()
+    ).decode("utf-8")
+
     st.markdown(
         f"""
         <div class="enaex-logo-wrapper">
-            <img src="data:image/svg+xml;base64,{svg_b64}" alt="ENAEX Logo">
+            <img
+                src="data:image/svg+xml;base64,{svg_b64}"
+                alt="ENAEX Logo"
+            >
         </div>
         """,
         unsafe_allow_html=True,
     )
 
 
-def kpi_card(label: str, value: str, help_text: str = "") -> None:
-    """Tarjeta KPI personalizada para evitar cortes visuales de st.metric."""
+def kpi_card(
+    label: str,
+    value: str,
+    help_text: str = "",
+) -> None:
+    """Tarjeta KPI personalizada."""
     st.markdown(
         f"""
         <div class="kpi-card">
@@ -161,14 +173,23 @@ def kpi_card(label: str, value: str, help_text: str = "") -> None:
     )
 
 
-def section_title(title: str, caption: str | None = None) -> None:
-    st.markdown(f"<div class='section-title'>{title}</div>", unsafe_allow_html=True)
+def section_title(
+    title: str,
+    caption: str | None = None,
+) -> None:
+    st.markdown(
+        f"<div class='section-title'>{title}</div>",
+        unsafe_allow_html=True,
+    )
+
     if caption:
-        st.markdown(f"<div class='section-caption'>{caption}</div>", unsafe_allow_html=True)
+        st.markdown(
+            f"<div class='section-caption'>{caption}</div>",
+            unsafe_allow_html=True,
+        )
 
 
 def limpiar_estilo_grafico(ax) -> None:
-    """Aplica formato visual limpio: sin grillas internas y sin bordes superiores/derechos."""
     ax.grid(False)
 
     ax.spines["top"].set_visible(False)
@@ -176,112 +197,215 @@ def limpiar_estilo_grafico(ax) -> None:
     ax.spines["left"].set_color("#d1d5db")
     ax.spines["bottom"].set_color("#d1d5db")
 
-    ax.tick_params(axis="x", colors="#374151")
-    ax.tick_params(axis="y", colors="#374151")
+    ax.tick_params(
+        axis="x",
+        colors="#374151",
+    )
+    ax.tick_params(
+        axis="y",
+        colors="#374151",
+    )
 
 
 # ============================================================
-# Utilidades de datos
+# Utilidades de datos y formato
 # ============================================================
 
 def convertir_numero(valor):
-    """Convierte números con formatos 1.234,56 / 1234,56 / 1234.56."""
+    """
+    Convierte números con formatos:
+
+    - 1.234,56
+    - 1234,56
+    - 1234.56
+    """
     if pd.isna(valor):
         return np.nan
 
     s = str(valor).strip()
 
-    if s == "" or s.lower() in ["nan", "none", "null"]:
+    if s == "" or s.lower() in [
+        "nan",
+        "none",
+        "null",
+    ]:
         return np.nan
 
     if "." in s and "," in s:
-        s = s.replace(".", "").replace(",", ".")
+        s = (
+            s.replace(".", "")
+            .replace(",", ".")
+        )
     elif "," in s:
         s = s.replace(",", ".")
 
-    return pd.to_numeric(s, errors="coerce")
+    return pd.to_numeric(
+        s,
+        errors="coerce",
+    )
 
 
-def limpiar_id_contrato(valor):
-    """
-    Normaliza IDs de contrato/documento para cruces.
-
-    Corrige casos como:
-    - 4600003868.0
-    - 4600003868.00
-    - 4600003868,0
-    - 4600003868,00
-    - 4.600.003.868
-    - 4,600,003,868
-    """
+def limpiar_id_documento(valor):
+    """Normaliza IDs de documento de compras."""
     if pd.isna(valor):
         return pd.NA
 
     s = str(valor).strip()
 
-    if s == "" or s.lower() in ["nan", "none", "null", "<na>"]:
+    if s == "" or s.lower() in [
+        "nan",
+        "none",
+        "null",
+        "<na>",
+    ]:
         return pd.NA
 
-    s = s.replace("\u00a0", "").strip()
+    s = s.replace(
+        "\u00a0",
+        "",
+    ).strip()
 
-    s = re.sub(r"([,.]0+)$", "", s)
+    s = re.sub(
+        r"([,.]0+)$",
+        "",
+        s,
+    )
 
-    if re.fullmatch(r"[0-9.,]+", s):
-        s = re.sub(r"[.,]", "", s)
+    if re.fullmatch(
+        r"[0-9.,]+",
+        s,
+    ):
+        s = re.sub(
+            r"[.,]",
+            "",
+            s,
+        )
 
-    solo_digitos = re.sub(r"\D", "", s)
+    solo_digitos = re.sub(
+        r"\D",
+        "",
+        s,
+    )
+
     if solo_digitos:
-        s = solo_digitos
+        return solo_digitos
 
     return s
 
 
-def limpiar_texto_serie(serie: pd.Series, quitar_decimal: bool = True) -> pd.Series:
-    if quitar_decimal:
-        return serie.apply(limpiar_id_contrato)
-
-    serie_limpia = serie.astype(str).str.strip()
-    return serie_limpia.replace(["", "nan", "NaN", "None", "none", "NULL", "null"], pd.NA)
-
-
-def formato_usd_compacto(x, pos=None) -> str:
+def formato_usd_compacto(
+    x,
+    pos=None,
+) -> str:
     if pd.isna(x):
         return "$0"
+
     if abs(x) >= 1_000_000_000:
-        return f"${x/1_000_000_000:.1f}B"
+        return (
+            f"${x / 1_000_000_000:.1f}B"
+        )
+
     if abs(x) >= 1_000_000:
-        return f"${x/1_000_000:.1f}M"
+        return (
+            f"${x / 1_000_000:.1f}M"
+        )
+
     if abs(x) >= 1_000:
-        return f"${x/1_000:.0f}K"
+        return (
+            f"${x / 1_000:.0f}K"
+        )
+
     return f"${x:,.0f}"
 
 
-def formato_usd_largo(x) -> str:
+def formato_usd_compacto_2_decimales(
+    x,
+    pos=None,
+) -> str:
     if pd.isna(x):
-        x = 0
-    return f"US$ {x:,.2f}"
+        return "$0.00"
+
+    if abs(x) >= 1_000_000_000:
+        return (
+            f"${x / 1_000_000_000:.2f}B"
+        )
+
+    if abs(x) >= 1_000_000:
+        return (
+            f"${x / 1_000_000:.2f}M"
+        )
+
+    if abs(x) >= 1_000:
+        return (
+            f"${x / 1_000:.2f}K"
+        )
+
+    return f"${x:,.2f}"
 
 
 def formato_usd_millones(x) -> str:
     if pd.isna(x):
         x = 0
-    return f"US$ {x / 1_000_000:,.2f} MM"
+
+    return (
+        f"US$ {x / 1_000_000:,.2f} MM"
+    )
 
 
 def formato_entero(x) -> str:
     if pd.isna(x):
         x = 0
+
     return f"{int(round(x)):,.0f}"
 
 
 def formato_porcentaje(x) -> str:
     if pd.isna(x):
         x = 0
+
     return f"{x:.2%}"
 
 
-def validar_columnas(df: pd.DataFrame, columnas: list[str], nombre_df: str) -> list[str]:
-    return [col for col in columnas if col not in df.columns]
+def validar_columnas(
+    df: pd.DataFrame,
+    columnas: list[str],
+) -> list[str]:
+    return [
+        col
+        for col in columnas
+        if col not in df.columns
+    ]
+
+
+def estilizar_dataframe(
+    df: pd.DataFrame,
+    columnas_monto: list[str] | None = None,
+    columnas_porcentaje: list[str] | None = None,
+    columnas_entero: list[str] | None = None,
+):
+    """
+    Aplica formato únicamente para visualización.
+
+    No modifica los valores originales usados en cálculos.
+    """
+    formatos: dict[str, str] = {}
+
+    for col in columnas_monto or []:
+        if col in df.columns:
+            formatos[col] = "{:,.0f}"
+
+    for col in columnas_porcentaje or []:
+        if col in df.columns:
+            formatos[col] = "{:.2%}"
+
+    for col in columnas_entero or []:
+        if col in df.columns:
+            formatos[col] = "{:,.0f}"
+
+    return df.style.format(
+        formatos,
+        na_rep="",
+    )
 
 
 # ============================================================
@@ -291,45 +415,90 @@ def validar_columnas(df: pd.DataFrame, columnas: list[str], nombre_df: str) -> l
 render_logo()
 
 st.markdown(
-    "<div class='main-title'>Gastos de órdenes de compra</div>",
+    """
+    <div class='main-title'>
+        Gastos de órdenes de compra
+    </div>
+    """,
     unsafe_allow_html=True,
 )
+
 st.markdown(
-    "<div class='subtitle'>Análisis de órdenes de compra y gasto convertido a USD.</div>",
+    """
+    <div class='subtitle'>
+        Análisis de órdenes de compra y gasto convertido a USD.
+    </div>
+    """,
     unsafe_allow_html=True,
 )
 
 if "dataframes_cargados" not in st.session_state:
-    st.warning("Primero debes cargar los archivos en la pestaña 01_CARGA_ARCHIVOS.")
+    st.warning(
+        "Primero debes cargar los archivos en la pestaña "
+        "01_CARGA_ARCHIVOS."
+    )
     st.stop()
 
-dataframes = st.session_state["dataframes_cargados"]
+dataframes = st.session_state[
+    "dataframes_cargados"
+]
 
-DATAFRAMES_REQUERIDOS = ["df_moneda_cambio", "df_ordenes"]
-faltantes_df = [nombre for nombre in DATAFRAMES_REQUERIDOS if nombre not in dataframes]
+DATAFRAMES_REQUERIDOS = [
+    "df_moneda_cambio",
+    "df_ordenes",
+]
+
+faltantes_df = [
+    nombre
+    for nombre in DATAFRAMES_REQUERIDOS
+    if nombre not in dataframes
+]
 
 if faltantes_df:
     st.error(
         "Faltan DataFrames requeridos para esta pestaña: "
         + ", ".join(faltantes_df)
-        + ". Vuelve a cargar los archivos en 01_CARGA_ARCHIVOS."
+        + ". Vuelve a cargar los archivos en "
+        "01_CARGA_ARCHIVOS."
     )
     st.stop()
 
-_df_moneda_cambio = dataframes["df_moneda_cambio"].copy()
-_df_ordenes = dataframes["df_ordenes"].copy()
+_df_moneda_cambio = dataframes[
+    "df_moneda_cambio"
+].copy()
+
+_df_ordenes = dataframes[
+    "df_ordenes"
+].copy()
 
 columnas_requeridas = {
-    "df_ordenes": ["Documento_compras", "Fecha_documento", "Moneda", "Precio_neto"],
-    "df_moneda_cambio": ["Moneda", "Factor_USD_por_Unidad", "Valor_CLP_por_Unidad", "Fecha_Conversion"],
+    "df_ordenes": [
+        "Documento_compras",
+        "Fecha_documento",
+        "Moneda",
+        "Precio_neto",
+    ],
+    "df_moneda_cambio": [
+        "Moneda",
+        "Factor_USD_por_Unidad",
+        "Valor_CLP_por_Unidad",
+        "Fecha_Conversion",
+    ],
 }
 
 validaciones = {
-    nombre: validar_columnas(df, columnas_requeridas[nombre], nombre)
-    for nombre, df in {
-        "df_ordenes": _df_ordenes,
-        "df_moneda_cambio": _df_moneda_cambio,
-    }.items()
+    "df_ordenes": validar_columnas(
+        _df_ordenes,
+        columnas_requeridas[
+            "df_ordenes"
+        ],
+    ),
+    "df_moneda_cambio": validar_columnas(
+        _df_moneda_cambio,
+        columnas_requeridas[
+            "df_moneda_cambio"
+        ],
+    ),
 }
 
 errores_columnas = [
@@ -339,13 +508,18 @@ errores_columnas = [
 ]
 
 if errores_columnas:
-    st.error("Hay columnas faltantes en los archivos cargados:")
+    st.error(
+        "Hay columnas faltantes en los archivos cargados:"
+    )
+
     for error in errores_columnas:
         st.write(f"- {error}")
+
     st.stop()
 
+
 # ============================================================
-# Preparación: órdenes a USD
+# Preparación de órdenes en USD
 # ============================================================
 
 @st.cache_data(show_spinner=False)
@@ -354,18 +528,75 @@ def preparar_ordenes_usd(
     df_moneda_cambio: pd.DataFrame,
     version_cache: str,
 ) -> tuple[pd.DataFrame, list[str]]:
-    df_ordenes_usd = df_ordenes.copy()
-    df_cambio = df_moneda_cambio.copy()
+    df_ordenes_usd = (
+        df_ordenes.copy()
+    )
 
-    df_ordenes_usd["Moneda"] = df_ordenes_usd["Moneda"].astype(str).str.strip().str.upper()
-    df_cambio["Moneda"] = df_cambio["Moneda"].astype(str).str.strip().str.upper()
+    df_cambio = (
+        df_moneda_cambio.copy()
+    )
 
-    df_ordenes_usd["Precio_neto_num"] = df_ordenes_usd["Precio_neto"].apply(convertir_numero)
-    df_cambio["Factor_USD_por_Unidad"] = df_cambio["Factor_USD_por_Unidad"].apply(convertir_numero)
+    df_ordenes_usd["Moneda"] = (
+        df_ordenes_usd["Moneda"]
+        .astype(str)
+        .str.strip()
+        .str.upper()
+    )
 
-    monedas_registros = set(df_ordenes_usd["Moneda"].dropna().unique())
-    monedas_tabla = set(df_cambio["Moneda"].dropna().unique())
-    monedas_faltantes = sorted(monedas_registros - monedas_tabla)
+    df_cambio["Moneda"] = (
+        df_cambio["Moneda"]
+        .astype(str)
+        .str.strip()
+        .str.upper()
+    )
+
+    df_ordenes_usd[
+        "Precio_neto_num"
+    ] = (
+        df_ordenes_usd[
+            "Precio_neto"
+        ]
+        .apply(convertir_numero)
+    )
+
+    df_cambio[
+        "Factor_USD_por_Unidad"
+    ] = (
+        df_cambio[
+            "Factor_USD_por_Unidad"
+        ]
+        .apply(convertir_numero)
+    )
+
+    df_cambio[
+        "Valor_CLP_por_Unidad"
+    ] = (
+        df_cambio[
+            "Valor_CLP_por_Unidad"
+        ]
+        .apply(convertir_numero)
+    )
+
+    monedas_registros = set(
+        df_ordenes_usd[
+            "Moneda"
+        ]
+        .dropna()
+        .unique()
+    )
+
+    monedas_tabla = set(
+        df_cambio[
+            "Moneda"
+        ]
+        .dropna()
+        .unique()
+    )
+
+    monedas_faltantes = sorted(
+        monedas_registros
+        - monedas_tabla
+    )
 
     columnas_cambio = [
         "Moneda",
@@ -374,212 +605,527 @@ def preparar_ordenes_usd(
         "Fecha_Conversion",
     ]
 
-    df_ordenes_usd = df_ordenes_usd.merge(
-        df_cambio[columnas_cambio].drop_duplicates(subset=["Moneda"]),
-        on="Moneda",
-        how="left",
+    df_ordenes_usd = (
+        df_ordenes_usd.merge(
+            df_cambio[
+                columnas_cambio
+            ]
+            .drop_duplicates(
+                subset=["Moneda"]
+            ),
+            on="Moneda",
+            how="left",
+        )
     )
 
-    df_ordenes_usd["Precio_neto_USD"] = (
-        df_ordenes_usd["Precio_neto_num"] * df_ordenes_usd["Factor_USD_por_Unidad"]
+    df_ordenes_usd[
+        "Precio_neto_USD"
+    ] = (
+        df_ordenes_usd[
+            "Precio_neto_num"
+        ]
+        * df_ordenes_usd[
+            "Factor_USD_por_Unidad"
+        ]
     )
 
-    df_ordenes_usd["Documento_Compras_Texto"] = limpiar_texto_serie(
-        df_ordenes_usd["Documento_compras"],
-        quitar_decimal=True,
+    df_ordenes_usd[
+        "Documento_Compras_Texto"
+    ] = (
+        df_ordenes_usd[
+            "Documento_compras"
+        ]
+        .apply(
+            limpiar_id_documento
+        )
     )
 
-    df_ordenes_usd["Tipo_Orden_Compra"] = pd.to_numeric(
-        df_ordenes_usd["Documento_Compras_Texto"].str[:2],
+    df_ordenes_usd[
+        "Tipo_Orden_Compra"
+    ] = pd.to_numeric(
+        df_ordenes_usd[
+            "Documento_Compras_Texto"
+        ]
+        .astype("string")
+        .str[:2],
         errors="coerce",
     )
 
-    df_ordenes_usd["Monto_OC_USD"] = pd.to_numeric(
-        df_ordenes_usd["Precio_neto_USD"],
+    df_ordenes_usd[
+        "Monto_OC_USD"
+    ] = pd.to_numeric(
+        df_ordenes_usd[
+            "Precio_neto_USD"
+        ],
         errors="coerce",
     ).fillna(0)
 
-    df_ordenes_usd["Fecha_documento"] = pd.to_datetime(
-        df_ordenes_usd["Fecha_documento"],
+    df_ordenes_usd[
+        "Fecha_documento"
+    ] = pd.to_datetime(
+        df_ordenes_usd[
+            "Fecha_documento"
+        ],
         errors="coerce",
     )
 
-    df_ordenes_usd = df_ordenes_usd.dropna(subset=["Fecha_documento"]).copy()
+    df_ordenes_usd = (
+        df_ordenes_usd
+        .dropna(
+            subset=[
+                "Fecha_documento"
+            ]
+        )
+        .copy()
+    )
 
-    if not df_ordenes_usd.empty:
-        df_ordenes_usd["Año"] = df_ordenes_usd["Fecha_documento"].dt.year
-        df_ordenes_usd["Mes"] = df_ordenes_usd["Fecha_documento"].dt.month
-        df_ordenes_usd["AñoMes"] = df_ordenes_usd["Fecha_documento"].dt.strftime("%Y-%m")
-        df_ordenes_usd["InicioMes"] = df_ordenes_usd["Fecha_documento"].dt.to_period("M").dt.to_timestamp()
-    else:
-        df_ordenes_usd["Año"] = pd.Series(dtype="int64")
-        df_ordenes_usd["Mes"] = pd.Series(dtype="int64")
-        df_ordenes_usd["AñoMes"] = pd.Series(dtype="object")
-        df_ordenes_usd["InicioMes"] = pd.Series(dtype="datetime64[ns]")
+    df_ordenes_usd["Año"] = (
+        df_ordenes_usd[
+            "Fecha_documento"
+        ]
+        .dt.year
+    )
 
-    monto_total_oc_usd = df_ordenes_usd["Monto_OC_USD"].sum()
-    df_ordenes_usd["Participacion_OC"] = (
-        df_ordenes_usd["Monto_OC_USD"] / monto_total_oc_usd
-        if monto_total_oc_usd != 0
+    df_ordenes_usd["Mes"] = (
+        df_ordenes_usd[
+            "Fecha_documento"
+        ]
+        .dt.month
+    )
+
+    df_ordenes_usd[
+        "AñoMes"
+    ] = (
+        df_ordenes_usd[
+            "Fecha_documento"
+        ]
+        .dt.strftime("%Y-%m")
+    )
+
+    df_ordenes_usd[
+        "InicioMes"
+    ] = (
+        df_ordenes_usd[
+            "Fecha_documento"
+        ]
+        .dt.to_period("M")
+        .dt.to_timestamp()
+    )
+
+    monto_total = (
+        df_ordenes_usd[
+            "Monto_OC_USD"
+        ]
+        .sum()
+    )
+
+    df_ordenes_usd[
+        "Participacion_OC"
+    ] = (
+        df_ordenes_usd[
+            "Monto_OC_USD"
+        ]
+        / monto_total
+        if monto_total != 0
         else 0
     )
 
-    return df_ordenes_usd, monedas_faltantes
+    return (
+        df_ordenes_usd,
+        monedas_faltantes,
+    )
 
 
-df_ordenes_usd, monedas_faltantes = preparar_ordenes_usd(
-    _df_ordenes,
-    _df_moneda_cambio,
-    VERSION_NORMALIZACION_IDS,
+df_ordenes_usd, monedas_faltantes = (
+    preparar_ordenes_usd(
+        _df_ordenes,
+        _df_moneda_cambio,
+        VERSION_NORMALIZACION_IDS,
+    )
 )
 
 if monedas_faltantes:
-    st.warning("Faltan monedas en df_moneda_cambio: " + ", ".join(monedas_faltantes))
+    st.warning(
+        "Faltan monedas en df_moneda_cambio: "
+        + ", ".join(
+            monedas_faltantes
+        )
+    )
 
 if df_ordenes_usd.empty:
-    st.warning("No hay órdenes con Fecha_documento válida para analizar.")
+    st.warning(
+        "No hay órdenes con Fecha_documento válida para analizar."
+    )
     st.stop()
 
+
 # ============================================================
-# Filtros de encabezado
+# Filtros
 # ============================================================
 
-section_title("Filtros", "Selecciona el periodo, tipo de OC y moneda para actualizar el análisis.")
+section_title(
+    "Filtros",
+    (
+        "Selecciona la fecha inicial, fecha final, "
+        "tipo de OC y moneda."
+    ),
+)
 
-with st.container(border=True):
-    col_f1, col_f2, col_f3 = st.columns(3)
+min_fecha = (
+    df_ordenes_usd[
+        "Fecha_documento"
+    ]
+    .min()
+    .date()
+)
 
-    min_fecha = df_ordenes_usd["Fecha_documento"].min().date()
-    max_fecha = df_ordenes_usd["Fecha_documento"].max().date()
+max_fecha = (
+    df_ordenes_usd[
+        "Fecha_documento"
+    ]
+    .max()
+    .date()
+)
+
+with st.container(
+    border=True
+):
+    col_f1, col_f2, col_f3, col_f4 = (
+        st.columns(4)
+    )
 
     with col_f1:
-        rango_fechas = st.date_input(
-            "Periodo de documentos",
-            value=(min_fecha, max_fecha),
+        fecha_inicio = st.date_input(
+            "Fecha inicial",
+            value=min_fecha,
             min_value=min_fecha,
             max_value=max_fecha,
         )
 
     with col_f2:
-        tipos_oc_disponibles = sorted(
-            [int(x) for x in df_ordenes_usd["Tipo_Orden_Compra"].dropna().unique()]
-        )
-        tipos_oc_sel = st.multiselect(
-            "Tipo de OC",
-            options=tipos_oc_disponibles,
-            default=tipos_oc_disponibles,
+        fecha_fin = st.date_input(
+            "Fecha final",
+            value=max_fecha,
+            min_value=min_fecha,
+            max_value=max_fecha,
         )
 
     with col_f3:
-        monedas_disponibles = sorted(df_ordenes_usd["Moneda"].dropna().unique().tolist())
+        tipos_oc_disponibles = sorted(
+            int(x)
+            for x in (
+                df_ordenes_usd[
+                    "Tipo_Orden_Compra"
+                ]
+                .dropna()
+                .unique()
+            )
+        )
+
+        tipos_oc_sel = st.multiselect(
+            "Tipo de OC",
+            options=(
+                tipos_oc_disponibles
+            ),
+            default=(
+                tipos_oc_disponibles
+            ),
+        )
+
+    with col_f4:
+        monedas_disponibles = sorted(
+            df_ordenes_usd[
+                "Moneda"
+            ]
+            .dropna()
+            .unique()
+            .tolist()
+        )
+
         monedas_sel = st.multiselect(
             "Moneda",
             options=monedas_disponibles,
             default=monedas_disponibles,
         )
 
-if isinstance(rango_fechas, tuple) and len(rango_fechas) == 2:
-    fecha_inicio, fecha_fin = rango_fechas
-else:
-    fecha_inicio, fecha_fin = min_fecha, max_fecha
+if fecha_inicio > fecha_fin:
+    st.error(
+        "La fecha inicial no puede ser posterior a la fecha final."
+    )
+    st.stop()
 
-fecha_inicio_ts = pd.Timestamp(fecha_inicio)
-fecha_fin_ts = pd.Timestamp(fecha_fin) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+fecha_inicio_ts = pd.Timestamp(
+    fecha_inicio
+)
+
+fecha_fin_ts = (
+    pd.Timestamp(fecha_fin)
+    + pd.Timedelta(days=1)
+    - pd.Timedelta(seconds=1)
+)
 
 mask_ordenes = (
-    (df_ordenes_usd["Fecha_documento"] >= fecha_inicio_ts)
-    & (df_ordenes_usd["Fecha_documento"] <= fecha_fin_ts)
+    (
+        df_ordenes_usd[
+            "Fecha_documento"
+        ]
+        >= fecha_inicio_ts
+    )
+    & (
+        df_ordenes_usd[
+            "Fecha_documento"
+        ]
+        <= fecha_fin_ts
+    )
 )
 
 if tipos_oc_sel:
-    mask_ordenes &= df_ordenes_usd["Tipo_Orden_Compra"].isin(tipos_oc_sel)
+    mask_ordenes &= (
+        df_ordenes_usd[
+            "Tipo_Orden_Compra"
+        ]
+        .isin(tipos_oc_sel)
+    )
+else:
+    mask_ordenes &= False
 
 if monedas_sel:
-    mask_ordenes &= df_ordenes_usd["Moneda"].isin(monedas_sel)
+    mask_ordenes &= (
+        df_ordenes_usd[
+            "Moneda"
+        ]
+        .isin(monedas_sel)
+    )
+else:
+    mask_ordenes &= False
 
-df_ordenes_filtrado = df_ordenes_usd[mask_ordenes].copy()
+df_ordenes_filtrado = (
+    df_ordenes_usd[
+        mask_ordenes
+    ]
+    .copy()
+)
 
 if df_ordenes_filtrado.empty:
-    st.info("No hay órdenes para los filtros seleccionados.")
+    st.info(
+        "No hay órdenes para los filtros seleccionados."
+    )
+
 
 # ============================================================
-# KPIs
+# Indicadores principales
 # ============================================================
 
-section_title("Indicadores principales", "Resumen ejecutivo del gasto filtrado.")
-
-monto_total_oc_usd = df_ordenes_filtrado["Monto_OC_USD"].sum()
-monto_oc_tipo_44_usd = df_ordenes_filtrado.loc[
-    df_ordenes_filtrado["Tipo_Orden_Compra"] == 44,
-    "Monto_OC_USD",
-].sum()
-participacion_oc_tipo_44 = (
-    monto_oc_tipo_44_usd / monto_total_oc_usd if monto_total_oc_usd != 0 else 0
+section_title(
+    "Indicadores principales",
+    "Resumen ejecutivo del gasto filtrado.",
 )
-ordenes_unicas = df_ordenes_filtrado["Documento_Compras_Texto"].nunique()
-monedas_unicas = df_ordenes_filtrado["Moneda"].nunique()
 
-col_kpi1, col_kpi2, col_kpi3, col_kpi4 = st.columns(4)
+monto_total_oc_usd = (
+    df_ordenes_filtrado[
+        "Monto_OC_USD"
+    ]
+    .sum()
+)
+
+monto_oc_tipo_44_usd = (
+    df_ordenes_filtrado.loc[
+        (
+            df_ordenes_filtrado[
+                "Tipo_Orden_Compra"
+            ]
+            == 44
+        ),
+        "Monto_OC_USD",
+    ]
+    .sum()
+)
+
+participacion_oc_tipo_44 = (
+    monto_oc_tipo_44_usd
+    / monto_total_oc_usd
+    if monto_total_oc_usd != 0
+    else 0
+)
+
+ordenes_unicas = (
+    df_ordenes_filtrado[
+        "Documento_Compras_Texto"
+    ]
+    .nunique()
+)
+
+monedas_unicas = (
+    df_ordenes_filtrado[
+        "Moneda"
+    ]
+    .nunique()
+)
+
+col_kpi1, col_kpi2, col_kpi3 = (
+    st.columns(3)
+)
+
 with col_kpi1:
     kpi_card(
         "Gasto total OC",
-        formato_usd_largo(monto_total_oc_usd),
-        f"Equivalente: {formato_usd_millones(monto_total_oc_usd)}",
+        formato_usd_millones(
+            monto_total_oc_usd
+        ),
+        (
+            "Gasto total convertido a USD, "
+            "expresado en millones."
+        ),
     )
+
 with col_kpi2:
     kpi_card(
         "OC tipo 44",
-        formato_usd_largo(monto_oc_tipo_44_usd),
-        f"{formato_usd_millones(monto_oc_tipo_44_usd)} | Participación: {formato_porcentaje(participacion_oc_tipo_44)}",
+        formato_usd_millones(
+            monto_oc_tipo_44_usd
+        ),
+        (
+            "Participación: "
+            f"{formato_porcentaje(participacion_oc_tipo_44)}"
+        ),
     )
+
 with col_kpi3:
-    kpi_card("N° órdenes", formato_entero(ordenes_unicas), f"Monedas analizadas: {monedas_unicas}")
+    kpi_card(
+        "N° órdenes",
+        formato_entero(
+            ordenes_unicas
+        ),
+        (
+            "Monedas analizadas: "
+            f"{monedas_unicas}"
+        ),
+    )
+
+col_kpi4, col_kpi5 = (
+    st.columns(2)
+)
+
 with col_kpi4:
-    kpi_card("Periodo analizado", f"{fecha_inicio}", f"Hasta {fecha_fin}")
+    kpi_card(
+        "Periodo inicial",
+        str(fecha_inicio),
+        "Fecha inicial seleccionada",
+    )
+
+with col_kpi5:
+    kpi_card(
+        "Periodo final",
+        str(fecha_fin),
+        "Fecha final seleccionada",
+    )
+
 
 # ============================================================
 # Gasto anual
 # ============================================================
 
-section_title("Gasto total por año", "Suma anual del gasto de órdenes de compra convertido a USD.")
+section_title(
+    "Gasto total por año",
+    (
+        "Suma anual del gasto de órdenes "
+        "de compra convertido a USD."
+    ),
+)
 
 df_gasto_anual = (
     df_ordenes_filtrado
-    .groupby("Año", as_index=False)["Monto_OC_USD"]
+    .groupby(
+        "Año",
+        as_index=False,
+    )["Monto_OC_USD"]
     .sum()
-    .rename(columns={"Monto_OC_USD": "Gasto_Total_USD"})
+    .rename(
+        columns={
+            "Monto_OC_USD":
+            "Gasto_Total_USD"
+        }
+    )
     .sort_values("Año")
 )
 
 if df_gasto_anual.empty:
-    st.info("No hay datos para graficar gasto anual.")
+    st.info(
+        "No hay datos para graficar gasto anual."
+    )
 else:
-    fig, ax = plt.subplots(figsize=(9, 5))
+    fig, ax = plt.subplots(
+        figsize=(9, 5)
+    )
 
     bars = ax.bar(
-        df_gasto_anual["Año"].astype(str),
-        df_gasto_anual["Gasto_Total_USD"],
+        df_gasto_anual[
+            "Año"
+        ].astype(str),
+        df_gasto_anual[
+            "Gasto_Total_USD"
+        ],
         color="#2563eb",
         edgecolor="#1d4ed8",
         linewidth=0.8,
     )
 
-    ax.set_title("Total gasto por año", fontsize=14, fontweight="bold", pad=14)
+    ax.set_title(
+        "Total gasto por año",
+        fontsize=14,
+        fontweight="bold",
+        pad=14,
+    )
+
     ax.set_xlabel("Año")
-    ax.set_ylabel("Gasto total [USD]")
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(formato_usd_compacto))
+    ax.set_ylabel(
+        "Gasto total [USD]"
+    )
+
+    ax.yaxis.set_major_formatter(
+        mticker.FuncFormatter(
+            formato_usd_compacto
+        )
+    )
+
     limpiar_estilo_grafico(ax)
 
-    max_valor = df_gasto_anual["Gasto_Total_USD"].max()
-    margen_superior = max_valor * 0.18 if max_valor > 0 else 1
-    ax.set_ylim(0, max_valor + margen_superior)
+    max_valor = (
+        df_gasto_anual[
+            "Gasto_Total_USD"
+        ]
+        .max()
+    )
+
+    margen_superior = (
+        max_valor * 0.18
+        if max_valor > 0
+        else 1
+    )
+
+    ax.set_ylim(
+        0,
+        max_valor
+        + margen_superior,
+    )
 
     for bar in bars:
-        valor = bar.get_height()
+        valor = (
+            bar.get_height()
+        )
+
         ax.text(
-            bar.get_x() + bar.get_width() / 2,
-            valor + margen_superior * 0.06,
-            formato_usd_compacto(valor),
+            (
+                bar.get_x()
+                + bar.get_width() / 2
+            ),
+            (
+                valor
+                + margen_superior * 0.06
+            ),
+            formato_usd_compacto(
+                valor
+            ),
             ha="center",
             va="bottom",
             fontsize=9,
@@ -588,10 +1134,25 @@ else:
         )
 
     fig.tight_layout()
-    st.pyplot(fig, clear_figure=True)
 
-    with st.expander("Ver tabla de gasto anual"):
-        st.dataframe(df_gasto_anual, use_container_width=True, hide_index=True)
+    st.pyplot(
+        fig,
+        clear_figure=True,
+    )
+
+    with st.expander(
+        "Ver tabla de gasto anual"
+    ):
+        st.dataframe(
+            estilizar_dataframe(
+                df_gasto_anual,
+                columnas_monto=[
+                    "Gasto_Total_USD"
+                ],
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
 
 
 # ============================================================
@@ -600,53 +1161,132 @@ else:
 
 section_title(
     "Gasto mensual",
-    "Desglose mensual del gasto en órdenes de compra. Selecciona un mes para revisar el detalle de registros."
+    (
+        "Desglose mensual del gasto en órdenes de compra. "
+        "Selecciona un mes para revisar el detalle de registros."
+    ),
 )
 
 df_gasto_mensual = (
     df_ordenes_filtrado
-    .groupby(["InicioMes", "AñoMes"], as_index=False)["Monto_OC_USD"]
+    .groupby(
+        [
+            "InicioMes",
+            "AñoMes",
+        ],
+        as_index=False,
+    )["Monto_OC_USD"]
     .sum()
-    .rename(columns={"Monto_OC_USD": "Gasto_Mensual_USD"})
+    .rename(
+        columns={
+            "Monto_OC_USD":
+            "Gasto_Mensual_USD"
+        }
+    )
     .sort_values("InicioMes")
     .reset_index(drop=True)
 )
 
 if df_gasto_mensual.empty:
-    st.info("No hay datos para graficar gasto mensual.")
+    st.info(
+        "No hay datos para graficar gasto mensual."
+    )
 else:
-    df_gasto_mensual_plot = df_gasto_mensual.copy()
-    top_indices = df_gasto_mensual_plot["Gasto_Mensual_USD"].nlargest(5).index
+    df_gasto_mensual_plot = (
+        df_gasto_mensual.copy()
+    )
 
-    fig, ax = plt.subplots(figsize=(15, 6))
+    top_indices = (
+        df_gasto_mensual_plot[
+            "Gasto_Mensual_USD"
+        ]
+        .nlargest(5)
+        .index
+    )
+
+    # Gráfico vertical.
+    fig, ax = plt.subplots(
+        figsize=(15, 6)
+    )
 
     bars = ax.bar(
-        df_gasto_mensual_plot["AñoMes"],
-        df_gasto_mensual_plot["Gasto_Mensual_USD"],
+        df_gasto_mensual_plot[
+            "AñoMes"
+        ],
+        df_gasto_mensual_plot[
+            "Gasto_Mensual_USD"
+        ],
         color="#2563eb",
         edgecolor="#1d4ed8",
         linewidth=0.8,
     )
 
-    ax.set_title("Gasto mensual en órdenes de compra", fontsize=15, fontweight="bold", pad=14)
+    ax.set_title(
+        "Gasto mensual en órdenes de compra",
+        fontsize=15,
+        fontweight="bold",
+        pad=14,
+    )
+
     ax.set_xlabel("Mes")
-    ax.set_ylabel("Gasto mensual [USD]")
-    ax.tick_params(axis="x", rotation=45)
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(formato_usd_compacto))
+    ax.set_ylabel(
+        "Gasto mensual [USD]"
+    )
+
+    ax.tick_params(
+        axis="x",
+        rotation=45,
+    )
+
+    ax.yaxis.set_major_formatter(
+        mticker.FuncFormatter(
+            formato_usd_compacto_2_decimales
+        )
+    )
+
     limpiar_estilo_grafico(ax)
 
-    max_valor = df_gasto_mensual_plot["Gasto_Mensual_USD"].max()
-    margen_superior = max_valor * 0.20 if max_valor > 0 else 1
-    ax.set_ylim(0, max_valor + margen_superior)
+    max_valor = (
+        df_gasto_mensual_plot[
+            "Gasto_Mensual_USD"
+        ]
+        .max()
+    )
+
+    margen_superior = (
+        max_valor * 0.20
+        if max_valor > 0
+        else 1
+    )
+
+    ax.set_ylim(
+        0,
+        max_valor
+        + margen_superior,
+    )
 
     for i in top_indices:
         bar = bars[i]
-        valor = df_gasto_mensual_plot.loc[i, "Gasto_Mensual_USD"]
+
+        valor = (
+            df_gasto_mensual_plot.loc[
+                i,
+                "Gasto_Mensual_USD",
+            ]
+        )
 
         ax.text(
-            bar.get_x() + bar.get_width() / 2,
-            valor + margen_superior * 0.05,
-            formato_usd_compacto(valor),
+            (
+                bar.get_x()
+                + bar.get_width() / 2
+            ),
+            (
+                valor
+                + margen_superior * 0.05
+            ),
+            formato_usd_compacto_2_decimales(
+                valor
+            ),
             ha="center",
             va="bottom",
             fontsize=9,
@@ -655,78 +1295,201 @@ else:
         )
 
     fig.tight_layout()
-    st.pyplot(fig, clear_figure=True)
 
-    st.markdown("#### Detalle del gasto mensual")
+    st.pyplot(
+        fig,
+        clear_figure=True,
+    )
 
-    meses_disponibles = df_gasto_mensual_plot["AñoMes"].tolist()
+    st.markdown(
+        "#### Detalle del gasto mensual"
+    )
 
-    mes_default_idx = len(meses_disponibles) - 1
-    if not df_gasto_mensual_plot.empty:
-        mes_default_idx = int(df_gasto_mensual_plot["Gasto_Mensual_USD"].idxmax())
+    meses_disponibles = (
+        df_gasto_mensual_plot[
+            "AñoMes"
+        ]
+        .tolist()
+    )
+
+    mes_default_idx = int(
+        df_gasto_mensual_plot[
+            "Gasto_Mensual_USD"
+        ]
+        .idxmax()
+    )
 
     mes_seleccionado = st.selectbox(
-        "Selecciona un mes para visualizar el detalle de registros",
+        (
+            "Selecciona un mes para visualizar "
+            "el detalle de registros"
+        ),
         options=meses_disponibles,
         index=mes_default_idx,
     )
 
-    df_detalle_mes = df_ordenes_filtrado[
-        df_ordenes_filtrado["AñoMes"] == mes_seleccionado
-    ].copy()
+    df_detalle_mes = (
+        df_ordenes_filtrado[
+            (
+                df_ordenes_filtrado[
+                    "AñoMes"
+                ]
+                == mes_seleccionado
+            )
+        ]
+        .copy()
+    )
 
-    monto_mes_usd = df_detalle_mes["Monto_OC_USD"].sum()
-    ordenes_mes = df_detalle_mes["Documento_Compras_Texto"].nunique()
-    registros_mes = len(df_detalle_mes)
-    monedas_mes = df_detalle_mes["Moneda"].nunique()
+    monto_mes_usd = (
+        df_detalle_mes[
+            "Monto_OC_USD"
+        ]
+        .sum()
+    )
 
-    col_mes1, col_mes2, col_mes3, col_mes4 = st.columns(4)
+    ordenes_mes = (
+        df_detalle_mes[
+            "Documento_Compras_Texto"
+        ]
+        .nunique()
+    )
+
+    registros_mes = len(
+        df_detalle_mes
+    )
+
+    monedas_mes = (
+        df_detalle_mes[
+            "Moneda"
+        ]
+        .nunique()
+    )
+
+    col_mes1, col_mes2, col_mes3, col_mes4 = (
+        st.columns(4)
+    )
+
     with col_mes1:
         kpi_card(
             "Gasto del mes",
-            formato_usd_largo(monto_mes_usd),
-            f"{formato_usd_millones(monto_mes_usd)} | Mes seleccionado: {mes_seleccionado}"
+            formato_usd_millones(
+                monto_mes_usd
+            ),
+            (
+                "Mes seleccionado: "
+                f"{mes_seleccionado}"
+            ),
         )
+
     with col_mes2:
-        kpi_card("Órdenes únicas", formato_entero(ordenes_mes), "Documento de compras único")
+        kpi_card(
+            "Órdenes únicas",
+            formato_entero(
+                ordenes_mes
+            ),
+            "Documento de compras único",
+        )
+
     with col_mes3:
-        kpi_card("Registros", formato_entero(registros_mes), "Líneas o registros del mes")
+        kpi_card(
+            "Registros",
+            formato_entero(
+                registros_mes
+            ),
+            "Líneas o registros del mes",
+        )
+
     with col_mes4:
-        kpi_card("Monedas", formato_entero(monedas_mes), "Monedas presentes en el mes")
+        kpi_card(
+            "Monedas",
+            formato_entero(
+                monedas_mes
+            ),
+            "Monedas presentes en el mes",
+        )
 
     df_resumen_mes_tipo = (
         df_detalle_mes
-        .groupby("Tipo_Orden_Compra", as_index=False)
-        .agg(
-            Monto_USD=("Monto_OC_USD", "sum"),
-            Ordenes=("Documento_Compras_Texto", "nunique"),
-            Registros=("Documento_Compras_Texto", "count"),
+        .groupby(
+            "Tipo_Orden_Compra",
+            as_index=False,
         )
-        .sort_values("Monto_USD", ascending=False)
+        .agg(
+            Monto_USD=(
+                "Monto_OC_USD",
+                "sum",
+            ),
+            Ordenes=(
+                "Documento_Compras_Texto",
+                "nunique",
+            ),
+            Registros=(
+                "Documento_Compras_Texto",
+                "count",
+            ),
+        )
+        .sort_values(
+            "Monto_USD",
+            ascending=False,
+        )
     )
 
-    if not df_resumen_mes_tipo.empty:
-        df_resumen_mes_tipo["Participacion_%"] = (
-            df_resumen_mes_tipo["Monto_USD"] / df_resumen_mes_tipo["Monto_USD"].sum() * 100
-            if df_resumen_mes_tipo["Monto_USD"].sum() != 0
-            else 0
-        )
+    total_mes_tipo = (
+        df_resumen_mes_tipo[
+            "Monto_USD"
+        ]
+        .sum()
+    )
 
-    col_resumen_mes, col_detalle_mes = st.columns([0.9, 1.6])
+    df_resumen_mes_tipo[
+        "Participacion_OC"
+    ] = (
+        df_resumen_mes_tipo[
+            "Monto_USD"
+        ]
+        / total_mes_tipo
+        if total_mes_tipo != 0
+        else 0
+    )
+
+    col_resumen_mes, col_detalle_mes = (
+        st.columns(
+            [0.9, 1.6]
+        )
+    )
 
     with col_resumen_mes:
-        st.markdown("##### Resumen por tipo de OC")
+        st.markdown(
+            "##### Resumen por tipo de OC"
+        )
+
         st.dataframe(
-            df_resumen_mes_tipo,
+            estilizar_dataframe(
+                df_resumen_mes_tipo,
+                columnas_monto=[
+                    "Monto_USD"
+                ],
+                columnas_entero=[
+                    "Ordenes",
+                    "Registros",
+                    "Tipo_Orden_Compra",
+                ],
+                columnas_porcentaje=[
+                    "Participacion_OC"
+                ],
+            ),
             use_container_width=True,
             hide_index=True,
         )
 
     with col_detalle_mes:
-        st.markdown("##### Registros del mes seleccionado")
+        st.markdown(
+            "##### Registros del mes seleccionado"
+        )
 
         columnas_detalle_mes = [
-            col for col in [
+            col
+            for col in [
                 "Documento_compras",
                 "Documento_Compras_Texto",
                 "Fecha_documento",
@@ -735,80 +1498,212 @@ else:
                 "Precio_neto",
                 "Precio_neto_num",
                 "Factor_USD_por_Unidad",
+                "Valor_CLP_por_Unidad",
                 "Precio_neto_USD",
                 "Monto_OC_USD",
                 "Tipo_Orden_Compra",
                 "Participacion_OC",
-            ] if col in df_detalle_mes.columns
+            ]
+            if col
+            in df_detalle_mes.columns
         ]
 
         df_detalle_mes_tabla = (
-            df_detalle_mes[columnas_detalle_mes]
-            .sort_values("Monto_OC_USD", ascending=False)
+            df_detalle_mes[
+                columnas_detalle_mes
+            ]
+            .sort_values(
+                "Monto_OC_USD",
+                ascending=False,
+            )
             .reset_index(drop=True)
+            .copy()
         )
 
+        if (
+            "Precio_neto"
+            in df_detalle_mes_tabla.columns
+        ):
+            df_detalle_mes_tabla[
+                "Precio_neto"
+            ] = (
+                df_detalle_mes_tabla[
+                    "Precio_neto"
+                ]
+                .apply(
+                    convertir_numero
+                )
+            )
+
         st.dataframe(
-            df_detalle_mes_tabla,
+            estilizar_dataframe(
+                df_detalle_mes_tabla,
+                columnas_monto=[
+                    "Precio_neto",
+                    "Precio_neto_num",
+                    "Factor_USD_por_Unidad",
+                    "Valor_CLP_por_Unidad",
+                    "Precio_neto_USD",
+                    "Monto_OC_USD",
+                ],
+                columnas_entero=[
+                    "Tipo_Orden_Compra"
+                ],
+                columnas_porcentaje=[
+                    "Participacion_OC"
+                ],
+            ),
             use_container_width=True,
             hide_index=True,
         )
 
-    with st.expander("Ver tabla completa de gasto mensual"):
-        st.dataframe(df_gasto_mensual, use_container_width=True, hide_index=True)
+    with st.expander(
+        "Ver tabla completa de gasto mensual"
+    ):
+        st.dataframe(
+            estilizar_dataframe(
+                df_gasto_mensual,
+                columnas_monto=[
+                    "Gasto_Mensual_USD"
+                ],
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
 
 
 # ============================================================
 # Participación por tipo de OC
 # ============================================================
 
-section_title("Participación por tipo de orden de compra", "Distribución del gasto total según los dos primeros dígitos del documento de compras.")
+section_title(
+    "Participación por tipo de orden de compra",
+    (
+        "Distribución del gasto total según los dos primeros "
+        "dígitos del documento de compras."
+    ),
+)
 
 df_tipo_oc = (
     df_ordenes_filtrado
-    .groupby("Tipo_Orden_Compra", as_index=False)
-    .agg(
-        Monto_OC_USD=("Monto_OC_USD", "sum"),
-        Ordenes=("Documento_Compras_Texto", "nunique"),
+    .groupby(
+        "Tipo_Orden_Compra",
+        as_index=False,
     )
-    .sort_values("Monto_OC_USD", ascending=False)
+    .agg(
+        Monto_OC_USD=(
+            "Monto_OC_USD",
+            "sum",
+        ),
+        Ordenes=(
+            "Documento_Compras_Texto",
+            "nunique",
+        ),
+    )
+    .sort_values(
+        "Monto_OC_USD",
+        ascending=False,
+    )
 )
 
-df_tipo_oc["Participacion"] = (
-    df_tipo_oc["Monto_OC_USD"] / df_tipo_oc["Monto_OC_USD"].sum()
-    if df_tipo_oc["Monto_OC_USD"].sum() != 0
+total_tipo_oc = (
+    df_tipo_oc[
+        "Monto_OC_USD"
+    ]
+    .sum()
+)
+
+df_tipo_oc[
+    "Participacion"
+] = (
+    df_tipo_oc[
+        "Monto_OC_USD"
+    ]
+    / total_tipo_oc
+    if total_tipo_oc != 0
     else 0
 )
 
 if df_tipo_oc.empty:
-    st.info("No hay datos para analizar tipos de orden de compra.")
+    st.info(
+        "No hay datos para analizar tipos de orden de compra."
+    )
 else:
-    fig, ax = plt.subplots(figsize=(11, 5.5))
+    fig, ax = plt.subplots(
+        figsize=(11, 5.5)
+    )
 
     bars = ax.bar(
-        df_tipo_oc["Tipo_Orden_Compra"].astype(str),
-        df_tipo_oc["Monto_OC_USD"],
+        df_tipo_oc[
+            "Tipo_Orden_Compra"
+        ].astype(str),
+        df_tipo_oc[
+            "Monto_OC_USD"
+        ],
         color="#2563eb",
         edgecolor="#1d4ed8",
         linewidth=0.8,
     )
 
-    ax.set_title("Gasto por tipo de OC", fontsize=14, fontweight="bold", pad=14)
-    ax.set_xlabel("Tipo de OC")
-    ax.set_ylabel("Gasto [USD]")
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(formato_usd_compacto))
+    ax.set_title(
+        "Gasto por tipo de OC",
+        fontsize=14,
+        fontweight="bold",
+        pad=14,
+    )
+
+    ax.set_xlabel(
+        "Tipo de OC"
+    )
+
+    ax.set_ylabel(
+        "Gasto [USD]"
+    )
+
+    ax.yaxis.set_major_formatter(
+        mticker.FuncFormatter(
+            formato_usd_compacto
+        )
+    )
+
     limpiar_estilo_grafico(ax)
 
-    max_valor = df_tipo_oc["Monto_OC_USD"].max()
-    margen_superior = max_valor * 0.18 if max_valor > 0 else 1
-    ax.set_ylim(0, max_valor + margen_superior)
+    max_valor = (
+        df_tipo_oc[
+            "Monto_OC_USD"
+        ]
+        .max()
+    )
+
+    margen_superior = (
+        max_valor * 0.18
+        if max_valor > 0
+        else 1
+    )
+
+    ax.set_ylim(
+        0,
+        max_valor
+        + margen_superior,
+    )
 
     for bar in bars:
-        valor = bar.get_height()
+        valor = (
+            bar.get_height()
+        )
+
         ax.text(
-            bar.get_x() + bar.get_width() / 2,
-            valor + margen_superior * 0.06,
-            formato_usd_compacto(valor),
+            (
+                bar.get_x()
+                + bar.get_width() / 2
+            ),
+            (
+                valor
+                + margen_superior * 0.06
+            ),
+            formato_usd_compacto(
+                valor
+            ),
             ha="center",
             va="bottom",
             fontsize=9,
@@ -817,45 +1712,165 @@ else:
         )
 
     fig.tight_layout()
-    st.pyplot(fig, clear_figure=True)
 
-    with st.expander("Ver tabla por tipo de OC"):
-        st.dataframe(df_tipo_oc, use_container_width=True, hide_index=True)
+    st.pyplot(
+        fig,
+        clear_figure=True,
+    )
+
+    with st.expander(
+        "Ver tabla por tipo de OC"
+    ):
+        st.dataframe(
+            estilizar_dataframe(
+                df_tipo_oc,
+                columnas_monto=[
+                    "Monto_OC_USD"
+                ],
+                columnas_entero=[
+                    "Tipo_Orden_Compra",
+                    "Ordenes",
+                ],
+                columnas_porcentaje=[
+                    "Participacion"
+                ],
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
 
 
 # ============================================================
 # Tablas de apoyo y validaciones
 # ============================================================
 
-section_title("Tablas de apoyo", "Vistas acotadas para revisar conversiones y validaciones de gasto.")
+section_title(
+    "Tablas de apoyo",
+    (
+        "Vistas acotadas para revisar conversiones "
+        "y validaciones de gasto."
+    ),
+)
 
-with st.expander("Monedas únicas en órdenes"):
-    df_monedas_unicas = pd.DataFrame(
-        {"Moneda": sorted(df_ordenes_usd["Moneda"].dropna().unique())}
-    ).reset_index(drop=True)
-    st.dataframe(df_monedas_unicas, use_container_width=True, hide_index=True)
+with st.expander(
+    "Monedas únicas en órdenes"
+):
+    df_monedas_unicas = (
+        pd.DataFrame(
+            {
+                "Moneda": sorted(
+                    df_ordenes_usd[
+                        "Moneda"
+                    ]
+                    .dropna()
+                    .unique()
+                )
+            }
+        )
+        .reset_index(drop=True)
+    )
 
-with st.expander("Órdenes convertidas a USD"):
-    columnas_preview = [
-        col for col in [
-            "Documento_compras", "Documento_Compras_Texto", "Fecha_documento",
-            "Texto_breve", "Moneda", "Precio_neto", "Precio_neto_num",
-            "Factor_USD_por_Unidad", "Precio_neto_USD", "Tipo_Orden_Compra",
-            "Participacion_OC",
-        ] if col in df_ordenes_usd.columns
-    ]
     st.dataframe(
-        df_ordenes_usd[columnas_preview].head(500),
+        df_monedas_unicas,
         use_container_width=True,
         hide_index=True,
     )
 
-with st.expander("Resumen de validación"):
-    if not monedas_faltantes:
-        st.success("Todas las monedas de df_ordenes existen en df_moneda_cambio.")
-    else:
-        st.warning("Hay monedas de df_ordenes que no fueron encontradas en df_moneda_cambio.")
-        st.write(", ".join(monedas_faltantes))
+with st.expander(
+    "Órdenes convertidas a USD"
+):
+    columnas_preview = [
+        col
+        for col in [
+            "Documento_compras",
+            "Documento_Compras_Texto",
+            "Fecha_documento",
+            "Texto_breve",
+            "Moneda",
+            "Precio_neto",
+            "Precio_neto_num",
+            "Factor_USD_por_Unidad",
+            "Valor_CLP_por_Unidad",
+            "Precio_neto_USD",
+            "Monto_OC_USD",
+            "Tipo_Orden_Compra",
+            "Participacion_OC",
+        ]
+        if col
+        in df_ordenes_usd.columns
+    ]
 
-    st.write(f"- Órdenes únicas filtradas: {ordenes_unicas:,.0f}")
-    st.write(f"- Gasto total filtrado: {formato_usd_largo(monto_total_oc_usd)}")
+    df_preview = (
+        df_ordenes_usd[
+            columnas_preview
+        ]
+        .head(500)
+        .copy()
+    )
+
+    if (
+        "Precio_neto"
+        in df_preview.columns
+    ):
+        df_preview[
+            "Precio_neto"
+        ] = (
+            df_preview[
+                "Precio_neto"
+            ]
+            .apply(
+                convertir_numero
+            )
+        )
+
+    st.dataframe(
+        estilizar_dataframe(
+            df_preview,
+            columnas_monto=[
+                "Precio_neto",
+                "Precio_neto_num",
+                "Factor_USD_por_Unidad",
+                "Valor_CLP_por_Unidad",
+                "Precio_neto_USD",
+                "Monto_OC_USD",
+            ],
+            columnas_entero=[
+                "Tipo_Orden_Compra"
+            ],
+            columnas_porcentaje=[
+                "Participacion_OC"
+            ],
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+with st.expander(
+    "Resumen de validación"
+):
+    if not monedas_faltantes:
+        st.success(
+            "Todas las monedas de df_ordenes "
+            "existen en df_moneda_cambio."
+        )
+    else:
+        st.warning(
+            "Hay monedas de df_ordenes que no fueron "
+            "encontradas en df_moneda_cambio."
+        )
+
+        st.write(
+            ", ".join(
+                monedas_faltantes
+            )
+        )
+
+    st.write(
+        "- Órdenes únicas filtradas: "
+        f"{ordenes_unicas:,.0f}"
+    )
+
+    st.write(
+        "- Gasto total filtrado: "
+        f"{formato_usd_millones(monto_total_oc_usd)}"
+    )
