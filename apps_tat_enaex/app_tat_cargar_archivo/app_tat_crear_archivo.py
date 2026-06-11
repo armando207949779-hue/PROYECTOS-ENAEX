@@ -146,11 +146,6 @@ def aplicar_estilos():
                 color: #64748b;
                 font-size: 14px;
             }
-
-            hr {
-                margin-top: 1rem;
-                margin-bottom: 1.5rem;
-            }
         </style>
         """,
         unsafe_allow_html=True
@@ -208,6 +203,12 @@ def inicializar_estado():
     if "archivo_tat_activo" not in st.session_state:
         st.session_state["archivo_tat_activo"] = None
 
+    if "df_tat" not in st.session_state:
+        st.session_state["df_tat"] = None
+
+    if "nombre_archivo_tat" not in st.session_state:
+        st.session_state["nombre_archivo_tat"] = None
+
 
 # =========================
 # Lectura de archivo
@@ -230,9 +231,34 @@ def leer_archivo(archivo_bytes, nombre_archivo):
     raise ValueError("Formato no soportado. Usa CSV, XLSX, XLS o PARQUET.")
 
 
+# =========================
+# Guardado en sesión
+# =========================
+
 def guardar_archivo_en_sesion(df, nombre_archivo):
+    """
+    Guarda el archivo en modo múltiple y también en las llaves antiguas
+    que usan las demás pestañas: df_tat y nombre_archivo_tat.
+    """
     st.session_state["archivos_tat"][nombre_archivo] = df
     st.session_state["archivo_tat_activo"] = nombre_archivo
+
+    # Compatibilidad con las demás pestañas
+    st.session_state["df_tat"] = df
+    st.session_state["nombre_archivo_tat"] = nombre_archivo
+
+
+def activar_archivo(nombre_archivo):
+    """
+    Define qué archivo queda activo para las otras pestañas.
+    """
+    df = st.session_state["archivos_tat"][nombre_archivo]
+
+    st.session_state["archivo_tat_activo"] = nombre_archivo
+
+    # Estas son las llaves importantes para Filtro TAT, Gráficos TAT, etc.
+    st.session_state["df_tat"] = df
+    st.session_state["nombre_archivo_tat"] = nombre_archivo
 
 
 def eliminar_archivo_de_sesion(nombre_archivo):
@@ -242,14 +268,20 @@ def eliminar_archivo_de_sesion(nombre_archivo):
     archivos_restantes = list(st.session_state["archivos_tat"].keys())
 
     if archivos_restantes:
-        st.session_state["archivo_tat_activo"] = archivos_restantes[0]
+        activar_archivo(archivos_restantes[0])
     else:
         st.session_state["archivo_tat_activo"] = None
+        st.session_state["df_tat"] = None
+        st.session_state["nombre_archivo_tat"] = None
 
 
 def eliminar_todos_los_archivos():
     st.session_state["archivos_tat"] = {}
     st.session_state["archivo_tat_activo"] = None
+
+    # Borrar también las llaves antiguas
+    st.session_state["df_tat"] = None
+    st.session_state["nombre_archivo_tat"] = None
 
 
 # =========================
@@ -364,7 +396,8 @@ if archivos:
     if archivos_cargados:
         mostrar_mensaje_html(
             "success",
-            f"Archivos cargados correctamente: {len(archivos_cargados)}"
+            f"Archivos cargados correctamente: {len(archivos_cargados)}. "
+            f"Archivo activo: {st.session_state['nombre_archivo_tat']}"
         )
 
         with st.expander("Ver archivos cargados"):
@@ -448,35 +481,41 @@ st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown('<div class="section-card">', unsafe_allow_html=True)
 
-st.subheader("Archivo activo")
+st.subheader("Archivo activo para las demás pestañas")
 
 archivo_activo_actual = st.session_state.get("archivo_tat_activo")
 
 if archivo_activo_actual not in archivos_disponibles:
     archivo_activo_actual = archivos_disponibles[0]
-    st.session_state["archivo_tat_activo"] = archivo_activo_actual
+    activar_archivo(archivo_activo_actual)
 
 archivo_seleccionado = st.selectbox(
-    "Selecciona el archivo que quieres visualizar",
+    "Selecciona el archivo que quieres usar en Filtro TAT, Gráficos TAT y Performance de Plantas",
     options=archivos_disponibles,
-    index=archivos_disponibles.index(archivo_activo_actual),
+    index=archivos_disponibles.index(st.session_state["archivo_tat_activo"]),
     key="selector_archivo_tat"
 )
 
-st.session_state["archivo_tat_activo"] = archivo_seleccionado
+activar_archivo(archivo_seleccionado)
 
-df_tat = st.session_state["archivos_tat"][archivo_seleccionado]
+df_tat = st.session_state["df_tat"]
+nombre_archivo = st.session_state["nombre_archivo_tat"]
 
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.metric("Archivo seleccionado", archivo_seleccionado)
+    st.metric("Archivo activo", nombre_archivo)
 
 with col2:
     st.metric("Filas", f"{df_tat.shape[0]:,}")
 
 with col3:
     st.metric("Columnas", f"{df_tat.shape[1]:,}")
+
+mostrar_mensaje_html(
+    "success",
+    f"Este archivo quedó guardado como df_tat para las demás pestañas: {nombre_archivo}"
+)
 
 st.markdown("</div>", unsafe_allow_html=True)
 
@@ -487,13 +526,15 @@ st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown('<div class="section-card">', unsafe_allow_html=True)
 
-st.subheader("Vista previa del archivo seleccionado")
+st.subheader("Vista previa del archivo activo")
+
+max_filas = min(200, max(5, df_tat.shape[0]))
 
 filas_preview = st.slider(
     "Cantidad de filas a mostrar",
     min_value=5,
-    max_value=min(200, max(5, df_tat.shape[0])),
-    value=min(50, max(5, df_tat.shape[0])),
+    max_value=max_filas,
+    value=min(50, max_filas),
     step=5
 )
 
@@ -511,7 +552,7 @@ st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown('<div class="section-card">', unsafe_allow_html=True)
 
-st.subheader("Columnas disponibles")
+st.subheader("Columnas disponibles del archivo activo")
 
 columnas_df = pd.DataFrame(
     {
@@ -544,11 +585,11 @@ col1, col2 = st.columns(2)
 
 with col1:
     if st.button(
-        "Eliminar archivo seleccionado",
+        "Eliminar archivo activo",
         use_container_width=True
     ):
         eliminar_archivo_de_sesion(archivo_seleccionado)
-        st.success("Archivo seleccionado eliminado de la sesión.")
+        st.success("Archivo activo eliminado de la sesión.")
         st.rerun()
 
 with col2:
