@@ -1,3 +1,11 @@
+# ============================================================
+# 04_MATCH
+# Match integrado ME5A · ARIBA · ME80FN
+# Flujo: cargar 3 archivos -> procesar -> confirmar -> descargar parquet
+# CSV opcional
+# Excel eliminado
+# ============================================================
+
 import io
 import base64
 from pathlib import Path
@@ -7,25 +15,85 @@ import pandas as pd
 import streamlit as st
 
 
-# =========================================================
+# ============================================================
 # Configuración general
-# =========================================================
+# ============================================================
 
 st.set_page_config(
-    page_title="Match Integrado",
+    page_title="04_MATCH",
     page_icon="🔗",
-    layout="wide"
+    layout="wide",
 )
 
+
+# ============================================================
+# Rutas
+# ============================================================
 
 BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
 LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
 
 
-# =========================================================
-# UI común
-# =========================================================
+# ============================================================
+# Estilo visual minimalista
+# No se modifica .block-container para no afectar el logo.
+# ============================================================
+
+st.markdown(
+    """
+    <style>
+        div[data-testid="stMetric"] {
+            background-color: #f8f9fa;
+            padding: 14px;
+            border-radius: 12px;
+            border: 1px solid #e9ecef;
+        }
+
+        div[data-testid="stFileUploader"] {
+            padding: 10px;
+            border-radius: 12px;
+        }
+
+        .app-header {
+            text-align: center;
+            margin-bottom: 1rem;
+        }
+
+        .app-title {
+            font-size: 30px;
+            font-weight: 700;
+            margin-bottom: 0;
+        }
+
+        .app-subtitle {
+            color: #6c757d;
+            font-size: 16px;
+            margin-top: 4px;
+        }
+
+        .step-box {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 14px;
+            padding: 18px;
+            margin-bottom: 16px;
+        }
+
+        .small-muted {
+            color: #6c757d;
+            font-size: 14px;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+# ============================================================
+# Logo
+# Se mantiene la configuración original de esta app.
+# ============================================================
 
 def mostrar_logo(ancho: int = 180):
     if not LOGO_PATH.exists():
@@ -48,32 +116,32 @@ def mostrar_logo(ancho: int = 180):
             >
         </div>
         """,
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
 
 
-# =========================================================
+# ============================================================
 # Funciones generales
-# =========================================================
+# ============================================================
 
 def obtener_separador(separador_csv: str):
-    if separador_csv == "Automático":
-        return None
-    if separador_csv == "Punto y coma (;)":
-        return ";"
-    if separador_csv == "Coma (,)":
-        return ","
-    if separador_csv == "Tabulación":
-        return "\t"
-    return None
+    separadores = {
+        "Automático": None,
+        "Punto y coma (;)": ";",
+        "Coma (,)": ",",
+        "Tabulación": "\t",
+    }
+
+    return separadores.get(separador_csv, None)
 
 
 @st.cache_data(show_spinner=False)
 def leer_archivo_cache(
     bytes_archivo: bytes,
     nombre_archivo: str,
-    separador_csv: str
+    separador_csv: str,
 ) -> pd.DataFrame:
+
     buffer = io.BytesIO(bytes_archivo)
     nombre = nombre_archivo.lower()
 
@@ -92,8 +160,9 @@ def leer_archivo_cache(
                 sep=sep,
                 engine="python",
                 encoding="utf-8-sig",
-                on_bad_lines="skip"
+                on_bad_lines="skip",
             )
+
         except Exception:
             buffer.seek(0)
 
@@ -102,10 +171,10 @@ def leer_archivo_cache(
                 sep=sep,
                 engine="python",
                 encoding="latin1",
-                on_bad_lines="skip"
+                on_bad_lines="skip",
             )
 
-    raise ValueError("Formato no soportado. Usa .parquet, .xlsx o .csv")
+    raise ValueError("Formato no soportado. Usa archivos .parquet, .xlsx o .csv")
 
 
 def limpiar_nombres_columnas(df: pd.DataFrame) -> pd.DataFrame:
@@ -114,8 +183,11 @@ def limpiar_nombres_columnas(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def validar_columnas(df: pd.DataFrame, columnas: list, nombre_df: str):
-    faltantes = [col for col in columnas if col not in df.columns]
+def validar_columnas(df: pd.DataFrame, columnas: list, nombre_df: str) -> None:
+    faltantes = [
+        col for col in columnas
+        if col not in df.columns
+    ]
 
     if faltantes:
         raise ValueError(
@@ -157,22 +229,76 @@ def limpiar_booleanos(df: pd.DataFrame, columnas: list) -> pd.DataFrame:
 def formatear_valor(valor):
     if pd.isna(valor):
         return ""
+
     return str(valor)
 
 
-# =========================================================
-# Match ME5A vs NME80FN
+# ============================================================
+# Detección de archivos cargados
+# ============================================================
+
+def detectar_tipo_archivo(nombre_archivo: str) -> str | None:
+    nombre = nombre_archivo.lower()
+
+    if "me5a" in nombre:
+        return "ME5A"
+
+    if "ariba" in nombre:
+        return "ARIBA"
+
+    if "me80fn" in nombre or "nme80fn" in nombre:
+        return "ME80FN"
+
+    return None
+
+
+def detectar_archivos_cargados(archivos: list) -> dict:
+    detectados = {
+        "ME5A": None,
+        "ARIBA": None,
+        "ME80FN": None,
+    }
+
+    conflictos = []
+
+    for archivo in archivos:
+        tipo = detectar_tipo_archivo(archivo.name)
+
+        if tipo is None:
+            continue
+
+        if detectados[tipo] is not None:
+            conflictos.append(tipo)
+        else:
+            detectados[tipo] = archivo
+
+    return {
+        "detectados": detectados,
+        "conflictos": conflictos,
+    }
+
+
+def archivos_completos(detectados: dict) -> bool:
+    return all(
+        detectados[tipo] is not None
+        for tipo in ["ME5A", "ARIBA", "ME80FN"]
+    )
+
+
+# ============================================================
+# Match ME5A vs ME80FN
 # Criterio AND estricto:
 # Pedido + Posición + Material + Centro
-# =========================================================
+# ============================================================
 
 @st.cache_data(show_spinner=False)
-def match_me5a_nme80fn(
+def match_me5a_me80fn(
     df_me5a: pd.DataFrame,
-    df_nme: pd.DataFrame
+    df_me80fn: pd.DataFrame,
 ) -> pd.DataFrame:
+
     me5a = limpiar_nombres_columnas(df_me5a)
-    nme = limpiar_nombres_columnas(df_nme)
+    me80fn = limpiar_nombres_columnas(df_me80fn)
 
     validar_columnas(
         me5a,
@@ -180,40 +306,40 @@ def match_me5a_nme80fn(
             "Pedido",
             "Posición de pedido",
             "Material",
-            "Centro"
+            "Centro",
         ],
-        "ME5A"
+        "ME5A",
     )
 
     validar_columnas(
-        nme,
+        me80fn,
         [
             "Documento compras",
             "Posición",
             "Material",
-            "Centro"
+            "Centro",
         ],
-        "NME80FN"
+        "ME80FN",
     )
 
     me5a = me5a.copy()
-    nme = nme.copy()
+    me80fn = me80fn.copy()
 
     me5a["_id_me5a"] = range(len(me5a))
-    nme["_id_nme"] = range(len(nme))
+    me80fn["_id_me80fn"] = range(len(me80fn))
 
     me5a["_pedido_norm"] = normalizar_entero_str(me5a["Pedido"])
     me5a["_posicion_pedido_norm"] = normalizar_entero_str(me5a["Posición de pedido"])
     me5a["_material_norm"] = normalizar_material(me5a["Material"])
     me5a["_centro_norm"] = me5a["Centro"].astype("string").str.strip()
 
-    nme["_documento_norm"] = normalizar_entero_str(nme["Documento compras"])
-    nme["_posicion_norm"] = normalizar_entero_str(nme["Posición"])
-    nme["_material_norm"] = normalizar_material(nme["Material"])
-    nme["_centro_norm"] = nme["Centro"].astype("string").str.strip()
+    me80fn["_documento_norm"] = normalizar_entero_str(me80fn["Documento compras"])
+    me80fn["_posicion_norm"] = normalizar_entero_str(me80fn["Posición"])
+    me80fn["_material_norm"] = normalizar_material(me80fn["Material"])
+    me80fn["_centro_norm"] = me80fn["Centro"].astype("string").str.strip()
 
-    columnas_nme = [
-        "_id_nme",
+    columnas_me80fn = [
+        "_id_me80fn",
         "_documento_norm",
         "_posicion_norm",
         "_material_norm",
@@ -233,78 +359,82 @@ def match_me5a_nme80fn(
         "Fecha de documento",
         "Fecha contabiliz.",
         "fecha_facturacion_proveedor",
-        "fecha_entrada_mercancia_recepcion"
+        "fecha_entrada_mercancia_recepcion",
     ]
 
-    columnas_nme = [col for col in columnas_nme if col in nme.columns]
+    columnas_me80fn = [
+        col for col in columnas_me80fn
+        if col in me80fn.columns
+    ]
 
     candidatos = me5a.merge(
-        nme[columnas_nme],
+        me80fn[columnas_me80fn],
         left_on="_pedido_norm",
         right_on="_documento_norm",
         how="left",
-        suffixes=("_me5a", "_nme")
+        suffixes=("_me5a", "_me80fn"),
     )
 
-    candidatos["_match_nme_pedido_documento"] = (
+    candidatos["_match_me80fn_pedido_documento"] = (
         candidatos["_pedido_norm"].fillna("")
         .eq(candidatos["_documento_norm"].fillna(""))
     )
 
-    candidatos["_match_nme_posicion"] = (
+    candidatos["_match_me80fn_posicion"] = (
         candidatos["_posicion_pedido_norm"].fillna("")
         .eq(candidatos["_posicion_norm"].fillna(""))
     )
 
-    candidatos["_match_nme_material"] = (
+    candidatos["_match_me80fn_material"] = (
         candidatos["_material_norm_me5a"].fillna("")
-        .eq(candidatos["_material_norm_nme"].fillna(""))
+        .eq(candidatos["_material_norm_me80fn"].fillna(""))
     )
 
-    candidatos["_match_nme_centro"] = (
+    candidatos["_match_me80fn_centro"] = (
         candidatos["_centro_norm_me5a"].fillna("")
-        .eq(candidatos["_centro_norm_nme"].fillna(""))
+        .eq(candidatos["_centro_norm_me80fn"].fillna(""))
     )
 
-    candidatos["_match_nme_estricto"] = (
-        candidatos["_match_nme_pedido_documento"]
-        & candidatos["_match_nme_posicion"]
-        & candidatos["_match_nme_material"]
-        & candidatos["_match_nme_centro"]
+    candidatos["_match_me80fn_estricto"] = (
+        candidatos["_match_me80fn_pedido_documento"]
+        & candidatos["_match_me80fn_posicion"]
+        & candidatos["_match_me80fn_material"]
+        & candidatos["_match_me80fn_centro"]
     )
 
-    cols_bool_nme = [
-        "_match_nme_pedido_documento",
-        "_match_nme_posicion",
-        "_match_nme_material",
-        "_match_nme_centro",
-        "_match_nme_estricto"
+    columnas_bool = [
+        "_match_me80fn_pedido_documento",
+        "_match_me80fn_posicion",
+        "_match_me80fn_material",
+        "_match_me80fn_centro",
+        "_match_me80fn_estricto",
     ]
 
-    candidatos = limpiar_booleanos(candidatos, cols_bool_nme)
+    candidatos = limpiar_booleanos(candidatos, columnas_bool)
 
-    # Campo auxiliar interno para elegir el mejor candidato.
-    # No se muestra ni se exporta.
-    candidatos["_prioridad_match_nme"] = np.where(
-        candidatos["_match_nme_estricto"],
+    candidatos["_prioridad_match_me80fn"] = np.where(
+        candidatos["_match_me80fn_estricto"],
         1,
-        0
+        0,
     )
 
-    candidatos["_coincidencias_nme"] = (
-        candidatos["_match_nme_pedido_documento"].astype(int)
-        + candidatos["_match_nme_posicion"].astype(int)
-        + candidatos["_match_nme_material"].astype(int)
-        + candidatos["_match_nme_centro"].astype(int)
+    candidatos["_coincidencias_me80fn"] = (
+        candidatos["_match_me80fn_pedido_documento"].astype(int)
+        + candidatos["_match_me80fn_posicion"].astype(int)
+        + candidatos["_match_me80fn_material"].astype(int)
+        + candidatos["_match_me80fn_centro"].astype(int)
     )
 
     idx_mejor = (
         candidatos
         .sort_values(
-            by=["_prioridad_match_nme", "_coincidencias_nme"],
-            ascending=[False, False]
+            by=[
+                "_prioridad_match_me80fn",
+                "_coincidencias_me80fn",
+            ],
+            ascending=[False, False],
         )
-        .groupby("_id_me5a", dropna=False)["_coincidencias_nme"]
+        .groupby("_id_me5a", dropna=False)["_coincidencias_me80fn"]
         .idxmax()
     )
 
@@ -312,66 +442,72 @@ def match_me5a_nme80fn(
 
     columnas_resultado = [
         "_id_me5a",
-        "_match_nme_pedido_documento",
-        "_match_nme_posicion",
-        "_match_nme_material",
-        "_match_nme_centro",
-        "_match_nme_estricto",
+        "_match_me80fn_pedido_documento",
+        "_match_me80fn_posicion",
+        "_match_me80fn_material",
+        "_match_me80fn_centro",
+        "_match_me80fn_estricto",
         "Documento compras",
         "Posición",
-        "Centro_nme",
+        "Centro_me80fn",
         "Fecha de entrada",
-        "Material_nme",
-        "Texto breve_nme",
+        "Material_me80fn",
+        "Texto breve_me80fn",
         "Cantidad",
         "Unidad medida pedido",
         "Impte.mon.local",
-        "Moneda_nme",
+        "Moneda_me80fn",
         "Importe",
         "Clase de operación",
         "Fecha de documento",
         "Fecha contabiliz.",
         "fecha_facturacion_proveedor",
-        "fecha_entrada_mercancia_recepcion"
+        "fecha_entrada_mercancia_recepcion",
     ]
 
-    columnas_resultado = [col for col in columnas_resultado if col in mejor.columns]
+    columnas_resultado = [
+        col for col in columnas_resultado
+        if col in mejor.columns
+    ]
 
     resultado = mejor[columnas_resultado].copy()
 
-    resultado = resultado.rename(columns={
-        "Documento compras": "nme_documento_compras",
-        "Posición": "nme_posicion",
-        "Centro_nme": "nme_centro",
-        "Fecha de entrada": "nme_fecha_entrada",
-        "Material_nme": "nme_material",
-        "Texto breve_nme": "nme_texto_breve",
-        "Cantidad": "nme_cantidad",
-        "Unidad medida pedido": "nme_unidad_medida_pedido",
-        "Impte.mon.local": "nme_importe_moneda_local",
-        "Moneda_nme": "nme_moneda",
-        "Importe": "nme_importe",
-        "Clase de operación": "nme_clase_operacion",
-        "Fecha de documento": "nme_fecha_documento",
-        "Fecha contabiliz.": "nme_fecha_contabilizacion",
-        "fecha_facturacion_proveedor": "nme_fecha_facturacion_proveedor",
-        "fecha_entrada_mercancia_recepcion": "nme_fecha_recepcion_mercancia"
-    })
+    resultado = resultado.rename(
+        columns={
+            "Documento compras": "me80fn_documento_compras",
+            "Posición": "me80fn_posicion",
+            "Centro_me80fn": "me80fn_centro",
+            "Fecha de entrada": "me80fn_fecha_entrada",
+            "Material_me80fn": "me80fn_material",
+            "Texto breve_me80fn": "me80fn_texto_breve",
+            "Cantidad": "me80fn_cantidad",
+            "Unidad medida pedido": "me80fn_unidad_medida_pedido",
+            "Impte.mon.local": "me80fn_importe_moneda_local",
+            "Moneda_me80fn": "me80fn_moneda",
+            "Importe": "me80fn_importe",
+            "Clase de operación": "me80fn_clase_operacion",
+            "Fecha de documento": "me80fn_fecha_documento",
+            "Fecha contabiliz.": "me80fn_fecha_contabilizacion",
+            "fecha_facturacion_proveedor": "me80fn_fecha_facturacion_proveedor",
+            "fecha_entrada_mercancia_recepcion": "me80fn_fecha_recepcion_mercancia",
+        }
+    )
 
     return resultado
 
 
-# =========================================================
+# ============================================================
 # Match ME5A vs ARIBA
 # Criterio AND estricto:
 # Solicitud + Línea + Pedido
-# =========================================================
+# ============================================================
 
 @st.cache_data(show_spinner=False)
 def match_me5a_ariba(
     df_me5a: pd.DataFrame,
-    df_ariba: pd.DataFrame
+    df_ariba: pd.DataFrame,
 ) -> pd.DataFrame:
+
     me5a = limpiar_nombres_columnas(df_me5a)
     ariba = limpiar_nombres_columnas(df_ariba)
 
@@ -380,9 +516,9 @@ def match_me5a_ariba(
         [
             "Solicitud de pedido",
             "Pos.solicitud pedido",
-            "Pedido"
+            "Pedido",
         ],
-        "ME5A"
+        "ME5A",
     )
 
     validar_columnas(
@@ -390,9 +526,9 @@ def match_me5a_ariba(
         [
             "ID de solicitud de compra del ERP",
             "Número de línea de la solicitud de compra",
-            "ID de pedido"
+            "ID de pedido",
         ],
-        "ARIBA"
+        "ARIBA",
     )
 
     me5a = me5a.copy()
@@ -448,17 +584,20 @@ def match_me5a_ariba(
         "ID de unidad de negocio",
         "sum(Coste de variación de precio)",
         "Sample",
-        "Categoria Tipo de Compra"
+        "Categoria Tipo de Compra",
     ]
 
-    columnas_ariba = [col for col in columnas_ariba if col in ariba.columns]
+    columnas_ariba = [
+        col for col in columnas_ariba
+        if col in ariba.columns
+    ]
 
     candidatos = me5a.merge(
         ariba[columnas_ariba],
         left_on="_solicitud_norm",
         right_on="_id_erp_norm",
         how="left",
-        suffixes=("_me5a", "_ariba")
+        suffixes=("_me5a", "_ariba"),
     )
 
     candidatos["_match_ariba_solicitud"] = (
@@ -469,7 +608,7 @@ def match_me5a_ariba(
     candidatos["_match_ariba_linea"] = np.isclose(
         pd.to_numeric(candidatos["_linea_esperada_ariba"], errors="coerce"),
         pd.to_numeric(candidatos["_linea_ariba_num"], errors="coerce"),
-        equal_nan=False
+        equal_nan=False,
     )
 
     candidatos["_match_ariba_pedido"] = (
@@ -483,21 +622,19 @@ def match_me5a_ariba(
         & candidatos["_match_ariba_pedido"]
     )
 
-    cols_bool_ariba = [
+    columnas_bool = [
         "_match_ariba_solicitud",
         "_match_ariba_linea",
         "_match_ariba_pedido",
-        "_match_ariba_estricto"
+        "_match_ariba_estricto",
     ]
 
-    candidatos = limpiar_booleanos(candidatos, cols_bool_ariba)
+    candidatos = limpiar_booleanos(candidatos, columnas_bool)
 
-    # Campo auxiliar interno para elegir el mejor candidato.
-    # No se muestra ni se exporta.
     candidatos["_prioridad_match_ariba"] = np.where(
         candidatos["_match_ariba_estricto"],
         1,
-        0
+        0,
     )
 
     candidatos["_coincidencias_ariba"] = (
@@ -509,8 +646,11 @@ def match_me5a_ariba(
     idx_mejor = (
         candidatos
         .sort_values(
-            by=["_prioridad_match_ariba", "_coincidencias_ariba"],
-            ascending=[False, False]
+            by=[
+                "_prioridad_match_ariba",
+                "_coincidencias_ariba",
+            ],
+            ascending=[False, False],
         )
         .groupby("_id_me5a", dropna=False)["_coincidencias_ariba"]
         .idxmax()
@@ -540,62 +680,68 @@ def match_me5a_ariba(
         "ID de unidad de negocio",
         "sum(Coste de variación de precio)",
         "Sample",
-        "Categoria Tipo de Compra"
+        "Categoria Tipo de Compra",
     ]
 
-    columnas_resultado = [col for col in columnas_resultado if col in mejor.columns]
+    columnas_resultado = [
+        col for col in columnas_resultado
+        if col in mejor.columns
+    ]
 
     resultado = mejor[columnas_resultado].copy()
 
-    resultado = resultado.rename(columns={
-        "Tipo de Compra": "ariba_tipo_compra",
-        "ID de solicitud de compra": "ariba_id_solicitud_compra",
-        "ID de solicitud de compra del ERP": "ariba_solicitud_compra_erp",
-        "Número de línea de la solicitud de compra": "ariba_linea_solicitud_compra",
-        "Descripción": "ariba_descripcion",
-        "Fecha de la solicitud de compra": "ariba_fecha_solicitud_compra",
-        "Fecha de aprobación": "ariba_fecha_aprobacion",
-        "ID de pedido": "ariba_id_pedido",
-        "Proveedor - Proveedor de ERP": "ariba_proveedor_erp",
-        "Centro de costes - ID de centro de costes": "ariba_id_centro_costes",
-        "Centro de costes - Centro de costes": "ariba_centro_costes",
-        "ID de cuenta": "ariba_id_cuenta",
-        "Cuenta": "ariba_cuenta",
-        "ID de unidad de negocio": "ariba_id_unidad_negocio",
-        "sum(Coste de variación de precio)": "ariba_coste_variacion_precio",
-        "Sample": "ariba_sample",
-        "Categoria Tipo de Compra": "ariba_categoria_tipo_compra"
-    })
+    resultado = resultado.rename(
+        columns={
+            "Tipo de Compra": "ariba_tipo_compra",
+            "ID de solicitud de compra": "ariba_id_solicitud_compra",
+            "ID de solicitud de compra del ERP": "ariba_solicitud_compra_erp",
+            "Número de línea de la solicitud de compra": "ariba_linea_solicitud_compra",
+            "Descripción": "ariba_descripcion",
+            "Fecha de la solicitud de compra": "ariba_fecha_solicitud_compra",
+            "Fecha de aprobación": "ariba_fecha_aprobacion",
+            "ID de pedido": "ariba_id_pedido",
+            "Proveedor - Proveedor de ERP": "ariba_proveedor_erp",
+            "Centro de costes - ID de centro de costes": "ariba_id_centro_costes",
+            "Centro de costes - Centro de costes": "ariba_centro_costes",
+            "ID de cuenta": "ariba_id_cuenta",
+            "Cuenta": "ariba_cuenta",
+            "ID de unidad de negocio": "ariba_id_unidad_negocio",
+            "sum(Coste de variación de precio)": "ariba_coste_variacion_precio",
+            "Sample": "ariba_sample",
+            "Categoria Tipo de Compra": "ariba_categoria_tipo_compra",
+        }
+    )
 
     return resultado
 
 
-# =========================================================
+# ============================================================
 # Construcción de match final
-# =========================================================
+# ============================================================
 
 @st.cache_data(show_spinner=False)
 def construir_match_final(
     df_me5a: pd.DataFrame,
     df_ariba: pd.DataFrame,
-    df_nme: pd.DataFrame
+    df_me80fn: pd.DataFrame,
 ) -> pd.DataFrame:
+
     me5a = limpiar_nombres_columnas(df_me5a).copy()
     me5a["_id_me5a"] = range(len(me5a))
 
     match_ariba = match_me5a_ariba(me5a, df_ariba)
-    match_nme = match_me5a_nme80fn(me5a, df_nme)
+    match_me80fn = match_me5a_me80fn(me5a, df_me80fn)
 
     resultado = me5a.merge(
         match_ariba,
         on="_id_me5a",
-        how="left"
+        how="left",
     )
 
     resultado = resultado.merge(
-        match_nme,
+        match_me80fn,
         on="_id_me5a",
-        how="left"
+        how="left",
     )
 
     columnas_bool = [
@@ -603,54 +749,54 @@ def construir_match_final(
         "_match_ariba_linea",
         "_match_ariba_pedido",
         "_match_ariba_estricto",
-        "_match_nme_pedido_documento",
-        "_match_nme_posicion",
-        "_match_nme_material",
-        "_match_nme_centro",
-        "_match_nme_estricto"
+        "_match_me80fn_pedido_documento",
+        "_match_me80fn_posicion",
+        "_match_me80fn_material",
+        "_match_me80fn_centro",
+        "_match_me80fn_estricto",
     ]
 
     resultado = limpiar_booleanos(resultado, columnas_bool)
 
     resultado["match_ariba_encontrado"] = resultado["_match_ariba_estricto"]
-    resultado["match_nme80fn_encontrado"] = resultado["_match_nme_estricto"]
+    resultado["match_me80fn_encontrado"] = resultado["_match_me80fn_estricto"]
 
     resultado["estado_match"] = np.select(
         [
-            resultado["match_ariba_encontrado"] & resultado["match_nme80fn_encontrado"],
-            resultado["match_ariba_encontrado"] & ~resultado["match_nme80fn_encontrado"],
-            ~resultado["match_ariba_encontrado"] & resultado["match_nme80fn_encontrado"]
+            resultado["match_ariba_encontrado"] & resultado["match_me80fn_encontrado"],
+            resultado["match_ariba_encontrado"] & ~resultado["match_me80fn_encontrado"],
+            ~resultado["match_ariba_encontrado"] & resultado["match_me80fn_encontrado"],
         ],
         [
-            "Encontrado en ARIBA y NME80FN",
+            "Encontrado en ARIBA y ME80FN",
             "Encontrado solo en ARIBA",
-            "Encontrado solo en NME80FN"
+            "Encontrado solo en ME80FN",
         ],
-        default="No encontrado en ARIBA ni NME80FN"
+        default="No encontrado en ARIBA ni ME80FN",
     )
 
     return resultado
 
 
-# =========================================================
+# ============================================================
 # Nombres finales para exportación
-# =========================================================
+# ============================================================
 
 COLUMNAS_EXPORTACION = {
     "estado_match": "Estado del match",
     "match_ariba_encontrado": "Match encontrado - ARIBA",
-    "match_nme80fn_encontrado": "Match encontrado - NME80FN",
+    "match_me80fn_encontrado": "Match encontrado - ME80FN",
 
     "_match_ariba_solicitud": "Coincide solicitud - ARIBA",
     "_match_ariba_linea": "Coincide línea - ARIBA",
     "_match_ariba_pedido": "Coincide pedido - ARIBA",
     "_match_ariba_estricto": "Match estricto - ARIBA",
 
-    "_match_nme_pedido_documento": "Coincide pedido/documento - NME80FN",
-    "_match_nme_posicion": "Coincide posición - NME80FN",
-    "_match_nme_material": "Coincide material - NME80FN",
-    "_match_nme_centro": "Coincide centro - NME80FN",
-    "_match_nme_estricto": "Match estricto - NME80FN",
+    "_match_me80fn_pedido_documento": "Coincide pedido/documento - ME80FN",
+    "_match_me80fn_posicion": "Coincide posición - ME80FN",
+    "_match_me80fn_material": "Coincide material - ME80FN",
+    "_match_me80fn_centro": "Coincide centro - ME80FN",
+    "_match_me80fn_estricto": "Match estricto - ME80FN",
 
     "Solicitud de pedido": "Solicitud de pedido - ME5A",
     "Pos.solicitud pedido": "Posición solicitud de pedido - ME5A",
@@ -685,22 +831,22 @@ COLUMNAS_EXPORTACION = {
     "ariba_sample": "Sample - ARIBA",
     "ariba_categoria_tipo_compra": "Categoría tipo de compra - ARIBA",
 
-    "nme_documento_compras": "Documento de compras - NME80FN",
-    "nme_posicion": "Posición - NME80FN",
-    "nme_centro": "Centro - NME80FN",
-    "nme_fecha_entrada": "Fecha de entrada - NME80FN",
-    "nme_material": "Material - NME80FN",
-    "nme_texto_breve": "Texto breve - NME80FN",
-    "nme_cantidad": "Cantidad - NME80FN",
-    "nme_unidad_medida_pedido": "Unidad medida pedido - NME80FN",
-    "nme_importe_moneda_local": "Importe moneda local - NME80FN",
-    "nme_moneda": "Moneda - NME80FN",
-    "nme_importe": "Importe - NME80FN",
-    "nme_clase_operacion": "Clase de operación - NME80FN",
-    "nme_fecha_documento": "Fecha de documento - NME80FN",
-    "nme_fecha_contabilizacion": "Fecha contabilización - NME80FN",
-    "nme_fecha_facturacion_proveedor": "Fecha facturación proveedor - NME80FN",
-    "nme_fecha_recepcion_mercancia": "Fecha recepción mercancía - NME80FN",
+    "me80fn_documento_compras": "Documento de compras - ME80FN",
+    "me80fn_posicion": "Posición - ME80FN",
+    "me80fn_centro": "Centro - ME80FN",
+    "me80fn_fecha_entrada": "Fecha de entrada - ME80FN",
+    "me80fn_material": "Material - ME80FN",
+    "me80fn_texto_breve": "Texto breve - ME80FN",
+    "me80fn_cantidad": "Cantidad - ME80FN",
+    "me80fn_unidad_medida_pedido": "Unidad medida pedido - ME80FN",
+    "me80fn_importe_moneda_local": "Importe moneda local - ME80FN",
+    "me80fn_moneda": "Moneda - ME80FN",
+    "me80fn_importe": "Importe - ME80FN",
+    "me80fn_clase_operacion": "Clase de operación - ME80FN",
+    "me80fn_fecha_documento": "Fecha de documento - ME80FN",
+    "me80fn_fecha_contabilizacion": "Fecha contabilización - ME80FN",
+    "me80fn_fecha_facturacion_proveedor": "Fecha facturación proveedor - ME80FN",
+    "me80fn_fecha_recepcion_mercancia": "Fecha recepción mercancía - ME80FN",
 }
 
 
@@ -709,13 +855,16 @@ def preparar_resultado_exportacion(df: pd.DataFrame) -> pd.DataFrame:
 
     columnas_no_exportar = [
         "score_ariba",
-        "score_nme80fn",
-        "score_total_integrado"
+        "score_me80fn",
+        "score_total_integrado",
     ]
 
     df_export = df_export.drop(
-        columns=[col for col in columnas_no_exportar if col in df_export.columns],
-        errors="ignore"
+        columns=[
+            col for col in columnas_no_exportar
+            if col in df_export.columns
+        ],
+        errors="ignore",
     )
 
     columnas_renombrar = {
@@ -729,58 +878,66 @@ def preparar_resultado_exportacion(df: pd.DataFrame) -> pd.DataFrame:
     return df_export
 
 
-# =========================================================
+# ============================================================
 # Resumen
-# =========================================================
+# ============================================================
 
 def generar_resumen(resultado_final: pd.DataFrame) -> pd.DataFrame:
     total = int(len(resultado_final))
 
     if total == 0:
         return pd.DataFrame(
-            columns=["Mensaje", "Cantidad", "%"]
+            columns=[
+                "Mensaje",
+                "Cantidad",
+                "%",
+            ]
         )
 
     cantidad_ariba = int(resultado_final["match_ariba_encontrado"].sum())
-    cantidad_nme = int(resultado_final["match_nme80fn_encontrado"].sum())
+    cantidad_me80fn = int(resultado_final["match_me80fn_encontrado"].sum())
+
     cantidad_ambos = int(
-        resultado_final["estado_match"].eq("Encontrado en ARIBA y NME80FN").sum()
+        resultado_final["estado_match"].eq("Encontrado en ARIBA y ME80FN").sum()
     )
+
     cantidad_solo_ariba = int(
         resultado_final["estado_match"].eq("Encontrado solo en ARIBA").sum()
     )
-    cantidad_solo_nme = int(
-        resultado_final["estado_match"].eq("Encontrado solo en NME80FN").sum()
+
+    cantidad_solo_me80fn = int(
+        resultado_final["estado_match"].eq("Encontrado solo en ME80FN").sum()
     )
+
     cantidad_no_encontrado = int(
-        resultado_final["estado_match"].eq("No encontrado en ARIBA ni NME80FN").sum()
+        resultado_final["estado_match"].eq("No encontrado en ARIBA ni ME80FN").sum()
     )
 
     registros = [
         {
             "Mensaje": f"{cantidad_ariba:,} registros de {total:,} en ME5A fueron encontrados en ARIBA",
-            "Cantidad": cantidad_ariba
+            "Cantidad": cantidad_ariba,
         },
         {
-            "Mensaje": f"{cantidad_nme:,} registros de {total:,} en ME5A fueron encontrados en NME80FN",
-            "Cantidad": cantidad_nme
+            "Mensaje": f"{cantidad_me80fn:,} registros de {total:,} en ME5A fueron encontrados en ME80FN",
+            "Cantidad": cantidad_me80fn,
         },
         {
-            "Mensaje": f"{cantidad_ambos:,} registros de {total:,} en ME5A fueron encontrados en ARIBA y NME80FN",
-            "Cantidad": cantidad_ambos
+            "Mensaje": f"{cantidad_ambos:,} registros de {total:,} en ME5A fueron encontrados en ARIBA y ME80FN",
+            "Cantidad": cantidad_ambos,
         },
         {
             "Mensaje": f"{cantidad_solo_ariba:,} registros de {total:,} en ME5A fueron encontrados solo en ARIBA",
-            "Cantidad": cantidad_solo_ariba
+            "Cantidad": cantidad_solo_ariba,
         },
         {
-            "Mensaje": f"{cantidad_solo_nme:,} registros de {total:,} en ME5A fueron encontrados solo en NME80FN",
-            "Cantidad": cantidad_solo_nme
+            "Mensaje": f"{cantidad_solo_me80fn:,} registros de {total:,} en ME5A fueron encontrados solo en ME80FN",
+            "Cantidad": cantidad_solo_me80fn,
         },
         {
-            "Mensaje": f"{cantidad_no_encontrado:,} registros de {total:,} en ME5A no fueron encontrados en ARIBA ni NME80FN",
-            "Cantidad": cantidad_no_encontrado
-        }
+            "Mensaje": f"{cantidad_no_encontrado:,} registros de {total:,} en ME5A no fueron encontrados en ARIBA ni ME80FN",
+            "Cantidad": cantidad_no_encontrado,
+        },
     ]
 
     resumen = pd.DataFrame(registros)
@@ -789,20 +946,20 @@ def generar_resumen(resultado_final: pd.DataFrame) -> pd.DataFrame:
     return resumen
 
 
-# =========================================================
+# ============================================================
 # Mensaje de cambios y lógica del match
-# =========================================================
+# ============================================================
 
 def generar_resumen_cambios_match(
     df_me5a: pd.DataFrame,
     df_ariba: pd.DataFrame,
-    df_nme: pd.DataFrame,
-    resultado_final: pd.DataFrame
+    df_me80fn: pd.DataFrame,
+    resultado_final: pd.DataFrame,
 ) -> dict:
 
     total_me5a = int(len(df_me5a))
     total_ariba = int(len(df_ariba))
-    total_nme = int(len(df_nme))
+    total_me80fn = int(len(df_me80fn))
     total_resultado = int(len(resultado_final))
 
     match_ariba = (
@@ -811,20 +968,20 @@ def generar_resumen_cambios_match(
         else 0
     )
 
-    match_nme = (
-        int(resultado_final["match_nme80fn_encontrado"].sum())
-        if "match_nme80fn_encontrado" in resultado_final.columns
+    match_me80fn = (
+        int(resultado_final["match_me80fn_encontrado"].sum())
+        if "match_me80fn_encontrado" in resultado_final.columns
         else 0
     )
 
     no_encontrado = (
-        int(resultado_final["estado_match"].eq("No encontrado en ARIBA ni NME80FN").sum())
+        int(resultado_final["estado_match"].eq("No encontrado en ARIBA ni ME80FN").sum())
         if "estado_match" in resultado_final.columns
         else 0
     )
 
     match_ambos = (
-        int(resultado_final["estado_match"].eq("Encontrado en ARIBA y NME80FN").sum())
+        int(resultado_final["estado_match"].eq("Encontrado en ARIBA y ME80FN").sum())
         if "estado_match" in resultado_final.columns
         else 0
     )
@@ -835,8 +992,8 @@ def generar_resumen_cambios_match(
         else 0
     )
 
-    match_solo_nme = (
-        int(resultado_final["estado_match"].eq("Encontrado solo en NME80FN").sum())
+    match_solo_me80fn = (
+        int(resultado_final["estado_match"].eq("Encontrado solo en ME80FN").sum())
         if "estado_match" in resultado_final.columns
         else 0
     )
@@ -848,7 +1005,7 @@ def generar_resumen_cambios_match(
 
     if "estado_match" in resultado_final.columns:
         ejemplo_df = resultado_final[
-            resultado_final["estado_match"].eq("Encontrado en ARIBA y NME80FN")
+            resultado_final["estado_match"].eq("Encontrado en ARIBA y ME80FN")
         ]
 
         if not ejemplo_df.empty:
@@ -857,58 +1014,60 @@ def generar_resumen_cambios_match(
     return {
         "total_me5a": total_me5a,
         "total_ariba": total_ariba,
-        "total_nme": total_nme,
+        "total_me80fn": total_me80fn,
         "total_resultado": total_resultado,
         "match_ariba": match_ariba,
-        "match_nme": match_nme,
+        "match_me80fn": match_me80fn,
         "no_encontrado": no_encontrado,
         "match_ambos": match_ambos,
         "match_solo_ariba": match_solo_ariba,
-        "match_solo_nme": match_solo_nme,
+        "match_solo_me80fn": match_solo_me80fn,
         "columnas_resultado": columnas_resultado,
         "duplicados_resultado": duplicados_resultado,
-        "ejemplo_match_ambos": ejemplo_match_ambos
+        "ejemplo_match_ambos": ejemplo_match_ambos,
     }
 
 
 def generar_texto_ejemplo_match(ejemplo: dict) -> str:
     if not ejemplo:
         return """
-            **Ejemplo de lógica del match**
+        **Ejemplo de lógica del match**
 
-            No se encontró ningún caso con match simultáneo en ARIBA y NME80FN para mostrar como ejemplo.
+        No se encontró ningún caso con match simultáneo en ARIBA y ME80FN para mostrar como ejemplo.
         """
 
-    pos_solicitud = formatear_valor(ejemplo.get("Pos.solicitud pedido", ""))
+    pos_solicitud = formatear_valor(
+        ejemplo.get("Pos.solicitud pedido", "")
+    )
 
     return f"""
-            **Ejemplo de lógica del match**
+        **Ejemplo de lógica del match**
 
-            Se tomó un registro de ME5A que fue encontrado tanto en ARIBA como en NME80FN.
+        Se tomó un registro de ME5A que fue encontrado tanto en ARIBA como en ME80FN.
 
-            **Validación ARIBA**
+        **Validación ARIBA**
 
-            - Solicitud de pedido ME5A: **{formatear_valor(ejemplo.get('Solicitud de pedido', ''))}**.
-            - Solicitud ERP ARIBA: **{formatear_valor(ejemplo.get('ariba_solicitud_compra_erp', ''))}**.
-            - Posición solicitud ME5A / 10: **{pos_solicitud} / 10**.
-            - Línea ARIBA: **{formatear_valor(ejemplo.get('ariba_linea_solicitud_compra', ''))}**.
-            - Pedido ME5A: **{formatear_valor(ejemplo.get('Pedido', ''))}**.
-            - Pedido ARIBA: **{formatear_valor(ejemplo.get('ariba_id_pedido', ''))}**.
+        - Solicitud de pedido ME5A: **{formatear_valor(ejemplo.get('Solicitud de pedido', ''))}**.
+        - Solicitud ERP ARIBA: **{formatear_valor(ejemplo.get('ariba_solicitud_compra_erp', ''))}**.
+        - Posición solicitud ME5A / 10: **{pos_solicitud} / 10**.
+        - Línea ARIBA: **{formatear_valor(ejemplo.get('ariba_linea_solicitud_compra', ''))}**.
+        - Pedido ME5A: **{formatear_valor(ejemplo.get('Pedido', ''))}**.
+        - Pedido ARIBA: **{formatear_valor(ejemplo.get('ariba_id_pedido', ''))}**.
 
-            Resultado: el registro cumple las condiciones de solicitud, línea y pedido, por eso fue encontrado en ARIBA.
+        Resultado: el registro cumple las condiciones de solicitud, línea y pedido, por eso fue encontrado en ARIBA.
 
-            **Validación NME80FN**
+        **Validación ME80FN**
 
-            - Pedido ME5A: **{formatear_valor(ejemplo.get('Pedido', ''))}**.
-            - Documento compras NME80FN: **{formatear_valor(ejemplo.get('nme_documento_compras', ''))}**.
-            - Posición pedido ME5A: **{formatear_valor(ejemplo.get('Posición de pedido', ''))}**.
-            - Posición NME80FN: **{formatear_valor(ejemplo.get('nme_posicion', ''))}**.
-            - Material ME5A: **{formatear_valor(ejemplo.get('Material', ''))}**.
-            - Material NME80FN: **{formatear_valor(ejemplo.get('nme_material', ''))}**.
-            - Centro ME5A: **{formatear_valor(ejemplo.get('Centro', ''))}**.
-            - Centro NME80FN: **{formatear_valor(ejemplo.get('nme_centro', ''))}**.
+        - Pedido ME5A: **{formatear_valor(ejemplo.get('Pedido', ''))}**.
+        - Documento compras ME80FN: **{formatear_valor(ejemplo.get('me80fn_documento_compras', ''))}**.
+        - Posición pedido ME5A: **{formatear_valor(ejemplo.get('Posición de pedido', ''))}**.
+        - Posición ME80FN: **{formatear_valor(ejemplo.get('me80fn_posicion', ''))}**.
+        - Material ME5A: **{formatear_valor(ejemplo.get('Material', ''))}**.
+        - Material ME80FN: **{formatear_valor(ejemplo.get('me80fn_material', ''))}**.
+        - Centro ME5A: **{formatear_valor(ejemplo.get('Centro', ''))}**.
+        - Centro ME80FN: **{formatear_valor(ejemplo.get('me80fn_centro', ''))}**.
 
-            Resultado: el registro cumple las condiciones de pedido, posición, material y centro, por eso fue encontrado en NME80FN.
+        Resultado: el registro cumple las condiciones de pedido, posición, material y centro, por eso fue encontrado en ME80FN.
     """
 
 
@@ -923,16 +1082,16 @@ def mostrar_resumen_cambios_match(resumen_cambios: dict):
 
             - Se cargaron **{resumen_cambios['total_me5a']:,} registros** de ME5A.
             - Se cargaron **{resumen_cambios['total_ariba']:,} registros** de ARIBA.
-            - Se cargaron **{resumen_cambios['total_nme']:,} registros** de NME80FN.
+            - Se cargaron **{resumen_cambios['total_me80fn']:,} registros** de ME80FN.
 
             **Resultado del match con AND estricto**
 
             - **{resumen_cambios['match_ariba']:,} registros de {resumen_cambios['total_me5a']:,} en ME5A fueron encontrados en ARIBA**.
-            - **{resumen_cambios['match_nme']:,} registros de {resumen_cambios['total_me5a']:,} en ME5A fueron encontrados en NME80FN**.
-            - **{resumen_cambios['match_ambos']:,} registros de {resumen_cambios['total_me5a']:,} en ME5A fueron encontrados en ARIBA y NME80FN**.
+            - **{resumen_cambios['match_me80fn']:,} registros de {resumen_cambios['total_me5a']:,} en ME5A fueron encontrados en ME80FN**.
+            - **{resumen_cambios['match_ambos']:,} registros de {resumen_cambios['total_me5a']:,} en ME5A fueron encontrados en ARIBA y ME80FN**.
             - **{resumen_cambios['match_solo_ariba']:,} registros de {resumen_cambios['total_me5a']:,} en ME5A fueron encontrados solo en ARIBA**.
-            - **{resumen_cambios['match_solo_nme']:,} registros de {resumen_cambios['total_me5a']:,} en ME5A fueron encontrados solo en NME80FN**.
-            - **{resumen_cambios['no_encontrado']:,} registros de {resumen_cambios['total_me5a']:,} en ME5A no fueron encontrados en ARIBA ni NME80FN**.
+            - **{resumen_cambios['match_solo_me80fn']:,} registros de {resumen_cambios['total_me5a']:,} en ME5A fueron encontrados solo en ME80FN**.
+            - **{resumen_cambios['no_encontrado']:,} registros de {resumen_cambios['total_me5a']:,} en ME5A no fueron encontrados en ARIBA ni ME80FN**.
 
             **Condición ARIBA**
 
@@ -942,14 +1101,14 @@ def mostrar_resumen_cambios_match(resumen_cambios: dict):
             - **Pos.solicitud pedido - ME5A / 10** = **Número de línea de la solicitud de compra - ARIBA**.
             - **Pedido - ME5A** = **ID de pedido - ARIBA**.
 
-            **Condición NME80FN**
+            **Condición ME80FN**
 
-            Para que un registro tenga match en NME80FN, deben cumplirse las 4 condiciones:
+            Para que un registro tenga match en ME80FN, deben cumplirse las 4 condiciones:
 
-            - **Pedido - ME5A** = **Documento compras - NME80FN**.
-            - **Posición de pedido - ME5A** = **Posición - NME80FN**.
-            - **Material - ME5A** = **Material - NME80FN**.
-            - **Centro - ME5A** = **Centro - NME80FN**.
+            - **Pedido - ME5A** = **Documento compras - ME80FN**.
+            - **Posición de pedido - ME5A** = **Posición - ME80FN**.
+            - **Material - ME5A** = **Material - ME80FN**.
+            - **Centro - ME5A** = **Centro - ME80FN**.
 
             {texto_ejemplo}
 
@@ -961,14 +1120,15 @@ def mostrar_resumen_cambios_match(resumen_cambios: dict):
         )
 
 
-# =========================================================
+# ============================================================
 # Exportación
-# =========================================================
+# Excel eliminado
+# ============================================================
 
 def convertir_a_csv(df: pd.DataFrame) -> bytes:
     return df.to_csv(
         index=False,
-        encoding="utf-8-sig"
+        encoding="utf-8-sig",
     ).encode("utf-8-sig")
 
 
@@ -978,27 +1138,8 @@ def convertir_a_parquet(df: pd.DataFrame) -> bytes:
     df.to_parquet(
         output,
         index=False,
-        engine="pyarrow"
+        engine="pyarrow",
     )
-
-    return output.getvalue()
-
-
-def convertir_a_excel(df: pd.DataFrame, resumen: pd.DataFrame) -> bytes:
-    output = io.BytesIO()
-
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df.to_excel(
-            writer,
-            index=False,
-            sheet_name="Match_Final"
-        )
-
-        resumen.to_excel(
-            writer,
-            index=False,
-            sheet_name="Resumen"
-        )
 
     return output.getvalue()
 
@@ -1013,183 +1154,371 @@ def convertir_a_parquet_cache(df: pd.DataFrame) -> bytes:
     return convertir_a_parquet(df)
 
 
-@st.cache_data(show_spinner=False)
-def convertir_a_excel_cache(df: pd.DataFrame, resumen: pd.DataFrame) -> bytes:
-    return convertir_a_excel(df, resumen)
-
-
-# =========================================================
-# Interfaz
-# =========================================================
+# ============================================================
+# Encabezado
+# ============================================================
 
 mostrar_logo()
 
-st.title("Match integrado")
-st.caption("ME5A · ARIBA · NME80FN")
+st.markdown(
+    """
+    <div class="app-header">
+        <div class="app-title">04_MATCH</div>
+        <div class="app-subtitle">
+            Match integrado ME5A · ARIBA · ME80FN
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
-with st.sidebar:
-    st.header("Configuración")
 
-    separador_csv = st.selectbox(
-        "Separador CSV",
-        options=[
-            "Automático",
-            "Punto y coma (;)",
-            "Coma (,)",
-            "Tabulación"
-        ],
-        index=0
-    )
+# ============================================================
+# Configuración
+# ============================================================
 
-    limite_vista = st.number_input(
-        "Filas en vista previa",
-        min_value=50,
-        max_value=1000,
-        value=300,
-        step=50
-    )
+with st.expander("Configuración", expanded=False):
+    col_conf1, col_conf2 = st.columns(2)
 
-    ver_vista_previa_archivos = st.checkbox(
-        "Ver vista previa de archivos cargados",
-        value=True
-    )
+    with col_conf1:
+        separador_csv = st.selectbox(
+            "Separador CSV",
+            options=[
+                "Automático",
+                "Punto y coma (;)",
+                "Coma (,)",
+                "Tabulación",
+            ],
+            index=0,
+        )
+
+    with col_conf2:
+        limite_vista = st.number_input(
+            "Filas en vista previa",
+            min_value=50,
+            max_value=1000,
+            value=300,
+            step=50,
+        )
 
     st.caption("El separador solo aplica a archivos CSV.")
 
 
-st.subheader("Archivos")
+# ============================================================
+# Paso 1: cargar los 3 archivos
+# ============================================================
 
-col1, col2, col3 = st.columns(3)
+st.markdown(
+    """
+    <div class="step-box">
+        <h4 style="margin-top:0;">1. Cargar archivos</h4>
+        <p class="small-muted">
+            Carga de una sola vez los 3 archivos limpios: ME5A, ARIBA y ME80FN.
+            Se aceptan formatos Parquet, Excel o CSV.
+        </p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
-with col1:
-    archivo_me5a = st.file_uploader(
-        "ME5A limpio",
-        type=["parquet", "xlsx", "csv"],
-        key="me5a"
+archivos_cargados = st.file_uploader(
+    "Selecciona los 3 archivos",
+    type=[
+        "parquet",
+        "xlsx",
+        "csv",
+    ],
+    accept_multiple_files=True,
+    label_visibility="collapsed",
+)
+
+if not archivos_cargados:
+    st.info("Carga los archivos ME5A, ARIBA y ME80FN para iniciar el match.")
+    st.stop()
+
+if len(archivos_cargados) < 3:
+    st.warning(
+        f"Se cargaron {len(archivos_cargados)} archivo(s). "
+        "Debes cargar los 3 archivos: ME5A, ARIBA y ME80FN."
     )
-
-with col2:
-    archivo_ariba = st.file_uploader(
-        "ARIBA limpio",
-        type=["parquet", "xlsx", "csv"],
-        key="ariba"
-    )
-
-with col3:
-    archivo_nme = st.file_uploader(
-        "NME80FN limpio",
-        type=["parquet", "xlsx", "csv"],
-        key="nme"
-    )
-
-
-if not archivo_me5a or not archivo_ariba or not archivo_nme:
-    st.info("Carga los tres archivos para generar el match.")
     st.stop()
 
 
+deteccion = detectar_archivos_cargados(archivos_cargados)
+archivos_detectados = deteccion["detectados"]
+conflictos = deteccion["conflictos"]
+
+if conflictos:
+    st.warning(
+        "Se detectaron archivos duplicados para: "
+        + ", ".join(sorted(set(conflictos)))
+        + ". Revisa los nombres o asigna manualmente."
+    )
+
+if archivos_completos(archivos_detectados) and not conflictos:
+    archivo_me5a = archivos_detectados["ME5A"]
+    archivo_ariba = archivos_detectados["ARIBA"]
+    archivo_me80fn = archivos_detectados["ME80FN"]
+
+    st.success(
+        "Archivos detectados correctamente: "
+        f"ME5A = {archivo_me5a.name}, "
+        f"ARIBA = {archivo_ariba.name}, "
+        f"ME80FN = {archivo_me80fn.name}."
+    )
+
+else:
+    st.warning(
+        "No fue posible detectar automáticamente los 3 archivos. "
+        "Asigna cada archivo manualmente."
+    )
+
+    nombres_archivos = [
+        archivo.name for archivo in archivos_cargados
+    ]
+
+    opciones = ["-- Seleccionar --"] + nombres_archivos
+
+    def indice_detectado(tipo: str) -> int:
+        archivo = archivos_detectados.get(tipo)
+
+        if archivo is None:
+            return 0
+
+        if archivo.name in nombres_archivos:
+            return opciones.index(archivo.name)
+
+        return 0
+
+    col_asig1, col_asig2, col_asig3 = st.columns(3)
+
+    with col_asig1:
+        nombre_me5a = st.selectbox(
+            "Archivo ME5A",
+            options=opciones,
+            index=indice_detectado("ME5A"),
+        )
+
+    with col_asig2:
+        nombre_ariba = st.selectbox(
+            "Archivo ARIBA",
+            options=opciones,
+            index=indice_detectado("ARIBA"),
+        )
+
+    with col_asig3:
+        nombre_me80fn = st.selectbox(
+            "Archivo ME80FN",
+            options=opciones,
+            index=indice_detectado("ME80FN"),
+        )
+
+    seleccionados = [
+        nombre_me5a,
+        nombre_ariba,
+        nombre_me80fn,
+    ]
+
+    if "-- Seleccionar --" in seleccionados:
+        st.info("Asigna los 3 archivos para continuar.")
+        st.stop()
+
+    if len(set(seleccionados)) < 3:
+        st.error("Cada tipo debe tener un archivo distinto.")
+        st.stop()
+
+    archivos_por_nombre = {
+        archivo.name: archivo
+        for archivo in archivos_cargados
+    }
+
+    archivo_me5a = archivos_por_nombre[nombre_me5a]
+    archivo_ariba = archivos_por_nombre[nombre_ariba]
+    archivo_me80fn = archivos_por_nombre[nombre_me80fn]
+
+
+# ============================================================
+# Paso 2: procesamiento
+# ============================================================
+
 try:
+    bytes_me5a = archivo_me5a.getvalue()
+    bytes_ariba = archivo_ariba.getvalue()
+    bytes_me80fn = archivo_me80fn.getvalue()
+
+    firma_archivos = (
+        f"{archivo_me5a.name}_{len(bytes_me5a)}_"
+        f"{archivo_ariba.name}_{len(bytes_ariba)}_"
+        f"{archivo_me80fn.name}_{len(bytes_me80fn)}_"
+        f"{separador_csv}"
+    )
+
     with st.spinner("Leyendo archivos..."):
         df_me5a = leer_archivo_cache(
-            archivo_me5a.getvalue(),
-            archivo_me5a.name,
-            separador_csv
+            bytes_archivo=bytes_me5a,
+            nombre_archivo=archivo_me5a.name,
+            separador_csv=separador_csv,
         )
 
         df_ariba = leer_archivo_cache(
-            archivo_ariba.getvalue(),
-            archivo_ariba.name,
-            separador_csv
+            bytes_archivo=bytes_ariba,
+            nombre_archivo=archivo_ariba.name,
+            separador_csv=separador_csv,
         )
 
-        df_nme = leer_archivo_cache(
-            archivo_nme.getvalue(),
-            archivo_nme.name,
-            separador_csv
+        df_me80fn = leer_archivo_cache(
+            bytes_archivo=bytes_me80fn,
+            nombre_archivo=archivo_me80fn.name,
+            separador_csv=separador_csv,
         )
-
-    if ver_vista_previa_archivos:
-        st.subheader("Vista previa de archivos cargados")
-
-        tab_me5a, tab_ariba, tab_nme = st.tabs(
-            [
-                "ME5A",
-                "ARIBA",
-                "NME80FN"
-            ]
-        )
-
-        with tab_me5a:
-            st.caption(f"Filas: {len(df_me5a):,} · Columnas: {len(df_me5a.columns):,}")
-            st.dataframe(
-                df_me5a.head(int(limite_vista)),
-                use_container_width=True,
-                hide_index=True
-            )
-
-        with tab_ariba:
-            st.caption(f"Filas: {len(df_ariba):,} · Columnas: {len(df_ariba.columns):,}")
-            st.dataframe(
-                df_ariba.head(int(limite_vista)),
-                use_container_width=True,
-                hide_index=True
-            )
-
-        with tab_nme:
-            st.caption(f"Filas: {len(df_nme):,} · Columnas: {len(df_nme.columns):,}")
-            st.dataframe(
-                df_nme.head(int(limite_vista)),
-                use_container_width=True,
-                hide_index=True
-            )
 
     with st.spinner("Generando match integrado..."):
         resultado_final = construir_match_final(
             df_me5a=df_me5a,
             df_ariba=df_ariba,
-            df_nme=df_nme
+            df_me80fn=df_me80fn,
         )
 
         resumen = generar_resumen(resultado_final)
-        resultado_exportacion = preparar_resultado_exportacion(resultado_final)
 
-        parquet_bytes = convertir_a_parquet_cache(resultado_exportacion)
+        resultado_exportacion = preparar_resultado_exportacion(
+            resultado_final
+        )
+
+        parquet_bytes = convertir_a_parquet_cache(
+            resultado_exportacion
+        )
 
         resumen_cambios = generar_resumen_cambios_match(
             df_me5a=df_me5a,
             df_ariba=df_ariba,
-            df_nme=df_nme,
-            resultado_final=resultado_final
+            df_me80fn=df_me80fn,
+            resultado_final=resultado_final,
         )
 
-    st.success("Match generado correctamente.")
+except Exception as e:
+    st.error("No se pudo generar el match.")
+    st.exception(e)
+    st.stop()
 
-    mostrar_resumen_cambios_match(resumen_cambios)
 
-    st.subheader("Indicadores")
+st.markdown(
+    """
+    <div class="step-box">
+        <h4 style="margin-top:0;">2. Match generado</h4>
+        <p class="small-muted">
+            El cruce ME5A, ARIBA y ME80FN fue ejecutado correctamente.
+            El archivo de salida ya está listo.
+        </p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
-    total_me5a = len(df_me5a)
-    total_resultado = len(resultado_final)
-    total_ariba_match = int(resultado_final["match_ariba_encontrado"].sum())
-    total_nme_match = int(resultado_final["match_nme80fn_encontrado"].sum())
+st.success("Match generado correctamente.")
 
-    m1, m2, m3, m4 = st.columns(4)
 
-    m1.metric("Registros ME5A", f"{total_me5a:,}")
-    m2.metric("Resultado integrado", f"{total_resultado:,}")
-    m3.metric("Encontrados en ARIBA", f"{total_ariba_match:,} de {total_me5a:,}")
-    m4.metric("Encontrados en NME80FN", f"{total_nme_match:,} de {total_me5a:,}")
+# ============================================================
+# Indicadores
+# ============================================================
 
-    st.subheader("Resumen")
+total_me5a = len(df_me5a)
+total_resultado = len(resultado_final)
+total_ariba_match = int(resultado_final["match_ariba_encontrado"].sum())
+total_me80fn_match = int(resultado_final["match_me80fn_encontrado"].sum())
 
+col1, col2, col3, col4 = st.columns(4)
+
+col1.metric("Registros ME5A", f"{total_me5a:,}")
+col2.metric("Resultado integrado", f"{total_resultado:,}")
+col3.metric("Encontrados en ARIBA", f"{total_ariba_match:,}")
+col4.metric("Encontrados en ME80FN", f"{total_me80fn_match:,}")
+
+
+# ============================================================
+# Paso 3: descarga principal
+# ============================================================
+
+st.markdown(
+    """
+    <div class="step-box">
+        <h4 style="margin-top:0;">3. Descargar resultado integrado</h4>
+        <p class="small-muted">
+            El formato principal de salida es Parquet.
+        </p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.download_button(
+    label="Descargar resultado en Parquet",
+    data=parquet_bytes,
+    file_name="match_integrado_me5a_ariba_me80fn.parquet",
+    mime="application/octet-stream",
+    type="primary",
+    use_container_width=True,
+)
+
+
+# ============================================================
+# Detalle opcional
+# ============================================================
+
+mostrar_resumen_cambios_match(resumen_cambios)
+
+with st.expander("Resumen del match", expanded=False):
     st.dataframe(
         resumen,
         use_container_width=True,
-        hide_index=True
+        hide_index=True,
     )
 
-    st.subheader("Vista previa del match final")
 
+with st.expander("Vista previa de archivos cargados", expanded=False):
+    tab_me5a, tab_ariba, tab_me80fn = st.tabs(
+        [
+            "ME5A",
+            "ARIBA",
+            "ME80FN",
+        ]
+    )
+
+    with tab_me5a:
+        st.caption(
+            f"Filas: {len(df_me5a):,} · Columnas: {len(df_me5a.columns):,}"
+        )
+
+        st.dataframe(
+            df_me5a.head(int(limite_vista)),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    with tab_ariba:
+        st.caption(
+            f"Filas: {len(df_ariba):,} · Columnas: {len(df_ariba.columns):,}"
+        )
+
+        st.dataframe(
+            df_ariba.head(int(limite_vista)),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    with tab_me80fn:
+        st.caption(
+            f"Filas: {len(df_me80fn):,} · Columnas: {len(df_me80fn.columns):,}"
+        )
+
+        st.dataframe(
+            df_me80fn.head(int(limite_vista)),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+
+with st.expander("Vista previa del match final", expanded=False):
     st.caption(
         f"Mostrando hasta {int(limite_vista):,} registros de "
         f"{len(resultado_exportacion):,} registros generados en el match final. "
@@ -1199,99 +1528,62 @@ try:
     st.dataframe(
         resultado_exportacion.head(int(limite_vista)),
         use_container_width=True,
-        hide_index=True
+        hide_index=True,
     )
 
-    with st.expander("Ver columnas disponibles"):
-        c1, c2, c3, c4 = st.columns(4)
 
-        with c1:
-            st.markdown("**ME5A**")
-            st.write(df_me5a.columns.tolist())
+with st.expander("Ver columnas disponibles", expanded=False):
+    col_c1, col_c2, col_c3, col_c4 = st.columns(4)
 
-        with c2:
-            st.markdown("**ARIBA**")
-            st.write(df_ariba.columns.tolist())
+    with col_c1:
+        st.markdown("**ME5A**")
+        st.write(df_me5a.columns.tolist())
 
-        with c3:
-            st.markdown("**NME80FN**")
-            st.write(df_nme.columns.tolist())
+    with col_c2:
+        st.markdown("**ARIBA**")
+        st.write(df_ariba.columns.tolist())
 
-        with c4:
-            st.markdown("**Resultado exportado**")
-            st.write(resultado_exportacion.columns.tolist())
+    with col_c3:
+        st.markdown("**ME80FN**")
+        st.write(df_me80fn.columns.tolist())
 
-    st.subheader("Descarga")
+    with col_c4:
+        st.markdown("**Resultado exportado**")
+        st.write(resultado_exportacion.columns.tolist())
 
-    st.download_button(
-        label="Descargar resultado en Parquet",
-        data=parquet_bytes,
-        file_name="match_integrado_me5a_ariba_nme80fn.parquet",
-        mime="application/octet-stream",
-        use_container_width=True
-    )
 
+# ============================================================
+# Descarga opcional CSV
+# CSV se genera solo si el usuario lo prepara.
+# Excel eliminado.
+# ============================================================
+
+with st.expander("Descarga opcional CSV", expanded=False):
     st.caption(
-        "Parquet es el formato principal recomendado para conservar tipos de datos "
-        "y trabajar con Python. CSV y Excel se preparan solo si los solicitas."
+        "El archivo recomendado es Parquet. CSV se prepara solo cuando lo solicitas."
     )
 
-    with st.expander("Opcional: descargar como CSV o Excel"):
-        col_csv, col_excel = st.columns(2)
+    preparar_csv = st.button(
+        "Preparar CSV",
+        use_container_width=True,
+    )
 
-        with col_csv:
-            preparar_csv = st.button(
-                "Preparar CSV",
-                use_container_width=True
+    if preparar_csv:
+        with st.spinner("Preparando CSV..."):
+            st.session_state["match_csv_bytes"] = convertir_a_csv_cache(
+                resultado_exportacion
             )
+            st.session_state["match_csv_firma"] = firma_archivos
+            st.session_state["match_csv_nombre"] = "match_integrado_me5a_ariba_me80fn.csv"
 
-            if preparar_csv:
-                with st.spinner("Preparando CSV..."):
-                    csv_bytes = convertir_a_csv_cache(resultado_exportacion)
-
-                st.download_button(
-                    label="Descargar CSV",
-                    data=csv_bytes,
-                    file_name="match_integrado_me5a_ariba_nme80fn.csv",
-                    mime="text/csv",
-                    use_container_width=True
-                )
-
-        with col_excel:
-            limite_excel = 250_000
-
-            if len(resultado_exportacion) > limite_excel:
-                st.button(
-                    "Excel no disponible",
-                    disabled=True,
-                    use_container_width=True
-                )
-
-                st.warning(
-                    f"Excel no está disponible porque la salida tiene más de {limite_excel:,} filas. "
-                    "Usa Parquet o CSV."
-                )
-            else:
-                preparar_excel = st.button(
-                    "Preparar Excel",
-                    use_container_width=True
-                )
-
-                if preparar_excel:
-                    with st.spinner("Preparando Excel..."):
-                        excel_bytes = convertir_a_excel_cache(
-                            resultado_exportacion,
-                            resumen
-                        )
-
-                    st.download_button(
-                        label="Descargar Excel",
-                        data=excel_bytes,
-                        file_name="match_integrado_me5a_ariba_nme80fn.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True
-                    )
-
-except Exception as e:
-    st.error("No se pudo generar el match.")
-    st.exception(e)
+    if (
+        st.session_state.get("match_csv_bytes") is not None
+        and st.session_state.get("match_csv_firma") == firma_archivos
+    ):
+        st.download_button(
+            label="Descargar CSV",
+            data=st.session_state["match_csv_bytes"],
+            file_name=st.session_state["match_csv_nombre"],
+            mime="text/csv",
+            use_container_width=True,
+        )
