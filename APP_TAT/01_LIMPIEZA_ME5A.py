@@ -2,6 +2,8 @@
 # 01_LIMPIEZA_ME5A
 # Limpieza minimalista ME5A
 # Flujo: cargar archivo -> procesar -> confirmar -> descargar parquet
+# CSV opcional
+# Excel eliminado
 # ============================================================
 
 import io
@@ -458,6 +460,7 @@ def diagnostico_columnas_cache(df: pd.DataFrame) -> pd.DataFrame:
 
 # ============================================================
 # Exportación
+# Excel eliminado
 # ============================================================
 
 def convertir_a_parquet(df: pd.DataFrame) -> bytes:
@@ -479,29 +482,6 @@ def convertir_a_csv(df: pd.DataFrame) -> bytes:
     ).encode("utf-8-sig")
 
 
-def convertir_a_excel(
-    df_limpio: pd.DataFrame,
-    diagnostico_columnas: pd.DataFrame,
-) -> bytes:
-
-    output = io.BytesIO()
-
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df_limpio.to_excel(
-            writer,
-            index=False,
-            sheet_name="Data_Limpia",
-        )
-
-        diagnostico_columnas.to_excel(
-            writer,
-            index=False,
-            sheet_name="Diagnostico",
-        )
-
-    return output.getvalue()
-
-
 @st.cache_data(show_spinner=False)
 def convertir_a_parquet_cache(df: pd.DataFrame) -> bytes:
     return convertir_a_parquet(df)
@@ -510,17 +490,6 @@ def convertir_a_parquet_cache(df: pd.DataFrame) -> bytes:
 @st.cache_data(show_spinner=False)
 def convertir_a_csv_cache(df: pd.DataFrame) -> bytes:
     return convertir_a_csv(df)
-
-
-@st.cache_data(show_spinner=False)
-def convertir_a_excel_cache(
-    df_limpio: pd.DataFrame,
-    diagnostico_columnas: pd.DataFrame,
-) -> bytes:
-    return convertir_a_excel(
-        df_limpio=df_limpio,
-        diagnostico_columnas=diagnostico_columnas,
-    )
 
 
 # ============================================================
@@ -582,7 +551,7 @@ uploaded_file = st.file_uploader(
 )
 
 if uploaded_file is None:
-    st.info("Carga un archivo para iniciar el proceso.")
+    st.info("Carga un archivo ME5A para iniciar el proceso.")
     st.stop()
 
 
@@ -592,6 +561,13 @@ if uploaded_file is None:
 
 try:
     bytes_archivo = uploaded_file.getvalue()
+
+    firma_archivo = (
+        f"{uploaded_file.name}_"
+        f"{len(bytes_archivo)}_"
+        f"{separador_csv}"
+    )
+
     nombre_archivo = uploaded_file.name
 
     with st.spinner("Procesando archivo..."):
@@ -622,11 +598,6 @@ try:
             extension="csv",
         )
 
-        nombre_excel = generar_nombre_salida(
-            nombre_archivo=nombre_archivo,
-            extension="xlsx",
-        )
-
 except Exception as e:
     st.error("No fue posible procesar el archivo.")
     st.exception(e)
@@ -638,7 +609,8 @@ st.markdown(
     <div class="step-box">
         <h4 style="margin-top:0;">2. Archivo procesado</h4>
         <p class="small-muted">
-            La limpieza fue ejecutada correctamente. El archivo de salida ya está listo.
+            La limpieza fue ejecutada correctamente.
+            El archivo de salida ya está listo.
         </p>
     </div>
     """,
@@ -751,34 +723,36 @@ with st.expander("Diagnóstico de columnas", expanded=False):
     )
 
 
-with st.expander("Descargas opcionales", expanded=False):
+# ============================================================
+# Descarga opcional CSV
+# CSV se genera solo si el usuario lo prepara.
+# Excel eliminado.
+# ============================================================
+
+with st.expander("Descarga opcional CSV", expanded=False):
     st.caption(
-        "El archivo recomendado es Parquet. CSV y Excel quedan disponibles solo como apoyo."
+        "El archivo recomendado es Parquet. CSV se prepara solo cuando lo solicitas."
     )
 
-    col_csv, col_excel = st.columns(2)
+    preparar_csv = st.button(
+        "Preparar CSV",
+        use_container_width=True,
+    )
 
-    with col_csv:
-        csv_bytes = convertir_a_csv_cache(df_limpio)
+    if preparar_csv:
+        with st.spinner("Preparando CSV..."):
+            st.session_state["me5a_csv_bytes"] = convertir_a_csv_cache(df_limpio)
+            st.session_state["me5a_csv_firma"] = firma_archivo
+            st.session_state["me5a_csv_nombre"] = nombre_csv
 
+    if (
+        st.session_state.get("me5a_csv_bytes") is not None
+        and st.session_state.get("me5a_csv_firma") == firma_archivo
+    ):
         st.download_button(
             label="Descargar CSV",
-            data=csv_bytes,
-            file_name=nombre_csv,
+            data=st.session_state["me5a_csv_bytes"],
+            file_name=st.session_state["me5a_csv_nombre"],
             mime="text/csv",
-            use_container_width=True,
-        )
-
-    with col_excel:
-        excel_bytes = convertir_a_excel_cache(
-            df_limpio=df_limpio,
-            diagnostico_columnas=diagnostico_columnas,
-        )
-
-        st.download_button(
-            label="Descargar Excel",
-            data=excel_bytes,
-            file_name=nombre_excel,
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
         )
