@@ -36,17 +36,13 @@ LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
 
 # ============================================================
 # Estilo visual minimalista
+# IMPORTANTE:
+# No se modifica .block-container para no afectar el logo.
 # ============================================================
 
 st.markdown(
     """
     <style>
-        .block-container {
-            padding-top: 1.5rem;
-            padding-bottom: 2rem;
-            max-width: 1200px;
-        }
-
         div[data-testid="stMetric"] {
             background-color: #f8f9fa;
             padding: 14px;
@@ -96,35 +92,32 @@ st.markdown(
 
 # ============================================================
 # Logo
+# Se mantiene la configuración original.
 # ============================================================
 
-def mostrar_logo() -> None:
-    if not LOGO_PATH.exists():
-        return
+def mostrar_logo():
+    if LOGO_PATH.exists():
+        logo_svg = LOGO_PATH.read_text(encoding="utf-8")
+        logo_base64 = base64.b64encode(logo_svg.encode("utf-8")).decode("utf-8")
 
-    logo_svg = LOGO_PATH.read_text(encoding="utf-8")
-    logo_base64 = base64.b64encode(
-        logo_svg.encode("utf-8")
-    ).decode("utf-8")
-
-    st.markdown(
-        f"""
-        <div style="
-            width: 100%;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            margin-bottom: 8px;
-        ">
-            <img
-                src="data:image/svg+xml;base64,{logo_base64}"
-                style="width: 180px; display: block;"
-                alt="ENAEX"
-            >
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+        st.markdown(
+            f"""
+            <div style="
+                width: 100%;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                margin-top: 5px;
+                margin-bottom: 10px;
+            ">
+                <img 
+                    src="data:image/svg+xml;base64,{logo_base64}" 
+                    style="width: 220px; display: block;"
+                >
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
 
 # ============================================================
@@ -550,7 +543,7 @@ st.markdown(
 
 
 # ============================================================
-# Parámetros mínimos
+# Configuración CSV
 # ============================================================
 
 with st.expander("Configuración CSV", expanded=False):
@@ -710,23 +703,20 @@ with st.expander("Ver detalle del procesamiento", expanded=False):
     columnas_fecha = resumen["columnas_fecha"]
     columnas_numericas = resumen["columnas_numericas"]
 
-    st.write(
-        "- Se limpiaron nombres de columnas."
-    )
-    st.write(
-        "- Se quitaron columnas completamente vacías."
-    )
-    st.write(
-        "- Se limpiaron espacios en textos y valores vacíos."
-    )
+    st.write("- Se limpiaron nombres de columnas.")
+    st.write("- Se quitaron columnas completamente vacías.")
+    st.write("- Se limpiaron espacios en textos y valores vacíos.")
+
     st.write(
         f"- Columnas convertidas a fecha: "
         f"{', '.join(columnas_fecha) if columnas_fecha else 'No detectadas'}."
     )
+
     st.write(
         f"- Columnas convertidas a número: "
         f"{', '.join(columnas_numericas) if columnas_numericas else 'No detectadas'}."
     )
+
     st.write(
         f"- Columnas eliminadas: "
         f"{', '.join(columnas_eliminadas) if columnas_eliminadas else 'No se eliminaron columnas por nombre'}."
