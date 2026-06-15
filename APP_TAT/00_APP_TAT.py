@@ -17,16 +17,87 @@ import streamlit as st
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
 
-# Este archivo está en:
-# PROYECTOS-ENAEX/APP_TAT/
-#
-# Por eso las apps están en la MISMA carpeta:
-APP_01 = BASE_DIR / "01_APP_TAT.py"
-APP_02 = BASE_DIR / "02_APP_TAT.py"
-
 # Logo ubicado en:
 # PROYECTOS-ENAEX/assets/logo.svg
 LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
+
+
+# ============================================================
+# Apps disponibles
+# ============================================================
+
+APPS = [
+    {
+        "nombre": "01_LIMPIEZA_ME5A",
+        "archivo": "01_LIMPIEZA_ME5A.py",
+        "titulo": "01 Limpieza ME5A",
+        "icono": "🧹",
+        "descripcion": "Limpieza y preparación de datos ME5A.",
+    },
+    {
+        "nombre": "02_LIMPIEZA_ARIBA",
+        "archivo": "02_LIMPIEZA_ARIBA",
+        "titulo": "02 Limpieza Ariba",
+        "icono": "🧹",
+        "descripcion": "Limpieza y preparación de información desde Ariba.",
+    },
+    {
+        "nombre": "03_LIMPIEZA_ME80FN",
+        "archivo": "03_LIMPIEZA_ME80FN",
+        "titulo": "03 Limpieza ME80FN",
+        "icono": "🧹",
+        "descripcion": "Limpieza y procesamiento de datos ME80FN.",
+    },
+    {
+        "nombre": "04_MATCH",
+        "archivo": "04_MATCH.py",
+        "titulo": "04 Match",
+        "icono": "🔗",
+        "descripcion": "Cruce y emparejamiento de información entre fuentes.",
+    },
+    {
+        "nombre": "05_CALCULOS",
+        "archivo": "05_CALCULOS.py",
+        "titulo": "05 Cálculos",
+        "icono": "🧮",
+        "descripcion": "Cálculos operativos y generación de resultados TAT.",
+    },
+    {
+        "nombre": "06_CARGAR_ARCHIVO",
+        "archivo": "06_CARGAR_ARCHIVO.py",
+        "titulo": "06 Cargar Archivo",
+        "icono": "📤",
+        "descripcion": "Carga de archivos para el flujo operativo.",
+    },
+    {
+        "nombre": "07_FILTRO",
+        "archivo": "07_FILTRO.py",
+        "titulo": "07 Filtro",
+        "icono": "🔎",
+        "descripcion": "Aplicación de filtros y segmentación de información.",
+    },
+    {
+        "nombre": "08_PERFORMANCE_PLANTA_MENSUAL",
+        "archivo": "08_PERFORMANCE_PLANTA_MENSUAL.py",
+        "titulo": "08 Performance Planta Mensual",
+        "icono": "📊",
+        "descripcion": "Análisis mensual de performance por planta.",
+    },
+    {
+        "nombre": "09_PERFORMANCE_PLANTAS",
+        "archivo": "09_PERFORMANCE_PLANTAS.py",
+        "titulo": "09 Performance Plantas",
+        "icono": "📈",
+        "descripcion": "Análisis comparativo de performance por plantas.",
+    },
+    {
+        "nombre": "10_ALERTAS",
+        "archivo": "10_ALERTAS.py",
+        "titulo": "10 Alertas",
+        "icono": "🚨",
+        "descripcion": "Gestión, revisión y generación de alertas TAT.",
+    },
+]
 
 
 # ============================================================
@@ -41,8 +112,30 @@ st.set_page_config(
 
 
 # ============================================================
-# Logo centrado
+# Utilidades
 # ============================================================
+
+def obtener_ruta_app(nombre_archivo: str) -> Path:
+    """
+    Devuelve la ruta de una app dentro de la carpeta APP_TAT.
+
+    Algunas apps del repositorio aparecen sin extensión .py.
+    Esta función permite validar ambas opciones:
+    - nombre_archivo
+    - nombre_archivo.py
+    """
+    ruta = BASE_DIR / nombre_archivo
+
+    if ruta.exists():
+        return ruta
+
+    if not nombre_archivo.endswith(".py"):
+        ruta_py = BASE_DIR / f"{nombre_archivo}.py"
+        if ruta_py.exists():
+            return ruta_py
+
+    return ruta
+
 
 def mostrar_logo_centrado() -> None:
     """Muestra el logo corporativo centrado en la página de inicio."""
@@ -100,46 +193,25 @@ def pagina_inicio() -> None:
 
     st.markdown("---")
 
-    col1, col2 = st.columns(2)
+    st.subheader("Apps disponibles")
 
-    with col1:
-        st.info(
-            """
-            **01_APP_TAT**
+    columnas = st.columns(2)
 
-            Primera app del portal TAT.
+    for i, app in enumerate(APPS):
+        with columnas[i % 2]:
+            st.info(
+                f"""
+                **{app["titulo"]}**
 
-            Permite revisar:
-            - Información base de TAT
-            - Consultas operativas
-            - Visualización de datos
-            - Descarga de resultados
-            """
-        )
-
-    with col2:
-        st.info(
-            """
-            **02_APP_TAT**
-
-            Segunda app del portal TAT.
-
-            Permite revisar:
-            - Indicadores asociados
-            - Seguimiento de información
-            - Análisis por filtros
-            - Reportes y exportaciones
-            """
-        )
+                {app["descripcion"]}
+                """
+            )
 
     st.markdown("---")
 
     st.success(
         """
-        Para comenzar, entra a una de las pestañas disponibles en **Apps**:
-
-        - **01 App TAT**
-        - **02 App TAT**
+        Para comenzar, selecciona una app desde el menú de navegación del portal.
         """
     )
 
@@ -149,8 +221,8 @@ def pagina_inicio() -> None:
 # ============================================================
 
 apps_requeridas = {
-    "01_APP_TAT": APP_01,
-    "02_APP_TAT": APP_02,
+    app["nombre"]: obtener_ruta_app(app["archivo"])
+    for app in APPS
 }
 
 apps_faltantes = {
@@ -169,6 +241,25 @@ if apps_faltantes:
 
 
 # ============================================================
+# Construcción de páginas
+# ============================================================
+
+paginas_apps = []
+
+for app in APPS:
+    ruta_app = obtener_ruta_app(app["archivo"])
+
+    paginas_apps.append(
+        st.Page(
+            ruta_app,
+            title=app["titulo"],
+            icon=app["icono"],
+            url_path=app["nombre"].lower(),
+        )
+    )
+
+
+# ============================================================
 # Navegación entre páginas
 # ============================================================
 
@@ -182,21 +273,7 @@ pagina = st.navigation(
                 url_path="inicio",
             )
         ],
-
-        "Apps": [
-            st.Page(
-                APP_01,
-                title="01 App TAT",
-                icon="📋",
-                url_path="app_tat_01",
-            ),
-            st.Page(
-                APP_02,
-                title="02 App TAT",
-                icon="📈",
-                url_path="app_tat_02",
-            ),
-        ],
+        "Apps TAT": paginas_apps,
     }
 )
 
