@@ -574,35 +574,45 @@ def mostrar_figura_estado_solped(registro: pd.Series, columnas_clave: dict):
 
 
 def construir_tabla_etapas_tat(registro: pd.Series, columnas_clave: dict) -> pd.DataFrame:
-    return pd.DataFrame(
-        [
+    etapas = [
+        {
+            "Etapa": "Solicitud",
+            "Fecha": obtener_valor(registro, columnas_clave["fecha_solicitud"]),
+        },
+        {
+            "Etapa": "Liberación",
+            "Fecha": obtener_valor(registro, columnas_clave["fecha_liberacion"]),
+        },
+        {
+            "Etapa": "Pedido",
+            "Fecha": obtener_valor(registro, columnas_clave["fecha_pedido"]),
+        },
+        {
+            "Etapa": "Facturación",
+            "Fecha": obtener_valor(registro, columnas_clave["fecha_facturacion"]),
+        },
+        {
+            "Etapa": "Recepción",
+            "Fecha": obtener_valor(registro, columnas_clave["fecha_recepcion"]),
+        },
+    ]
+
+    registros = []
+
+    for item in etapas:
+        fecha = pd.to_datetime(item["Fecha"], errors="coerce")
+        realizado = pd.notna(fecha)
+
+        registros.append(
             {
-                "Etapa": "Solicitud",
-                "Fecha TAT": formatear_fecha(obtener_valor(registro, columnas_clave["fecha_solicitud"])),
-                "Realizado": "Sí" if pd.notna(pd.to_datetime(obtener_valor(registro, columnas_clave["fecha_solicitud"]), errors="coerce")) else "No",
-            },
-            {
-                "Etapa": "Liberación",
-                "Fecha TAT": formatear_fecha(obtener_valor(registro, columnas_clave["fecha_liberacion"])),
-                "Realizado": "Sí" if pd.notna(pd.to_datetime(obtener_valor(registro, columnas_clave["fecha_liberacion"]), errors="coerce")) else "No",
-            },
-            {
-                "Etapa": "Pedido",
-                "Fecha TAT": formatear_fecha(obtener_valor(registro, columnas_clave["fecha_pedido"])),
-                "Realizado": "Sí" if pd.notna(pd.to_datetime(obtener_valor(registro, columnas_clave["fecha_pedido"]), errors="coerce")) else "No",
-            },
-            {
-                "Etapa": "Facturación",
-                "Fecha TAT": formatear_fecha(obtener_valor(registro, columnas_clave["fecha_facturacion"])),
-                "Realizado": "Sí" if pd.notna(pd.to_datetime(obtener_valor(registro, columnas_clave["fecha_facturacion"]), errors="coerce")) else "No",
-            },
-            {
-                "Etapa": "Recepción",
-                "Fecha TAT": formatear_fecha(obtener_valor(registro, columnas_clave["fecha_recepcion"])),
-                "Realizado": "Sí" if pd.notna(pd.to_datetime(obtener_valor(registro, columnas_clave["fecha_recepcion"]), errors="coerce")) else "No",
-            },
-        ]
-    )
+                "Etapa": item["Etapa"],
+                "Fecha TAT": formatear_fecha(item["Fecha"]),
+                "Estado": "Realizado" if realizado else "Pendiente",
+                "Marca": "✅" if realizado else "❌",
+            }
+        )
+
+    return pd.DataFrame(registros)
 
 
 def mostrar_detalle_observacion(registro: pd.Series, columnas_clave: dict):
@@ -820,6 +830,10 @@ if limpiar_filtros:
         "filtro_material",
         "filtro_modo",
         "selector_observacion",
+        "filtro_parquet_bytes",
+        "filtro_parquet_firma",
+        "filtro_csv_bytes",
+        "filtro_csv_firma",
     ]
 
     for clave in claves_filtros:
@@ -872,7 +886,11 @@ total_original = len(df_base)
 total_filtrado = len(df_filtrado)
 
 total_solped_original = int(df_base[columnas_clave["solped"]].nunique(dropna=True))
-total_solped_filtrado = int(df_filtrado[columnas_clave["solped"]].nunique(dropna=True)) if not df_filtrado.empty else 0
+total_solped_filtrado = (
+    int(df_filtrado[columnas_clave["solped"]].nunique(dropna=True))
+    if not df_filtrado.empty
+    else 0
+)
 
 col_m1, col_m2, col_m3, col_m4 = st.columns(4)
 
@@ -883,7 +901,7 @@ col_m4.metric("SOLPED filtradas", f"{total_solped_filtrado:,}")
 
 
 # ============================================================
-# Selección de observación
+# Selección de observación optimizada
 # ============================================================
 
 st.markdown(
@@ -891,7 +909,8 @@ st.markdown(
     <div class="step-box">
         <h4 style="margin-top:0;">Observación seleccionada</h4>
         <p class="small-muted">
-            Selecciona una observación para visualizar el seguimiento de la SOLPED. Por defecto se toma la primera observación filtrada.
+            Selecciona una observación para visualizar el seguimiento de la SOLPED.
+            Por defecto se toma la primera observación filtrada.
         </p>
     </div>
     """,
@@ -902,41 +921,55 @@ if df_filtrado.empty:
     st.warning("No hay observaciones para mostrar con los filtros actuales.")
     st.stop()
 
-columnas_selector = [
-    columnas_clave["solped"],
-    columnas_clave["pedido"],
-    columnas_clave["posicion"],
-    columnas_clave["material"],
-    columnas_clave["texto_breve"],
-    columnas_clave["centro"],
-    columnas_clave["performance_tat_total"],
-]
+limite_selector = 500
 
-columnas_selector = [
-    col for col in columnas_selector
-    if col is not None and col in df_filtrado.columns
-]
+df_selector = df_filtrado.head(limite_selector).copy()
 
-def etiqueta_observacion(id_observacion):
-    fila = df_filtrado[df_filtrado["_id_observacion"].eq(id_observacion)].iloc[0]
+if len(df_filtrado) > limite_selector:
+    st.info(
+        f"Hay {len(df_filtrado):,} observaciones filtradas. "
+        f"Para mantener buen rendimiento, el selector muestra las primeras {limite_selector:,}. "
+        "Usa los filtros para reducir el resultado."
+    )
 
-    solped = formatear_valor(obtener_valor(fila, columnas_clave["solped"]))
-    pedido = formatear_valor(obtener_valor(fila, columnas_clave["pedido"]))
-    posicion = formatear_valor(obtener_valor(fila, columnas_clave["posicion"]))
-    material = formatear_valor(obtener_valor(fila, columnas_clave["material"]))
+df_selector["_etiqueta_observacion"] = (
+    "SOLPED "
+    + df_selector[columnas_clave["solped"]].astype("string").fillna("")
+)
 
-    return f"SOLPED {solped} | Pedido {pedido} | Pos {posicion} | Material {material}"
+if columnas_clave["pedido"] is not None and columnas_clave["pedido"] in df_selector.columns:
+    df_selector["_etiqueta_observacion"] += (
+        " | Pedido "
+        + df_selector[columnas_clave["pedido"]].astype("string").fillna("")
+    )
 
+if columnas_clave["posicion"] is not None and columnas_clave["posicion"] in df_selector.columns:
+    df_selector["_etiqueta_observacion"] += (
+        " | Pos "
+        + df_selector[columnas_clave["posicion"]].astype("string").fillna("")
+    )
 
-ids_observacion = df_filtrado["_id_observacion"].tolist()
+if columnas_clave["material"] is not None and columnas_clave["material"] in df_selector.columns:
+    df_selector["_etiqueta_observacion"] += (
+        " | Material "
+        + df_selector[columnas_clave["material"]].astype("string").fillna("")
+    )
 
-id_observacion_seleccionada = st.selectbox(
+opciones_selector = dict(
+    zip(
+        df_selector["_etiqueta_observacion"],
+        df_selector["_id_observacion"],
+    )
+)
+
+etiqueta_seleccionada = st.selectbox(
     "Observación",
-    options=ids_observacion,
+    options=list(opciones_selector.keys()),
     index=0,
-    format_func=etiqueta_observacion,
     key="selector_observacion",
 )
+
+id_observacion_seleccionada = opciones_selector[etiqueta_seleccionada]
 
 registro_seleccionado = (
     df_filtrado[df_filtrado["_id_observacion"].eq(id_observacion_seleccionada)]
@@ -997,41 +1030,71 @@ else:
 
 
 # ============================================================
-# Descarga opcional
+# Descarga opcional optimizada
 # ============================================================
 
 with st.expander("Descargar resultado filtrado", expanded=False):
-    st.caption("Parquet es el formato recomendado. CSV se prepara solo cuando lo solicitas.")
+    st.caption(
+        "Parquet es el formato recomendado. Los archivos se preparan solo cuando los solicitas."
+    )
 
     df_export = df_filtrado.drop(columns=["_id_observacion"], errors="ignore")
+
+    firma_export = (
+        f"{len(df_export)}_"
+        f"{filtro_solped}_"
+        f"{filtro_pedido}_"
+        f"{filtro_posicion}_"
+        f"{filtro_material}_"
+        f"{modo_busqueda}"
+    )
 
     col_d1, col_d2 = st.columns(2)
 
     with col_d1:
-        parquet_bytes = convertir_a_parquet_cache(df_export)
-
-        st.download_button(
-            label="Descargar Parquet filtrado",
-            data=parquet_bytes,
-            file_name="resultado_filtrado_solped.parquet",
-            mime="application/octet-stream",
-            type="primary",
+        preparar_parquet = st.button(
+            "Preparar Parquet filtrado",
             use_container_width=True,
+            key="preparar_parquet_filtrado",
         )
+
+        if preparar_parquet:
+            with st.spinner("Preparando Parquet..."):
+                st.session_state["filtro_parquet_bytes"] = convertir_a_parquet_cache(df_export)
+                st.session_state["filtro_parquet_firma"] = firma_export
+
+        if (
+            st.session_state.get("filtro_parquet_bytes") is not None
+            and st.session_state.get("filtro_parquet_firma") == firma_export
+        ):
+            st.download_button(
+                label="Descargar Parquet filtrado",
+                data=st.session_state["filtro_parquet_bytes"],
+                file_name="resultado_filtrado_solped.parquet",
+                mime="application/octet-stream",
+                type="primary",
+                use_container_width=True,
+            )
 
     with col_d2:
         preparar_csv = st.button(
             "Preparar CSV filtrado",
             use_container_width=True,
+            key="preparar_csv_filtrado",
         )
 
         if preparar_csv:
             with st.spinner("Preparando CSV..."):
-                csv_bytes = convertir_a_csv_cache(df_export)
+                st.session_state["filtro_csv_bytes"] = convertir_a_csv_cache(df_export)
+                st.session_state["filtro_csv_firma"] = firma_export
 
+        if (
+            st.session_state.get("filtro_csv_bytes") is not None
+            and st.session_state.get("filtro_csv_firma") == firma_export
+        ):
             st.download_button(
                 label="Descargar CSV filtrado",
-                data=csv_bytes,
+                data=st.session_state["filtro_csv_bytes"],
                 file_name="resultado_filtrado_solped.csv",
                 mime="text/csv",
                 use_container_width=True,
