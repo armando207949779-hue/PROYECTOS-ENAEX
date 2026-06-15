@@ -1,3 +1,9 @@
+# ============================================================
+# 06_CARGAR_ARCHIVO
+# Carga múltiple de archivos base TAT
+# Guarda archivo activo en sesión como df_tat
+# ============================================================
+
 import base64
 from pathlib import Path
 from io import BytesIO
@@ -6,162 +12,91 @@ import pandas as pd
 import streamlit as st
 
 
-# =========================
+# ============================================================
 # Configuración de página
-# =========================
+# ============================================================
 
 st.set_page_config(
-    page_title="Cargar archivos TAT",
+    page_title="06_CARGAR_ARCHIVO",
     page_icon="📁",
     layout="wide",
-    initial_sidebar_state="expanded"
 )
 
 
-# =========================
+# ============================================================
 # Rutas
-# =========================
+# ============================================================
 
 BASE_DIR = Path(__file__).resolve().parent
-PROJECT_DIR = BASE_DIR.parent
+ROOT_DIR = BASE_DIR.parent
+LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
 
-LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
 
-
-# =========================
+# ============================================================
 # Estilos
-# =========================
+# IMPORTANTE:
+# No se modifica .block-container para no afectar el logo.
+# ============================================================
 
-def aplicar_estilos():
-    st.markdown(
-        """
-        <style>
-            .main {
-                background-color: #f7f9fc;
-            }
+st.markdown(
+    """
+    <style>
+        div[data-testid="stMetric"] {
+            background-color: #f8f9fa;
+            padding: 14px;
+            border-radius: 12px;
+            border: 1px solid #e9ecef;
+        }
 
-            .block-container {
-                padding-top: 2rem;
-                padding-bottom: 3rem;
-                max-width: 1200px;
-            }
+        div[data-testid="stFileUploader"] {
+            padding: 10px;
+            border-radius: 12px;
+        }
 
-            .header-card {
-                background: linear-gradient(135deg, #ffffff 0%, #eef4ff 100%);
-                border: 1px solid #dce6f5;
-                border-radius: 22px;
-                padding: 28px 32px;
-                margin-bottom: 25px;
-                box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
-            }
+        .app-header {
+            text-align: center;
+            margin-bottom: 1rem;
+        }
 
-            .title {
-                text-align: center;
-                color: #0f172a;
-                font-size: 38px;
-                font-weight: 800;
-                margin-bottom: 10px;
-            }
+        .app-title {
+            font-size: 30px;
+            font-weight: 700;
+            margin-bottom: 0;
+        }
 
-            .subtitle {
-                text-align: center;
-                color: #475569;
-                font-size: 17px;
-                line-height: 1.6;
-                margin-bottom: 0;
-            }
+        .app-subtitle {
+            color: #6c757d;
+            font-size: 16px;
+            margin-top: 4px;
+        }
 
-            .section-card {
-                background-color: #ffffff;
-                border: 1px solid #e2e8f0;
-                border-radius: 18px;
-                padding: 24px;
-                margin-bottom: 22px;
-                box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
-            }
+        .step-box {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 14px;
+            padding: 18px;
+            margin-bottom: 16px;
+        }
 
-            .success-box {
-                background-color: #ecfdf5;
-                color: #065f46;
-                border: 1px solid #a7f3d0;
-                border-radius: 14px;
-                padding: 14px 18px;
-                font-weight: 600;
-                margin-top: 12px;
-            }
-
-            .warning-box {
-                background-color: #fffbeb;
-                color: #92400e;
-                border: 1px solid #fde68a;
-                border-radius: 14px;
-                padding: 14px 18px;
-                font-weight: 600;
-                margin-top: 12px;
-            }
-
-            .error-box {
-                background-color: #fef2f2;
-                color: #991b1b;
-                border: 1px solid #fecaca;
-                border-radius: 14px;
-                padding: 14px 18px;
-                font-weight: 600;
-                margin-top: 12px;
-            }
-
-            div[data-testid="stMetric"] {
-                background-color: #ffffff;
-                border: 1px solid #e2e8f0;
-                padding: 18px;
-                border-radius: 16px;
-                box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05);
-            }
-
-            div[data-testid="stMetricLabel"] {
-                color: #475569;
-                font-weight: 700;
-            }
-
-            div[data-testid="stMetricValue"] {
-                color: #0f172a;
-                font-weight: 800;
-            }
-
-            .stButton > button {
-                border-radius: 12px;
-                border: 1px solid #cbd5e1;
-                padding: 0.55rem 1rem;
-                font-weight: 700;
-                transition: all 0.2s ease-in-out;
-            }
-
-            .stButton > button:hover {
-                border-color: #2563eb;
-                color: #2563eb;
-                transform: translateY(-1px);
-            }
-
-            .small-text {
-                color: #64748b;
-                font-size: 14px;
-            }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
+        .small-muted {
+            color: #6c757d;
+            font-size: 14px;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 
-# =========================
+# ============================================================
 # Logo
-# =========================
+# Se mantiene configuración segura.
+# ============================================================
 
-def mostrar_logo_centrado():
+def mostrar_logo():
     if LOGO_PATH.exists():
         logo_svg = LOGO_PATH.read_text(encoding="utf-8")
-        logo_base64 = base64.b64encode(
-            logo_svg.encode("utf-8")
-        ).decode("utf-8")
+        logo_base64 = base64.b64encode(logo_svg.encode("utf-8")).decode("utf-8")
 
         st.markdown(
             f"""
@@ -171,30 +106,23 @@ def mostrar_logo_centrado():
                 justify-content: center;
                 align-items: center;
                 margin-top: 5px;
-                margin-bottom: 18px;
+                margin-bottom: 10px;
             ">
-                <img
-                    src="data:image/svg+xml;base64,{logo_base64}"
+                <img 
+                    src="data:image/svg+xml;base64,{logo_base64}" 
                     style="width: 220px; display: block;"
                 >
             </div>
             """,
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
     else:
-        st.markdown(
-            f"""
-            <div class="warning-box">
-                Logo no encontrado: {LOGO_PATH}
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        st.warning(f"Logo no encontrado: {LOGO_PATH}")
 
 
-# =========================
+# ============================================================
 # Estado de sesión
-# =========================
+# ============================================================
 
 def inicializar_estado():
     if "archivos_tat" not in st.session_state:
@@ -210,58 +138,95 @@ def inicializar_estado():
         st.session_state["nombre_archivo_tat"] = None
 
 
-# =========================
-# Lectura de archivo
-# =========================
+# ============================================================
+# Funciones base
+# ============================================================
 
-@st.cache_data(show_spinner="Leyendo archivo...")
-def leer_archivo(archivo_bytes, nombre_archivo):
+def obtener_separador(separador_csv: str):
+    separadores = {
+        "Automático": None,
+        "Punto y coma (;)": ";",
+        "Coma (,)": ",",
+        "Tabulación": "\t",
+    }
+
+    return separadores.get(separador_csv, None)
+
+
+@st.cache_data(show_spinner=False)
+def leer_archivo_cache(
+    archivo_bytes: bytes,
+    nombre_archivo: str,
+    separador_csv: str,
+) -> pd.DataFrame:
+
     extension = Path(nombre_archivo).suffix.lower()
     buffer = BytesIO(archivo_bytes)
-
-    if extension == ".csv":
-        return pd.read_csv(buffer)
-
-    if extension in [".xlsx", ".xls"]:
-        return pd.read_excel(buffer)
 
     if extension == ".parquet":
         return pd.read_parquet(buffer)
 
+    if extension in [".xlsx", ".xls"]:
+        return pd.read_excel(buffer)
+
+    if extension == ".csv":
+        sep = obtener_separador(separador_csv)
+
+        try:
+            return pd.read_csv(
+                buffer,
+                sep=sep,
+                engine="python",
+                encoding="utf-8-sig",
+                on_bad_lines="skip",
+            )
+
+        except Exception:
+            buffer.seek(0)
+
+            return pd.read_csv(
+                buffer,
+                sep=sep,
+                engine="python",
+                encoding="latin1",
+                on_bad_lines="skip",
+            )
+
     raise ValueError("Formato no soportado. Usa CSV, XLSX, XLS o PARQUET.")
 
 
-# =========================
-# Guardado en sesión
-# =========================
+def limpiar_nombres_columnas(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    df.columns = df.columns.astype(str).str.strip()
+    return df
 
-def guardar_archivo_en_sesion(df, nombre_archivo):
+
+def guardar_archivo_en_sesion(df: pd.DataFrame, nombre_archivo: str):
     """
-    Guarda el archivo en modo múltiple y también en las llaves antiguas
-    que usan las demás pestañas: df_tat y nombre_archivo_tat.
+    Guarda el archivo en modo múltiple y también actualiza las llaves
+    que usan las demás apps: df_tat y nombre_archivo_tat.
     """
+    df = limpiar_nombres_columnas(df)
+
     st.session_state["archivos_tat"][nombre_archivo] = df
     st.session_state["archivo_tat_activo"] = nombre_archivo
 
-    # Compatibilidad con las demás pestañas
     st.session_state["df_tat"] = df
     st.session_state["nombre_archivo_tat"] = nombre_archivo
 
 
-def activar_archivo(nombre_archivo):
+def activar_archivo(nombre_archivo: str):
     """
-    Define qué archivo queda activo para las otras pestañas.
+    Define qué archivo queda activo para las otras apps.
     """
     df = st.session_state["archivos_tat"][nombre_archivo]
 
     st.session_state["archivo_tat_activo"] = nombre_archivo
-
-    # Estas son las llaves importantes para Filtro TAT, Gráficos TAT, etc.
     st.session_state["df_tat"] = df
     st.session_state["nombre_archivo_tat"] = nombre_archivo
 
 
-def eliminar_archivo_de_sesion(nombre_archivo):
+def eliminar_archivo_de_sesion(nombre_archivo: str):
     if nombre_archivo in st.session_state["archivos_tat"]:
         st.session_state["archivos_tat"].pop(nombre_archivo)
 
@@ -278,17 +243,11 @@ def eliminar_archivo_de_sesion(nombre_archivo):
 def eliminar_todos_los_archivos():
     st.session_state["archivos_tat"] = {}
     st.session_state["archivo_tat_activo"] = None
-
-    # Borrar también las llaves antiguas
     st.session_state["df_tat"] = None
     st.session_state["nombre_archivo_tat"] = None
 
 
-# =========================
-# Utilidades
-# =========================
-
-def obtener_resumen_archivos():
+def obtener_resumen_archivos() -> pd.DataFrame:
     resumen = []
 
     for nombre, df in st.session_state["archivos_tat"].items():
@@ -299,152 +258,176 @@ def obtener_resumen_archivos():
                 "Columnas": df.shape[1],
                 "Memoria aproximada MB": round(
                     df.memory_usage(deep=True).sum() / 1024 / 1024,
-                    2
-                )
+                    2,
+                ),
+                "Activo": nombre == st.session_state.get("archivo_tat_activo"),
             }
         )
 
     return pd.DataFrame(resumen)
 
 
-def mostrar_mensaje_html(tipo, texto):
-    clases = {
-        "success": "success-box",
-        "warning": "warning-box",
-        "error": "error-box"
-    }
-
-    clase = clases.get(tipo, "warning-box")
-
-    st.markdown(
-        f"""
-        <div class="{clase}">
-            {texto}
-        </div>
-        """,
-        unsafe_allow_html=True
+def construir_tabla_columnas(df: pd.DataFrame) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "N°": range(1, len(df.columns) + 1),
+            "Columna": list(df.columns),
+            "Tipo de dato": [str(df[col].dtype) for col in df.columns],
+            "Valores no nulos": [int(df[col].notna().sum()) for col in df.columns],
+            "Valores nulos": [int(df[col].isna().sum()) for col in df.columns],
+        }
     )
 
 
-# =========================
-# Interfaz
-# =========================
+# ============================================================
+# Inicio
+# ============================================================
 
-aplicar_estilos()
 inicializar_estado()
-
-mostrar_logo_centrado()
+mostrar_logo()
 
 st.markdown(
     """
-    <div class="header-card">
-        <div class="title">Cargar archivos base TAT</div>
-        <p class="subtitle">
-            Sube uno o varios archivos en una sola carga para reutilizarlos en
-            Filtro TAT, Gráficos TAT y Performance de Plantas.
-        </p>
+    <div class="app-header">
+        <div class="app-title">06_CARGAR_ARCHIVO</div>
+        <div class="app-subtitle">
+            Carga uno o varios archivos base TAT y define el archivo activo para las demás apps
+        </div>
     </div>
     """,
-    unsafe_allow_html=True
+    unsafe_allow_html=True,
 )
 
 
-# =========================
-# Carga de archivos
-# =========================
+# ============================================================
+# Configuración
+# ============================================================
 
-st.markdown('<div class="section-card">', unsafe_allow_html=True)
+with st.expander("Configuración de lectura", expanded=False):
+    separador_csv = st.selectbox(
+        "Separador CSV",
+        options=[
+            "Automático",
+            "Punto y coma (;)",
+            "Coma (,)",
+            "Tabulación",
+        ],
+        index=0,
+    )
 
-st.subheader("Carga múltiple de archivos")
+    st.caption("El separador solo aplica a archivos CSV.")
+
+
+# ============================================================
+# Paso 1: Cargar archivos
+# ============================================================
 
 st.markdown(
     """
-    <p class="small-text">
-        Formatos permitidos: CSV, XLSX, XLS y PARQUET.
-        Puedes seleccionar varios archivos al mismo tiempo.
-    </p>
+    <div class="step-box">
+        <h4 style="margin-top:0;">1. Cargar archivos</h4>
+        <p class="small-muted">
+            Puedes seleccionar uno o varios archivos al mismo tiempo.
+            Formatos permitidos: CSV, XLSX, XLS y PARQUET.
+        </p>
+    </div>
     """,
-    unsafe_allow_html=True
+    unsafe_allow_html=True,
 )
 
 archivos = st.file_uploader(
     "Selecciona uno o varios archivos base TAT",
     type=["xlsx", "xls", "csv", "parquet"],
     accept_multiple_files=True,
-    key="archivos_base_tat_uploader"
+    key="archivos_base_tat_uploader",
+    label_visibility="collapsed",
 )
 
 if archivos:
     archivos_cargados = []
     archivos_con_error = []
 
-    for archivo in archivos:
-        try:
-            archivo_bytes = archivo.getvalue()
-            df = leer_archivo(archivo_bytes, archivo.name)
-            guardar_archivo_en_sesion(df, archivo.name)
-            archivos_cargados.append(archivo.name)
+    with st.spinner("Leyendo archivos..."):
+        for archivo in archivos:
+            try:
+                archivo_bytes = archivo.getvalue()
 
-        except Exception as error:
-            archivos_con_error.append(
-                {
-                    "archivo": archivo.name,
-                    "error": str(error)
-                }
-            )
+                df = leer_archivo_cache(
+                    archivo_bytes=archivo_bytes,
+                    nombre_archivo=archivo.name,
+                    separador_csv=separador_csv,
+                )
+
+                guardar_archivo_en_sesion(
+                    df=df,
+                    nombre_archivo=archivo.name,
+                )
+
+                archivos_cargados.append(archivo.name)
+
+            except Exception as error:
+                archivos_con_error.append(
+                    {
+                        "archivo": archivo.name,
+                        "error": str(error),
+                    }
+                )
 
     if archivos_cargados:
-        mostrar_mensaje_html(
-            "success",
+        st.success(
             f"Archivos cargados correctamente: {len(archivos_cargados)}. "
             f"Archivo activo: {st.session_state['nombre_archivo_tat']}"
         )
 
-        with st.expander("Ver archivos cargados"):
+        with st.expander("Ver archivos cargados", expanded=False):
             for nombre in archivos_cargados:
                 st.write(f"✅ {nombre}")
 
     if archivos_con_error:
-        mostrar_mensaje_html(
-            "error",
+        st.error(
             f"No se pudieron cargar {len(archivos_con_error)} archivo(s)."
         )
 
-        with st.expander("Ver errores"):
+        with st.expander("Ver errores", expanded=False):
             for item in archivos_con_error:
                 st.write(f"❌ {item['archivo']}")
                 st.code(item["error"])
 
-st.markdown("</div>", unsafe_allow_html=True)
 
-
-# =========================
+# ============================================================
 # Validación inicial
-# =========================
+# ============================================================
 
 if not st.session_state["archivos_tat"]:
-    mostrar_mensaje_html(
-        "warning",
-        "Todavía no hay archivos cargados. Sube uno o varios archivos para continuar."
-    )
+    st.info("Todavía no hay archivos cargados. Sube uno o varios archivos para continuar.")
     st.stop()
 
 
-# =========================
-# Resumen general
-# =========================
+# ============================================================
+# Paso 2: Resumen general
+# ============================================================
 
-st.markdown('<div class="section-card">', unsafe_allow_html=True)
-
-st.subheader("Resumen general")
+st.markdown(
+    """
+    <div class="step-box">
+        <h4 style="margin-top:0;">2. Archivos cargados</h4>
+        <p class="small-muted">
+            Revisa los archivos disponibles y selecciona cuál quedará activo para las demás apps.
+        </p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 archivos_disponibles = list(st.session_state["archivos_tat"].keys())
 
 total_archivos = len(archivos_disponibles)
+
 total_filas = sum(
     df.shape[0]
     for df in st.session_state["archivos_tat"].values()
 )
+
 total_columnas_distintas = len(
     set(
         columna
@@ -455,33 +438,34 @@ total_columnas_distintas = len(
 
 col1, col2, col3 = st.columns(3)
 
-with col1:
-    st.metric("Archivos cargados", f"{total_archivos:,}")
-
-with col2:
-    st.metric("Filas totales", f"{total_filas:,}")
-
-with col3:
-    st.metric("Columnas distintas", f"{total_columnas_distintas:,}")
+col1.metric("Archivos cargados", f"{total_archivos:,}")
+col2.metric("Filas totales", f"{total_filas:,}")
+col3.metric("Columnas distintas", f"{total_columnas_distintas:,}")
 
 resumen_df = obtener_resumen_archivos()
 
 st.dataframe(
     resumen_df,
     use_container_width=True,
-    hide_index=True
+    hide_index=True,
 )
 
-st.markdown("</div>", unsafe_allow_html=True)
 
+# ============================================================
+# Paso 3: Seleccionar archivo activo
+# ============================================================
 
-# =========================
-# Selector de archivo activo
-# =========================
-
-st.markdown('<div class="section-card">', unsafe_allow_html=True)
-
-st.subheader("Archivo activo para las demás pestañas")
+st.markdown(
+    """
+    <div class="step-box">
+        <h4 style="margin-top:0;">3. Seleccionar archivo activo</h4>
+        <p class="small-muted">
+            El archivo activo queda guardado como df_tat y nombre_archivo_tat para las demás apps.
+        </p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 archivo_activo_actual = st.session_state.get("archivo_tat_activo")
 
@@ -490,10 +474,10 @@ if archivo_activo_actual not in archivos_disponibles:
     activar_archivo(archivo_activo_actual)
 
 archivo_seleccionado = st.selectbox(
-    "Selecciona el archivo que quieres usar en Filtro TAT, Gráficos TAT y Performance de Plantas",
+    "Archivo activo",
     options=archivos_disponibles,
     index=archivos_disponibles.index(st.session_state["archivo_tat_activo"]),
-    key="selector_archivo_tat"
+    key="selector_archivo_tat",
 )
 
 activar_archivo(archivo_seleccionado)
@@ -503,102 +487,71 @@ nombre_archivo = st.session_state["nombre_archivo_tat"]
 
 col1, col2, col3 = st.columns(3)
 
-with col1:
-    st.metric("Archivo activo", nombre_archivo)
+col1.metric("Archivo activo", nombre_archivo)
+col2.metric("Filas", f"{df_tat.shape[0]:,}")
+col3.metric("Columnas", f"{df_tat.shape[1]:,}")
 
-with col2:
-    st.metric("Filas", f"{df_tat.shape[0]:,}")
-
-with col3:
-    st.metric("Columnas", f"{df_tat.shape[1]:,}")
-
-mostrar_mensaje_html(
-    "success",
-    f"Este archivo quedó guardado como df_tat para las demás pestañas: {nombre_archivo}"
+st.success(
+    f"Archivo activo guardado como df_tat para las demás apps: {nombre_archivo}"
 )
 
-st.markdown("</div>", unsafe_allow_html=True)
+
+# ============================================================
+# Detalle opcional
+# ============================================================
+
+with st.expander("Vista previa del archivo activo", expanded=False):
+    max_filas = min(200, max(5, df_tat.shape[0]))
+
+    filas_preview = st.slider(
+        "Cantidad de filas a mostrar",
+        min_value=5,
+        max_value=max_filas,
+        value=min(50, max_filas),
+        step=5,
+    )
+
+    st.dataframe(
+        df_tat.head(filas_preview),
+        use_container_width=True,
+    )
 
 
-# =========================
-# Vista previa
-# =========================
+with st.expander("Columnas disponibles del archivo activo", expanded=False):
+    columnas_df = construir_tabla_columnas(df_tat)
 
-st.markdown('<div class="section-card">', unsafe_allow_html=True)
-
-st.subheader("Vista previa del archivo activo")
-
-max_filas = min(200, max(5, df_tat.shape[0]))
-
-filas_preview = st.slider(
-    "Cantidad de filas a mostrar",
-    min_value=5,
-    max_value=max_filas,
-    value=min(50, max_filas),
-    step=5
-)
-
-st.dataframe(
-    df_tat.head(filas_preview),
-    use_container_width=True
-)
-
-st.markdown("</div>", unsafe_allow_html=True)
+    st.dataframe(
+        columnas_df,
+        use_container_width=True,
+        hide_index=True,
+    )
 
 
-# =========================
-# Columnas disponibles
-# =========================
-
-st.markdown('<div class="section-card">', unsafe_allow_html=True)
-
-st.subheader("Columnas disponibles del archivo activo")
-
-columnas_df = pd.DataFrame(
-    {
-        "N°": range(1, len(df_tat.columns) + 1),
-        "Columna": list(df_tat.columns),
-        "Tipo de dato": [str(df_tat[col].dtype) for col in df_tat.columns],
-        "Valores no nulos": [df_tat[col].notna().sum() for col in df_tat.columns],
-        "Valores nulos": [df_tat[col].isna().sum() for col in df_tat.columns],
-    }
-)
-
-st.dataframe(
-    columnas_df,
-    use_container_width=True,
-    hide_index=True
-)
-
-st.markdown("</div>", unsafe_allow_html=True)
-
-
-# =========================
+# ============================================================
 # Acciones
-# =========================
+# ============================================================
 
-st.markdown('<div class="section-card">', unsafe_allow_html=True)
+with st.expander("Acciones", expanded=False):
+    col1, col2 = st.columns(2)
 
-st.subheader("Acciones")
+    with col1:
+        eliminar_activo = st.button(
+            "Eliminar archivo activo",
+            use_container_width=True,
+        )
 
-col1, col2 = st.columns(2)
+        if eliminar_activo:
+            eliminar_archivo_de_sesion(archivo_seleccionado)
+            st.success("Archivo activo eliminado de la sesión.")
+            st.rerun()
 
-with col1:
-    if st.button(
-        "Eliminar archivo activo",
-        use_container_width=True
-    ):
-        eliminar_archivo_de_sesion(archivo_seleccionado)
-        st.success("Archivo activo eliminado de la sesión.")
-        st.rerun()
+    with col2:
+        eliminar_todos = st.button(
+            "Eliminar todos los archivos",
+            use_container_width=True,
+        )
 
-with col2:
-    if st.button(
-        "Eliminar todos los archivos",
-        use_container_width=True
-    ):
-        eliminar_todos_los_archivos()
-        st.success("Todos los archivos fueron eliminados de la sesión.")
-        st.rerun()
-
-st.markdown("</div>", unsafe_allow_html=True)
+        if eliminar_todos:
+            eliminar_todos_los_archivos()
+            st.success("Todos los archivos fueron eliminados de la sesión.")
+            st.rerun()
