@@ -2,7 +2,8 @@
 # 02_LIMPIEZA_ARIBA
 # Limpieza minimalista ARIBA
 # Flujo: cargar archivo -> procesar -> confirmar -> descargar parquet
-# CSV/Excel se generan solo de manera excepcional
+# CSV opcional
+# Excel eliminado
 # ============================================================
 
 import io
@@ -446,6 +447,7 @@ def diagnostico_columnas_cache(df: pd.DataFrame) -> pd.DataFrame:
 
 # ============================================================
 # Exportación
+# Excel eliminado
 # ============================================================
 
 def convertir_a_parquet(df: pd.DataFrame) -> bytes:
@@ -467,95 +469,6 @@ def convertir_a_csv(df: pd.DataFrame) -> bytes:
     ).encode("utf-8-sig")
 
 
-def limpiar_caracteres_excel(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Limpieza exclusiva para exportar a Excel.
-    Elimina caracteres invisibles que openpyxl no acepta.
-    No modifica el dataframe principal ni el Parquet.
-    """
-    df = df.copy()
-
-    patron_caracteres_invalidos = r"[\x00-\x08\x0B-\x0C\x0E-\x1F]"
-
-    columnas_texto = df.select_dtypes(include=["object", "string"]).columns
-
-    for col in columnas_texto:
-        df[col] = (
-            df[col]
-            .astype("string")
-            .str.replace(
-                patron_caracteres_invalidos,
-                "",
-                regex=True,
-            )
-        )
-
-        df[col] = df[col].replace(
-            {
-                "": pd.NA,
-                "<NA>": pd.NA,
-                "nan": pd.NA,
-                "NaN": pd.NA,
-                "None": pd.NA,
-            }
-        )
-
-    return df
-
-
-def convertir_a_excel(
-    df_input_limpio: pd.DataFrame,
-    df_output: pd.DataFrame,
-    diagnostico_columnas: pd.DataFrame,
-) -> bytes:
-
-    output = io.BytesIO()
-
-    # Esta limpieza solo aplica a la exportación Excel.
-    df_input_limpio_excel = limpiar_caracteres_excel(df_input_limpio)
-    df_output_excel = limpiar_caracteres_excel(df_output)
-    diagnostico_columnas_excel = limpiar_caracteres_excel(diagnostico_columnas)
-
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df_input_limpio_excel.to_excel(
-            writer,
-            index=False,
-            sheet_name="Input_Limpio",
-        )
-
-        df_output_excel.to_excel(
-            writer,
-            index=False,
-            sheet_name="Output_ARIBA",
-        )
-
-        diagnostico_columnas_excel.to_excel(
-            writer,
-            index=False,
-            sheet_name="Diagnostico",
-        )
-
-        if "Categoria Tipo de Compra" in df_output_excel.columns:
-            conteo_categoria = (
-                df_output_excel["Categoria Tipo de Compra"]
-                .value_counts(dropna=False)
-                .reset_index()
-            )
-
-            conteo_categoria.columns = [
-                "Categoria Tipo de Compra",
-                "Cantidad",
-            ]
-
-            conteo_categoria.to_excel(
-                writer,
-                index=False,
-                sheet_name="Conteo_Categoria",
-            )
-
-    return output.getvalue()
-
-
 @st.cache_data(show_spinner=False)
 def convertir_a_parquet_cache(df: pd.DataFrame) -> bytes:
     return convertir_a_parquet(df)
@@ -564,19 +477,6 @@ def convertir_a_parquet_cache(df: pd.DataFrame) -> bytes:
 @st.cache_data(show_spinner=False)
 def convertir_a_csv_cache(df: pd.DataFrame) -> bytes:
     return convertir_a_csv(df)
-
-
-@st.cache_data(show_spinner=False)
-def convertir_a_excel_cache(
-    df_input_limpio: pd.DataFrame,
-    df_output: pd.DataFrame,
-    diagnostico_columnas: pd.DataFrame,
-) -> bytes:
-    return convertir_a_excel(
-        df_input_limpio=df_input_limpio,
-        df_output=df_output,
-        diagnostico_columnas=diagnostico_columnas,
-    )
 
 
 # ============================================================
@@ -711,7 +611,6 @@ try:
 
         nombre_parquet = generar_nombre_salida("parquet")
         nombre_csv = generar_nombre_salida("csv")
-        nombre_excel = generar_nombre_salida("xlsx")
 
 except Exception as e:
     st.error("No fue posible procesar el archivo.")
@@ -884,65 +783,35 @@ with st.expander("Diagnóstico de columnas", expanded=False):
 
 
 # ============================================================
-# Descargas opcionales
-# CSV y Excel se generan solo si el usuario los prepara.
+# Descarga opcional CSV
+# CSV se genera solo si el usuario lo prepara.
+# Excel eliminado.
 # ============================================================
 
-with st.expander("Descargas opcionales", expanded=False):
+with st.expander("Descarga opcional CSV", expanded=False):
     st.caption(
-        "El archivo recomendado es Parquet. CSV y Excel se preparan solo cuando los solicitas."
+        "El archivo recomendado es Parquet. CSV se prepara solo cuando lo solicitas."
     )
 
-    col_csv, col_excel = st.columns(2)
+    preparar_csv = st.button(
+        "Preparar CSV",
+        use_container_width=True,
+    )
 
-    with col_csv:
-        preparar_csv = st.button(
-            "Preparar CSV",
+    if preparar_csv:
+        with st.spinner("Preparando CSV..."):
+            st.session_state["ariba_csv_bytes"] = convertir_a_csv_cache(df_output)
+            st.session_state["ariba_csv_firma"] = firma_archivo
+            st.session_state["ariba_csv_nombre"] = nombre_csv
+
+    if (
+        st.session_state.get("ariba_csv_bytes") is not None
+        and st.session_state.get("ariba_csv_firma") == firma_archivo
+    ):
+        st.download_button(
+            label="Descargar CSV",
+            data=st.session_state["ariba_csv_bytes"],
+            file_name=st.session_state["ariba_csv_nombre"],
+            mime="text/csv",
             use_container_width=True,
         )
-
-        if preparar_csv:
-            with st.spinner("Preparando CSV..."):
-                st.session_state["ariba_csv_bytes"] = convertir_a_csv_cache(df_output)
-                st.session_state["ariba_csv_firma"] = firma_archivo
-                st.session_state["ariba_csv_nombre"] = nombre_csv
-
-        if (
-            st.session_state.get("ariba_csv_bytes") is not None
-            and st.session_state.get("ariba_csv_firma") == firma_archivo
-        ):
-            st.download_button(
-                label="Descargar CSV",
-                data=st.session_state["ariba_csv_bytes"],
-                file_name=st.session_state["ariba_csv_nombre"],
-                mime="text/csv",
-                use_container_width=True,
-            )
-
-    with col_excel:
-        preparar_excel = st.button(
-            "Preparar Excel",
-            use_container_width=True,
-        )
-
-        if preparar_excel:
-            with st.spinner("Preparando Excel..."):
-                st.session_state["ariba_excel_bytes"] = convertir_a_excel_cache(
-                    df_input_limpio=df_input_limpio,
-                    df_output=df_output,
-                    diagnostico_columnas=diagnostico_columnas,
-                )
-                st.session_state["ariba_excel_firma"] = firma_archivo
-                st.session_state["ariba_excel_nombre"] = nombre_excel
-
-        if (
-            st.session_state.get("ariba_excel_bytes") is not None
-            and st.session_state.get("ariba_excel_firma") == firma_archivo
-        ):
-            st.download_button(
-                label="Descargar Excel",
-                data=st.session_state["ariba_excel_bytes"],
-                file_name=st.session_state["ariba_excel_nombre"],
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-            )
