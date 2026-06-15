@@ -1031,44 +1031,44 @@ def generar_resumen_cambios_match(
 def generar_texto_ejemplo_match(ejemplo: dict) -> str:
     if not ejemplo:
         return """
-        **Ejemplo de lógica del match**
+### Ejemplo de lógica del match
 
-        No se encontró ningún caso con match simultáneo en ARIBA y ME80FN para mostrar como ejemplo.
-        """
+No se encontró ningún caso con match simultáneo en ARIBA y ME80FN para mostrar como ejemplo.
+"""
 
     pos_solicitud = formatear_valor(
         ejemplo.get("Pos.solicitud pedido", "")
     )
 
     return f"""
-        **Ejemplo de lógica del match**
+### Ejemplo de lógica del match
 
-        Se tomó un registro de ME5A que fue encontrado tanto en ARIBA como en ME80FN.
+Se tomó un registro de ME5A que fue encontrado tanto en ARIBA como en ME80FN.
 
-        **Validación ARIBA**
+**Validación ARIBA**
 
-        - Solicitud de pedido ME5A: **{formatear_valor(ejemplo.get('Solicitud de pedido', ''))}**.
-        - Solicitud ERP ARIBA: **{formatear_valor(ejemplo.get('ariba_solicitud_compra_erp', ''))}**.
-        - Posición solicitud ME5A / 10: **{pos_solicitud} / 10**.
-        - Línea ARIBA: **{formatear_valor(ejemplo.get('ariba_linea_solicitud_compra', ''))}**.
-        - Pedido ME5A: **{formatear_valor(ejemplo.get('Pedido', ''))}**.
-        - Pedido ARIBA: **{formatear_valor(ejemplo.get('ariba_id_pedido', ''))}**.
+- Solicitud de pedido ME5A: **{formatear_valor(ejemplo.get('Solicitud de pedido', ''))}**.
+- Solicitud ERP ARIBA: **{formatear_valor(ejemplo.get('ariba_solicitud_compra_erp', ''))}**.
+- Posición solicitud ME5A / 10: **{pos_solicitud} / 10**.
+- Línea ARIBA: **{formatear_valor(ejemplo.get('ariba_linea_solicitud_compra', ''))}**.
+- Pedido ME5A: **{formatear_valor(ejemplo.get('Pedido', ''))}**.
+- Pedido ARIBA: **{formatear_valor(ejemplo.get('ariba_id_pedido', ''))}**.
 
-        Resultado: el registro cumple las condiciones de solicitud, línea y pedido, por eso fue encontrado en ARIBA.
+Resultado: el registro cumple las condiciones de solicitud, línea y pedido, por eso fue encontrado en ARIBA.
 
-        **Validación ME80FN**
+**Validación ME80FN**
 
-        - Pedido ME5A: **{formatear_valor(ejemplo.get('Pedido', ''))}**.
-        - Documento compras ME80FN: **{formatear_valor(ejemplo.get('me80fn_documento_compras', ''))}**.
-        - Posición pedido ME5A: **{formatear_valor(ejemplo.get('Posición de pedido', ''))}**.
-        - Posición ME80FN: **{formatear_valor(ejemplo.get('me80fn_posicion', ''))}**.
-        - Material ME5A: **{formatear_valor(ejemplo.get('Material', ''))}**.
-        - Material ME80FN: **{formatear_valor(ejemplo.get('me80fn_material', ''))}**.
-        - Centro ME5A: **{formatear_valor(ejemplo.get('Centro', ''))}**.
-        - Centro ME80FN: **{formatear_valor(ejemplo.get('me80fn_centro', ''))}**.
+- Pedido ME5A: **{formatear_valor(ejemplo.get('Pedido', ''))}**.
+- Documento compras ME80FN: **{formatear_valor(ejemplo.get('me80fn_documento_compras', ''))}**.
+- Posición pedido ME5A: **{formatear_valor(ejemplo.get('Posición de pedido', ''))}**.
+- Posición ME80FN: **{formatear_valor(ejemplo.get('me80fn_posicion', ''))}**.
+- Material ME5A: **{formatear_valor(ejemplo.get('Material', ''))}**.
+- Material ME80FN: **{formatear_valor(ejemplo.get('me80fn_material', ''))}**.
+- Centro ME5A: **{formatear_valor(ejemplo.get('Centro', ''))}**.
+- Centro ME80FN: **{formatear_valor(ejemplo.get('me80fn_centro', ''))}**.
 
-        Resultado: el registro cumple las condiciones de pedido, posición, material y centro, por eso fue encontrado en ME80FN.
-    """
+Resultado: el registro cumple las condiciones de pedido, posición, material y centro, por eso fue encontrado en ME80FN.
+"""
 
 
 def mostrar_resumen_cambios_match(resumen_cambios: dict):
@@ -1076,46 +1076,46 @@ def mostrar_resumen_cambios_match(resumen_cambios: dict):
     texto_ejemplo = generar_texto_ejemplo_match(ejemplo)
 
     with st.expander("Cambios realizados y lógica del match", expanded=False):
-        st.info(
+        st.markdown(
             f"""
-            **Archivos cargados**
+### Archivos cargados
 
-            - Se cargaron **{resumen_cambios['total_me5a']:,} registros** de ME5A.
-            - Se cargaron **{resumen_cambios['total_ariba']:,} registros** de ARIBA.
-            - Se cargaron **{resumen_cambios['total_me80fn']:,} registros** de ME80FN.
+- Se cargaron **{resumen_cambios['total_me5a']:,} registros** de ME5A.
+- Se cargaron **{resumen_cambios['total_ariba']:,} registros** de ARIBA.
+- Se cargaron **{resumen_cambios['total_me80fn']:,} registros** de ME80FN.
 
-            **Resultado del match con AND estricto**
+### Resultado del match con AND estricto
 
-            - **{resumen_cambios['match_ariba']:,} registros de {resumen_cambios['total_me5a']:,} en ME5A fueron encontrados en ARIBA**.
-            - **{resumen_cambios['match_me80fn']:,} registros de {resumen_cambios['total_me5a']:,} en ME5A fueron encontrados en ME80FN**.
-            - **{resumen_cambios['match_ambos']:,} registros de {resumen_cambios['total_me5a']:,} en ME5A fueron encontrados en ARIBA y ME80FN**.
-            - **{resumen_cambios['match_solo_ariba']:,} registros de {resumen_cambios['total_me5a']:,} en ME5A fueron encontrados solo en ARIBA**.
-            - **{resumen_cambios['match_solo_me80fn']:,} registros de {resumen_cambios['total_me5a']:,} en ME5A fueron encontrados solo en ME80FN**.
-            - **{resumen_cambios['no_encontrado']:,} registros de {resumen_cambios['total_me5a']:,} en ME5A no fueron encontrados en ARIBA ni ME80FN**.
+- **{resumen_cambios['match_ariba']:,} registros de {resumen_cambios['total_me5a']:,} en ME5A fueron encontrados en ARIBA**.
+- **{resumen_cambios['match_me80fn']:,} registros de {resumen_cambios['total_me5a']:,} en ME5A fueron encontrados en ME80FN**.
+- **{resumen_cambios['match_ambos']:,} registros de {resumen_cambios['total_me5a']:,} en ME5A fueron encontrados en ARIBA y ME80FN**.
+- **{resumen_cambios['match_solo_ariba']:,} registros de {resumen_cambios['total_me5a']:,} en ME5A fueron encontrados solo en ARIBA**.
+- **{resumen_cambios['match_solo_me80fn']:,} registros de {resumen_cambios['total_me5a']:,} en ME5A fueron encontrados solo en ME80FN**.
+- **{resumen_cambios['no_encontrado']:,} registros de {resumen_cambios['total_me5a']:,} en ME5A no fueron encontrados en ARIBA ni ME80FN**.
 
-            **Condición ARIBA**
+### Condición ARIBA
 
-            Para que un registro tenga match en ARIBA, deben cumplirse las 3 condiciones:
+Para que un registro tenga match en ARIBA, deben cumplirse las 3 condiciones:
 
-            - **Solicitud de pedido - ME5A** = **ID de solicitud de compra del ERP - ARIBA**.
-            - **Pos.solicitud pedido - ME5A / 10** = **Número de línea de la solicitud de compra - ARIBA**.
-            - **Pedido - ME5A** = **ID de pedido - ARIBA**.
+- **Solicitud de pedido - ME5A** = **ID de solicitud de compra del ERP - ARIBA**.
+- **Pos.solicitud pedido - ME5A / 10** = **Número de línea de la solicitud de compra - ARIBA**.
+- **Pedido - ME5A** = **ID de pedido - ARIBA**.
 
-            **Condición ME80FN**
+### Condición ME80FN
 
-            Para que un registro tenga match en ME80FN, deben cumplirse las 4 condiciones:
+Para que un registro tenga match en ME80FN, deben cumplirse las 4 condiciones:
 
-            - **Pedido - ME5A** = **Documento compras - ME80FN**.
-            - **Posición de pedido - ME5A** = **Posición - ME80FN**.
-            - **Material - ME5A** = **Material - ME80FN**.
-            - **Centro - ME5A** = **Centro - ME80FN**.
+- **Pedido - ME5A** = **Documento compras - ME80FN**.
+- **Posición de pedido - ME5A** = **Posición - ME80FN**.
+- **Material - ME5A** = **Material - ME80FN**.
+- **Centro - ME5A** = **Centro - ME80FN**.
 
-            {texto_ejemplo}
+{texto_ejemplo}
 
-            **Salida generada**
+### Salida generada
 
-            - Se generó una salida integrada con **{resumen_cambios['total_resultado']:,} registros** y **{resumen_cambios['columnas_resultado']:,} columnas**.
-            - Filas duplicadas detectadas en la salida integrada: **{resumen_cambios['duplicados_resultado']:,}**.
+- Se generó una salida integrada con **{resumen_cambios['total_resultado']:,} registros** y **{resumen_cambios['columnas_resultado']:,} columnas**.
+- Filas duplicadas detectadas en la salida integrada: **{resumen_cambios['duplicados_resultado']:,}**.
             """
         )
 
