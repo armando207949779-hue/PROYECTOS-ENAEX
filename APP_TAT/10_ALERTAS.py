@@ -43,7 +43,6 @@ COL_SOLPED = "Solicitud de pedido - ME5A"
 COL_OC_ME5A = "Pedido - ME5A"
 COL_OC_ME80FN = "Documento de compras - ME80FN"
 COL_POS_SOLPED = "Posición solicitud de pedido - ME5A"
-COL_POS_OC = "Posición de pedido - ME5A"
 COL_MATERIAL = "Material - ME5A"
 COL_TEXTO = "Texto breve - ME5A"
 COL_CENTRO = "Centro - ME5A"
@@ -51,14 +50,11 @@ COL_GRUPO_COMPRAS = "Grupo de compras"
 COL_TIPO_OC = "tipo_oc"
 COL_ORIGEN = "origen"
 COL_SISTEMA = "sistema"
-COL_ESTADO_MATCH = "Estado del match"
 COL_PERF_TAT = "performance_tat_total"
 COL_RANGO_INC = "rango_incumplimiento_tat"
-COL_INC_TAT = "incumplimiento_tat"
 COL_DIAS_TAT = "dias_tat_total"
 COL_DIAS_INC = "dias_incumplimiento_tat"
 COL_UMBRAL_TAT = "umbral_tat_total"
-COL_FECHAS_INCONSISTENTES = "tiene_fechas_inconsistentes"
 COL_ESTADO_RECEPCION_ALERTA = "estado_recepcion"
 
 COL_FECHA_SOLICITUD_FINAL = "fecha_solicitud_final"
@@ -1012,44 +1008,6 @@ def registrar_paso_filtro(
     )
 
 
-def contiene_texto(df: pd.DataFrame, columna: str, texto: str) -> pd.Series:
-    if columna not in df.columns or not str(texto).strip():
-        return pd.Series(True, index=df.index)
-
-    return df[columna].astype(str).str.contains(
-        str(texto).strip(),
-        case=False,
-        na=False,
-        regex=False,
-    )
-
-
-def filtrar_por_ids(df: pd.DataFrame, columna: str, texto: str) -> pd.Series:
-    if columna not in df.columns or not str(texto).strip():
-        return pd.Series(True, index=df.index)
-
-    tokens = [
-        t.strip().replace(".0", "")
-        for t in str(texto)
-        .replace("\n", ",")
-        .replace(";", ",")
-        .replace(" ", ",")
-        .split(",")
-        if t.strip()
-    ]
-
-    if not tokens:
-        return pd.Series(True, index=df.index)
-
-    serie = df[columna].astype(str).str.replace(".0", "", regex=False)
-    mask = pd.Series(False, index=df.index)
-
-    for token in tokens:
-        mask = mask | serie.str.contains(token, case=False, na=False, regex=False)
-
-    return mask
-
-
 def aplicar_filtros_alertas(
     df_base: pd.DataFrame,
     filtros: dict,
@@ -1070,42 +1028,7 @@ def aplicar_filtros_alertas(
         }
     ]
 
-    barra.progress(15, text="Aplicando búsquedas...")
-
-    textos = [
-        ("SolPed", COL_SOLPED, filtros.get("buscar_solped", "")),
-        ("Pedido", COL_OC_ME5A, filtros.get("buscar_pedido", "")),
-        ("Material", COL_MATERIAL, filtros.get("buscar_material", "")),
-    ]
-
-    for nombre, columna, texto in textos:
-        if str(texto).strip() and columna in df.columns:
-            antes = df.copy()
-            df = df[filtrar_por_ids(df, columna, texto)].copy()
-
-            registrar_paso_filtro(
-                resumen,
-                f"Filtro búsqueda {nombre}",
-                nombre,
-                texto,
-                antes,
-                df,
-            )
-
-    if str(filtros.get("buscar_texto", "")).strip() and COL_TEXTO in df.columns:
-        antes = df.copy()
-        df = df[contiene_texto(df, COL_TEXTO, filtros["buscar_texto"])].copy()
-
-        registrar_paso_filtro(
-            resumen,
-            "Filtro texto",
-            "Texto breve",
-            filtros["buscar_texto"],
-            antes,
-            df,
-        )
-
-    barra.progress(35, text="Aplicando rango de vencimiento...")
+    barra.progress(25, text="Aplicando rango de vencimiento...")
 
     rango_vencimiento = filtros.get("rango_vencimiento")
 
@@ -1134,10 +1057,10 @@ def aplicar_filtros_alertas(
                 df,
             )
 
-    barra.progress(55, text="Aplicando filtros categóricos...")
+    barra.progress(65, text="Aplicando filtros de alerta...")
 
     filtros_multiselect = [
-        ("Nivel alerta", COL_NIVEL_ALERTA_DESC, filtros.get("niveles", [])),
+        ("Tipo de alerta", COL_NIVEL_ALERTA_DESC, filtros.get("niveles", [])),
         ("Clasificación vencimiento", "clasificacion_vencimiento", filtros.get("clasificaciones", [])),
         ("Estado recepción", COL_ESTADO_RECEPCION_ALERTA, filtros.get("estados_recepcion", [])),
         ("Centro", COL_CENTRO, filtros.get("centros", [])),
@@ -1165,7 +1088,7 @@ def aplicar_filtros_alertas(
                 df,
             )
 
-    barra.progress(80, text="Ordenando por prioridad...")
+    barra.progress(90, text="Ordenando por prioridad...")
 
     if "score_riesgo" in df.columns:
         df = df.sort_values("score_riesgo", ascending=False).copy()
@@ -1187,6 +1110,32 @@ def formatear_ejes(ax):
 
     ax.tick_params(axis="both", length=0, colors=COLOR_MUTED)
     ax.set_facecolor("none")
+
+
+def crear_clasificacion_vencimiento_detallada(df: pd.DataFrame) -> pd.Series:
+    estado = df[COL_ESTADO_RECEPCION_ALERTA].astype(str)
+
+    dias = pd.to_numeric(
+        df.get("dias_restantes_int", pd.Series(np.nan, index=df.index)),
+        errors="coerce",
+    )
+
+    resultado = pd.Series("Sin datos", index=df.index, dtype="object")
+
+    resultado.loc[estado.eq("Recepcionado")] = "Recepcionado"
+    resultado.loc[estado.eq("Sin recepción") & dias.isna()] = "Sin datos"
+    resultado.loc[estado.eq("Sin recepción") & dias.lt(0)] = "Vencido"
+    resultado.loc[estado.eq("Sin recepción") & dias.eq(0)] = "Vence hoy"
+    resultado.loc[estado.eq("Sin recepción") & dias.eq(1)] = "1 día"
+    resultado.loc[estado.eq("Sin recepción") & dias.eq(2)] = "2 días"
+    resultado.loc[estado.eq("Sin recepción") & dias.between(3, 7, inclusive="both")] = "3-7 días"
+    resultado.loc[estado.eq("Sin recepción") & dias.between(8, 15, inclusive="both")] = "8-15 días"
+    resultado.loc[estado.eq("Sin recepción") & dias.between(16, 30, inclusive="both")] = "16-30 días"
+    resultado.loc[estado.eq("Sin recepción") & dias.between(31, 60, inclusive="both")] = "31-60 días"
+    resultado.loc[estado.eq("Sin recepción") & dias.between(61, 90, inclusive="both")] = "61-90 días"
+    resultado.loc[estado.eq("Sin recepción") & dias.gt(90)] = "+90 días"
+
+    return resultado
 
 
 def grafico_donut_alertas_porcentual(df: pd.DataFrame):
@@ -1325,17 +1274,24 @@ def grafico_donut_alertas_porcentual(df: pd.DataFrame):
 def grafico_alertas_valores_absolutos(df: pd.DataFrame):
     st.markdown("### Valores absolutos por vencimiento")
 
-    if df.empty or "clasificacion_vencimiento" not in df.columns:
+    if df.empty:
         st.info("No hay datos para graficar.")
         return
+
+    df_grafico = df.copy()
+    df_grafico["vencimiento_detallado"] = crear_clasificacion_vencimiento_detallada(df_grafico)
 
     orden = [
         "Vencido",
         "Vence hoy",
         "1 día",
         "2 días",
-        "7 días",
-        "+7 días",
+        "3-7 días",
+        "8-15 días",
+        "16-30 días",
+        "31-60 días",
+        "61-90 días",
+        "+90 días",
         "Sin datos",
         "Recepcionado",
     ]
@@ -1345,14 +1301,18 @@ def grafico_alertas_valores_absolutos(df: pd.DataFrame):
         "Vence hoy": COLOR_CRITICO,
         "1 día": COLOR_ATENCION,
         "2 días": COLOR_ATENCION,
-        "7 días": COLOR_SEGUIMIENTO,
-        "+7 días": COLOR_CONTROLADO,
+        "3-7 días": COLOR_SEGUIMIENTO,
+        "8-15 días": COLOR_SEGUIMIENTO,
+        "16-30 días": COLOR_CONTROLADO,
+        "31-60 días": COLOR_CONTROLADO,
+        "61-90 días": "#15803D",
+        "+90 días": "#166534",
         "Sin datos": COLOR_SIN_DATOS,
         "Recepcionado": COLOR_CERRADO,
     }
 
     tabla = (
-        df["clasificacion_vencimiento"]
+        df_grafico["vencimiento_detallado"]
         .value_counts()
         .reindex(orden, fill_value=0)
         .reset_index()
@@ -1369,7 +1329,7 @@ def grafico_alertas_valores_absolutos(df: pd.DataFrame):
 
     y = np.arange(len(tabla))
 
-    fig, ax = plt.subplots(figsize=(8.2, 5.4))
+    fig, ax = plt.subplots(figsize=(8.6, 5.8))
 
     ax.barh(
         y,
@@ -1397,7 +1357,86 @@ def grafico_alertas_valores_absolutos(df: pd.DataFrame):
     ax.set_xlabel("Cantidad de registros", color=COLOR_TEXTO)
 
     ax.set_title(
-        "Valores absolutos por clasificación de vencimiento",
+        "Valores absolutos por vencimiento detallado",
+        fontsize=14,
+        fontweight="bold",
+        color=COLOR_TEXTO,
+        pad=12,
+    )
+
+    formatear_ejes(ax)
+
+    fig.patch.set_alpha(0)
+    fig.tight_layout()
+
+    st.pyplot(fig, clear_figure=True, use_container_width=True)
+
+
+def grafico_vencidos_por_anio(df_vencidos: pd.DataFrame):
+    st.markdown("### Vencidos sin recepción por año")
+
+    if df_vencidos.empty:
+        st.info("No hay vencidos sin recepción para graficar.")
+        return
+
+    df_grafico = df_vencidos.copy()
+
+    df_grafico["fecha_vencimiento_tat"] = pd.to_datetime(
+        df_grafico["fecha_vencimiento_tat"],
+        errors="coerce",
+    )
+
+    df_grafico = df_grafico[df_grafico["fecha_vencimiento_tat"].notna()].copy()
+
+    if df_grafico.empty:
+        st.info("No hay fechas de vencimiento válidas para graficar por año.")
+        return
+
+    df_grafico["anio_vencimiento"] = df_grafico["fecha_vencimiento_tat"].dt.year
+
+    tabla = (
+        df_grafico
+        .groupby("anio_vencimiento")
+        .size()
+        .reset_index(name="Cantidad")
+        .sort_values("anio_vencimiento", ascending=False)
+    )
+
+    x = np.arange(len(tabla))
+
+    fig, ax = plt.subplots(figsize=(8.4, 4.8))
+
+    ax.bar(
+        x,
+        tabla["Cantidad"],
+        color=COLOR_CRITICO,
+        width=0.58,
+    )
+
+    max_cantidad = max(tabla["Cantidad"]) if len(tabla) else 0
+
+    for i, cantidad in enumerate(tabla["Cantidad"]):
+        ax.text(
+            i,
+            cantidad + max_cantidad * 0.02,
+            formato_cantidad(cantidad),
+            ha="center",
+            va="bottom",
+            fontsize=10,
+            fontweight="bold",
+            color=COLOR_TEXTO,
+        )
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(
+        tabla["anio_vencimiento"].astype(str),
+        color=COLOR_MUTED,
+    )
+
+    ax.set_ylabel("Cantidad de registros", color=COLOR_TEXTO)
+
+    ax.set_title(
+        "Concentración de vencidos sin recepción por año",
         fontsize=14,
         fontweight="bold",
         color=COLOR_TEXTO,
@@ -1511,7 +1550,7 @@ def mostrar_vencidos_por_anio(df_vencidos: pd.DataFrame):
         df_temp["anio_vencimiento"]
         .dropna()
         .astype(int)
-        .sort_values()
+        .sort_values(ascending=False)
         .unique()
         .tolist()
     )
@@ -1681,7 +1720,7 @@ except Exception as e:
 # ============================================================
 
 st.markdown("### Filtros")
-st.caption("Configura filtros y presiona Aplicar filtros para actualizar el análisis.")
+st.caption("Filtros enfocados solo en gestión de alertas.")
 
 fechas_vencimiento = df_panel["fecha_vencimiento_tat"].dropna()
 
@@ -1729,36 +1768,6 @@ with st.form("form_filtros_alertas"):
     f1, f2, f3, f4 = st.columns(4)
 
     with f1:
-        buscar_solped = st.text_input(
-            "Buscar SolPed",
-            placeholder="Ej: 1001973319",
-            key="alertas_buscar_solped",
-        )
-
-    with f2:
-        buscar_pedido = st.text_input(
-            "Buscar pedido",
-            placeholder="Ej: 4500...",
-            key="alertas_buscar_pedido",
-        )
-
-    with f3:
-        buscar_material = st.text_input(
-            "Buscar material",
-            placeholder="Material",
-            key="alertas_buscar_material",
-        )
-
-    with f4:
-        buscar_texto = st.text_input(
-            "Buscar texto breve",
-            placeholder="Descripción",
-            key="alertas_buscar_texto",
-        )
-
-    f5, f6, f7, f8 = st.columns(4)
-
-    with f5:
         if fecha_venc_min is not None and fecha_venc_max is not None:
             rango_vencimiento = st.date_input(
                 "Fecha vencimiento TAT",
@@ -1771,7 +1780,7 @@ with st.form("form_filtros_alertas"):
             rango_vencimiento = None
             st.warning("No hay fechas de vencimiento calculables.")
 
-    with f6:
+    with f2:
         niveles = st.multiselect(
             "Tipo de alerta",
             options=opciones_nivel,
@@ -1779,7 +1788,7 @@ with st.form("form_filtros_alertas"):
             key="alertas_niveles",
         )
 
-    with f7:
+    with f3:
         clasificaciones = st.multiselect(
             "Clasificación vencimiento",
             options=opciones_clasificacion,
@@ -1788,7 +1797,7 @@ with st.form("form_filtros_alertas"):
             help="Por defecto se excluyen 'Sin datos' y 'Recepcionado'.",
         )
 
-    with f8:
+    with f4:
         estados_recepcion = st.multiselect(
             "Estado recepción",
             options=opciones_estado_recepcion,
@@ -1796,9 +1805,9 @@ with st.form("form_filtros_alertas"):
             key="alertas_estados_recepcion",
         )
 
-    f9, f10, f11, f12 = st.columns(4)
+    f5, f6, f7, f8 = st.columns(4)
 
-    with f9:
+    with f5:
         centros = st.multiselect(
             "Centro",
             options=opciones_centros,
@@ -1807,7 +1816,7 @@ with st.form("form_filtros_alertas"):
             help="Por defecto se selecciona E002 si existe.",
         )
 
-    with f10:
+    with f6:
         grupos_compras = st.multiselect(
             "Grupo compras",
             options=opciones_grupos_compras,
@@ -1816,7 +1825,7 @@ with st.form("form_filtros_alertas"):
             help="Si no seleccionas grupo, se consideran todos.",
         )
 
-    with f11:
+    with f7:
         sistemas = st.multiselect(
             "Sistema",
             options=opciones_sistemas,
@@ -1825,7 +1834,7 @@ with st.form("form_filtros_alertas"):
             help="Si no seleccionas sistema, se consideran todos.",
         )
 
-    with f12:
+    with f8:
         tipos_oc = st.multiselect(
             "Tipo OC",
             options=opciones_tipo_oc,
@@ -1852,10 +1861,6 @@ with st.form("form_filtros_alertas"):
 
 if limpiar_filtros:
     claves = [
-        "alertas_buscar_solped",
-        "alertas_buscar_pedido",
-        "alertas_buscar_material",
-        "alertas_buscar_texto",
         "alertas_rango_vencimiento",
         "alertas_niveles",
         "alertas_clasificaciones",
@@ -1877,10 +1882,6 @@ if limpiar_filtros:
 
 
 filtros = {
-    "buscar_solped": buscar_solped,
-    "buscar_pedido": buscar_pedido,
-    "buscar_material": buscar_material,
-    "buscar_texto": buscar_texto,
     "rango_vencimiento": rango_vencimiento,
     "niveles": niveles,
     "clasificaciones": clasificaciones,
@@ -1971,7 +1972,7 @@ mostrar_card_estado(resumen_ejecutivo)
 st.markdown("### Desglose visual de alertas")
 st.caption(
     "El primer gráfico muestra la distribución porcentual. "
-    "El segundo gráfico muestra valores absolutos para evitar duplicar la misma información."
+    "El segundo gráfico muestra valores absolutos con mayor detalle en los rangos mayores a 7 días."
 )
 
 col_g1, col_g2 = st.columns(2)
@@ -2010,6 +2011,8 @@ df_proximos = df_filtrado[
 df_sin_fecha = df_filtrado[
     df_filtrado["nivel_alerta"].eq("Datos incompletos")
 ].copy()
+
+grafico_vencidos_por_anio(df_vencidos)
 
 mostrar_vencidos_por_anio(df_vencidos)
 
