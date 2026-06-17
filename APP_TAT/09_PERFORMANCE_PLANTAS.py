@@ -580,7 +580,7 @@ def preparar_base_plantas(df_original: pd.DataFrame) -> pd.DataFrame:
 
 
 # ============================================================
-# FILTROS
+# FILTROS GENERALES
 # ============================================================
 
 def registrar_paso_filtro(
@@ -906,23 +906,14 @@ def selector_filtro_semanal_tabla(df: pd.DataFrame):
     metadata = {
         "filtro_activo": False,
         "modo": "Sin filtro semanal específico",
-        "descripcion": "Se usa el rango general del dashboard.",
+        "descripcion": "Se usa la base filtrada general del dashboard.",
     }
 
     if df.empty:
         return df.copy(), metadata
 
     if "anio_iso_recepcion" not in df.columns or "semana_iso_recepcion" not in df.columns:
-        st.warning("No existen columnas de año/semana ISO para aplicar este filtro.")
-        return df.copy(), metadata
-
-    usar_filtro = st.checkbox(
-        "Filtrar este detalle semanal",
-        value=False,
-        key="usar_filtro_semana_tabla_plantas",
-    )
-
-    if not usar_filtro:
+        st.warning("No existen columnas de año/semana ISO para aplicar filtro semanal.")
         return df.copy(), metadata
 
     catalogo = crear_catalogo_semanas_disponibles(df)
@@ -931,57 +922,170 @@ def selector_filtro_semanal_tabla(df: pd.DataFrame):
         st.info("No hay semanas disponibles con los filtros actuales.")
         return df.copy(), metadata
 
-    modo_filtro = st.radio(
-        "Forma de selección",
-        options=[
-            "Calendario",
-            "Semana ISO manual",
-        ],
-        horizontal=True,
-        key="modo_filtro_semana_tabla_plantas",
-        help=(
-            "Calendario: eliges fechas y el sistema muestra las semanas involucradas. "
-            "Semana ISO manual: eliges año, semana inicial y semana final."
-        ),
+    st.markdown("#### Filtro del detalle semanal")
+    st.caption(
+        "Configura el filtro semanal y presiona confirmar. "
+        "El detalle no se filtra hasta que confirmes la selección."
     )
 
-    if modo_filtro == "Calendario":
-        fechas_validas = df[COL_FECHA_RECEPCION_FINAL].dropna()
+    fecha_inicio_cal = None
+    fecha_fin_cal = None
+    anio_sel = None
+    semana_inicio_sel = None
+    semana_fin_sel = None
 
-        fecha_min = fechas_validas.min().date()
-        fecha_max = fechas_validas.max().date()
-
-        rango_fecha_tabla = st.date_input(
-            "Rango de fechas para el detalle semanal",
-            value=(fecha_min, fecha_max),
-            min_value=fecha_min,
-            max_value=fecha_max,
-            key="rango_fecha_tabla_plantas",
-            help="Usa fecha_recepcion_final. Las semanas ISO se calculan según este rango.",
+    with st.form("form_filtro_detalle_semanal_plantas"):
+        modo_filtro = st.radio(
+            "Tipo de filtro semanal",
+            options=[
+                "Sin filtro semanal",
+                "Filtrar por rango de fechas",
+                "Filtrar por semana ISO",
+            ],
+            horizontal=True,
+            key="modo_filtro_detalle_semanal_plantas",
         )
 
-        if not isinstance(rango_fecha_tabla, (tuple, list)) or len(rango_fecha_tabla) != 2:
-            st.info("Selecciona una fecha inicial y una fecha final.")
-            return df.copy(), metadata
+        if modo_filtro == "Filtrar por rango de fechas":
+            fechas_validas = df[COL_FECHA_RECEPCION_FINAL].dropna()
 
-        fecha_inicio = rango_fecha_tabla[0]
-        fecha_fin = rango_fecha_tabla[1]
+            fecha_min = fechas_validas.min().date()
+            fecha_max = fechas_validas.max().date()
+
+            rango_fecha_tabla = st.date_input(
+                "Rango de fechas para el detalle semanal",
+                value=(fecha_min, fecha_max),
+                min_value=fecha_min,
+                max_value=fecha_max,
+                key="rango_fecha_detalle_semanal_plantas",
+                help="Se usa fecha_recepcion_final. Luego se agrupa por semana ISO.",
+            )
+
+            if isinstance(rango_fecha_tabla, (tuple, list)) and len(rango_fecha_tabla) == 2:
+                fecha_inicio_cal = rango_fecha_tabla[0]
+                fecha_fin_cal = rango_fecha_tabla[1]
+
+        elif modo_filtro == "Filtrar por semana ISO":
+            anios_disponibles = sorted(
+                catalogo["Año"]
+                .dropna()
+                .astype(int)
+                .unique()
+                .tolist()
+            )
+
+            anio_sel = st.selectbox(
+                "Año ISO",
+                options=anios_disponibles,
+                index=len(anios_disponibles) - 1,
+                key="anio_iso_detalle_semanal_plantas",
+            )
+
+            catalogo_anio = catalogo[catalogo["Año"].eq(int(anio_sel))].copy()
+
+            semanas_disponibles = sorted(
+                catalogo_anio["Semana"]
+                .dropna()
+                .astype(int)
+                .unique()
+                .tolist()
+            )
+
+            mapa_semana_etiqueta = dict(
+                zip(
+                    catalogo_anio["Semana"].astype(int),
+                    catalogo_anio["Etiqueta"].astype(str),
+                )
+            )
+
+            c1, c2 = st.columns(2)
+
+            with c1:
+                semana_inicio_sel = st.selectbox(
+                    "Semana inicial",
+                    options=semanas_disponibles,
+                    format_func=lambda semana: mapa_semana_etiqueta.get(
+                        int(semana),
+                        f"Semana {int(semana):02d}",
+                    ),
+                    index=0,
+                    key="semana_inicio_detalle_semanal_plantas",
+                )
+
+            semanas_fin_disponibles = [
+                semana for semana in semanas_disponibles
+                if int(semana) >= int(semana_inicio_sel)
+            ]
+
+            with c2:
+                semana_fin_sel = st.selectbox(
+                    "Semana final",
+                    options=semanas_fin_disponibles,
+                    format_func=lambda semana: mapa_semana_etiqueta.get(
+                        int(semana),
+                        f"Semana {int(semana):02d}",
+                    ),
+                    index=len(semanas_fin_disponibles) - 1,
+                    key="semana_fin_detalle_semanal_plantas",
+                )
+
+            fecha_inicio_semana, _ = obtener_rango_fechas_semana_iso(
+                int(anio_sel),
+                int(semana_inicio_sel),
+            )
+
+            _, fecha_fin_semana = obtener_rango_fechas_semana_iso(
+                int(anio_sel),
+                int(semana_fin_sel),
+            )
+
+            st.info(
+                f"El rango seleccionado corresponde a: "
+                f"{fecha_inicio_semana.strftime('%d-%m-%Y')} "
+                f"a {fecha_fin_semana.strftime('%d-%m-%Y')}."
+            )
+
+        confirmar_filtro = st.form_submit_button(
+            "Confirmar filtro semanal",
+            use_container_width=True,
+            type="primary",
+        )
+
+    if not confirmar_filtro:
+        st.info("Configura el filtro semanal y presiona **Confirmar filtro semanal**.")
+        return df.copy(), metadata
+
+    progreso = st.progress(0, text="Validando filtro semanal...")
+
+    progreso.progress(20, text="Leyendo configuración del filtro...")
+
+    if modo_filtro == "Sin filtro semanal":
+        progreso.progress(100, text="Detalle semanal preparado sin filtro adicional.")
+
+        metadata = {
+            "filtro_activo": False,
+            "modo": "Sin filtro semanal",
+            "descripcion": "Se usa la base filtrada general del dashboard.",
+        }
+
+        return df.copy(), metadata
+
+    if modo_filtro == "Filtrar por rango de fechas":
+        progreso.progress(45, text="Aplicando rango de fechas...")
+
+        if fecha_inicio_cal is None or fecha_fin_cal is None:
+            st.warning("Selecciona una fecha inicial y una fecha final.")
+            return df.copy(), metadata
 
         df_filtrado = filtrar_por_fecha_recepcion(
             df=df,
-            fecha_inicio=fecha_inicio,
-            fecha_fin=fecha_fin,
+            fecha_inicio=fecha_inicio_cal,
+            fecha_fin=fecha_fin_cal,
         )
 
-        catalogo_filtrado = crear_catalogo_semanas_disponibles(df_filtrado)
+        progreso.progress(75, text="Identificando semanas incluidas...")
 
-        if df_filtrado.empty:
-            st.warning("No hay datos para el rango de fechas seleccionado.")
-            return df_filtrado, {
-                "filtro_activo": True,
-                "modo": "Calendario",
-                "descripcion": f"{fecha_inicio.strftime('%d-%m-%Y')} a {fecha_fin.strftime('%d-%m-%Y')}",
-            }
+        catalogo_filtrado = crear_catalogo_semanas_disponibles(df_filtrado)
 
         semanas_txt = ", ".join(
             [
@@ -990,122 +1094,99 @@ def selector_filtro_semanal_tabla(df: pd.DataFrame):
             ]
         )
 
-        st.caption(
-            f"Rango seleccionado: {fecha_inicio.strftime('%d-%m-%Y')} a {fecha_fin.strftime('%d-%m-%Y')}. "
-            f"Semanas incluidas: {semanas_txt if semanas_txt else 'Sin semanas'}."
+        progreso.progress(100, text="Filtro semanal aplicado.")
+
+        st.success(
+            f"Filtro aplicado: {fecha_inicio_cal.strftime('%d-%m-%Y')} "
+            f"a {fecha_fin_cal.strftime('%d-%m-%Y')}."
         )
 
-        with st.expander("Ver semanas incluidas en el rango seleccionado", expanded=False):
-            st.dataframe(
-                catalogo_filtrado,
-                use_container_width=True,
-                hide_index=True,
-            )
+        st.caption(
+            f"Semanas incluidas: {semanas_txt if semanas_txt else 'Sin semanas disponibles'}."
+        )
+
+        if not catalogo_filtrado.empty:
+            with st.expander("Semanas incluidas en el rango confirmado", expanded=True):
+                st.dataframe(
+                    catalogo_filtrado,
+                    use_container_width=True,
+                    hide_index=True,
+                )
 
         metadata = {
             "filtro_activo": True,
-            "modo": "Calendario",
-            "descripcion": f"{fecha_inicio.strftime('%d-%m-%Y')} a {fecha_fin.strftime('%d-%m-%Y')}",
+            "modo": "Rango de fechas",
+            "descripcion": (
+                f"{fecha_inicio_cal.strftime('%d-%m-%Y')} "
+                f"a {fecha_fin_cal.strftime('%d-%m-%Y')}"
+            ),
         }
 
         return df_filtrado, metadata
 
-    anios_disponibles = sorted(
-        catalogo["Año"].dropna().astype(int).unique().tolist()
-    )
+    if modo_filtro == "Filtrar por semana ISO":
+        progreso.progress(45, text="Aplicando semanas ISO seleccionadas...")
 
-    anio_sel = st.selectbox(
-        "Año ISO",
-        options=anios_disponibles,
-        index=len(anios_disponibles) - 1,
-        key="anio_iso_tabla_plantas",
-    )
+        if anio_sel is None or semana_inicio_sel is None or semana_fin_sel is None:
+            st.warning("Selecciona año, semana inicial y semana final.")
+            return df.copy(), metadata
 
-    catalogo_anio = catalogo[catalogo["Año"].eq(int(anio_sel))].copy()
-
-    semanas_disponibles = sorted(
-        catalogo_anio["Semana"].dropna().astype(int).unique().tolist()
-    )
-
-    mapa_semana_etiqueta = dict(
-        zip(
-            catalogo_anio["Semana"].astype(int),
-            catalogo_anio["Etiqueta"].astype(str),
+        fecha_inicio_semana, _ = obtener_rango_fechas_semana_iso(
+            int(anio_sel),
+            int(semana_inicio_sel),
         )
-    )
 
-    c1, c2 = st.columns(2)
+        _, fecha_fin_semana = obtener_rango_fechas_semana_iso(
+            int(anio_sel),
+            int(semana_fin_sel),
+        )
 
-    with c1:
-        semana_inicio_sel = st.selectbox(
-            "Semana inicial",
-            options=semanas_disponibles,
-            format_func=lambda semana: mapa_semana_etiqueta.get(
-                int(semana),
-                f"Semana {int(semana):02d}",
+        df_filtrado = filtrar_por_anio_y_semana_iso(
+            df=df,
+            anio_iso=anio_sel,
+            semana_inicio=semana_inicio_sel,
+            semana_fin=semana_fin_sel,
+        )
+
+        progreso.progress(75, text="Preparando detalle semanal filtrado...")
+
+        catalogo_filtrado = crear_catalogo_semanas_disponibles(df_filtrado)
+
+        progreso.progress(100, text="Filtro semanal aplicado.")
+
+        st.success(
+            f"Filtro aplicado: Año {anio_sel}, semana {semana_inicio_sel} "
+            f"a semana {semana_fin_sel}."
+        )
+
+        st.caption(
+            f"Rango calendario correspondiente: "
+            f"{fecha_inicio_semana.strftime('%d-%m-%Y')} "
+            f"a {fecha_fin_semana.strftime('%d-%m-%Y')}."
+        )
+
+        if not catalogo_filtrado.empty:
+            with st.expander("Semanas incluidas en el rango confirmado", expanded=True):
+                st.dataframe(
+                    catalogo_filtrado,
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+        metadata = {
+            "filtro_activo": True,
+            "modo": "Semana ISO",
+            "descripcion": (
+                f"Año {anio_sel}, semana {semana_inicio_sel} "
+                f"a semana {semana_fin_sel} · "
+                f"{fecha_inicio_semana.strftime('%d-%m-%Y')} "
+                f"a {fecha_fin_semana.strftime('%d-%m-%Y')}"
             ),
-            index=0,
-            key="semana_inicio_tabla_plantas",
-        )
+        }
 
-    semanas_fin_disponibles = [
-        semana for semana in semanas_disponibles
-        if int(semana) >= int(semana_inicio_sel)
-    ]
+        return df_filtrado, metadata
 
-    with c2:
-        semana_fin_sel = st.selectbox(
-            "Semana final",
-            options=semanas_fin_disponibles,
-            format_func=lambda semana: mapa_semana_etiqueta.get(
-                int(semana),
-                f"Semana {int(semana):02d}",
-            ),
-            index=len(semanas_fin_disponibles) - 1,
-            key="semana_fin_tabla_plantas",
-        )
-
-    fecha_inicio_semana, _ = obtener_rango_fechas_semana_iso(
-        int(anio_sel),
-        int(semana_inicio_sel),
-    )
-
-    _, fecha_fin_semana = obtener_rango_fechas_semana_iso(
-        int(anio_sel),
-        int(semana_fin_sel),
-    )
-
-    st.caption(
-        f"Rango seleccionado: Año {anio_sel}, semana {semana_inicio_sel} "
-        f"a semana {semana_fin_sel} · "
-        f"{fecha_inicio_semana.strftime('%d-%m-%Y')} a "
-        f"{fecha_fin_semana.strftime('%d-%m-%Y')}"
-    )
-
-    with st.expander("Ver semanas disponibles del año seleccionado", expanded=False):
-        st.dataframe(
-            catalogo_anio,
-            use_container_width=True,
-            hide_index=True,
-        )
-
-    df_filtrado = filtrar_por_anio_y_semana_iso(
-        df=df,
-        anio_iso=anio_sel,
-        semana_inicio=semana_inicio_sel,
-        semana_fin=semana_fin_sel,
-    )
-
-    metadata = {
-        "filtro_activo": True,
-        "modo": "Semana ISO manual",
-        "descripcion": (
-            f"Año {anio_sel}, semana {semana_inicio_sel} a semana {semana_fin_sel} · "
-            f"{fecha_inicio_semana.strftime('%d-%m-%Y')} a {fecha_fin_semana.strftime('%d-%m-%Y')}"
-        ),
-    }
-
-    return df_filtrado, metadata
+    return df.copy(), metadata
 
 
 # ============================================================
@@ -1724,96 +1805,6 @@ def grafico_evolucion_mensual_grupo(tabla: pd.DataFrame, grupo: str):
     st.pyplot(fig, clear_figure=True, use_container_width=True)
 
 
-def grafico_mensual_grupo(tabla: pd.DataFrame, grupo: str):
-    st.markdown(f"#### {grupo}")
-
-    if tabla.empty:
-        st.info("No hay datos evaluables para este grupo.")
-        return
-
-    labels = tabla["periodo_label"].astype(str).tolist()
-    x = np.arange(len(labels))
-
-    y = tabla["% Cumple"].to_numpy()
-    cumple = tabla["Cumple"].astype(int).to_numpy()
-
-    fig, ax = plt.subplots(figsize=(13, 4.8))
-
-    ax.bar(
-        x,
-        y,
-        color=COLOR_CUMPLE,
-        width=0.58,
-        label="Cumplimiento TAT",
-    )
-
-    for i, valor in enumerate(y):
-        ax.text(
-            i,
-            valor + 2,
-            f"{valor:.0f}%",
-            ha="center",
-            va="bottom",
-            fontsize=9,
-            fontweight="bold",
-            color=COLOR_TEXTO,
-        )
-
-        if valor >= 8:
-            ax.text(
-                i,
-                valor / 2,
-                f"{cumple[i]:,}",
-                ha="center",
-                va="center",
-                fontsize=9,
-                color="white",
-                fontweight="bold",
-            )
-
-    ax.axhline(
-        META_CUMPLIMIENTO,
-        color=COLOR_META,
-        linestyle="--",
-        linewidth=2.5,
-        label=f"Meta {META_CUMPLIMIENTO}%",
-    )
-
-    ax.set_ylim(0, 108)
-    ax.set_ylabel("% Cumple", color=COLOR_TEXTO)
-
-    ax.set_xticks(x)
-    ax.set_xticklabels(
-        labels,
-        rotation=90,
-        ha="center",
-        fontsize=9,
-        color=COLOR_MUTED,
-    )
-
-    ax.set_yticks([0, 25, 50, 65, 75, 100])
-    ax.set_yticklabels(
-        ["0%", "25%", "50%", "65%", "75%", "100%"],
-        color=COLOR_MUTED,
-    )
-
-    ax.legend(
-        loc="upper center",
-        bbox_to_anchor=(0.5, -0.35),
-        ncol=2,
-        frameon=False,
-        fontsize=10,
-    )
-
-    formatear_ejes(ax)
-
-    fig.patch.set_alpha(0)
-    fig.tight_layout()
-    fig.subplots_adjust(bottom=0.38)
-
-    st.pyplot(fig, clear_figure=True, use_container_width=True)
-
-
 # ============================================================
 # EXPORTACIÓN
 # ============================================================
@@ -2157,24 +2148,10 @@ for grupo in ["Prillex", "Rio Loa", "Plantas de servicios"]:
 
 
 # ============================================================
-# DETALLE MENSUAL POR GRUPO
-# ============================================================
-
-with st.expander("Detalle mensual por planta en barras", expanded=False):
-    st.caption(
-        "Cada gráfico muestra el cumplimiento mensual individual en formato de barras."
-    )
-
-    for grupo in ["Prillex", "Rio Loa", "Plantas de servicios"]:
-        tabla_grupo = crear_resumen_mensual_grupo(df_dashboard, grupo)
-        grafico_mensual_grupo(tabla_grupo, grupo)
-
-
-# ============================================================
 # ANÁLISIS POR CENTRO
 # ============================================================
 
-with st.expander("Análisis por centro específico", expanded=False):
+with st.expander("Análisis por centro específico", expanded=True):
     st.caption(
         "Ranking de centros incluidos en la base filtrada actual."
     )
@@ -2203,7 +2180,7 @@ with st.expander("Análisis por centro específico", expanded=False):
 # DETALLE SEMANAL CON FILTRO
 # ============================================================
 
-with st.expander("Detalle semanal con filtro por semanas", expanded=False):
+with st.expander("Detalle semanal con filtro por semanas", expanded=True):
     st.caption(
         "Detalle por semana ISO y grupo planta usando fecha_recepcion_final. "
         "Cada semana muestra explícitamente su fecha de inicio y fin."
@@ -2256,7 +2233,7 @@ with st.expander("Detalle semanal con filtro por semanas", expanded=False):
 # DETALLE DE FILTROS
 # ============================================================
 
-with st.expander("Detalle de filtros aplicados", expanded=False):
+with st.expander("Detalle de filtros aplicados", expanded=True):
     mostrar_detalle_filtros_aplicados(resumen_filtros_df)
 
 
