@@ -6,21 +6,9 @@
 
 import base64
 from pathlib import Path
-from io import BytesIO
 
 import pandas as pd
 import streamlit as st
-
-
-# ============================================================
-# Configuración de página
-# ============================================================
-
-st.set_page_config(
-    page_title="07_FILTRO",
-    page_icon="🔎",
-    layout="wide",
-)
 
 
 # ============================================================
@@ -47,9 +35,27 @@ st.markdown(
             border: 1px solid #e9ecef;
         }
 
-        div[data-testid="stFileUploader"] {
-            padding: 10px;
-            border-radius: 12px;
+        .result-card {
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 14px;
+            padding: 16px 18px;
+            margin-top: 12px;
+            margin-bottom: 12px;
+        }
+
+        .section-title {
+            font-size: 1.08rem;
+            font-weight: 800;
+            color: #1f2937;
+            margin-top: 20px;
+            margin-bottom: 4px;
+        }
+
+        .section-subtitle {
+            font-size: 0.88rem;
+            color: #6b7280;
+            margin-bottom: 12px;
         }
     </style>
     """,
@@ -104,6 +110,9 @@ def formatear_valor(valor) -> str:
     if texto == "":
         return "—"
 
+    if texto.endswith(".0"):
+        texto = texto[:-2]
+
     return texto
 
 
@@ -116,7 +125,7 @@ def formatear_entero(valor) -> str:
     if pd.isna(numero):
         return formatear_valor(valor)
 
-    return f"{int(round(numero)):,}"
+    return f"{int(round(numero)):,}".replace(",", ".")
 
 
 def formatear_fecha(valor) -> str:
@@ -169,20 +178,37 @@ def buscar_columna(df: pd.DataFrame, candidatos: list[str]) -> str | None:
     return None
 
 
-def normalizar_texto_serie(serie: pd.Series) -> pd.Series:
-    return (
-        serie
-        .astype("string")
-        .str.strip()
-        .str.lower()
-    )
+def obtener_valor(registro: pd.Series, columna: str | None):
+    if columna is None:
+        return pd.NA
+
+    if columna not in registro.index:
+        return pd.NA
+
+    return registro.get(columna)
+
+
+def normalizar_valor_busqueda(valor) -> str:
+    if pd.isna(valor):
+        return ""
+
+    texto = str(valor).strip().lower()
+
+    if texto.endswith(".0"):
+        texto = texto[:-2]
+
+    return texto
+
+
+def normalizar_serie_busqueda(serie: pd.Series) -> pd.Series:
+    return serie.apply(normalizar_valor_busqueda)
 
 
 def aplicar_filtro_texto(
     df: pd.DataFrame,
     columna: str | None,
     texto: str,
-    modo: str = "Contiene",
+    modo: str = "Exacta",
 ) -> pd.DataFrame:
 
     if columna is None or columna not in df.columns:
@@ -193,13 +219,31 @@ def aplicar_filtro_texto(
     if not texto:
         return df
 
-    serie = normalizar_texto_serie(df[columna])
-    texto_norm = texto.lower().strip()
+    serie = normalizar_serie_busqueda(df[columna])
+    texto_norm = normalizar_valor_busqueda(texto)
 
     if modo == "Exacta":
         return df[serie.eq(texto_norm)].copy()
 
     return df[serie.str.contains(texto_norm, na=False, regex=False)].copy()
+
+
+def hay_criterio_busqueda(
+    filtro_solped: str,
+    filtro_pedido: str,
+    filtro_posicion: str,
+    filtro_material: str,
+    filtro_texto_breve: str,
+) -> bool:
+    valores = [
+        filtro_solped,
+        filtro_pedido,
+        filtro_posicion,
+        filtro_material,
+        filtro_texto_breve,
+    ]
+
+    return any(str(valor).strip() for valor in valores)
 
 
 def aplicar_filtros_con_progreso(
@@ -209,13 +253,15 @@ def aplicar_filtros_con_progreso(
     filtro_pedido: str,
     filtro_posicion: str,
     filtro_material: str,
+    filtro_texto_breve: str,
     modo_busqueda: str,
 ) -> pd.DataFrame:
 
-    barra = st.progress(0, text="Preparando filtros...")
+    barra = st.progress(0, text="Preparando búsqueda...")
 
     df_filtrado = df_base.copy()
-    barra.progress(10, text="Cargando base de datos...")
+
+    barra.progress(15, text="Cargando base activa...")
 
     df_filtrado = aplicar_filtro_texto(
         df=df_filtrado,
@@ -223,7 +269,8 @@ def aplicar_filtros_con_progreso(
         texto=filtro_solped,
         modo=modo_busqueda,
     )
-    barra.progress(30, text="Aplicando filtro SOLPED...")
+
+    barra.progress(35, text="Buscando SOLPED...")
 
     df_filtrado = aplicar_filtro_texto(
         df=df_filtrado,
@@ -231,7 +278,8 @@ def aplicar_filtros_con_progreso(
         texto=filtro_pedido,
         modo=modo_busqueda,
     )
-    barra.progress(50, text="Aplicando filtro Pedido...")
+
+    barra.progress(50, text="Buscando pedido...")
 
     df_filtrado = aplicar_filtro_texto(
         df=df_filtrado,
@@ -239,7 +287,8 @@ def aplicar_filtros_con_progreso(
         texto=filtro_posicion,
         modo=modo_busqueda,
     )
-    barra.progress(70, text="Aplicando filtro Posición...")
+
+    barra.progress(65, text="Buscando posición...")
 
     df_filtrado = aplicar_filtro_texto(
         df=df_filtrado,
@@ -247,40 +296,19 @@ def aplicar_filtros_con_progreso(
         texto=filtro_material,
         modo=modo_busqueda,
     )
-    barra.progress(90, text="Aplicando filtro Material...")
 
-    barra.progress(100, text="Filtros aplicados correctamente.")
+    barra.progress(80, text="Buscando material...")
 
-    return df_filtrado
-
-
-def convertir_a_parquet(df: pd.DataFrame) -> bytes:
-    output = BytesIO()
-
-    df.to_parquet(
-        output,
-        index=False,
-        engine="pyarrow",
+    df_filtrado = aplicar_filtro_texto(
+        df=df_filtrado,
+        columna=columnas_clave["texto_breve"],
+        texto=filtro_texto_breve,
+        modo="Contiene",
     )
 
-    return output.getvalue()
+    barra.progress(100, text="Búsqueda finalizada.")
 
-
-def convertir_a_csv(df: pd.DataFrame) -> bytes:
-    return df.to_csv(
-        index=False,
-        encoding="utf-8-sig",
-    ).encode("utf-8-sig")
-
-
-@st.cache_data(show_spinner=False)
-def convertir_a_parquet_cache(df: pd.DataFrame) -> bytes:
-    return convertir_a_parquet(df)
-
-
-@st.cache_data(show_spinner=False)
-def convertir_a_csv_cache(df: pd.DataFrame) -> bytes:
-    return convertir_a_csv(df)
+    return df_filtrado
 
 
 # ============================================================
@@ -305,6 +333,7 @@ def detectar_columnas_clave(df: pd.DataFrame) -> dict:
                 "Pedido",
                 "ID pedido - ARIBA",
                 "ariba_id_pedido",
+                "Documento de compras - ME80FN",
             ],
         ),
         "posicion": buscar_columna(
@@ -342,16 +371,34 @@ def detectar_columnas_clave(df: pd.DataFrame) -> dict:
                 "Centro - ME80FN",
             ],
         ),
+        "grupo_compras": buscar_columna(
+            df,
+            [
+                "Grupo de compras",
+                "Grupo compras",
+                "Grupo de compras - ME5A",
+            ],
+        ),
         "tipo_oc": buscar_columna(
             df,
             [
                 "tipo_oc",
+                "Tipo OC",
+                "Clase de documento",
             ],
         ),
         "sistema": buscar_columna(
             df,
             [
                 "sistema",
+                "Sistema",
+            ],
+        ),
+        "origen": buscar_columna(
+            df,
+            [
+                "origen",
+                "Origen",
             ],
         ),
         "estado_match": buscar_columna(
@@ -390,6 +437,7 @@ def detectar_columnas_clave(df: pd.DataFrame) -> dict:
             [
                 "fecha_facturacion_final",
                 "Fecha facturación proveedor - ME80FN",
+                "Fecha facturación",
             ],
         ),
         "fecha_recepcion": buscar_columna(
@@ -397,6 +445,7 @@ def detectar_columnas_clave(df: pd.DataFrame) -> dict:
             [
                 "fecha_recepcion_final",
                 "Fecha recepción mercancía - ME80FN",
+                "Fecha recepción",
             ],
         ),
         "dias_tat_total": buscar_columna(
@@ -432,118 +481,162 @@ def detectar_columnas_clave(df: pd.DataFrame) -> dict:
     }
 
 
-def construir_columnas_vista(df: pd.DataFrame, columnas_clave: dict) -> list[str]:
-    columnas = [
-        columnas_clave["solped"],
-        columnas_clave["pedido"],
-        columnas_clave["posicion"],
-        columnas_clave["material"],
-        columnas_clave["texto_breve"],
-        columnas_clave["centro"],
-        columnas_clave["tipo_oc"],
-        columnas_clave["sistema"],
-        columnas_clave["estado_match"],
-        columnas_clave["fecha_solicitud"],
-        columnas_clave["fecha_liberacion"],
-        columnas_clave["fecha_pedido"],
-        columnas_clave["fecha_facturacion"],
-        columnas_clave["fecha_recepcion"],
-        columnas_clave["dias_tat_total"],
-        columnas_clave["umbral_tat_total"],
-        columnas_clave["performance_tat_total"],
-        columnas_clave["dias_incumplimiento"],
-        columnas_clave["rango_incumplimiento"],
-    ]
-
-    columnas = [
-        col for col in columnas
-        if col is not None and col in df.columns
-    ]
-
-    return list(dict.fromkeys(columnas))
-
-
 # ============================================================
-# Visualización de observación
+# Construcción de etiquetas y tablas
 # ============================================================
 
-def mostrar_campo(label: str, valor):
-    st.caption(label)
-    st.write(formatear_valor(valor))
+def construir_etiqueta_observacion(row: pd.Series, columnas_clave: dict) -> str:
+    solped = formatear_valor(obtener_valor(row, columnas_clave["solped"]))
+    pedido = formatear_valor(obtener_valor(row, columnas_clave["pedido"]))
+    posicion = formatear_valor(obtener_valor(row, columnas_clave["posicion"]))
+    material = formatear_valor(obtener_valor(row, columnas_clave["material"]))
+    texto = formatear_valor(obtener_valor(row, columnas_clave["texto_breve"]))
+    fila = formatear_valor(row.get("_id_observacion", ""))
+
+    etiqueta = f"SOLPED {solped}"
+
+    if pedido != "—":
+        etiqueta += f" | Pedido {pedido}"
+
+    if posicion != "—":
+        etiqueta += f" | Pos {posicion}"
+
+    if material != "—":
+        etiqueta += f" | Material {material}"
+
+    if texto != "—":
+        texto_corto = texto[:45] + "..." if len(texto) > 45 else texto
+        etiqueta += f" | {texto_corto}"
+
+    etiqueta += f" | Fila {fila}"
+
+    return etiqueta
 
 
-def obtener_valor(registro: pd.Series, columna: str | None):
-    if columna is None:
-        return pd.NA
+def construir_tabla_general(registro: pd.Series, columnas_clave: dict) -> pd.DataFrame:
+    datos = [
+        {
+            "Campo": "SOLPED",
+            "Valor": formatear_valor(obtener_valor(registro, columnas_clave["solped"])),
+        },
+        {
+            "Campo": "Pedido",
+            "Valor": formatear_valor(obtener_valor(registro, columnas_clave["pedido"])),
+        },
+        {
+            "Campo": "Posición",
+            "Valor": formatear_valor(obtener_valor(registro, columnas_clave["posicion"])),
+        },
+        {
+            "Campo": "Material",
+            "Valor": formatear_valor(obtener_valor(registro, columnas_clave["material"])),
+        },
+        {
+            "Campo": "Texto breve",
+            "Valor": formatear_valor(obtener_valor(registro, columnas_clave["texto_breve"])),
+        },
+        {
+            "Campo": "Centro",
+            "Valor": formatear_valor(obtener_valor(registro, columnas_clave["centro"])),
+        },
+        {
+            "Campo": "Grupo de compras",
+            "Valor": formatear_valor(obtener_valor(registro, columnas_clave["grupo_compras"])),
+        },
+        {
+            "Campo": "Tipo OC",
+            "Valor": formatear_valor(obtener_valor(registro, columnas_clave["tipo_oc"])),
+        },
+        {
+            "Campo": "Sistema",
+            "Valor": formatear_valor(obtener_valor(registro, columnas_clave["sistema"])),
+        },
+        {
+            "Campo": "Origen",
+            "Valor": formatear_valor(obtener_valor(registro, columnas_clave["origen"])),
+        },
+        {
+            "Campo": "Estado del match",
+            "Valor": formatear_valor(obtener_valor(registro, columnas_clave["estado_match"])),
+        },
+    ]
 
-    if columna not in registro.index:
-        return pd.NA
-
-    return registro.get(columna)
+    return pd.DataFrame(datos)
 
 
-def mostrar_figura_estado_solped(registro: pd.Series, columnas_clave: dict):
-    """
-    Muestra el estado de la SOLPED sin HTML manual.
-    Evita que aparezcan textos como </div> en pantalla.
-    """
+def construir_tabla_fechas(registro: pd.Series, columnas_clave: dict) -> pd.DataFrame:
+    datos = [
+        {
+            "Etapa": "Solicitud",
+            "Fecha": formatear_fecha(obtener_valor(registro, columnas_clave["fecha_solicitud"])),
+        },
+        {
+            "Etapa": "Liberación",
+            "Fecha": formatear_fecha(obtener_valor(registro, columnas_clave["fecha_liberacion"])),
+        },
+        {
+            "Etapa": "Pedido",
+            "Fecha": formatear_fecha(obtener_valor(registro, columnas_clave["fecha_pedido"])),
+        },
+        {
+            "Etapa": "Facturación",
+            "Fecha": formatear_fecha(obtener_valor(registro, columnas_clave["fecha_facturacion"])),
+        },
+        {
+            "Etapa": "Recepción",
+            "Fecha": formatear_fecha(obtener_valor(registro, columnas_clave["fecha_recepcion"])),
+        },
+    ]
 
+    return pd.DataFrame(datos)
+
+
+def construir_tabla_etapas_tat(registro: pd.Series, columnas_clave: dict) -> pd.DataFrame:
     etapas = [
         {
-            "etapa": "Solicitud",
-            "fecha": obtener_valor(registro, columnas_clave["fecha_solicitud"]),
+            "Etapa": "Solicitud",
+            "Fecha": obtener_valor(registro, columnas_clave["fecha_solicitud"]),
         },
         {
-            "etapa": "Liberación",
-            "fecha": obtener_valor(registro, columnas_clave["fecha_liberacion"]),
+            "Etapa": "Liberación",
+            "Fecha": obtener_valor(registro, columnas_clave["fecha_liberacion"]),
         },
         {
-            "etapa": "Pedido",
-            "fecha": obtener_valor(registro, columnas_clave["fecha_pedido"]),
+            "Etapa": "Pedido",
+            "Fecha": obtener_valor(registro, columnas_clave["fecha_pedido"]),
         },
         {
-            "etapa": "Facturación",
-            "fecha": obtener_valor(registro, columnas_clave["fecha_facturacion"]),
+            "Etapa": "Facturación",
+            "Fecha": obtener_valor(registro, columnas_clave["fecha_facturacion"]),
         },
         {
-            "etapa": "Recepción",
-            "fecha": obtener_valor(registro, columnas_clave["fecha_recepcion"]),
+            "Etapa": "Recepción",
+            "Fecha": obtener_valor(registro, columnas_clave["fecha_recepcion"]),
         },
     ]
 
-    st.markdown("#### Estado de la SOLPED")
+    registros = []
 
-    cols = st.columns(len(etapas))
-
-    for col, item in zip(cols, etapas):
-        fecha = pd.to_datetime(item["fecha"], errors="coerce")
+    for item in etapas:
+        fecha = pd.to_datetime(item["Fecha"], errors="coerce")
         realizado = pd.notna(fecha)
-        fecha_texto = formatear_fecha(item["fecha"])
 
-        with col:
-            if realizado:
-                st.success(
-                    f"✅ **{item['etapa']}**\n\n{fecha_texto}"
-                )
-            else:
-                st.error(
-                    f"❌ **{item['etapa']}**\n\nSin fecha"
-                )
+        registros.append(
+            {
+                "Etapa": item["Etapa"],
+                "Fecha TAT": formatear_fecha(item["Fecha"]),
+                "Estado": "Realizado" if realizado else "Pendiente",
+                "Marca": "✅" if realizado else "❌",
+            }
+        )
+
+    return pd.DataFrame(registros)
 
 
 def construir_validacion_temporal_tat(
     registro: pd.Series,
     columnas_clave: dict,
 ) -> pd.DataFrame:
-    """
-    Valida que las fechas del flujo TAT estén ordenadas temporalmente.
-
-    Orden esperado:
-    Solicitud <= Liberación <= Pedido <= Facturación <= Recepción
-
-    También valida controles directos desde Solicitud hacia Facturación y Recepción,
-    para detectar casos raros aunque falten fechas intermedias.
-    """
 
     etapas = {
         "Solicitud": pd.to_datetime(
@@ -612,15 +705,59 @@ def construir_validacion_temporal_tat(
     return pd.DataFrame(validaciones)
 
 
+# ============================================================
+# Visualización de resultado confirmado
+# ============================================================
+
+def mostrar_figura_estado_solped(registro: pd.Series, columnas_clave: dict):
+    etapas = [
+        {
+            "etapa": "Solicitud",
+            "fecha": obtener_valor(registro, columnas_clave["fecha_solicitud"]),
+        },
+        {
+            "etapa": "Liberación",
+            "fecha": obtener_valor(registro, columnas_clave["fecha_liberacion"]),
+        },
+        {
+            "etapa": "Pedido",
+            "fecha": obtener_valor(registro, columnas_clave["fecha_pedido"]),
+        },
+        {
+            "etapa": "Facturación",
+            "fecha": obtener_valor(registro, columnas_clave["fecha_facturacion"]),
+        },
+        {
+            "etapa": "Recepción",
+            "fecha": obtener_valor(registro, columnas_clave["fecha_recepcion"]),
+        },
+    ]
+
+    st.markdown("#### Flujo de la SOLPED")
+
+    cols = st.columns(len(etapas))
+
+    for col, item in zip(cols, etapas):
+        fecha = pd.to_datetime(item["fecha"], errors="coerce")
+        realizado = pd.notna(fecha)
+        fecha_texto = formatear_fecha(item["fecha"])
+
+        with col:
+            if realizado:
+                st.success(
+                    f"✅ **{item['etapa']}**\n\n{fecha_texto}"
+                )
+            else:
+                st.error(
+                    f"❌ **{item['etapa']}**\n\nSin fecha"
+                )
+
+
 def mostrar_validacion_temporal_tat(
     registro: pd.Series,
     columnas_clave: dict,
 ):
-    """
-    Muestra confirmación visual de si las fechas TAT están ordenadas.
-    """
-
-    st.markdown("#### Validación temporal de fechas")
+    st.markdown("#### Validación temporal")
 
     validacion_df = construir_validacion_temporal_tat(
         registro=registro,
@@ -654,118 +791,53 @@ def mostrar_validacion_temporal_tat(
     )
 
 
-def construir_tabla_etapas_tat(registro: pd.Series, columnas_clave: dict) -> pd.DataFrame:
-    etapas = [
-        {
-            "Etapa": "Solicitud",
-            "Fecha": obtener_valor(registro, columnas_clave["fecha_solicitud"]),
-        },
-        {
-            "Etapa": "Liberación",
-            "Fecha": obtener_valor(registro, columnas_clave["fecha_liberacion"]),
-        },
-        {
-            "Etapa": "Pedido",
-            "Fecha": obtener_valor(registro, columnas_clave["fecha_pedido"]),
-        },
-        {
-            "Etapa": "Facturación",
-            "Fecha": obtener_valor(registro, columnas_clave["fecha_facturacion"]),
-        },
-        {
-            "Etapa": "Recepción",
-            "Fecha": obtener_valor(registro, columnas_clave["fecha_recepcion"]),
-        },
-    ]
+def mostrar_detalle_observacion(registro: pd.Series, columnas_clave: dict):
+    st.markdown("### Resultado confirmado")
+    st.caption("Detalle ordenado desde información general hasta validaciones específicas.")
 
-    registros = []
+    st.markdown("#### 1. Información general")
 
-    for item in etapas:
-        fecha = pd.to_datetime(item["Fecha"], errors="coerce")
-        realizado = pd.notna(fecha)
+    col_g1, col_g2, col_g3, col_g4 = st.columns(4)
 
-        registros.append(
-            {
-                "Etapa": item["Etapa"],
-                "Fecha TAT": formatear_fecha(item["Fecha"]),
-                "Estado": "Realizado" if realizado else "Pendiente",
-                "Marca": "✅" if realizado else "❌",
-            }
-        )
-
-    return pd.DataFrame(registros)
-
-
-def mostrar_bloque_estado_match(registro: pd.Series, columnas_clave: dict):
-    if not columnas_clave["estado_match"]:
-        return
-
-    estado_match = formatear_valor(
-        obtener_valor(registro, columnas_clave["estado_match"])
+    col_g1.metric(
+        "SOLPED",
+        formatear_valor(obtener_valor(registro, columnas_clave["solped"])),
     )
 
-    st.markdown("#### Estado del match")
-    st.success(f"**Estado del match:** {estado_match}")
+    col_g2.metric(
+        "Pedido",
+        formatear_valor(obtener_valor(registro, columnas_clave["pedido"])),
+    )
 
+    col_g3.metric(
+        "Posición",
+        formatear_valor(obtener_valor(registro, columnas_clave["posicion"])),
+    )
 
-def mostrar_detalle_observacion(registro: pd.Series, columnas_clave: dict):
-    mostrar_figura_estado_solped(registro, columnas_clave)
-    mostrar_validacion_temporal_tat(registro, columnas_clave)
-
-    st.markdown("#### Datos principales")
-
-    col1, col2, col3, col4 = st.columns(4)
-
-    with col1:
-        mostrar_campo("SOLPED", obtener_valor(registro, columnas_clave["solped"]))
-        mostrar_campo("Pedido", obtener_valor(registro, columnas_clave["pedido"]))
-
-    with col2:
-        mostrar_campo("Posición", obtener_valor(registro, columnas_clave["posicion"]))
-        mostrar_campo("Material", obtener_valor(registro, columnas_clave["material"]))
-
-    with col3:
-        mostrar_campo("Texto breve", obtener_valor(registro, columnas_clave["texto_breve"]))
-        mostrar_campo("Centro", obtener_valor(registro, columnas_clave["centro"]))
-
-    with col4:
-        mostrar_campo("Tipo de OC", obtener_valor(registro, columnas_clave["tipo_oc"]))
-        mostrar_campo("Sistema", obtener_valor(registro, columnas_clave["sistema"]))
-
-    st.markdown("#### Fechas TAT")
-
-    fechas_df = pd.DataFrame(
-        [
-            {
-                "Fecha": "Fecha solicitud",
-                "Valor": formatear_fecha(obtener_valor(registro, columnas_clave["fecha_solicitud"])),
-            },
-            {
-                "Fecha": "Fecha liberación",
-                "Valor": formatear_fecha(obtener_valor(registro, columnas_clave["fecha_liberacion"])),
-            },
-            {
-                "Fecha": "Fecha pedido",
-                "Valor": formatear_fecha(obtener_valor(registro, columnas_clave["fecha_pedido"])),
-            },
-            {
-                "Fecha": "Fecha facturación",
-                "Valor": formatear_fecha(obtener_valor(registro, columnas_clave["fecha_facturacion"])),
-            },
-            {
-                "Fecha": "Fecha recepción",
-                "Valor": formatear_fecha(obtener_valor(registro, columnas_clave["fecha_recepcion"])),
-            },
-        ]
+    col_g4.metric(
+        "Centro",
+        formatear_valor(obtener_valor(registro, columnas_clave["centro"])),
     )
 
     st.dataframe(
-        fechas_df,
+        construir_tabla_general(registro, columnas_clave),
         use_container_width=True,
         hide_index=True,
     )
 
-    st.markdown("#### Indicadores TAT")
+    st.markdown("#### 2. Seguimiento del flujo TAT")
+
+    mostrar_figura_estado_solped(registro, columnas_clave)
+
+    st.markdown("#### 3. Fechas principales")
+
+    st.dataframe(
+        construir_tabla_fechas(registro, columnas_clave),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.markdown("#### 4. Indicadores TAT")
 
     col_t1, col_t2, col_t3, col_t4, col_t5 = st.columns(5)
 
@@ -794,7 +866,7 @@ def mostrar_detalle_observacion(registro: pd.Series, columnas_clave: dict):
         formatear_valor(obtener_valor(registro, columnas_clave["rango_incumplimiento"])),
     )
 
-    st.markdown("#### Etapas del TAT")
+    st.markdown("#### 5. Estado de etapas")
 
     st.dataframe(
         construir_tabla_etapas_tat(registro, columnas_clave),
@@ -802,7 +874,27 @@ def mostrar_detalle_observacion(registro: pd.Series, columnas_clave: dict):
         hide_index=True,
     )
 
-    mostrar_bloque_estado_match(registro, columnas_clave)
+    st.markdown("#### 6. Validación temporal")
+
+    mostrar_validacion_temporal_tat(
+        registro=registro,
+        columnas_clave=columnas_clave,
+    )
+
+    with st.expander("Ver registro completo", expanded=False):
+        registro_df = (
+            registro
+            .drop(labels=["_id_observacion"], errors="ignore")
+            .to_frame(name="Valor")
+            .reset_index()
+            .rename(columns={"index": "Campo"})
+        )
+
+        st.dataframe(
+            registro_df,
+            use_container_width=True,
+            hide_index=True,
+        )
 
 
 # ============================================================
@@ -813,7 +905,7 @@ mostrar_logo()
 
 st.title("07_FILTRO")
 st.caption(
-    "Busca una SOLPED, filtra registros y visualiza el seguimiento TAT de la solicitud."
+    "Ingresa un criterio de búsqueda, ejecuta la consulta y confirma qué registro quieres revisar."
 )
 
 
@@ -845,17 +937,16 @@ if columnas_clave["solped"] is None:
 
 
 # ============================================================
-# Filtros en encabezado
+# Filtros iniciales
 # ============================================================
 
-st.markdown("### Filtros")
+st.markdown("### Búsqueda")
 st.caption(
-    "Filtra por SOLPED, pedido, posición o material. "
-    "Presiona Aplicar filtros para ejecutar la búsqueda."
+    "Completa al menos un campo. Luego presiona **Buscar** para cargar los resultados."
 )
 
-with st.form("form_filtros_solped"):
-    col_f1, col_f2, col_f3, col_f4, col_f5 = st.columns([1.4, 1.4, 1.1, 1.4, 1])
+with st.form("form_busqueda_solped"):
+    col_f1, col_f2, col_f3 = st.columns(3)
 
     with col_f1:
         filtro_solped = st.text_input(
@@ -878,6 +969,8 @@ with st.form("form_filtros_solped"):
             key="filtro_posicion",
         )
 
+    col_f4, col_f5, col_f6 = st.columns([1.2, 1.6, 1])
+
     with col_f4:
         filtro_material = st.text_input(
             "Material",
@@ -886,11 +979,18 @@ with st.form("form_filtros_solped"):
         )
 
     with col_f5:
+        filtro_texto_breve = st.text_input(
+            "Texto breve",
+            placeholder="Buscar por descripción",
+            key="filtro_texto_breve",
+        )
+
+    with col_f6:
         modo_busqueda = st.selectbox(
             "Modo",
             options=[
-                "Contiene",
                 "Exacta",
+                "Contiene",
             ],
             index=0,
             key="filtro_modo",
@@ -899,33 +999,32 @@ with st.form("form_filtros_solped"):
     col_b1, col_b2 = st.columns(2)
 
     with col_b1:
-        aplicar_filtros = st.form_submit_button(
-            "Aplicar filtros",
+        buscar = st.form_submit_button(
+            "Buscar",
             use_container_width=True,
             type="primary",
         )
 
     with col_b2:
-        limpiar_filtros = st.form_submit_button(
-            "Limpiar filtros",
+        limpiar = st.form_submit_button(
+            "Limpiar",
             use_container_width=True,
         )
 
 
-if limpiar_filtros:
+if limpiar:
     claves_filtros = [
         "filtro_solped",
         "filtro_pedido",
         "filtro_posicion",
         "filtro_material",
+        "filtro_texto_breve",
         "filtro_modo",
         "selector_observacion",
         "df_filtrado_solped",
         "firma_filtros_solped",
-        "filtro_parquet_bytes",
-        "filtro_parquet_firma",
-        "filtro_csv_bytes",
-        "filtro_csv_firma",
+        "filtro_id_confirmado",
+        "filtro_detalle_confirmado",
     ]
 
     for clave in claves_filtros:
@@ -940,13 +1039,24 @@ firma_filtros_actual = (
     f"{filtro_pedido}_"
     f"{filtro_posicion}_"
     f"{filtro_material}_"
+    f"{filtro_texto_breve}_"
     f"{modo_busqueda}_"
     f"{len(df_base)}"
 )
 
 
-if aplicar_filtros:
-    with st.spinner("Aplicando filtros..."):
+if buscar:
+    if not hay_criterio_busqueda(
+        filtro_solped=filtro_solped,
+        filtro_pedido=filtro_pedido,
+        filtro_posicion=filtro_posicion,
+        filtro_material=filtro_material,
+        filtro_texto_breve=filtro_texto_breve,
+    ):
+        st.warning("Ingresa al menos un criterio de búsqueda antes de continuar.")
+        st.stop()
+
+    with st.spinner("Buscando coincidencias..."):
         df_filtrado = aplicar_filtros_con_progreso(
             df_base=df_base,
             columnas_clave=columnas_clave,
@@ -954,13 +1064,20 @@ if aplicar_filtros:
             filtro_pedido=filtro_pedido,
             filtro_posicion=filtro_posicion,
             filtro_material=filtro_material,
+            filtro_texto_breve=filtro_texto_breve,
             modo_busqueda=modo_busqueda,
         )
 
         st.session_state["df_filtrado_solped"] = df_filtrado
         st.session_state["firma_filtros_solped"] = firma_filtros_actual
 
-    st.success("Filtros aplicados correctamente.")
+        if "filtro_id_confirmado" in st.session_state:
+            del st.session_state["filtro_id_confirmado"]
+
+        if "filtro_detalle_confirmado" in st.session_state:
+            del st.session_state["filtro_detalle_confirmado"]
+
+    st.success("Búsqueda finalizada.")
 
 else:
     if (
@@ -969,216 +1086,97 @@ else:
     ):
         df_filtrado = st.session_state["df_filtrado_solped"].copy()
     else:
-        df_filtrado = df_base.copy()
+        st.stop()
 
 
 # ============================================================
-# Indicadores
+# Validación de resultados
 # ============================================================
-
-total_original = len(df_base)
-total_filtrado = len(df_filtrado)
-
-total_solped_original = int(df_base[columnas_clave["solped"]].nunique(dropna=True))
-total_solped_filtrado = (
-    int(df_filtrado[columnas_clave["solped"]].nunique(dropna=True))
-    if not df_filtrado.empty
-    else 0
-)
-
-col_m1, col_m2, col_m3, col_m4 = st.columns(4)
-
-col_m1.metric("Filas totales", f"{total_original:,}")
-col_m2.metric("Filas filtradas", f"{total_filtrado:,}")
-col_m3.metric("SOLPED únicas", f"{total_solped_original:,}")
-col_m4.metric("SOLPED filtradas", f"{total_solped_filtrado:,}")
-
-
-# ============================================================
-# Selección de observación optimizada
-# ============================================================
-
-st.markdown("### Observación seleccionada")
-st.caption(
-    "Selecciona una observación para visualizar el seguimiento de la SOLPED. "
-    "Por defecto se toma la primera observación filtrada."
-)
 
 if df_filtrado.empty:
-    st.warning("No hay observaciones para mostrar con los filtros actuales.")
+    st.warning("No se encontraron coincidencias con los criterios ingresados.")
     st.stop()
 
-limite_selector = 500
 
-df_selector = df_filtrado.head(limite_selector).copy()
+# ============================================================
+# Selección y confirmación de coincidencia
+# ============================================================
 
-if len(df_filtrado) > limite_selector:
+total_resultados = len(df_filtrado)
+
+if total_resultados == 1:
+    registro_seleccionado = df_filtrado.iloc[0]
+    st.success("Se encontró una única coincidencia. Se muestra el detalle del registro.")
+
+else:
+    st.markdown("### Coincidencias encontradas")
+    st.caption(
+        "Se encontró más de una coincidencia. Selecciona cuál registro quieres revisar y confirma."
+    )
+
     st.info(
-        f"Hay {len(df_filtrado):,} observaciones filtradas. "
-        f"Para mantener buen rendimiento, el selector muestra las primeras {limite_selector:,}. "
-        "Usa los filtros para reducir el resultado."
+        f"Se encontraron **{total_resultados:,} coincidencias**. "
+        "Selecciona una observación para continuar."
     )
 
-df_selector["_etiqueta_observacion"] = (
-    "SOLPED "
-    + df_selector[columnas_clave["solped"]].astype("string").fillna("")
-)
+    limite_selector = 500
+    df_selector = df_filtrado.head(limite_selector).copy()
 
-if columnas_clave["pedido"] is not None and columnas_clave["pedido"] in df_selector.columns:
-    df_selector["_etiqueta_observacion"] += (
-        " | Pedido "
-        + df_selector[columnas_clave["pedido"]].astype("string").fillna("")
+    if len(df_filtrado) > limite_selector:
+        st.warning(
+            f"Se muestran las primeras {limite_selector:,} coincidencias en el selector. "
+            "Refina la búsqueda para reducir resultados."
+        )
+
+    df_selector["_etiqueta_observacion"] = df_selector.apply(
+        lambda row: construir_etiqueta_observacion(row, columnas_clave),
+        axis=1,
     )
 
-if columnas_clave["posicion"] is not None and columnas_clave["posicion"] in df_selector.columns:
-    df_selector["_etiqueta_observacion"] += (
-        " | Pos "
-        + df_selector[columnas_clave["posicion"]].astype("string").fillna("")
+    opciones_selector = dict(
+        zip(
+            df_selector["_etiqueta_observacion"],
+            df_selector["_id_observacion"],
+        )
     )
 
-if columnas_clave["material"] is not None and columnas_clave["material"] in df_selector.columns:
-    df_selector["_etiqueta_observacion"] += (
-        " | Material "
-        + df_selector[columnas_clave["material"]].astype("string").fillna("")
+    etiqueta_seleccionada = st.selectbox(
+        "Coincidencia",
+        options=list(opciones_selector.keys()),
+        index=0,
+        key="selector_observacion",
     )
 
-df_selector["_etiqueta_observacion"] += (
-    " | Fila "
-    + df_selector["_id_observacion"].astype("string")
-)
+    id_observacion_seleccionada = opciones_selector[etiqueta_seleccionada]
 
-opciones_selector = dict(
-    zip(
-        df_selector["_etiqueta_observacion"],
-        df_selector["_id_observacion"],
+    confirmar = st.button(
+        "Confirmar y ver detalle",
+        type="primary",
+        use_container_width=True,
     )
-)
 
-etiqueta_seleccionada = st.selectbox(
-    "Observación",
-    options=list(opciones_selector.keys()),
-    index=0,
-    key="selector_observacion",
-)
+    if confirmar:
+        st.session_state["filtro_id_confirmado"] = id_observacion_seleccionada
+        st.session_state["filtro_detalle_confirmado"] = True
 
-id_observacion_seleccionada = opciones_selector[etiqueta_seleccionada]
+    id_confirmado = st.session_state.get("filtro_id_confirmado")
 
-registro_seleccionado = (
-    df_filtrado[df_filtrado["_id_observacion"].eq(id_observacion_seleccionada)]
-    .iloc[0]
-)
+    if id_confirmado != id_observacion_seleccionada:
+        st.stop()
+
+    registro_seleccionado = (
+        df_filtrado[df_filtrado["_id_observacion"].eq(id_observacion_seleccionada)]
+        .iloc[0]
+    )
+
+    st.success("Registro confirmado. Se muestra el detalle seleccionado.")
+
+
+# ============================================================
+# Resultado confirmado
+# ============================================================
 
 mostrar_detalle_observacion(
     registro=registro_seleccionado,
     columnas_clave=columnas_clave,
 )
-
-
-# ============================================================
-# Resultado filtrado
-# ============================================================
-
-st.markdown("### Resultado filtrado")
-st.caption("Tabla resumida de las observaciones disponibles con los filtros aplicados.")
-
-columnas_vista = construir_columnas_vista(df_filtrado, columnas_clave)
-
-limite_vista = st.number_input(
-    "Filas a mostrar",
-    min_value=20,
-    max_value=1000,
-    value=200,
-    step=20,
-)
-
-df_vista = df_filtrado.drop(columns=["_id_observacion"], errors="ignore")
-
-columnas_vista = [
-    col for col in columnas_vista
-    if col in df_vista.columns
-]
-
-if columnas_vista:
-    st.dataframe(
-        df_vista[columnas_vista].head(int(limite_vista)),
-        use_container_width=True,
-        hide_index=True,
-    )
-else:
-    st.dataframe(
-        df_vista.head(int(limite_vista)),
-        use_container_width=True,
-        hide_index=True,
-    )
-
-
-# ============================================================
-# Descarga opcional optimizada
-# ============================================================
-
-with st.expander("Descargar resultado filtrado", expanded=False):
-    st.caption(
-        "Parquet es el formato recomendado. Los archivos se preparan solo cuando los solicitas."
-    )
-
-    df_export = df_filtrado.drop(columns=["_id_observacion"], errors="ignore")
-
-    firma_export = (
-        f"{len(df_export)}_"
-        f"{filtro_solped}_"
-        f"{filtro_pedido}_"
-        f"{filtro_posicion}_"
-        f"{filtro_material}_"
-        f"{modo_busqueda}"
-    )
-
-    col_d1, col_d2 = st.columns(2)
-
-    with col_d1:
-        preparar_parquet = st.button(
-            "Preparar Parquet filtrado",
-            use_container_width=True,
-            key="preparar_parquet_filtrado",
-        )
-
-        if preparar_parquet:
-            with st.spinner("Preparando Parquet..."):
-                st.session_state["filtro_parquet_bytes"] = convertir_a_parquet_cache(df_export)
-                st.session_state["filtro_parquet_firma"] = firma_export
-
-        if (
-            st.session_state.get("filtro_parquet_bytes") is not None
-            and st.session_state.get("filtro_parquet_firma") == firma_export
-        ):
-            st.download_button(
-                label="Descargar Parquet filtrado",
-                data=st.session_state["filtro_parquet_bytes"],
-                file_name="resultado_filtrado_solped.parquet",
-                mime="application/octet-stream",
-                type="primary",
-                use_container_width=True,
-            )
-
-    with col_d2:
-        preparar_csv = st.button(
-            "Preparar CSV filtrado",
-            use_container_width=True,
-            key="preparar_csv_filtrado",
-        )
-
-        if preparar_csv:
-            with st.spinner("Preparando CSV..."):
-                st.session_state["filtro_csv_bytes"] = convertir_a_csv_cache(df_export)
-                st.session_state["filtro_csv_firma"] = firma_export
-
-        if (
-            st.session_state.get("filtro_csv_bytes") is not None
-            and st.session_state.get("filtro_csv_firma") == firma_export
-        ):
-            st.download_button(
-                label="Descargar CSV filtrado",
-                data=st.session_state["filtro_csv_bytes"],
-                file_name="resultado_filtrado_solped.csv",
-                mime="text/csv",
-                use_container_width=True,
-            )
