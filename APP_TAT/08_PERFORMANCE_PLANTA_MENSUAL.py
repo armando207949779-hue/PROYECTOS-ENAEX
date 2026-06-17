@@ -1677,6 +1677,107 @@ def preparar_tabla_rangos_incumplimiento(df: pd.DataFrame) -> pd.DataFrame:
     return tabla
 
 
+def crear_desglose_sin_datos_incumplimiento(df: pd.DataFrame) -> pd.DataFrame:
+    columnas_necesarias = [
+        "rango_incumplimiento_tat",
+        "dias_tat_total",
+        "umbral_tat_total",
+        "dias_incumplimiento_tat",
+        "performance_tat_total",
+    ]
+
+    columnas_existentes = [
+        col for col in columnas_necesarias
+        if col in df.columns
+    ]
+
+    if "rango_incumplimiento_tat" not in columnas_existentes:
+        return pd.DataFrame()
+
+    temp = df.copy()
+
+    temp["rango_incumplimiento_tat"] = normalizar_rango_incumplimiento(
+        temp["rango_incumplimiento_tat"]
+    )
+
+    base_sin_datos = temp[
+        temp["rango_incumplimiento_tat"].eq("Sin datos")
+    ].copy()
+
+    if base_sin_datos.empty:
+        return pd.DataFrame()
+
+    registros = []
+    total_sin_datos = len(base_sin_datos)
+
+    def agregar_motivo(nombre, mask):
+        cantidad = int(mask.sum())
+
+        registros.append(
+            {
+                "Motivo": nombre,
+                "Cantidad": cantidad,
+                "% sobre Sin datos": round(
+                    cantidad / total_sin_datos * 100,
+                    2,
+                ) if total_sin_datos else 0,
+            }
+        )
+
+    if "dias_tat_total" in base_sin_datos.columns:
+        agregar_motivo(
+            "Falta días TAT total",
+            base_sin_datos["dias_tat_total"].isna(),
+        )
+
+    if "umbral_tat_total" in base_sin_datos.columns:
+        agregar_motivo(
+            "Falta umbral TAT total",
+            base_sin_datos["umbral_tat_total"].isna(),
+        )
+
+    if (
+        "dias_tat_total" in base_sin_datos.columns
+        and "umbral_tat_total" in base_sin_datos.columns
+    ):
+        agregar_motivo(
+            "Faltan días TAT total y umbral TAT total",
+            base_sin_datos["dias_tat_total"].isna()
+            & base_sin_datos["umbral_tat_total"].isna(),
+        )
+
+    if "dias_incumplimiento_tat" in base_sin_datos.columns:
+        agregar_motivo(
+            "Falta días de incumplimiento TAT",
+            base_sin_datos["dias_incumplimiento_tat"].isna(),
+        )
+
+    if "performance_tat_total" in base_sin_datos.columns:
+        performance_normalizada = base_sin_datos["performance_tat_total"].apply(
+            normalizar_estado_performance
+        )
+
+        for estado in ["Cumple", "No cumple", "En proceso", "No aplica", "Sin datos"]:
+            agregar_motivo(
+                f"Performance TAT = {estado}",
+                performance_normalizada.eq(estado),
+            )
+
+    desglose = pd.DataFrame(registros)
+
+    if desglose.empty:
+        return desglose
+
+    desglose = desglose[desglose["Cantidad"].gt(0)].copy()
+
+    desglose = desglose.sort_values(
+        "Cantidad",
+        ascending=False,
+    ).reset_index(drop=True)
+
+    return desglose
+
+
 def grafico_torta_rangos_incumplimiento(tabla: pd.DataFrame):
     if tabla.empty:
         st.info("No hay datos para graficar rangos de incumplimiento.")
@@ -1687,6 +1788,8 @@ def grafico_torta_rangos_incumplimiento(tabla: pd.DataFrame):
     if data.empty:
         st.info("No hay datos con cantidad mayor a cero.")
         return
+
+    total = int(data["Cantidad"].sum())
 
     colores = []
 
@@ -1700,29 +1803,66 @@ def grafico_torta_rangos_incumplimiento(tabla: pd.DataFrame):
         else:
             colores.append(COLOR_SIN_DATOS)
 
-    fig, ax = plt.subplots(figsize=(8, 5.8))
+    etiquetas_leyenda = []
+
+    for _, fila in data.iterrows():
+        etiquetas_leyenda.append(
+            f"{fila['Rango']} · {int(fila['Cantidad']):,} · {fila['% del total']:.1f}%"
+        )
+
+    fig, ax = plt.subplots(figsize=(9.5, 5.8))
 
     wedges, texts, autotexts = ax.pie(
         data["Cantidad"],
-        labels=data["Rango"].astype(str),
-        autopct=lambda pct: f"{pct:.1f}%" if pct >= 3 else "",
+        labels=None,
+        autopct=lambda pct: f"{pct:.1f}%" if pct >= 4 else "",
         startangle=90,
+        counterclock=False,
         colors=colores,
+        pctdistance=0.75,
         textprops={
-            "fontsize": 9,
-            "color": COLOR_TEXTO,
+            "fontsize": 10,
+            "color": "white",
             "fontweight": "bold",
         },
         wedgeprops={
-            "linewidth": 1,
+            "width": 0.42,
+            "linewidth": 1.4,
             "edgecolor": "white",
         },
     )
 
-    for autotext in autotexts:
-        autotext.set_color("white")
-        autotext.set_fontweight("bold")
-        autotext.set_fontsize(9)
+    ax.text(
+        0,
+        0.04,
+        f"{total:,}",
+        ha="center",
+        va="center",
+        fontsize=18,
+        fontweight="bold",
+        color=COLOR_TEXTO,
+    )
+
+    ax.text(
+        0,
+        -0.12,
+        "registros",
+        ha="center",
+        va="center",
+        fontsize=10,
+        color=COLOR_MUTED,
+    )
+
+    ax.legend(
+        wedges,
+        etiquetas_leyenda,
+        title="Rango",
+        loc="center left",
+        bbox_to_anchor=(1.02, 0.5),
+        frameon=False,
+        fontsize=10,
+        title_fontsize=11,
+    )
 
     ax.set_title(
         "Distribución porcentual de incumplimiento TAT",
@@ -2166,7 +2306,7 @@ else:
 st.markdown("### Incumplimiento TAT")
 st.caption(
     "Distribución porcentual de rangos de incumplimiento. "
-    "El detalle absoluto se muestra en la tabla inferior."
+    "El detalle absoluto se muestra debajo del gráfico."
 )
 
 tabla_rangos_incumplimiento = preparar_tabla_rangos_incumplimiento(df_dashboard)
@@ -2180,6 +2320,27 @@ if tabla_rangos_incumplimiento.empty:
 else:
     st.dataframe(
         tabla_rangos_incumplimiento,
+        use_container_width=True,
+        hide_index=True,
+    )
+
+st.markdown("#### Desglose de registros clasificados como Sin datos")
+
+st.caption(
+    "Este desglose explica por qué los registros aparecen como 'Sin datos' "
+    "en el rango de incumplimiento. No necesariamente coincide con el indicador "
+    "'Otros / sin datos', porque ese indicador usa performance_tat_total."
+)
+
+desglose_sin_datos_incumplimiento = crear_desglose_sin_datos_incumplimiento(
+    df_dashboard
+)
+
+if desglose_sin_datos_incumplimiento.empty:
+    st.success("No hay registros clasificados como Sin datos en el rango de incumplimiento.")
+else:
+    st.dataframe(
+        desglose_sin_datos_incumplimiento,
         use_container_width=True,
         hide_index=True,
     )
