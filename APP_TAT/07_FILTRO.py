@@ -34,7 +34,6 @@ LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
 
 # ============================================================
 # Estilos mínimos
-# IMPORTANTE:
 # No se modifica .block-container para no afectar el logo.
 # ============================================================
 
@@ -106,6 +105,18 @@ def formatear_valor(valor) -> str:
         return "—"
 
     return texto
+
+
+def formatear_entero(valor) -> str:
+    if pd.isna(valor):
+        return "—"
+
+    numero = pd.to_numeric(valor, errors="coerce")
+
+    if pd.isna(numero):
+        return formatear_valor(valor)
+
+    return f"{int(round(numero)):,}"
 
 
 def formatear_fecha(valor) -> str:
@@ -189,6 +200,58 @@ def aplicar_filtro_texto(
         return df[serie.eq(texto_norm)].copy()
 
     return df[serie.str.contains(texto_norm, na=False, regex=False)].copy()
+
+
+def aplicar_filtros_con_progreso(
+    df_base: pd.DataFrame,
+    columnas_clave: dict,
+    filtro_solped: str,
+    filtro_pedido: str,
+    filtro_posicion: str,
+    filtro_material: str,
+    modo_busqueda: str,
+) -> pd.DataFrame:
+
+    barra = st.progress(0, text="Preparando filtros...")
+
+    df_filtrado = df_base.copy()
+    barra.progress(10, text="Cargando base de datos...")
+
+    df_filtrado = aplicar_filtro_texto(
+        df=df_filtrado,
+        columna=columnas_clave["solped"],
+        texto=filtro_solped,
+        modo=modo_busqueda,
+    )
+    barra.progress(30, text="Aplicando filtro SOLPED...")
+
+    df_filtrado = aplicar_filtro_texto(
+        df=df_filtrado,
+        columna=columnas_clave["pedido"],
+        texto=filtro_pedido,
+        modo=modo_busqueda,
+    )
+    barra.progress(50, text="Aplicando filtro Pedido...")
+
+    df_filtrado = aplicar_filtro_texto(
+        df=df_filtrado,
+        columna=columnas_clave["posicion"],
+        texto=filtro_posicion,
+        modo=modo_busqueda,
+    )
+    barra.progress(70, text="Aplicando filtro Posición...")
+
+    df_filtrado = aplicar_filtro_texto(
+        df=df_filtrado,
+        columna=columnas_clave["material"],
+        texto=filtro_material,
+        modo=modo_busqueda,
+    )
+    barra.progress(90, text="Aplicando filtro Material...")
+
+    barra.progress(100, text="Filtros aplicados correctamente.")
+
+    return df_filtrado
 
 
 def convertir_a_parquet(df: pd.DataFrame) -> bytes:
@@ -633,6 +696,18 @@ def construir_tabla_etapas_tat(registro: pd.Series, columnas_clave: dict) -> pd.
     return pd.DataFrame(registros)
 
 
+def mostrar_bloque_estado_match(registro: pd.Series, columnas_clave: dict):
+    if not columnas_clave["estado_match"]:
+        return
+
+    estado_match = formatear_valor(
+        obtener_valor(registro, columnas_clave["estado_match"])
+    )
+
+    st.markdown("#### Estado del match")
+    st.success(f"**Estado del match:** {estado_match}")
+
+
 def mostrar_detalle_observacion(registro: pd.Series, columnas_clave: dict):
     mostrar_figura_estado_solped(registro, columnas_clave)
     mostrar_validacion_temporal_tat(registro, columnas_clave)
@@ -696,12 +771,12 @@ def mostrar_detalle_observacion(registro: pd.Series, columnas_clave: dict):
 
     col_t1.metric(
         "Días TAT total",
-        formatear_valor(obtener_valor(registro, columnas_clave["dias_tat_total"])),
+        formatear_entero(obtener_valor(registro, columnas_clave["dias_tat_total"])),
     )
 
     col_t2.metric(
         "Umbral TAT total",
-        formatear_valor(obtener_valor(registro, columnas_clave["umbral_tat_total"])),
+        formatear_entero(obtener_valor(registro, columnas_clave["umbral_tat_total"])),
     )
 
     col_t3.metric(
@@ -711,7 +786,7 @@ def mostrar_detalle_observacion(registro: pd.Series, columnas_clave: dict):
 
     col_t4.metric(
         "Días incumplimiento",
-        formatear_valor(obtener_valor(registro, columnas_clave["dias_incumplimiento"])),
+        formatear_entero(obtener_valor(registro, columnas_clave["dias_incumplimiento"])),
     )
 
     col_t5.metric(
@@ -727,9 +802,7 @@ def mostrar_detalle_observacion(registro: pd.Series, columnas_clave: dict):
         hide_index=True,
     )
 
-    if columnas_clave["estado_match"]:
-        st.markdown("#### Estado del match")
-        st.info(formatear_valor(obtener_valor(registro, columnas_clave["estado_match"])))
+    mostrar_bloque_estado_match(registro, columnas_clave)
 
 
 # ============================================================
@@ -778,55 +851,66 @@ if columnas_clave["solped"] is None:
 st.markdown("### Filtros")
 st.caption(
     "Filtra por SOLPED, pedido, posición o material. "
-    "Por defecto se selecciona la primera observación disponible."
+    "Presiona Aplicar filtros para ejecutar la búsqueda."
 )
 
-col_f1, col_f2, col_f3, col_f4, col_f5 = st.columns([1.4, 1.4, 1.1, 1.4, 1])
+with st.form("form_filtros_solped"):
+    col_f1, col_f2, col_f3, col_f4, col_f5 = st.columns([1.4, 1.4, 1.1, 1.4, 1])
 
-with col_f1:
-    filtro_solped = st.text_input(
-        "SOLPED",
-        placeholder="Ej: 6000123456",
-        key="filtro_solped",
-    )
+    with col_f1:
+        filtro_solped = st.text_input(
+            "SOLPED",
+            placeholder="Ej: 6000123456",
+            key="filtro_solped",
+        )
 
-with col_f2:
-    filtro_pedido = st.text_input(
-        "Pedido",
-        placeholder="Ej: 4500123456",
-        key="filtro_pedido",
-    )
+    with col_f2:
+        filtro_pedido = st.text_input(
+            "Pedido",
+            placeholder="Ej: 4500123456",
+            key="filtro_pedido",
+        )
 
-with col_f3:
-    filtro_posicion = st.text_input(
-        "Posición",
-        placeholder="Ej: 10",
-        key="filtro_posicion",
-    )
+    with col_f3:
+        filtro_posicion = st.text_input(
+            "Posición",
+            placeholder="Ej: 10",
+            key="filtro_posicion",
+        )
 
-with col_f4:
-    filtro_material = st.text_input(
-        "Material",
-        placeholder="Ej: 123456",
-        key="filtro_material",
-    )
+    with col_f4:
+        filtro_material = st.text_input(
+            "Material",
+            placeholder="Ej: 123456",
+            key="filtro_material",
+        )
 
-with col_f5:
-    modo_busqueda = st.selectbox(
-        "Modo",
-        options=[
-            "Contiene",
-            "Exacta",
-        ],
-        index=0,
-        key="filtro_modo",
-    )
+    with col_f5:
+        modo_busqueda = st.selectbox(
+            "Modo",
+            options=[
+                "Contiene",
+                "Exacta",
+            ],
+            index=0,
+            key="filtro_modo",
+        )
 
+    col_b1, col_b2 = st.columns(2)
 
-limpiar_filtros = st.button(
-    "Limpiar filtros",
-    use_container_width=True,
-)
+    with col_b1:
+        aplicar_filtros = st.form_submit_button(
+            "Aplicar filtros",
+            use_container_width=True,
+            type="primary",
+        )
+
+    with col_b2:
+        limpiar_filtros = st.form_submit_button(
+            "Limpiar filtros",
+            use_container_width=True,
+        )
+
 
 if limpiar_filtros:
     claves_filtros = [
@@ -836,6 +920,8 @@ if limpiar_filtros:
         "filtro_material",
         "filtro_modo",
         "selector_observacion",
+        "df_filtrado_solped",
+        "firma_filtros_solped",
         "filtro_parquet_bytes",
         "filtro_parquet_firma",
         "filtro_csv_bytes",
@@ -849,39 +935,41 @@ if limpiar_filtros:
     st.rerun()
 
 
-# ============================================================
-# Aplicar filtros
-# ============================================================
-
-df_filtrado = df_base.copy()
-
-df_filtrado = aplicar_filtro_texto(
-    df=df_filtrado,
-    columna=columnas_clave["solped"],
-    texto=filtro_solped,
-    modo=modo_busqueda,
+firma_filtros_actual = (
+    f"{filtro_solped}_"
+    f"{filtro_pedido}_"
+    f"{filtro_posicion}_"
+    f"{filtro_material}_"
+    f"{modo_busqueda}_"
+    f"{len(df_base)}"
 )
 
-df_filtrado = aplicar_filtro_texto(
-    df=df_filtrado,
-    columna=columnas_clave["pedido"],
-    texto=filtro_pedido,
-    modo=modo_busqueda,
-)
 
-df_filtrado = aplicar_filtro_texto(
-    df=df_filtrado,
-    columna=columnas_clave["posicion"],
-    texto=filtro_posicion,
-    modo=modo_busqueda,
-)
+if aplicar_filtros:
+    with st.spinner("Aplicando filtros..."):
+        df_filtrado = aplicar_filtros_con_progreso(
+            df_base=df_base,
+            columnas_clave=columnas_clave,
+            filtro_solped=filtro_solped,
+            filtro_pedido=filtro_pedido,
+            filtro_posicion=filtro_posicion,
+            filtro_material=filtro_material,
+            modo_busqueda=modo_busqueda,
+        )
 
-df_filtrado = aplicar_filtro_texto(
-    df=df_filtrado,
-    columna=columnas_clave["material"],
-    texto=filtro_material,
-    modo=modo_busqueda,
-)
+        st.session_state["df_filtrado_solped"] = df_filtrado
+        st.session_state["firma_filtros_solped"] = firma_filtros_actual
+
+    st.success("Filtros aplicados correctamente.")
+
+else:
+    if (
+        st.session_state.get("df_filtrado_solped") is not None
+        and st.session_state.get("firma_filtros_solped") == firma_filtros_actual
+    ):
+        df_filtrado = st.session_state["df_filtrado_solped"].copy()
+    else:
+        df_filtrado = df_base.copy()
 
 
 # ============================================================
