@@ -95,11 +95,6 @@ NIVEL_ALERTA_DESCRIPCION = {
     "Sin datos": "Sin datos",
 }
 
-NIVEL_ALERTA_INVERSO = {
-    descripcion: codigo
-    for codigo, descripcion in NIVEL_ALERTA_DESCRIPCION.items()
-}
-
 FECHAS_CANDIDATAS = [
     COL_FECHA_SOLICITUD_FINAL,
     COL_FECHA_LIBERACION_FINAL,
@@ -1270,17 +1265,134 @@ def aplicar_filtros_alertas(
 
 
 # ============================================================
-# GRÁFICOS
+# GRÁFICOS DONUT
 # ============================================================
 
-def formatear_ejes(ax):
-    ax.grid(False)
+def grafico_donut_generico(
+    tabla: pd.DataFrame,
+    columna_categoria: str,
+    columna_cantidad: str,
+    titulo: str,
+    colores: list[str],
+    centro_texto: str = "registros",
+):
+    if tabla.empty:
+        st.info("No hay datos para graficar.")
+        return
 
-    for spine in ax.spines.values():
-        spine.set_visible(False)
+    data = tabla.copy()
+    data = data[pd.to_numeric(data[columna_cantidad], errors="coerce").fillna(0).gt(0)].copy()
 
-    ax.tick_params(axis="both", length=0, colors=COLOR_MUTED)
-    ax.set_facecolor("none")
+    if data.empty:
+        st.info("No hay categorías con registros para graficar.")
+        return
+
+    data[columna_cantidad] = (
+        pd.to_numeric(data[columna_cantidad], errors="coerce")
+        .fillna(0)
+        .astype(int)
+    )
+
+    total = int(data[columna_cantidad].sum())
+
+    data["%"] = np.where(
+        total > 0,
+        data[columna_cantidad] / total * 100,
+        0,
+    )
+
+    cantidades = data[columna_cantidad].to_numpy()
+    etiquetas = data[columna_categoria].astype(str).tolist()
+    porcentajes = data["%"].to_numpy()
+
+    fig, ax = plt.subplots(figsize=(8.2, 5.9))
+
+    def autopct_func(pct):
+        if pct < 4:
+            return ""
+
+        return f"{pct:.1f}%"
+
+    wedges, texts, autotexts = ax.pie(
+        cantidades,
+        labels=None,
+        startangle=90,
+        counterclock=False,
+        colors=colores[:len(data)],
+        autopct=autopct_func,
+        pctdistance=0.78,
+        wedgeprops={
+            "width": 0.38,
+            "linewidth": 2.5,
+            "edgecolor": "white",
+        },
+    )
+
+    for autotext in autotexts:
+        autotext.set_fontweight("bold")
+        autotext.set_fontsize(9.5)
+        autotext.set_color("white")
+
+    ax.text(
+        0,
+        0.08,
+        formato_cantidad(total),
+        ha="center",
+        va="center",
+        fontsize=23,
+        fontweight="bold",
+        color=COLOR_TEXTO,
+    )
+
+    ax.text(
+        0,
+        -0.12,
+        centro_texto,
+        ha="center",
+        va="center",
+        fontsize=10,
+        fontweight="bold",
+        color=COLOR_MUTED,
+    )
+
+    etiquetas_leyenda = []
+
+    for etiqueta, cantidad, pct in zip(etiquetas, cantidades, porcentajes):
+        etiquetas_leyenda.append(
+            f"{etiqueta} · {formato_cantidad(cantidad)} · {pct:.1f}%"
+        )
+
+    legend = ax.legend(
+        wedges,
+        etiquetas_leyenda,
+        title="Leyenda",
+        loc="center left",
+        bbox_to_anchor=(1.02, 0.5),
+        frameon=False,
+        fontsize=8.5,
+        title_fontsize=9.5,
+    )
+
+    for texto in legend.get_texts():
+        texto.set_color(COLOR_TEXTO)
+
+    legend.get_title().set_color(COLOR_TEXTO)
+    legend.get_title().set_fontweight("bold")
+
+    ax.set_title(
+        titulo,
+        fontsize=14,
+        fontweight="bold",
+        color=COLOR_TEXTO,
+        pad=16,
+    )
+
+    ax.axis("equal")
+    fig.patch.set_alpha(0)
+    fig.tight_layout()
+    fig.subplots_adjust(right=0.67)
+
+    st.pyplot(fig, clear_figure=True, use_container_width=True)
 
 
 def grafico_distribucion_alertas(df: pd.DataFrame):
@@ -1290,7 +1402,7 @@ def grafico_distribucion_alertas(df: pd.DataFrame):
         st.info("No hay datos para graficar.")
         return
 
-    colores = {
+    colores_mapa = {
         "Crítico": COLOR_CRITICO,
         "Atención": COLOR_ATENCION,
         "Seguimiento": COLOR_SEGUIMIENTO,
@@ -1314,50 +1426,17 @@ def grafico_distribucion_alertas(df: pd.DataFrame):
         st.info("No hay categorías disponibles.")
         return
 
-    tabla["Nivel descriptivo"] = tabla["Nivel"].apply(describir_nivel_alerta)
-    tabla = tabla.sort_values("Cantidad", ascending=True)
+    tabla["Tipo de alerta"] = tabla["Nivel"].apply(describir_nivel_alerta)
+    tabla["Color"] = tabla["Nivel"].map(colores_mapa).fillna(COLOR_MUTED)
 
-    y = np.arange(len(tabla))
-
-    fig, ax = plt.subplots(figsize=(11, 4.8))
-
-    ax.barh(
-        y,
-        tabla["Cantidad"],
-        color=[colores.get(x, COLOR_MUTED) for x in tabla["Nivel"]],
-        height=0.55,
+    grafico_donut_generico(
+        tabla=tabla,
+        columna_categoria="Tipo de alerta",
+        columna_cantidad="Cantidad",
+        titulo="Distribución porcentual por tipo de alerta",
+        colores=tabla["Color"].tolist(),
+        centro_texto="registros",
     )
-
-    for i, cantidad in enumerate(tabla["Cantidad"]):
-        ax.text(
-            cantidad + max(tabla["Cantidad"]) * 0.01,
-            i,
-            formato_cantidad(cantidad),
-            va="center",
-            ha="left",
-            fontsize=10,
-            fontweight="bold",
-            color=COLOR_TEXTO,
-        )
-
-    ax.set_yticks(y)
-    ax.set_yticklabels(tabla["Nivel descriptivo"], color=COLOR_MUTED)
-    ax.set_xlabel("Cantidad de registros", color=COLOR_TEXTO)
-
-    ax.set_title(
-        "Distribución por tipo de alerta",
-        fontsize=14,
-        fontweight="bold",
-        color=COLOR_TEXTO,
-        pad=12,
-    )
-
-    formatear_ejes(ax)
-
-    fig.patch.set_alpha(0)
-    fig.tight_layout()
-
-    st.pyplot(fig, clear_figure=True, use_container_width=True)
 
 
 def grafico_vencimientos(df: pd.DataFrame):
@@ -1378,7 +1457,7 @@ def grafico_vencimientos(df: pd.DataFrame):
         "Recepcionado",
     ]
 
-    colores = {
+    colores_mapa = {
         "Vencido": COLOR_CRITICO,
         "Vence hoy": COLOR_CRITICO,
         "1 día": COLOR_ATENCION,
@@ -1403,53 +1482,16 @@ def grafico_vencimientos(df: pd.DataFrame):
         st.info("No hay clasificación de vencimientos.")
         return
 
-    x = np.arange(len(tabla))
+    tabla["Color"] = tabla["Clasificación"].map(colores_mapa).fillna(COLOR_MUTED)
 
-    fig, ax = plt.subplots(figsize=(11, 4.5))
-
-    ax.bar(
-        x,
-        tabla["Cantidad"],
-        color=[colores.get(x, COLOR_MUTED) for x in tabla["Clasificación"]],
-        width=0.62,
+    grafico_donut_generico(
+        tabla=tabla,
+        columna_categoria="Clasificación",
+        columna_cantidad="Cantidad",
+        titulo="Distribución porcentual por vencimiento",
+        colores=tabla["Color"].tolist(),
+        centro_texto="registros",
     )
-
-    for i, cantidad in enumerate(tabla["Cantidad"]):
-        ax.text(
-            i,
-            cantidad + max(tabla["Cantidad"]) * 0.015,
-            formato_cantidad(cantidad),
-            ha="center",
-            va="bottom",
-            fontsize=10,
-            fontweight="bold",
-            color=COLOR_TEXTO,
-        )
-
-    ax.set_xticks(x)
-    ax.set_xticklabels(
-        tabla["Clasificación"],
-        rotation=30,
-        ha="right",
-        color=COLOR_MUTED,
-    )
-
-    ax.set_ylabel("Cantidad", color=COLOR_TEXTO)
-
-    ax.set_title(
-        "Distribución por vencimiento TAT",
-        fontsize=14,
-        fontweight="bold",
-        color=COLOR_TEXTO,
-        pad=12,
-    )
-
-    formatear_ejes(ax)
-
-    fig.patch.set_alpha(0)
-    fig.tight_layout()
-
-    st.pyplot(fig, clear_figure=True, use_container_width=True)
 
 
 # ============================================================
@@ -1731,6 +1773,80 @@ def mostrar_tabla_alertas(
         use_container_width=True,
         hide_index=True,
     )
+
+
+def mostrar_vencidos_por_anio(df_vencidos: pd.DataFrame):
+    st.markdown("### Vencidos sin recepción por año")
+    st.caption(
+        "Los registros vencidos sin recepción se separan según el año de la fecha de vencimiento TAT."
+    )
+
+    if df_vencidos.empty:
+        st.success("No hay registros vencidos sin recepción con los filtros actuales.")
+        return
+
+    df_temp = df_vencidos.copy()
+    df_temp["anio_vencimiento"] = pd.to_datetime(
+        df_temp["fecha_vencimiento_tat"],
+        errors="coerce",
+    ).dt.year
+
+    anios_validos = (
+        df_temp["anio_vencimiento"]
+        .dropna()
+        .astype(int)
+        .sort_values()
+        .unique()
+        .tolist()
+    )
+
+    tiene_sin_anio = df_temp["anio_vencimiento"].isna().any()
+
+    total_vencidos = len(df_temp)
+
+    st.info(
+        f"Total vencidos sin recepción: **{formato_cantidad(total_vencidos)} registros**."
+    )
+
+    if not anios_validos and not tiene_sin_anio:
+        mostrar_tabla_alertas(
+            df_temp,
+            "Vencidos sin recepción",
+            "Registros vencidos sin recepción.",
+        )
+        return
+
+    for i, anio in enumerate(anios_validos):
+        df_anio = df_temp[
+            df_temp["anio_vencimiento"].eq(anio)
+        ].copy()
+
+        with st.expander(
+            f"Año {anio} · {formato_cantidad(len(df_anio))} registros",
+            expanded=i == 0,
+        ):
+            mostrar_tabla_alertas(
+                df_anio,
+                f"Vencidos sin recepción {anio}",
+                f"Registros vencidos sin recepción con fecha de vencimiento TAT durante {anio}.",
+                limite=300,
+            )
+
+    if tiene_sin_anio:
+        df_sin_anio = df_temp[
+            df_temp["anio_vencimiento"].isna()
+        ].copy()
+
+        with st.expander(
+            f"Sin año de vencimiento · {formato_cantidad(len(df_sin_anio))} registros",
+            expanded=False,
+        ):
+            mostrar_tabla_alertas(
+                df_sin_anio,
+                "Vencidos sin recepción sin año calculable",
+                "Registros vencidos sin recepción sin fecha de vencimiento TAT válida.",
+                limite=300,
+            )
 
 
 # ============================================================
@@ -2075,19 +2191,13 @@ c5.metric("Recepcionados", formato_cantidad(recepcionados_total))
 
 mostrar_card_estado(resumen_ejecutivo)
 
-desglose_alertas = crear_desglose_alertas(df_filtrado)
 
-st.markdown("### Desglose de alertas")
-st.caption("Cantidad y porcentaje de registros según tipo de alerta.")
+# ============================================================
+# DESGLOSE / DONUTS
+# ============================================================
 
-if desglose_alertas.empty:
-    st.info("No hay desglose disponible.")
-else:
-    st.dataframe(
-        desglose_alertas,
-        use_container_width=True,
-        hide_index=True,
-    )
+st.markdown("### Desglose porcentual de alertas")
+st.caption("Distribución porcentual de registros por tipo de alerta y por clasificación de vencimiento.")
 
 col_g1, col_g2 = st.columns(2)
 
@@ -2096,6 +2206,18 @@ with col_g1:
 
 with col_g2:
     grafico_vencimientos(df_filtrado)
+
+desglose_alertas = crear_desglose_alertas(df_filtrado)
+
+with st.expander("Ver tabla de desglose de alertas", expanded=False):
+    if desglose_alertas.empty:
+        st.info("No hay desglose disponible.")
+    else:
+        st.dataframe(
+            desglose_alertas,
+            use_container_width=True,
+            hide_index=True,
+        )
 
 
 # ============================================================
@@ -2114,11 +2236,7 @@ df_sin_fecha = df_filtrado[
     df_filtrado["nivel_alerta"].eq("Datos incompletos")
 ].copy()
 
-mostrar_tabla_alertas(
-    df_vencidos,
-    "Vencidos sin recepción",
-    "Registros que ya superaron la fecha de vencimiento TAT y no tienen recepción registrada.",
-)
+mostrar_vencidos_por_anio(df_vencidos)
 
 mostrar_tabla_alertas(
     df_proximos,
