@@ -23,7 +23,7 @@ LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
 
 
 # ============================================================
-# Estilos Streamlit nativos
+# CSS Streamlit nativo
 # No se modifica .block-container para no afectar el logo.
 # ============================================================
 
@@ -89,7 +89,7 @@ st.markdown(
 
 
 # ============================================================
-# CSS para componentes HTML
+# CSS para componentes HTML modernos
 # ============================================================
 
 CSS_COMPONENTES = """
@@ -106,19 +106,18 @@ CSS_COMPONENTES = """
         box-sizing: border-box;
     }
 
-    .modern-hero {
+    .hero {
         background:
-            radial-gradient(circle at top left, rgba(239, 62, 82, 0.14), transparent 30%),
-            radial-gradient(circle at top right, rgba(37, 99, 235, 0.18), transparent 34%),
+            radial-gradient(circle at top left, rgba(239, 62, 82, 0.20), transparent 30%),
+            radial-gradient(circle at top right, rgba(37, 99, 235, 0.22), transparent 34%),
             linear-gradient(135deg, #fff7ed 0%, #ffffff 45%, #eff6ff 100%);
         border: 1px solid #bfdbfe;
         border-radius: 24px;
         padding: 22px 26px;
-        margin: 0;
         box-shadow: 0 4px 14px rgba(15, 23, 42, 0.07);
     }
 
-    .modern-eyebrow {
+    .eyebrow {
         color: #ef3e52;
         font-size: 0.72rem;
         font-weight: 950;
@@ -127,19 +126,19 @@ CSS_COMPONENTES = """
         margin-bottom: 6px;
     }
 
-    .modern-title {
+    .hero-title {
         color: #0f172a;
-        font-size: 1.70rem;
+        font-size: 1.72rem;
         font-weight: 950;
         letter-spacing: -0.035em;
         margin-bottom: 6px;
     }
 
-    .modern-subtitle {
+    .hero-subtitle {
         color: #475569;
         font-size: 0.95rem;
         line-height: 1.48;
-        max-width: 960px;
+        max-width: 980px;
     }
 
     .flow-bridge {
@@ -151,10 +150,10 @@ CSS_COMPONENTES = """
         color: #991b1b;
         border: 1px solid #fecaca;
         font-size: 0.74rem;
-        font-weight: 900;
+        font-weight: 950;
     }
 
-    .modern-section {
+    .section {
         background: #ffffff;
         border: 1px solid #e2e8f0;
         border-radius: 18px;
@@ -163,14 +162,14 @@ CSS_COMPONENTES = """
         box-shadow: 0 1px 4px rgba(15, 23, 42, 0.05);
     }
 
-    .modern-section-header {
+    .section-header {
         display: flex;
         align-items: center;
         gap: 10px;
         margin-bottom: 12px;
     }
 
-    .modern-section-icon {
+    .section-icon {
         width: 34px;
         height: 34px;
         border-radius: 12px;
@@ -184,27 +183,27 @@ CSS_COMPONENTES = """
         flex: 0 0 auto;
     }
 
-    .modern-section-title {
+    .section-title {
         font-size: 1.05rem;
         font-weight: 950;
         color: #0f172a;
         margin-bottom: 1px;
     }
 
-    .modern-section-subtitle {
+    .section-subtitle {
         font-size: 0.82rem;
         color: #64748b;
         line-height: 1.35;
     }
 
-    .summary-grid {
+    .grid {
         display: grid;
         grid-template-columns: repeat(4, minmax(140px, 1fr));
         gap: 10px;
         margin-top: 8px;
     }
 
-    .summary-card {
+    .card {
         background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
         border: 1px solid #e2e8f0;
         border-radius: 15px;
@@ -214,80 +213,38 @@ CSS_COMPONENTES = """
         overflow: hidden;
     }
 
-    .summary-card::before {
+    .card::before {
         content: "";
         position: absolute;
         top: 0;
         left: 0;
-        width: 100%;
         height: 4px;
+        width: 100%;
         background: #cbd5e1;
     }
 
-    .card-blue {
-        background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
-        border-color: #bfdbfe;
-    }
+    .blue { background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%); border-color: #bfdbfe; }
+    .blue::before { background: #2563eb; }
 
-    .card-blue::before {
-        background: #2563eb;
-    }
+    .red { background: linear-gradient(180deg, #fff1f2 0%, #ffffff 100%); border-color: #fecdd3; }
+    .red::before { background: #ef3e52; }
 
-    .card-red {
-        background: linear-gradient(180deg, #fff1f2 0%, #ffffff 100%);
-        border-color: #fecdd3;
-    }
+    .orange { background: linear-gradient(180deg, #fff7ed 0%, #ffffff 100%); border-color: #fed7aa; }
+    .orange::before { background: #f97316; }
 
-    .card-red::before {
-        background: #ef3e52;
-    }
+    .green { background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%); border-color: #bbf7d0; }
+    .green::before { background: #22c55e; }
 
-    .card-orange {
-        background: linear-gradient(180deg, #fff7ed 0%, #ffffff 100%);
-        border-color: #fed7aa;
-    }
+    .purple { background: linear-gradient(180deg, #faf5ff 0%, #ffffff 100%); border-color: #e9d5ff; }
+    .purple::before { background: #9333ea; }
 
-    .card-orange::before {
-        background: #f97316;
-    }
+    .cyan { background: linear-gradient(180deg, #ecfeff 0%, #ffffff 100%); border-color: #a5f3fc; }
+    .cyan::before { background: #06b6d4; }
 
-    .card-green {
-        background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%);
-        border-color: #bbf7d0;
-    }
+    .yellow { background: linear-gradient(180deg, #fefce8 0%, #ffffff 100%); border-color: #fde68a; }
+    .yellow::before { background: #eab308; }
 
-    .card-green::before {
-        background: #22c55e;
-    }
-
-    .card-purple {
-        background: linear-gradient(180deg, #faf5ff 0%, #ffffff 100%);
-        border-color: #e9d5ff;
-    }
-
-    .card-purple::before {
-        background: #9333ea;
-    }
-
-    .card-cyan {
-        background: linear-gradient(180deg, #ecfeff 0%, #ffffff 100%);
-        border-color: #a5f3fc;
-    }
-
-    .card-cyan::before {
-        background: #06b6d4;
-    }
-
-    .card-yellow {
-        background: linear-gradient(180deg, #fefce8 0%, #ffffff 100%);
-        border-color: #fde68a;
-    }
-
-    .card-yellow::before {
-        background: #eab308;
-    }
-
-    .summary-label {
+    .label {
         color: #64748b;
         font-size: 0.66rem;
         font-weight: 950;
@@ -296,7 +253,7 @@ CSS_COMPONENTES = """
         margin-bottom: 6px;
     }
 
-    .summary-value {
+    .value {
         color: #0f172a;
         font-size: 0.96rem;
         font-weight: 850;
@@ -304,7 +261,7 @@ CSS_COMPONENTES = """
         overflow-wrap: anywhere;
     }
 
-    .summary-note {
+    .note {
         color: #64748b;
         font-size: 0.74rem;
         line-height: 1.30;
@@ -313,93 +270,12 @@ CSS_COMPONENTES = """
 
     .kpi-grid {
         display: grid;
-        grid-template-columns: repeat(5, minmax(130px, 1fr));
+        grid-template-columns: repeat(4, minmax(130px, 1fr));
         gap: 10px;
         margin-top: 8px;
     }
 
-    .kpi-card {
-        background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
-        border: 1px solid #e2e8f0;
-        border-radius: 15px;
-        padding: 13px 14px;
-        position: relative;
-        overflow: hidden;
-    }
-
-    .kpi-card::before {
-        content: "";
-        position: absolute;
-        top: 0;
-        left: 0;
-        height: 4px;
-        width: 100%;
-        background: #94a3b8;
-    }
-
-    .kpi-blue {
-        background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
-        border-color: #bfdbfe;
-    }
-
-    .kpi-blue::before {
-        background: #2563eb;
-    }
-
-    .kpi-red {
-        background: linear-gradient(180deg, #fff1f2 0%, #ffffff 100%);
-        border-color: #fecdd3;
-    }
-
-    .kpi-red::before {
-        background: #ef3e52;
-    }
-
-    .kpi-orange {
-        background: linear-gradient(180deg, #fff7ed 0%, #ffffff 100%);
-        border-color: #fed7aa;
-    }
-
-    .kpi-orange::before {
-        background: #f97316;
-    }
-
-    .kpi-green {
-        background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%);
-        border-color: #bbf7d0;
-    }
-
-    .kpi-green::before {
-        background: #22c55e;
-    }
-
-    .kpi-purple {
-        background: linear-gradient(180deg, #faf5ff 0%, #ffffff 100%);
-        border-color: #e9d5ff;
-    }
-
-    .kpi-purple::before {
-        background: #9333ea;
-    }
-
-    .kpi-label {
-        color: #64748b;
-        font-size: 0.66rem;
-        font-weight: 950;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        margin-bottom: 6px;
-    }
-
-    .kpi-value {
-        color: #0f172a;
-        font-size: 1.08rem;
-        font-weight: 950;
-        line-height: 1.25;
-        overflow-wrap: anywhere;
-    }
-
-    .status-pill {
+    .pill {
         display: inline-block;
         padding: 4px 10px;
         border-radius: 999px;
@@ -408,41 +284,12 @@ CSS_COMPONENTES = """
         margin-top: 6px;
     }
 
-    .status-green {
-        background: #dcfce7;
-        color: #166534;
-        border: 1px solid #bbf7d0;
-    }
-
-    .status-red {
-        background: #fee2e2;
-        color: #991b1b;
-        border: 1px solid #fecaca;
-    }
-
-    .status-yellow {
-        background: #fef9c3;
-        color: #854d0e;
-        border: 1px solid #fde68a;
-    }
-
-    .status-orange {
-        background: #ffedd5;
-        color: #9a3412;
-        border: 1px solid #fed7aa;
-    }
-
-    .status-blue {
-        background: #dbeafe;
-        color: #1e40af;
-        border: 1px solid #bfdbfe;
-    }
-
-    .status-gray {
-        background: #f1f5f9;
-        color: #475569;
-        border: 1px solid #e2e8f0;
-    }
+    .pill-green { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+    .pill-red { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+    .pill-yellow { background: #fef9c3; color: #854d0e; border: 1px solid #fde68a; }
+    .pill-orange { background: #ffedd5; color: #9a3412; border: 1px solid #fed7aa; }
+    .pill-blue { background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; }
+    .pill-gray { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
 
     .alert-panel {
         border-radius: 18px;
@@ -453,50 +300,50 @@ CSS_COMPONENTES = """
 
     .alert-red {
         background:
-            radial-gradient(circle at top right, rgba(239, 62, 82, 0.18), transparent 32%),
+            radial-gradient(circle at top right, rgba(239, 62, 82, 0.22), transparent 32%),
             linear-gradient(180deg, #fff1f2 0%, #ffffff 100%);
         border: 1px solid #fecdd3;
-        border-left: 6px solid #ef3e52;
+        border-left: 7px solid #ef3e52;
     }
 
     .alert-orange {
         background:
-            radial-gradient(circle at top right, rgba(249, 115, 22, 0.18), transparent 32%),
+            radial-gradient(circle at top right, rgba(249, 115, 22, 0.22), transparent 32%),
             linear-gradient(180deg, #fff7ed 0%, #ffffff 100%);
         border: 1px solid #fed7aa;
-        border-left: 6px solid #f97316;
+        border-left: 7px solid #f97316;
     }
 
     .alert-yellow {
         background:
-            radial-gradient(circle at top right, rgba(234, 179, 8, 0.18), transparent 32%),
+            radial-gradient(circle at top right, rgba(234, 179, 8, 0.22), transparent 32%),
             linear-gradient(180deg, #fefce8 0%, #ffffff 100%);
         border: 1px solid #fde68a;
-        border-left: 6px solid #eab308;
+        border-left: 7px solid #eab308;
     }
 
     .alert-green {
         background:
-            radial-gradient(circle at top right, rgba(34, 197, 94, 0.18), transparent 32%),
+            radial-gradient(circle at top right, rgba(34, 197, 94, 0.22), transparent 32%),
             linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%);
         border: 1px solid #bbf7d0;
-        border-left: 6px solid #22c55e;
+        border-left: 7px solid #22c55e;
     }
 
     .alert-blue {
         background:
-            radial-gradient(circle at top right, rgba(37, 99, 235, 0.18), transparent 32%),
+            radial-gradient(circle at top right, rgba(37, 99, 235, 0.22), transparent 32%),
             linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
         border: 1px solid #bfdbfe;
-        border-left: 6px solid #2563eb;
+        border-left: 7px solid #2563eb;
     }
 
     .alert-gray {
         background:
-            radial-gradient(circle at top right, rgba(100, 116, 139, 0.14), transparent 32%),
+            radial-gradient(circle at top right, rgba(100, 116, 139, 0.16), transparent 32%),
             linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
         border: 1px solid #e2e8f0;
-        border-left: 6px solid #64748b;
+        border-left: 7px solid #64748b;
     }
 
     .alert-title {
@@ -530,30 +377,16 @@ CSS_COMPONENTES = """
     }
 
     .alert-item {
-        background: rgba(255,255,255,0.76);
+        background: rgba(255,255,255,0.78);
         border: 1px solid rgba(226,232,240,0.95);
         border-radius: 13px;
         padding: 10px 12px;
     }
 
-    .alert-item-label {
-        color: #64748b;
-        font-size: 0.66rem;
-        font-weight: 950;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        margin-bottom: 4px;
-    }
-
-    .alert-item-value {
-        color: #0f172a;
-        font-size: 0.94rem;
-        font-weight: 900;
-        line-height: 1.25;
-    }
-
     .message-card {
-        background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+        background:
+            radial-gradient(circle at top right, rgba(37, 99, 235, 0.14), transparent 30%),
+            linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
         border: 1px solid #bfdbfe;
         border-left: 5px solid #2563eb;
         border-radius: 16px;
@@ -576,7 +409,7 @@ CSS_COMPONENTES = """
 
     .search-card {
         background:
-            radial-gradient(circle at top right, rgba(6, 182, 212, 0.16), transparent 28%),
+            radial-gradient(circle at top right, rgba(6, 182, 212, 0.18), transparent 28%),
             linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
         border: 1px solid #bae6fd;
         border-left: 5px solid #06b6d4;
@@ -602,7 +435,7 @@ CSS_COMPONENTES = """
 
     .flow-shell {
         background:
-            radial-gradient(circle at top left, rgba(37, 99, 235, 0.16), transparent 28%),
+            radial-gradient(circle at top left, rgba(37, 99, 235, 0.18), transparent 28%),
             linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
         border: 1px solid #dbeafe;
         border-radius: 18px;
@@ -722,30 +555,6 @@ CSS_COMPONENTES = """
         padding: 10px 12px;
     }
 
-    .flow-summary-label {
-        color: #64748b;
-        font-size: 0.67rem;
-        font-weight: 950;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        margin-bottom: 4px;
-    }
-
-    .flow-summary-value {
-        color: #0f172a;
-        font-size: 0.92rem;
-        font-weight: 900;
-        line-height: 1.25;
-        overflow-wrap: anywhere;
-    }
-
-    .flow-note {
-        margin-top: 12px;
-        color: #475569;
-        font-size: 0.84rem;
-        line-height: 1.45;
-    }
-
     .badge-flow {
         display: inline-block;
         padding: 3px 9px;
@@ -755,60 +564,22 @@ CSS_COMPONENTES = """
         margin-top: 5px;
     }
 
-    .badge-ok {
-        background: #dcfce7;
-        color: #166534;
-        border: 1px solid #bbf7d0;
-    }
-
-    .badge-active {
-        background: #dbeafe;
-        color: #1e40af;
-        border: 1px solid #bfdbfe;
-    }
-
-    .badge-pending {
-        background: #f1f5f9;
-        color: #475569;
-        border: 1px solid #e2e8f0;
-    }
+    .badge-ok { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+    .badge-active { background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; }
+    .badge-pending { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
 
     @media (max-width: 1100px) {
-        .summary-grid {
-            grid-template-columns: repeat(2, minmax(140px, 1fr));
-        }
-
-        .kpi-grid {
-            grid-template-columns: repeat(2, minmax(130px, 1fr));
-        }
-
-        .flow-summary {
-            grid-template-columns: repeat(2, minmax(120px, 1fr));
-        }
-
-        .alert-grid {
+        .grid, .kpi-grid, .alert-grid, .flow-summary {
             grid-template-columns: repeat(2, minmax(130px, 1fr));
         }
     }
 
     @media (max-width: 680px) {
-        .summary-grid {
+        .grid, .kpi-grid, .alert-grid, .flow-summary {
             grid-template-columns: 1fr;
         }
 
-        .kpi-grid {
-            grid-template-columns: 1fr;
-        }
-
-        .flow-summary {
-            grid-template-columns: 1fr;
-        }
-
-        .alert-grid {
-            grid-template-columns: 1fr;
-        }
-
-        .modern-title {
+        .hero-title {
             font-size: 1.35rem;
         }
     }
@@ -817,7 +588,7 @@ CSS_COMPONENTES = """
 
 
 # ============================================================
-# Render HTML seguro con components
+# Render HTML seguro
 # ============================================================
 
 def render_html(contenido: str, height: int, scrolling: bool = False):
@@ -973,9 +744,6 @@ def limpiar_nombres_columnas(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def normalizar_columnas_me80fn(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Compatibilidad con archivos antiguos que aún tengan NME80FN.
-    """
     df = df.copy()
 
     renombrar = {
@@ -1177,7 +945,7 @@ def calcular_estado_alerta_registro(registro: pd.Series, columnas_clave: dict) -
         titulo = "Pedido recepcionado"
         mensaje = (
             "El registro ya tiene recepción registrada. "
-            "La revisión en Filtro sirve para validar el historial y la trazabilidad completa."
+            "Filtro permite revisar la trazabilidad completa del caso que pudo venir desde Alertas."
         )
 
     elif pd.isna(fecha_solicitud):
@@ -1758,11 +1526,11 @@ def construir_validacion_temporal_tat(
 
 def html_section_header(icono: str, titulo: str, subtitulo: str) -> str:
     return f"""
-    <div class="modern-section-header">
-        <div class="modern-section-icon">{escape(icono)}</div>
+    <div class="section-header">
+        <div class="section-icon">{escape(icono)}</div>
         <div>
-            <div class="modern-section-title">{escape(titulo)}</div>
-            <div class="modern-section-subtitle">{escape(subtitulo)}</div>
+            <div class="section-title">{escape(titulo)}</div>
+            <div class="section-subtitle">{escape(subtitulo)}</div>
         </div>
     </div>
     """
@@ -1772,23 +1540,23 @@ def clase_estado_tat(valor: str) -> str:
     texto = str(valor).strip().lower()
 
     if texto == "cumple":
-        return "status-green"
+        return "pill-green"
 
     if texto == "no cumple":
-        return "status-red"
+        return "pill-red"
 
     if texto in ["en proceso", "sin datos"]:
-        return "status-yellow"
+        return "pill-yellow"
 
-    return "status-gray"
+    return "pill-gray"
 
 
 def html_hero() -> str:
     return """
-    <div class="modern-hero">
-        <div class="modern-eyebrow">Flujo operativo Alertas → Filtro</div>
-        <div class="modern-title">07_FILTRO</div>
-        <div class="modern-subtitle">
+    <div class="hero">
+        <div class="eyebrow">Flujo operativo Alertas → Filtro</div>
+        <div class="hero-title">07_FILTRO</div>
+        <div class="hero-subtitle">
             Alertas identifica las SOLPED críticas o próximas a vencer. Filtro permite entrar al detalle específico:
             compra, responsable, cantidades, valor, estado TAT, fechas y seguimiento completo de la solicitud.
         </div>
@@ -1849,23 +1617,23 @@ def html_alerta_operativa(registro: pd.Series, columnas_clave: dict) -> str:
 
         <div class="alert-grid">
             <div class="alert-item">
-                <div class="alert-item-label">Estado alerta</div>
-                <div class="alert-item-value">{escape(alerta["estado"])}</div>
+                <div class="label">Estado alerta</div>
+                <div class="value">{escape(alerta["estado"])}</div>
             </div>
 
             <div class="alert-item">
-                <div class="alert-item-label">Desde solicitud hasta hoy</div>
-                <div class="alert-item-value">{escape(alerta["dias_desde_solicitud_texto"])}</div>
+                <div class="label">Desde solicitud hasta hoy</div>
+                <div class="value">{escape(alerta["dias_desde_solicitud_texto"])}</div>
             </div>
 
             <div class="alert-item">
-                <div class="alert-item-label">Fecha vencimiento</div>
-                <div class="alert-item-value">{escape(alerta["fecha_vencimiento_texto"])}</div>
+                <div class="label">Fecha vencimiento</div>
+                <div class="value">{escape(alerta["fecha_vencimiento_texto"])}</div>
             </div>
 
             <div class="alert-item">
-                <div class="alert-item-label">Contra umbral</div>
-                <div class="alert-item-value">{escape(dias_restantes_txt)} · {escape(umbral_txt)}</div>
+                <div class="label">Contra umbral</div>
+                <div class="value">{escape(dias_restantes_txt)} · {escape(umbral_txt)}</div>
             </div>
         </div>
     </div>
@@ -1877,41 +1645,41 @@ def html_resumen_general(registro: pd.Series, columnas_clave: dict) -> str:
     moneda = obtener_valor(registro, columnas_clave["moneda"])
 
     campos = [
-        ("SOLPED", obtener_valor(registro, columnas_clave["solped"]), "card-blue"),
-        ("Pedido", obtener_valor(registro, columnas_clave["pedido"]), "card-blue"),
-        ("Posición", obtener_valor(registro, columnas_clave["posicion"]), "card-cyan"),
-        ("Centro", obtener_valor(registro, columnas_clave["centro"]), "card-cyan"),
-        ("Material", obtener_valor(registro, columnas_clave["material"]), "card-purple"),
-        ("Texto breve", obtener_valor(registro, columnas_clave["texto_breve"]), "card-purple"),
-        ("Cantidad solicitada", formatear_decimal(obtener_valor(registro, columnas_clave["cantidad_solicitada"])), "card-green"),
-        ("Unidad de medida", obtener_valor(registro, columnas_clave["unidad_medida"]), "card-green"),
-        ("Precio valoración", formatear_monto(obtener_valor(registro, columnas_clave["precio_valoracion"]), moneda), "card-yellow"),
-        ("Moneda", moneda, "card-yellow"),
-        ("Solicitante", obtener_valor(registro, columnas_clave["solicitante"]), "card-orange"),
-        ("Autor", obtener_valor(registro, columnas_clave["autor"]), "card-orange"),
-        ("Grupo de compras", obtener_valor(registro, columnas_clave["grupo_compras"]), "card-red"),
-        ("Tipo OC", obtener_valor(registro, columnas_clave["tipo_oc"]), "card-red"),
-        ("Sistema", obtener_valor(registro, columnas_clave["sistema"]), "card-blue"),
-        ("Origen", obtener_valor(registro, columnas_clave["origen"]), "card-cyan"),
-        ("Estado del match", estado_match, "card-red"),
+        ("SOLPED", obtener_valor(registro, columnas_clave["solped"]), "blue"),
+        ("Pedido", obtener_valor(registro, columnas_clave["pedido"]), "blue"),
+        ("Posición", obtener_valor(registro, columnas_clave["posicion"]), "cyan"),
+        ("Centro", obtener_valor(registro, columnas_clave["centro"]), "cyan"),
+        ("Material", obtener_valor(registro, columnas_clave["material"]), "purple"),
+        ("Texto breve", obtener_valor(registro, columnas_clave["texto_breve"]), "purple"),
+        ("Cantidad solicitada", formatear_decimal(obtener_valor(registro, columnas_clave["cantidad_solicitada"])), "green"),
+        ("Unidad de medida", obtener_valor(registro, columnas_clave["unidad_medida"]), "green"),
+        ("Precio valoración", formatear_monto(obtener_valor(registro, columnas_clave["precio_valoracion"]), moneda), "yellow"),
+        ("Moneda", moneda, "yellow"),
+        ("Solicitante", obtener_valor(registro, columnas_clave["solicitante"]), "orange"),
+        ("Autor", obtener_valor(registro, columnas_clave["autor"]), "orange"),
+        ("Grupo de compras", obtener_valor(registro, columnas_clave["grupo_compras"]), "red"),
+        ("Tipo OC", obtener_valor(registro, columnas_clave["tipo_oc"]), "red"),
+        ("Sistema", obtener_valor(registro, columnas_clave["sistema"]), "blue"),
+        ("Origen", obtener_valor(registro, columnas_clave["origen"]), "cyan"),
+        ("Estado del match", estado_match, "red"),
     ]
 
     cards = []
 
-    for label, value, extra_class in campos:
+    for label, value, color in campos:
         cards.append(
             f"""
-            <div class="summary-card {extra_class}">
-                <div class="summary-label">{escape(label)}</div>
-                <div class="summary-value">{valor_html(value)}</div>
+            <div class="card {color}">
+                <div class="label">{escape(label)}</div>
+                <div class="value">{valor_html(value)}</div>
             </div>
             """
         )
 
     return f"""
-    <div class="modern-section">
+    <div class="section">
         {html_section_header("1", "Información general y datos de compra", "Datos principales del registro confirmado, incluyendo cantidad, valor, responsables y origen.")}
-        <div class="summary-grid">
+        <div class="grid">
             {''.join(cards)}
         </div>
     </div>
@@ -1931,61 +1699,61 @@ def html_indicadores_tat(registro: pd.Series, columnas_clave: dict) -> str:
             "Días desde solicitud",
             alerta["dias_desde_solicitud_texto"],
             "Solicitud hasta hoy",
-            "kpi-red" if alerta["estado"] == "Vencido" else "kpi-blue",
+            "red" if alerta["estado"] == "Vencido" else "blue",
         ),
         (
             "Fecha vencimiento",
             alerta["fecha_vencimiento_texto"],
-            "Según fecha solicitud + umbral TAT",
-            "kpi-orange",
+            "Solicitud + umbral TAT",
+            "orange",
         ),
         (
             "Días TAT total",
             formatear_entero(obtener_valor(registro, columnas_clave["dias_tat_total"])),
             "Solicitud a recepción",
-            "kpi-blue",
+            "blue",
         ),
         (
             "Umbral TAT total",
             formatear_entero(alerta["umbral"]),
             "Límite definido o inferido",
-            "kpi-purple",
+            "purple",
         ),
         (
             "Performance TAT",
             performance,
-            f'<span class="status-pill {estado_class}">{escape(performance)}</span>',
-            "kpi-green",
+            f'<span class="pill {estado_class}">{escape(performance)}</span>',
+            "green",
         ),
         (
             "Días incumplimiento",
             formatear_entero(obtener_valor(registro, columnas_clave["dias_incumplimiento"])),
             "Días sobre umbral",
-            "kpi-red",
+            "red",
         ),
         (
             "Rango incumplimiento",
             formatear_valor(obtener_valor(registro, columnas_clave["rango_incumplimiento"])),
             "Clasificación TAT",
-            "kpi-orange",
+            "orange",
         ),
     ]
 
     cards = []
 
-    for label, value, note, extra_class in kpis:
+    for label, value, note, color in kpis:
         cards.append(
             f"""
-            <div class="kpi-card {extra_class}">
-                <div class="kpi-label">{escape(label)}</div>
-                <div class="kpi-value">{escape(str(value))}</div>
-                <div class="summary-note">{note}</div>
+            <div class="card {color}">
+                <div class="label">{escape(label)}</div>
+                <div class="value">{escape(str(value))}</div>
+                <div class="note">{note}</div>
             </div>
             """
         )
 
     return f"""
-    <div class="modern-section">
+    <div class="section">
         {html_section_header("4", "Indicadores TAT y lectura temporal", "Resumen de tiempos, umbrales, vencimiento y cumplimiento del registro.")}
         <div class="kpi-grid">
             {''.join(cards)}
@@ -2114,27 +1882,27 @@ def html_diagrama_flujo_solped(registro: pd.Series, columnas_clave: dict) -> str
 
         <div class="flow-summary">
             <div class="flow-summary-item">
-                <div class="flow-summary-label">Última etapa</div>
-                <div class="flow-summary-value">{escape(resumen["ultima_etapa"])}</div>
+                <div class="label">Última etapa</div>
+                <div class="value">{escape(resumen["ultima_etapa"])}</div>
             </div>
 
             <div class="flow-summary-item">
-                <div class="flow-summary-label">Fecha última etapa</div>
-                <div class="flow-summary-value">{escape(resumen["ultima_fecha"])}</div>
+                <div class="label">Fecha última etapa</div>
+                <div class="value">{escape(resumen["ultima_fecha"])}</div>
             </div>
 
             <div class="flow-summary-item">
-                <div class="flow-summary-label">Estado recepción</div>
-                <div class="flow-summary-value">{escape(resumen["estado_recepcion"])}</div>
+                <div class="label">Estado recepción</div>
+                <div class="value">{escape(resumen["estado_recepcion"])}</div>
             </div>
 
             <div class="flow-summary-item">
-                <div class="flow-summary-label">Tiempo transcurrido</div>
-                <div class="flow-summary-value">{escape(dias_texto)}</div>
+                <div class="label">Tiempo transcurrido</div>
+                <div class="value">{escape(dias_texto)}</div>
             </div>
         </div>
 
-        <div class="flow-note">
+        <div class="note" style="margin-top:12px;">
             {escape(nota)}
         </div>
     </div>
@@ -2150,7 +1918,7 @@ def html_diagrama_flujo_solped(registro: pd.Series, columnas_clave: dict) -> str
 def mostrar_hero():
     render_html(
         html_hero(),
-        height=170,
+        height=175,
         scrolling=False,
     )
 
@@ -2177,7 +1945,7 @@ def mostrar_resumen_general_moderno(registro: pd.Series, columnas_clave: dict):
             registro=registro,
             columnas_clave=columnas_clave,
         ),
-        height=565,
+        height=570,
         scrolling=True,
     )
 
