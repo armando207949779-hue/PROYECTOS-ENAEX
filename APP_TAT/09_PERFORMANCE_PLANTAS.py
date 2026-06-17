@@ -26,7 +26,7 @@ BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
 LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
 
-COLOR_CUMPLE = "#EF3E52"        # Rojo original
+COLOR_CUMPLE = "#EF3E52"
 COLOR_NO_CUMPLE = "#BFC3C7"
 COLOR_EN_PROCESO = "#F4B400"
 COLOR_NO_APLICA = "#9CA3AF"
@@ -406,6 +406,13 @@ def validar_columnas_base(df: pd.DataFrame):
         )
 
 
+def obtener_rango_fechas_semana_iso(anio_iso: int, semana_iso: int):
+    inicio = pd.Timestamp(date.fromisocalendar(int(anio_iso), int(semana_iso), 1))
+    fin = pd.Timestamp(date.fromisocalendar(int(anio_iso), int(semana_iso), 7))
+
+    return inicio, fin
+
+
 # ============================================================
 # PERFORMANCE
 # ============================================================
@@ -753,6 +760,355 @@ def aplicar_filtros_con_progreso(
 
 
 # ============================================================
+# FILTRO SEMANAL
+# ============================================================
+
+def crear_catalogo_semanas_disponibles(df: pd.DataFrame) -> pd.DataFrame:
+    columnas_requeridas = [
+        "anio_iso_recepcion",
+        "semana_iso_recepcion",
+        COL_FECHA_RECEPCION_FINAL,
+    ]
+
+    if df.empty or any(col not in df.columns for col in columnas_requeridas):
+        return pd.DataFrame(
+            columns=[
+                "Año",
+                "Semana",
+                "Inicio semana",
+                "Fin semana",
+                "Desde datos",
+                "Hasta datos",
+                "Registros",
+                "Etiqueta",
+            ]
+        )
+
+    base = df[
+        df["anio_iso_recepcion"].notna()
+        & df["semana_iso_recepcion"].notna()
+        & df[COL_FECHA_RECEPCION_FINAL].notna()
+    ].copy()
+
+    if base.empty:
+        return pd.DataFrame(
+            columns=[
+                "Año",
+                "Semana",
+                "Inicio semana",
+                "Fin semana",
+                "Desde datos",
+                "Hasta datos",
+                "Registros",
+                "Etiqueta",
+            ]
+        )
+
+    catalogo = (
+        base
+        .groupby(["anio_iso_recepcion", "semana_iso_recepcion"])
+        .agg(
+            Desde_datos=(COL_FECHA_RECEPCION_FINAL, "min"),
+            Hasta_datos=(COL_FECHA_RECEPCION_FINAL, "max"),
+            Registros=(COL_FECHA_RECEPCION_FINAL, "size"),
+        )
+        .reset_index()
+        .rename(
+            columns={
+                "anio_iso_recepcion": "Año",
+                "semana_iso_recepcion": "Semana",
+            }
+        )
+    )
+
+    catalogo["Año"] = catalogo["Año"].astype(int)
+    catalogo["Semana"] = catalogo["Semana"].astype(int)
+
+    inicios = []
+    fines = []
+
+    for _, fila in catalogo.iterrows():
+        inicio, fin = obtener_rango_fechas_semana_iso(
+            int(fila["Año"]),
+            int(fila["Semana"]),
+        )
+
+        inicios.append(inicio)
+        fines.append(fin)
+
+    catalogo["Inicio semana"] = inicios
+    catalogo["Fin semana"] = fines
+
+    catalogo["Etiqueta"] = (
+        "Semana "
+        + catalogo["Semana"].astype(str).str.zfill(2)
+        + " · "
+        + catalogo["Inicio semana"].dt.strftime("%d-%m-%Y")
+        + " a "
+        + catalogo["Fin semana"].dt.strftime("%d-%m-%Y")
+        + " · "
+        + catalogo["Registros"].astype(str)
+        + " registros"
+    )
+
+    catalogo["Desde datos"] = catalogo["Desde_datos"].dt.strftime("%d-%m-%Y")
+    catalogo["Hasta datos"] = catalogo["Hasta_datos"].dt.strftime("%d-%m-%Y")
+    catalogo["Inicio semana"] = catalogo["Inicio semana"].dt.strftime("%d-%m-%Y")
+    catalogo["Fin semana"] = catalogo["Fin semana"].dt.strftime("%d-%m-%Y")
+
+    catalogo = catalogo.drop(columns=["Desde_datos", "Hasta_datos"])
+
+    return catalogo.sort_values(["Año", "Semana"]).reset_index(drop=True)
+
+
+def filtrar_por_fecha_recepcion(
+    df: pd.DataFrame,
+    fecha_inicio,
+    fecha_fin,
+) -> pd.DataFrame:
+    if df.empty:
+        return df.copy()
+
+    fecha_inicio = pd.Timestamp(fecha_inicio)
+    fecha_fin = (
+        pd.Timestamp(fecha_fin)
+        + pd.Timedelta(days=1)
+        - pd.Timedelta(microseconds=1)
+    )
+
+    return df[
+        df[COL_FECHA_RECEPCION_FINAL].between(fecha_inicio, fecha_fin)
+    ].copy()
+
+
+def filtrar_por_anio_y_semana_iso(
+    df: pd.DataFrame,
+    anio_iso: int | None,
+    semana_inicio: int | None,
+    semana_fin: int | None,
+) -> pd.DataFrame:
+    if df.empty:
+        return df.copy()
+
+    if anio_iso is None or semana_inicio is None or semana_fin is None:
+        return df.copy()
+
+    if "anio_iso_recepcion" not in df.columns or "semana_iso_recepcion" not in df.columns:
+        return df.copy()
+
+    return df[
+        df["anio_iso_recepcion"].eq(int(anio_iso))
+        & df["semana_iso_recepcion"].between(int(semana_inicio), int(semana_fin))
+    ].copy()
+
+
+def selector_filtro_semanal_tabla(df: pd.DataFrame):
+    metadata = {
+        "filtro_activo": False,
+        "modo": "Sin filtro semanal específico",
+        "descripcion": "Se usa el rango general del dashboard.",
+    }
+
+    if df.empty:
+        return df.copy(), metadata
+
+    if "anio_iso_recepcion" not in df.columns or "semana_iso_recepcion" not in df.columns:
+        st.warning("No existen columnas de año/semana ISO para aplicar este filtro.")
+        return df.copy(), metadata
+
+    usar_filtro = st.checkbox(
+        "Filtrar este detalle semanal",
+        value=False,
+        key="usar_filtro_semana_tabla_plantas",
+    )
+
+    if not usar_filtro:
+        return df.copy(), metadata
+
+    catalogo = crear_catalogo_semanas_disponibles(df)
+
+    if catalogo.empty:
+        st.info("No hay semanas disponibles con los filtros actuales.")
+        return df.copy(), metadata
+
+    modo_filtro = st.radio(
+        "Forma de selección",
+        options=[
+            "Calendario",
+            "Semana ISO manual",
+        ],
+        horizontal=True,
+        key="modo_filtro_semana_tabla_plantas",
+        help=(
+            "Calendario: eliges fechas y el sistema muestra las semanas involucradas. "
+            "Semana ISO manual: eliges año, semana inicial y semana final."
+        ),
+    )
+
+    if modo_filtro == "Calendario":
+        fechas_validas = df[COL_FECHA_RECEPCION_FINAL].dropna()
+
+        fecha_min = fechas_validas.min().date()
+        fecha_max = fechas_validas.max().date()
+
+        rango_fecha_tabla = st.date_input(
+            "Rango de fechas para el detalle semanal",
+            value=(fecha_min, fecha_max),
+            min_value=fecha_min,
+            max_value=fecha_max,
+            key="rango_fecha_tabla_plantas",
+            help="Usa fecha_recepcion_final. Las semanas ISO se calculan según este rango.",
+        )
+
+        if not isinstance(rango_fecha_tabla, (tuple, list)) or len(rango_fecha_tabla) != 2:
+            st.info("Selecciona una fecha inicial y una fecha final.")
+            return df.copy(), metadata
+
+        fecha_inicio = rango_fecha_tabla[0]
+        fecha_fin = rango_fecha_tabla[1]
+
+        df_filtrado = filtrar_por_fecha_recepcion(
+            df=df,
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+        )
+
+        catalogo_filtrado = crear_catalogo_semanas_disponibles(df_filtrado)
+
+        if df_filtrado.empty:
+            st.warning("No hay datos para el rango de fechas seleccionado.")
+            return df_filtrado, {
+                "filtro_activo": True,
+                "modo": "Calendario",
+                "descripcion": f"{fecha_inicio.strftime('%d-%m-%Y')} a {fecha_fin.strftime('%d-%m-%Y')}",
+            }
+
+        semanas_txt = ", ".join(
+            [
+                f"{int(row['Año'])}-S{int(row['Semana']):02d}"
+                for _, row in catalogo_filtrado.iterrows()
+            ]
+        )
+
+        st.caption(
+            f"Rango seleccionado: {fecha_inicio.strftime('%d-%m-%Y')} a {fecha_fin.strftime('%d-%m-%Y')}. "
+            f"Semanas incluidas: {semanas_txt if semanas_txt else 'Sin semanas'}."
+        )
+
+        with st.expander("Ver semanas incluidas en el rango seleccionado", expanded=False):
+            st.dataframe(
+                catalogo_filtrado,
+                use_container_width=True,
+                hide_index=True,
+            )
+
+        metadata = {
+            "filtro_activo": True,
+            "modo": "Calendario",
+            "descripcion": f"{fecha_inicio.strftime('%d-%m-%Y')} a {fecha_fin.strftime('%d-%m-%Y')}",
+        }
+
+        return df_filtrado, metadata
+
+    anios_disponibles = sorted(
+        catalogo["Año"].dropna().astype(int).unique().tolist()
+    )
+
+    anio_sel = st.selectbox(
+        "Año ISO",
+        options=anios_disponibles,
+        index=len(anios_disponibles) - 1,
+        key="anio_iso_tabla_plantas",
+    )
+
+    catalogo_anio = catalogo[catalogo["Año"].eq(int(anio_sel))].copy()
+
+    semanas_disponibles = sorted(
+        catalogo_anio["Semana"].dropna().astype(int).unique().tolist()
+    )
+
+    mapa_semana_etiqueta = dict(
+        zip(
+            catalogo_anio["Semana"].astype(int),
+            catalogo_anio["Etiqueta"].astype(str),
+        )
+    )
+
+    c1, c2 = st.columns(2)
+
+    with c1:
+        semana_inicio_sel = st.selectbox(
+            "Semana inicial",
+            options=semanas_disponibles,
+            format_func=lambda semana: mapa_semana_etiqueta.get(
+                int(semana),
+                f"Semana {int(semana):02d}",
+            ),
+            index=0,
+            key="semana_inicio_tabla_plantas",
+        )
+
+    semanas_fin_disponibles = [
+        semana for semana in semanas_disponibles
+        if int(semana) >= int(semana_inicio_sel)
+    ]
+
+    with c2:
+        semana_fin_sel = st.selectbox(
+            "Semana final",
+            options=semanas_fin_disponibles,
+            format_func=lambda semana: mapa_semana_etiqueta.get(
+                int(semana),
+                f"Semana {int(semana):02d}",
+            ),
+            index=len(semanas_fin_disponibles) - 1,
+            key="semana_fin_tabla_plantas",
+        )
+
+    fecha_inicio_semana, _ = obtener_rango_fechas_semana_iso(
+        int(anio_sel),
+        int(semana_inicio_sel),
+    )
+
+    _, fecha_fin_semana = obtener_rango_fechas_semana_iso(
+        int(anio_sel),
+        int(semana_fin_sel),
+    )
+
+    st.caption(
+        f"Rango seleccionado: Año {anio_sel}, semana {semana_inicio_sel} "
+        f"a semana {semana_fin_sel} · "
+        f"{fecha_inicio_semana.strftime('%d-%m-%Y')} a "
+        f"{fecha_fin_semana.strftime('%d-%m-%Y')}"
+    )
+
+    with st.expander("Ver semanas disponibles del año seleccionado", expanded=False):
+        st.dataframe(
+            catalogo_anio,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    df_filtrado = filtrar_por_anio_y_semana_iso(
+        df=df,
+        anio_iso=anio_sel,
+        semana_inicio=semana_inicio_sel,
+        semana_fin=semana_fin_sel,
+    )
+
+    metadata = {
+        "filtro_activo": True,
+        "modo": "Semana ISO manual",
+        "descripcion": (
+            f"Año {anio_sel}, semana {semana_inicio_sel} a semana {semana_fin_sel} · "
+            f"{fecha_inicio_semana.strftime('%d-%m-%Y')} a {fecha_fin_semana.strftime('%d-%m-%Y')}"
+        ),
+    }
+
+    return df_filtrado, metadata
+
+
+# ============================================================
 # RESÚMENES
 # ============================================================
 
@@ -925,29 +1281,6 @@ def crear_resumen_mensual_grupo(df: pd.DataFrame, grupo: str) -> pd.DataFrame:
     return tabla.sort_values("periodo_fecha").reset_index(drop=True)
 
 
-def crear_resumen_temporal_grupos(df: pd.DataFrame) -> pd.DataFrame:
-    registros = []
-
-    for grupo in ["Prillex", "Rio Loa", "Plantas de servicios"]:
-        tabla = crear_resumen_mensual_grupo(df, grupo)
-
-        if tabla.empty:
-            continue
-
-        tabla = tabla[tabla["Total evaluable"].gt(0)].copy()
-
-        if tabla.empty:
-            continue
-
-        tabla["Grupo planta"] = grupo
-        registros.append(tabla)
-
-    if not registros:
-        return pd.DataFrame()
-
-    return pd.concat(registros, ignore_index=True)
-
-
 def crear_resumen_centros(df: pd.DataFrame, mapa_etiquetas: dict) -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame()
@@ -1011,6 +1344,8 @@ def crear_detalle_semanal(df: pd.DataFrame) -> pd.DataFrame:
     columnas_salida = [
         "Año",
         "Semana",
+        "Inicio semana",
+        "Fin semana",
         "Grupo planta",
         "Cumple",
         "No cumple",
@@ -1080,11 +1415,86 @@ def crear_detalle_semanal(df: pd.DataFrame) -> pd.DataFrame:
         0,
     )
 
-    tabla["% Cumple"] = tabla["% Cumple"].round(2)
+    orden_grupo = {
+        "Prillex": 1,
+        "Rio Loa": 2,
+        "Plantas de servicios": 3,
+    }
 
-    return tabla[columnas_salida].sort_values(
-        ["Año", "Semana", "Grupo planta"]
-    ).reset_index(drop=True)
+    tabla["orden_grupo"] = tabla["Grupo planta"].map(orden_grupo).fillna(99)
+
+    totales = (
+        tabla
+        .groupby(["Año", "Semana"], as_index=False)
+        .agg(
+            Cumple=("Cumple", "sum"),
+            **{"No cumple": ("No cumple", "sum")},
+            **{"Total evaluable": ("Total evaluable", "sum")},
+        )
+    )
+
+    totales["Grupo planta"] = "Total semana"
+    totales["% Cumple"] = np.where(
+        totales["Total evaluable"] > 0,
+        totales["Cumple"] / totales["Total evaluable"] * 100,
+        0,
+    )
+    totales["orden_grupo"] = 999
+
+    tabla_final = pd.concat(
+        [
+            tabla[
+                [
+                    "Año",
+                    "Semana",
+                    "Grupo planta",
+                    "Cumple",
+                    "No cumple",
+                    "Total evaluable",
+                    "% Cumple",
+                    "orden_grupo",
+                ]
+            ],
+            totales[
+                [
+                    "Año",
+                    "Semana",
+                    "Grupo planta",
+                    "Cumple",
+                    "No cumple",
+                    "Total evaluable",
+                    "% Cumple",
+                    "orden_grupo",
+                ]
+            ],
+        ],
+        ignore_index=True,
+    )
+
+    inicios = []
+    fines = []
+
+    for _, fila in tabla_final.iterrows():
+        inicio, fin = obtener_rango_fechas_semana_iso(
+            int(fila["Año"]),
+            int(fila["Semana"]),
+        )
+
+        inicios.append(inicio.strftime("%d-%m-%Y"))
+        fines.append(fin.strftime("%d-%m-%Y"))
+
+    tabla_final["Inicio semana"] = inicios
+    tabla_final["Fin semana"] = fines
+    tabla_final["% Cumple"] = tabla_final["% Cumple"].round(2)
+
+    tabla_final = (
+        tabla_final
+        .sort_values(["Año", "Semana", "orden_grupo"])
+        .drop(columns=["orden_grupo"])
+        .reset_index(drop=True)
+    )
+
+    return tabla_final[columnas_salida]
 
 
 def mostrar_detalle_filtros_aplicados(resumen_filtros_df: pd.DataFrame):
@@ -1223,14 +1633,9 @@ def grafico_cumplimiento_grupos(tabla: pd.DataFrame):
     st.pyplot(fig, clear_figure=True, use_container_width=True)
 
 
-def grafico_temporal_grupos(tabla: pd.DataFrame):
-    st.markdown("### Evolución mensual del cumplimiento por planta")
-    st.caption(
-        "Evolución mensual del porcentaje de cumplimiento TAT por planta."
-    )
-
+def grafico_evolucion_mensual_grupo(tabla: pd.DataFrame, grupo: str):
     if tabla.empty:
-        st.info("No hay datos mensuales evaluables.")
+        st.info(f"No hay datos mensuales evaluables para {grupo}.")
         return
 
     colores = {
@@ -1241,45 +1646,32 @@ def grafico_temporal_grupos(tabla: pd.DataFrame):
 
     tabla = tabla.sort_values("periodo_fecha").copy()
 
-    periodos = (
-        tabla[["periodo_fecha", "periodo_label"]]
-        .drop_duplicates()
-        .sort_values("periodo_fecha")
+    labels = tabla["periodo_label"].astype(str).tolist()
+    x = np.arange(len(labels))
+    y = tabla["% Cumple"].to_numpy()
+
+    fig, ax = plt.subplots(figsize=(13, 4.8))
+
+    ax.plot(
+        x,
+        y,
+        marker="o",
+        linewidth=3,
+        color=colores.get(grupo, COLOR_CUMPLE),
+        label="Cumplimiento TAT",
     )
 
-    labels = periodos["periodo_label"].astype(str).tolist()
-    x_map = {
-        periodo: i
-        for i, periodo in enumerate(periodos["periodo_fecha"])
-    }
-
-    fig, ax = plt.subplots(figsize=(14, 5.4))
-
-    for grupo, data_grupo in tabla.groupby("Grupo planta"):
-        data_grupo = data_grupo.sort_values("periodo_fecha").copy()
-        x = data_grupo["periodo_fecha"].map(x_map).to_numpy()
-        y = data_grupo["% Cumple"].to_numpy()
-
-        ax.plot(
-            x,
-            y,
-            marker="o",
-            linewidth=2.8,
-            color=colores.get(grupo, COLOR_MUTED),
-            label=grupo,
+    for xi, yi in zip(x, y):
+        ax.text(
+            xi,
+            yi + 2,
+            f"{yi:.0f}%",
+            ha="center",
+            va="bottom",
+            fontsize=9,
+            fontweight="bold",
+            color=COLOR_TEXTO,
         )
-
-        for xi, yi in zip(x, y):
-            ax.text(
-                xi,
-                yi + 2,
-                f"{yi:.0f}%",
-                ha="center",
-                va="bottom",
-                fontsize=8,
-                fontweight="bold",
-                color=COLOR_TEXTO,
-            )
 
     ax.axhline(
         META_CUMPLIMIENTO,
@@ -1292,7 +1684,7 @@ def grafico_temporal_grupos(tabla: pd.DataFrame):
     ax.set_ylim(0, 108)
     ax.set_ylabel("% Cumple sobre evaluables", color=COLOR_TEXTO)
 
-    ax.set_xticks(np.arange(len(labels)))
+    ax.set_xticks(x)
     ax.set_xticklabels(
         labels,
         rotation=90,
@@ -1308,7 +1700,7 @@ def grafico_temporal_grupos(tabla: pd.DataFrame):
     )
 
     ax.set_title(
-        "Evolución mensual por planta",
+        f"Evolución mensual de cumplimiento · {grupo}",
         fontsize=15,
         fontweight="bold",
         color=COLOR_TEXTO,
@@ -1317,8 +1709,8 @@ def grafico_temporal_grupos(tabla: pd.DataFrame):
 
     ax.legend(
         loc="upper center",
-        bbox_to_anchor=(0.5, -0.38),
-        ncol=4,
+        bbox_to_anchor=(0.5, -0.36),
+        ncol=2,
         frameon=False,
         fontsize=10,
     )
@@ -1327,7 +1719,7 @@ def grafico_temporal_grupos(tabla: pd.DataFrame):
 
     fig.patch.set_alpha(0)
     fig.tight_layout()
-    fig.subplots_adjust(bottom=0.42)
+    fig.subplots_adjust(bottom=0.40)
 
     st.pyplot(fig, clear_figure=True, use_container_width=True)
 
@@ -1751,26 +2143,31 @@ else:
 
 
 # ============================================================
-# EVOLUCIÓN MENSUAL
+# EVOLUCIÓN MENSUAL SEPARADA POR PLANTA
 # ============================================================
 
-resumen_temporal_grupos = crear_resumen_temporal_grupos(df_dashboard)
+st.markdown("### Evolución mensual por planta")
+st.caption(
+    "Se muestran gráficos separados para evitar saturación visual."
+)
 
-grafico_temporal_grupos(resumen_temporal_grupos)
+for grupo in ["Prillex", "Rio Loa", "Plantas de servicios"]:
+    tabla_grupo = crear_resumen_mensual_grupo(df_dashboard, grupo)
+    grafico_evolucion_mensual_grupo(tabla_grupo, grupo)
 
 
 # ============================================================
 # DETALLE MENSUAL POR GRUPO
 # ============================================================
 
-st.markdown("### Detalle mensual por planta")
-st.caption(
-    "Cada gráfico muestra el cumplimiento mensual individual para cada planta o grupo."
-)
+with st.expander("Detalle mensual por planta en barras", expanded=False):
+    st.caption(
+        "Cada gráfico muestra el cumplimiento mensual individual en formato de barras."
+    )
 
-for grupo in ["Prillex", "Rio Loa", "Plantas de servicios"]:
-    tabla_grupo = crear_resumen_mensual_grupo(df_dashboard, grupo)
-    grafico_mensual_grupo(tabla_grupo, grupo)
+    for grupo in ["Prillex", "Rio Loa", "Plantas de servicios"]:
+        tabla_grupo = crear_resumen_mensual_grupo(df_dashboard, grupo)
+        grafico_mensual_grupo(tabla_grupo, grupo)
 
 
 # ============================================================
@@ -1803,15 +2200,26 @@ with st.expander("Análisis por centro específico", expanded=False):
 
 
 # ============================================================
-# DETALLE SEMANAL
+# DETALLE SEMANAL CON FILTRO
 # ============================================================
 
-with st.expander("Detalle semanal", expanded=False):
+with st.expander("Detalle semanal con filtro por semanas", expanded=False):
     st.caption(
-        "Detalle por semana ISO y grupo planta usando fecha_recepcion_final."
+        "Detalle por semana ISO y grupo planta usando fecha_recepcion_final. "
+        "Cada semana muestra explícitamente su fecha de inicio y fin."
     )
 
-    detalle_semanal = crear_detalle_semanal(df_dashboard)
+    df_semanal, metadata_semanal = selector_filtro_semanal_tabla(df_dashboard)
+
+    if metadata_semanal.get("filtro_activo"):
+        st.success(
+            f"Filtro semanal activo: {metadata_semanal.get('modo')} · "
+            f"{metadata_semanal.get('descripcion')}"
+        )
+    else:
+        st.info("Sin filtro semanal específico. Se usa la base filtrada general.")
+
+    detalle_semanal = crear_detalle_semanal(df_semanal)
 
     if detalle_semanal.empty:
         st.info("No hay detalle semanal evaluable.")
@@ -1828,6 +2236,19 @@ with st.expander("Detalle semanal", expanded=False):
                     max_value=100,
                 ),
             },
+        )
+
+        csv_detalle_semanal = detalle_semanal.to_csv(
+            index=False,
+            encoding="utf-8-sig",
+        ).encode("utf-8-sig")
+
+        st.download_button(
+            label="Descargar detalle semanal CSV",
+            data=csv_detalle_semanal,
+            file_name="detalle_semanal_performance_plantas.csv",
+            mime="text/csv",
+            use_container_width=True,
         )
 
 
@@ -1864,6 +2285,7 @@ with st.expander("Vista previa de datos filtrados", expanded=False):
         COL_FECHA_RECEPCION_FINAL,
         "anio_iso_recepcion",
         "semana_iso_recepcion",
+        "semana_iso_label",
         "dias_tat_total",
         COL_PERFORMANCE_TAT,
         "periodo_fecha",
