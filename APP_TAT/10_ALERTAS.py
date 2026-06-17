@@ -4,7 +4,6 @@
 # Usa df_tat cargado desde 06_CARGAR_ARCHIVO
 # ============================================================
 
-import io
 import base64
 from pathlib import Path
 from typing import Any
@@ -48,14 +47,10 @@ COL_POS_OC = "Posición de pedido - ME5A"
 COL_MATERIAL = "Material - ME5A"
 COL_TEXTO = "Texto breve - ME5A"
 COL_CENTRO = "Centro - ME5A"
-COL_SOLICITANTE = "Solicitante"
-COL_AUTOR = "Autor"
 COL_GRUPO_COMPRAS = "Grupo de compras"
-COL_TIPO_IMPUTACION = "Tipo de imputación"
 COL_TIPO_OC = "tipo_oc"
 COL_ORIGEN = "origen"
 COL_SISTEMA = "sistema"
-COL_NOMBRE_TIPO_COMPRA = "nombre_tipo_compra"
 COL_ESTADO_MATCH = "Estado del match"
 COL_PERF_TAT = "performance_tat_total"
 COL_RANGO_INC = "rango_incumplimiento_tat"
@@ -63,7 +58,6 @@ COL_INC_TAT = "incumplimiento_tat"
 COL_DIAS_TAT = "dias_tat_total"
 COL_DIAS_INC = "dias_incumplimiento_tat"
 COL_UMBRAL_TAT = "umbral_tat_total"
-COL_MONTO = "monto"
 COL_FECHAS_INCONSISTENTES = "tiene_fechas_inconsistentes"
 COL_ESTADO_RECEPCION_ALERTA = "estado_recepcion"
 
@@ -257,47 +251,6 @@ st.markdown(
             font-size: 0.88rem;
             color: #334155;
             line-height: 1.45;
-        }
-
-        .stage-box {
-            background: #ffffff;
-            border: 1px solid #e5e7eb;
-            border-radius: 12px;
-            padding: 12px;
-            min-height: 135px;
-            text-align: center;
-        }
-
-        .stage-done {
-            border-top: 5px solid #16a34a;
-        }
-
-        .stage-pending {
-            border-top: 5px solid #dc2626;
-        }
-
-        .stage-neutral {
-            border-top: 5px solid #94a3b8;
-        }
-
-        .stage-title {
-            font-size: 0.74rem;
-            font-weight: 800;
-            color: #334155;
-            text-transform: uppercase;
-            margin-bottom: 6px;
-        }
-
-        .stage-date {
-            font-size: 0.95rem;
-            font-weight: 700;
-            color: #0f172a;
-        }
-
-        .stage-status {
-            margin-top: 8px;
-            font-size: 0.78rem;
-            font-weight: 700;
         }
     </style>
     """,
@@ -604,13 +557,6 @@ def opciones_columna(df: pd.DataFrame, col: str, max_opciones: int = 800) -> lis
 
 def columnas_existentes(df: pd.DataFrame, columnas: list[str]) -> list[str]:
     return [col for col in columnas if col in df.columns]
-
-
-def obtener_fecha_segura(row: pd.Series, columna: str):
-    if columna not in row.index:
-        return pd.NaT
-
-    return pd.to_datetime(row.get(columna, pd.NaT), errors="coerce")
 
 
 def describir_nivel_alerta(nivel: Any) -> str:
@@ -1036,41 +982,6 @@ def crear_tabla_prioridad(df: pd.DataFrame) -> pd.DataFrame:
         tabla = tabla.drop(columns=["nivel_alerta"])
 
     return tabla
-
-
-def resumen_materiales(df: pd.DataFrame) -> pd.DataFrame:
-    if COL_MATERIAL not in df.columns:
-        return pd.DataFrame()
-
-    columnas_group = [COL_MATERIAL]
-
-    if COL_TEXTO in df.columns:
-        columnas_group.append(COL_TEXTO)
-
-    base = df.copy()
-
-    resumen = (
-        base
-        .groupby(columnas_group, dropna=False)
-        .agg(
-            Registros=(COL_MATERIAL, "size"),
-            Vencidos_sin_recepcion=("nivel_alerta", lambda s: int(s.eq("Crítico").sum())),
-            Proximos_0_30_dias=("nivel_alerta", lambda s: int(s.isin(["Atención", "Seguimiento"]).sum())),
-            Sin_recepcion=(COL_ESTADO_RECEPCION_ALERTA, lambda s: int(s.eq("Sin recepción").sum())),
-            Recepcionados=(COL_ESTADO_RECEPCION_ALERTA, lambda s: int(s.eq("Recepcionado").sum())),
-            Score_promedio=("score_riesgo", "mean"),
-        )
-        .reset_index()
-    )
-
-    resumen["Score_promedio"] = resumen["Score_promedio"].round(2)
-
-    resumen = resumen.sort_values(
-        ["Vencidos_sin_recepcion", "Proximos_0_30_dias", "Score_promedio", "Registros"],
-        ascending=[False, False, False, False],
-    )
-
-    return resumen.reset_index(drop=True)
 
 
 # ============================================================
@@ -1535,221 +1446,6 @@ def mostrar_card_estado(resumen: dict):
     )
 
 
-def crear_detalle_etapas_pedido(row: pd.Series) -> pd.DataFrame:
-    registros = []
-    fecha_anterior = pd.NaT
-    etapa_anterior = None
-
-    for nombre, columna in ETAPAS_LINEA_PEDIDO:
-        fecha = obtener_fecha_segura(row, columna)
-
-        if pd.notna(fecha):
-            estado = "Registrado"
-            fecha_texto = fecha.strftime("%d-%m-%Y")
-        else:
-            estado = "Pendiente"
-            fecha_texto = "Pendiente"
-
-        dias_desde_anterior = np.nan
-
-        if pd.notna(fecha) and pd.notna(fecha_anterior):
-            dias_desde_anterior = int((fecha - fecha_anterior).days)
-
-        registros.append(
-            {
-                "Etapa": nombre,
-                "Columna fecha": columna,
-                "Fecha": fecha_texto,
-                "Estado": estado,
-                "Etapa anterior": etapa_anterior if etapa_anterior else "-",
-                "Días desde etapa anterior": dias_desde_anterior,
-            }
-        )
-
-        if pd.notna(fecha):
-            fecha_anterior = fecha
-            etapa_anterior = nombre
-
-    detalle = pd.DataFrame(registros)
-
-    detalle["Días desde etapa anterior"] = detalle["Días desde etapa anterior"].apply(
-        lambda x: "-" if pd.isna(x) else int(x)
-    )
-
-    return detalle
-
-
-def mostrar_timeline_pedido(row: pd.Series):
-    st.markdown("#### Diagrama de avance del pedido")
-    st.caption(
-        "Este diagrama muestra las fechas registradas por etapa. "
-        "Si una fecha aparece como pendiente, el registro todavía no tiene ese hito informado."
-    )
-
-    fechas = [
-        obtener_fecha_segura(row, columna)
-        for _, columna in ETAPAS_LINEA_PEDIDO
-    ]
-
-    completadas = [
-        pd.notna(fecha)
-        for fecha in fechas
-    ]
-
-    try:
-        primera_pendiente = completadas.index(False)
-    except ValueError:
-        primera_pendiente = None
-
-    cols = st.columns(len(ETAPAS_LINEA_PEDIDO))
-
-    for idx, (nombre, columna) in enumerate(ETAPAS_LINEA_PEDIDO):
-        fecha = obtener_fecha_segura(row, columna)
-        completada = pd.notna(fecha)
-
-        if completada:
-            clase = "stage-box stage-done"
-            estado = "✓ Registrado"
-            fecha_txt = fecha.strftime("%d-%m-%Y")
-        elif primera_pendiente == idx:
-            clase = "stage-box stage-pending"
-            estado = "Pendiente actual"
-            fecha_txt = "Pendiente"
-        else:
-            clase = "stage-box stage-neutral"
-            estado = "Pendiente"
-            fecha_txt = "Pendiente"
-
-        dias_desde_anterior = "-"
-
-        if idx > 0 and completada:
-            fecha_anterior = None
-
-            for j in range(idx - 1, -1, -1):
-                posible_fecha = fechas[j]
-
-                if pd.notna(posible_fecha):
-                    fecha_anterior = posible_fecha
-                    break
-
-            if fecha_anterior is not None and pd.notna(fecha_anterior):
-                dias_desde_anterior = int((fecha - fecha_anterior).days)
-
-        with cols[idx]:
-            st.markdown(
-                f"""
-                <div class="{clase}">
-                    <div class="stage-title">{nombre}</div>
-                    <div class="stage-date">{fecha_txt}</div>
-                    <div class="stage-status">{estado}</div>
-                    <div style="
-                        margin-top: 8px;
-                        font-size: 0.72rem;
-                        color: #64748b;
-                        font-weight: 600;
-                    ">
-                        Días desde etapa anterior: {dias_desde_anterior}
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-    detalle_etapas = crear_detalle_etapas_pedido(row)
-
-    st.markdown("#### Detalle de fechas por etapa")
-
-    st.dataframe(
-        detalle_etapas,
-        use_container_width=True,
-        hide_index=True,
-    )
-
-
-def mostrar_expediente(row: pd.Series):
-    st.markdown("### Expediente del registro seleccionado")
-
-    oc_principal = row.get(COL_OC_ME5A, row.get(COL_OC_ME80FN, np.nan))
-    nivel_desc = row.get(COL_NIVEL_ALERTA_DESC, describir_nivel_alerta(row.get("nivel_alerta", np.nan)))
-
-    col_e1, col_e2, col_e3, col_e4, col_e5 = st.columns(5)
-
-    col_e1.metric("SolPed", formato_id(row.get(COL_SOLPED, np.nan)))
-    col_e2.metric("Pedido", formato_id(oc_principal))
-    col_e3.metric("Centro", formato_valor(row.get(COL_CENTRO, np.nan)))
-    col_e4.metric("Tipo alerta", formato_valor(nivel_desc))
-    col_e5.metric("Estado", formato_valor(row.get("clasificacion_vencimiento", np.nan)))
-
-    col_i1, col_i2, col_i3, col_i4, col_i5 = st.columns(5)
-
-    col_i1.metric("Fecha vencimiento", formato_valor(row.get("fecha_vencimiento_texto", np.nan)))
-    col_i2.metric("Vencimiento", formato_valor(row.get("dias_hasta_vencimiento", np.nan)))
-    col_i3.metric("Última etapa", formato_valor(row.get("ultima_etapa_registrada", np.nan)))
-    col_i4.metric("Fecha pendiente", formato_valor(row.get("fecha_pendiente", np.nan)))
-    col_i5.metric("Score riesgo", formato_valor(row.get("score_riesgo", np.nan)))
-
-    col_t1, col_t2, col_t3, col_t4 = st.columns(4)
-
-    col_t1.metric("TAT transcurrido", formato_valor(row.get("tiempo_transcurrido_tat", np.nan)))
-    col_t2.metric("Exceso umbral", formato_valor(row.get("tiempo_excedido_umbral_texto", np.nan)))
-    col_t3.metric("Performance TAT", formato_valor(row.get(COL_PERF_TAT, np.nan)))
-    col_t4.metric("Rango incumplimiento", formato_valor(row.get(COL_RANGO_INC, np.nan)))
-
-    st.info(f"Acción sugerida: {formato_valor(row.get('accion_sugerida', np.nan))}")
-
-    mostrar_timeline_pedido(row)
-
-    detalle_cols = [
-        COL_SOLPED,
-        COL_OC_ME5A,
-        COL_OC_ME80FN,
-        COL_POS_SOLPED,
-        COL_POS_OC,
-        COL_MATERIAL,
-        COL_TEXTO,
-        COL_CENTRO,
-        "centro_label",
-        COL_GRUPO_COMPRAS,
-        COL_SOLICITANTE,
-        COL_AUTOR,
-        COL_TIPO_OC,
-        COL_SISTEMA,
-        COL_ORIGEN,
-        COL_PERF_TAT,
-        COL_RANGO_INC,
-        COL_DIAS_TAT,
-        COL_DIAS_INC,
-        COL_UMBRAL_TAT,
-        COL_FECHA_SOLICITUD_FINAL,
-        COL_FECHA_LIBERACION_FINAL,
-        COL_FECHA_PEDIDO_FINAL,
-        COL_FECHA_FACTURACION_FINAL,
-        COL_FECHA_RECEPCION_FINAL,
-        "fecha_inicio_tat",
-        "fecha_vencimiento_tat",
-        "fecha_recepcion_alerta",
-        "dias_restantes_int",
-        "dias_transcurridos_alerta",
-        "exceso_umbral_alerta",
-        "nivel_alerta",
-        COL_NIVEL_ALERTA_DESC,
-        "clasificacion_vencimiento",
-        "ultima_etapa_registrada",
-        "fecha_pendiente",
-        "accion_sugerida",
-        "score_riesgo",
-    ]
-
-    detalle_cols = columnas_existentes(pd.DataFrame([row]), detalle_cols)
-
-    with st.expander("Detalle completo del registro", expanded=True):
-        st.dataframe(
-            pd.DataFrame([row])[detalle_cols],
-            use_container_width=True,
-            hide_index=True,
-        )
-
-
 def mostrar_tabla_alertas(
     df: pd.DataFrame,
     titulo: str,
@@ -1950,39 +1646,6 @@ def mostrar_proximos_por_rango(df_proximos: pd.DataFrame):
                 item["descripcion"],
                 limite=300,
             )
-
-
-# ============================================================
-# EXPORTACIÓN
-# ============================================================
-
-def convertir_a_parquet(df: pd.DataFrame) -> bytes:
-    output = io.BytesIO()
-
-    df.to_parquet(
-        output,
-        index=False,
-        engine="pyarrow",
-    )
-
-    return output.getvalue()
-
-
-def convertir_a_csv(df: pd.DataFrame) -> bytes:
-    return df.to_csv(
-        index=False,
-        encoding="utf-8-sig",
-    ).encode("utf-8-sig")
-
-
-@st.cache_data(show_spinner=False)
-def convertir_a_parquet_cache(df: pd.DataFrame) -> bytes:
-    return convertir_a_parquet(df)
-
-
-@st.cache_data(show_spinner=False)
-def convertir_a_csv_cache(df: pd.DataFrame) -> bytes:
-    return convertir_a_csv(df)
 
 
 # ============================================================
@@ -2204,10 +1867,6 @@ if limpiar_filtros:
         "alertas_df_filtrado",
         "alertas_resumen_filtros",
         "alertas_firma_filtros",
-        "alertas_parquet_bytes",
-        "alertas_parquet_firma",
-        "alertas_csv_bytes",
-        "alertas_csv_firma",
     ]
 
     for clave in claves:
@@ -2362,258 +2021,3 @@ with st.expander("Datos incompletos para calcular vencimiento", expanded=True):
         "Datos incompletos para calcular vencimiento",
         "Registros sin fecha de vencimiento calculable. Requieren corrección de datos base.",
     )
-
-
-# ============================================================
-# EXPEDIENTE / SEGUIMIENTO DE REGISTRO
-# ============================================================
-
-st.markdown("### Expediente / seguimiento del registro")
-st.caption(
-    "Esta sección muestra el detalle completo del registro seleccionado, "
-    "aunque el estado sea Controlado, Cerrado o no crítico."
-)
-
-df_expediente = df_filtrado.copy()
-
-if df_expediente.empty:
-    st.info("No hay registros disponibles para mostrar expediente con los filtros actuales.")
-else:
-    if "score_riesgo" in df_expediente.columns:
-        df_expediente = df_expediente.sort_values(
-            "score_riesgo",
-            ascending=False,
-        ).reset_index(drop=True)
-    else:
-        df_expediente = df_expediente.reset_index(drop=True)
-
-    if len(df_expediente) == 1:
-        registro = df_expediente.iloc[0]
-
-        st.success(
-            "Se encontró un único registro con los filtros actuales. "
-            "El expediente se muestra automáticamente."
-        )
-
-        mostrar_expediente(registro)
-
-    else:
-        def etiqueta_registro(idx):
-            row = df_expediente.iloc[idx]
-
-            solped = formato_id(row.get(COL_SOLPED, np.nan))
-            pedido = formato_id(row.get(COL_OC_ME5A, row.get(COL_OC_ME80FN, np.nan)))
-            nivel = formato_valor(row.get(COL_NIVEL_ALERTA_DESC, describir_nivel_alerta(row.get("nivel_alerta", np.nan))))
-            estado = formato_valor(row.get("clasificacion_vencimiento", np.nan))
-            venc = formato_valor(row.get("dias_hasta_vencimiento", np.nan))
-            centro = formato_valor(row.get(COL_CENTRO, np.nan))
-
-            return f"{nivel} · {estado} · SolPed {solped} · Pedido {pedido} · {centro} · {venc}"
-
-        seleccionado_idx = st.selectbox(
-            "Registro a revisar",
-            options=list(range(len(df_expediente))),
-            index=0,
-            format_func=etiqueta_registro,
-            key="alertas_selector_expediente",
-        )
-
-        registro = df_expediente.iloc[seleccionado_idx]
-
-        mostrar_expediente(registro)
-
-
-# ============================================================
-# ESTADÍSTICA POR MATERIAL
-# ============================================================
-
-st.markdown("### Estadística por material")
-st.caption("Materiales con mayor concentración de alertas o registros sin recepción.")
-
-resumen_mat = resumen_materiales(df_filtrado)
-
-if resumen_mat.empty:
-    st.info("No hay información de material disponible.")
-else:
-    total_mat = len(resumen_mat)
-    mostrados_mat = min(100, total_mat)
-
-    mensaje_vista_previa(
-        titulo="Estadística por material",
-        total_registros=total_mat,
-        registros_mostrados=mostrados_mat,
-        limite=100,
-    )
-
-    st.dataframe(
-        resumen_mat.head(100),
-        use_container_width=True,
-        hide_index=True,
-    )
-
-
-# ============================================================
-# DETALLE DE FILTROS
-# ============================================================
-
-with st.expander("Detalle de filtros aplicados", expanded=True):
-    st.dataframe(
-        resumen_filtros_df,
-        use_container_width=True,
-        hide_index=True,
-    )
-
-
-# ============================================================
-# DATOS FILTRADOS
-# ============================================================
-
-with st.expander("Datos filtrados", expanded=False):
-    limite_vista = st.number_input(
-        "Filas a mostrar",
-        min_value=50,
-        max_value=5000,
-        value=300,
-        step=50,
-        key="alertas_limite_vista",
-    )
-
-    total_datos_filtrados = len(df_filtrado)
-    registros_mostrados = min(int(limite_vista), total_datos_filtrados)
-
-    mensaje_vista_previa(
-        titulo="Datos filtrados",
-        total_registros=total_datos_filtrados,
-        registros_mostrados=registros_mostrados,
-        limite=int(limite_vista),
-    )
-
-    columnas_preferidas = [
-        COL_NIVEL_ALERTA_DESC,
-        "nivel_alerta",
-        "clasificacion_vencimiento",
-        "dias_hasta_vencimiento",
-        "fecha_vencimiento_texto",
-        "fecha_pendiente",
-        "accion_sugerida",
-        COL_SOLPED,
-        COL_OC_ME5A,
-        COL_OC_ME80FN,
-        COL_POS_SOLPED,
-        COL_MATERIAL,
-        COL_TEXTO,
-        COL_CENTRO,
-        "centro_label",
-        COL_GRUPO_COMPRAS,
-        COL_SOLICITANTE,
-        COL_AUTOR,
-        COL_TIPO_OC,
-        COL_SISTEMA,
-        COL_ORIGEN,
-        COL_PERF_TAT,
-        COL_RANGO_INC,
-        COL_DIAS_TAT,
-        COL_DIAS_INC,
-        COL_UMBRAL_TAT,
-        COL_FECHA_SOLICITUD_FINAL,
-        COL_FECHA_LIBERACION_FINAL,
-        COL_FECHA_PEDIDO_FINAL,
-        COL_FECHA_FACTURACION_FINAL,
-        COL_FECHA_RECEPCION_FINAL,
-        "fecha_vencimiento_tat",
-        "score_riesgo",
-    ]
-
-    columnas_preferidas = columnas_existentes(df_filtrado, columnas_preferidas)
-
-    if columnas_preferidas:
-        vista = df_filtrado[columnas_preferidas].head(registros_mostrados).copy()
-
-        if COL_NIVEL_ALERTA_DESC in vista.columns:
-            vista = vista.rename(columns={COL_NIVEL_ALERTA_DESC: "Tipo alerta"})
-
-        st.dataframe(
-            vista,
-            use_container_width=True,
-            hide_index=True,
-        )
-    else:
-        st.dataframe(
-            df_filtrado.head(registros_mostrados),
-            use_container_width=True,
-            hide_index=True,
-        )
-
-    with st.expander("Ver columnas disponibles", expanded=False):
-        ccol1, ccol2 = st.columns(2)
-
-        with ccol1:
-            st.markdown("**Columnas originales**")
-            st.write(df_original.columns.tolist())
-
-        with ccol2:
-            st.markdown("**Columnas finales**")
-            st.write(df_panel.columns.tolist())
-
-
-# ============================================================
-# DESCARGA
-# ============================================================
-
-with st.expander("Descargar resultado filtrado", expanded=False):
-    st.caption(
-        "Parquet es el formato recomendado. CSV se prepara solo cuando lo solicitas. Excel eliminado."
-    )
-
-    firma_export = f"{len(df_filtrado)}_{firma_filtros}"
-
-    col_d1, col_d2 = st.columns(2)
-
-    with col_d1:
-        preparar_parquet = st.button(
-            "Preparar Parquet",
-            use_container_width=True,
-            key="alertas_preparar_parquet",
-        )
-
-        if preparar_parquet:
-            with st.spinner("Preparando Parquet..."):
-                st.session_state["alertas_parquet_bytes"] = convertir_a_parquet_cache(df_filtrado)
-                st.session_state["alertas_parquet_firma"] = firma_export
-
-        if (
-            st.session_state.get("alertas_parquet_bytes") is not None
-            and st.session_state.get("alertas_parquet_firma") == firma_export
-        ):
-            st.download_button(
-                label="Descargar Parquet",
-                data=st.session_state["alertas_parquet_bytes"],
-                file_name="alertas_tat_filtrado.parquet",
-                mime="application/octet-stream",
-                type="primary",
-                use_container_width=True,
-            )
-
-    with col_d2:
-        preparar_csv = st.button(
-            "Preparar CSV",
-            use_container_width=True,
-            key="alertas_preparar_csv",
-        )
-
-        if preparar_csv:
-            with st.spinner("Preparando CSV..."):
-                st.session_state["alertas_csv_bytes"] = convertir_a_csv_cache(df_filtrado)
-                st.session_state["alertas_csv_firma"] = firma_export
-
-        if (
-            st.session_state.get("alertas_csv_bytes") is not None
-            and st.session_state.get("alertas_csv_firma") == firma_export
-        ):
-            st.download_button(
-                label="Descargar CSV",
-                data=st.session_state["alertas_csv_bytes"],
-                file_name="alertas_tat_filtrado.csv",
-                mime="text/csv",
-                use_container_width=True,
-            )
