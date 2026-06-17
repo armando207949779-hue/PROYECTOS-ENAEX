@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 
 # ============================================================
@@ -57,190 +58,6 @@ st.markdown(
             font-size: 0.88rem;
             color: #6b7280;
             margin-bottom: 12px;
-        }
-
-        .flow-shell {
-            background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
-            border: 1px solid #dbeafe;
-            border-radius: 18px;
-            padding: 18px 20px 16px;
-            margin: 12px 0 18px 0;
-            box-shadow: 0 1px 4px rgba(15, 23, 42, 0.05);
-        }
-
-        .flow-title {
-            font-size: 0.78rem;
-            font-weight: 800;
-            color: #1e3a8a;
-            text-transform: uppercase;
-            letter-spacing: 0.06em;
-            margin-bottom: 14px;
-        }
-
-        .flow-track {
-            display: flex;
-            align-items: flex-start;
-            width: 100%;
-            overflow-x: auto;
-            padding-bottom: 6px;
-        }
-
-        .flow-step {
-            flex: 0 0 145px;
-            text-align: center;
-            min-width: 0;
-        }
-
-        .flow-dot {
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
-            margin: 0 auto 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 900;
-            font-size: 1rem;
-            box-sizing: border-box;
-        }
-
-        .flow-dot-ok {
-            background: #22c55e;
-            color: #ffffff;
-            border: 3px solid #22c55e;
-        }
-
-        .flow-dot-active {
-            background: #ffffff;
-            color: #2563eb;
-            border: 5px solid #3b82f6;
-        }
-
-        .flow-dot-pending {
-            background: #ffffff;
-            color: #94a3b8;
-            border: 4px solid #cbd5e1;
-        }
-
-        .flow-label {
-            font-size: 0.74rem;
-            font-weight: 800;
-            color: #1f2937;
-            text-transform: uppercase;
-            line-height: 1.2;
-        }
-
-        .flow-date {
-            color: #475569;
-            font-size: 0.72rem;
-            line-height: 1.25;
-            margin-top: 4px;
-            overflow-wrap: anywhere;
-        }
-
-        .flow-detail {
-            color: #64748b;
-            font-size: 0.70rem;
-            line-height: 1.25;
-            margin-top: 4px;
-        }
-
-        .flow-connector {
-            flex: 1;
-            height: 5px;
-            min-width: 28px;
-            margin-top: 23px;
-            border-radius: 999px;
-            background: #cbd5e1;
-        }
-
-        .flow-connector-ok {
-            background: #22c55e;
-        }
-
-        .flow-connector-active {
-            background: repeating-linear-gradient(
-                90deg,
-                #3b82f6 0 14px,
-                transparent 14px 22px
-            );
-        }
-
-        .flow-summary {
-            margin-top: 16px;
-            display: grid;
-            grid-template-columns: repeat(4, minmax(120px, 1fr));
-            gap: 10px;
-        }
-
-        .flow-summary-item {
-            background: #ffffff;
-            border: 1px solid #e2e8f0;
-            border-radius: 12px;
-            padding: 10px 12px;
-        }
-
-        .flow-summary-label {
-            color: #94a3b8;
-            font-size: 0.67rem;
-            font-weight: 800;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            margin-bottom: 4px;
-        }
-
-        .flow-summary-value {
-            color: #0f172a;
-            font-size: 0.92rem;
-            font-weight: 800;
-            line-height: 1.25;
-            overflow-wrap: anywhere;
-        }
-
-        .flow-note {
-            margin-top: 12px;
-            color: #475569;
-            font-size: 0.84rem;
-            line-height: 1.45;
-        }
-
-        .badge-flow {
-            display: inline-block;
-            padding: 3px 9px;
-            border-radius: 999px;
-            font-size: 0.70rem;
-            font-weight: 800;
-            margin-top: 5px;
-        }
-
-        .badge-ok {
-            background: #dcfce7;
-            color: #166534;
-            border: 1px solid #bbf7d0;
-        }
-
-        .badge-active {
-            background: #dbeafe;
-            color: #1e40af;
-            border: 1px solid #bfdbfe;
-        }
-
-        .badge-pending {
-            background: #f1f5f9;
-            color: #475569;
-            border: 1px solid #e2e8f0;
-        }
-
-        @media (max-width: 1000px) {
-            .flow-summary {
-                grid-template-columns: repeat(2, minmax(120px, 1fr));
-            }
-        }
-
-        @media (max-width: 640px) {
-            .flow-summary {
-                grid-template-columns: 1fr;
-            }
         }
     </style>
     """,
@@ -1096,13 +913,231 @@ def html_diagrama_flujo_solped(registro: pd.Series, columnas_clave: dict) -> str
     return html
 
 
+def html_documento_flujo_solped(registro: pd.Series, columnas_clave: dict) -> str:
+    contenido = html_diagrama_flujo_solped(
+        registro=registro,
+        columnas_clave=columnas_clave,
+    )
+
+    return f"""
+    <!doctype html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+
+        <style>
+            html, body {{
+                margin: 0;
+                padding: 0;
+                background: transparent;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+                color: #0f172a;
+            }}
+
+            .flow-shell {{
+                background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+                border: 1px solid #dbeafe;
+                border-radius: 18px;
+                padding: 18px 20px 16px;
+                margin: 0;
+                box-shadow: 0 1px 4px rgba(15, 23, 42, 0.06);
+                box-sizing: border-box;
+            }}
+
+            .flow-title {{
+                font-size: 0.78rem;
+                font-weight: 800;
+                color: #1e3a8a;
+                text-transform: uppercase;
+                letter-spacing: 0.06em;
+                margin-bottom: 14px;
+            }}
+
+            .flow-track {{
+                display: flex;
+                align-items: flex-start;
+                width: 100%;
+                overflow-x: auto;
+                padding-bottom: 8px;
+            }}
+
+            .flow-step {{
+                flex: 0 0 145px;
+                text-align: center;
+                min-width: 0;
+            }}
+
+            .flow-dot {{
+                width: 50px;
+                height: 50px;
+                border-radius: 50%;
+                margin: 0 auto 8px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-weight: 900;
+                font-size: 1rem;
+                box-sizing: border-box;
+            }}
+
+            .flow-dot-ok {{
+                background: #22c55e;
+                color: #ffffff;
+                border: 3px solid #22c55e;
+            }}
+
+            .flow-dot-active {{
+                background: #ffffff;
+                color: #2563eb;
+                border: 5px solid #3b82f6;
+            }}
+
+            .flow-dot-pending {{
+                background: #ffffff;
+                color: #94a3b8;
+                border: 4px solid #cbd5e1;
+            }}
+
+            .flow-label {{
+                font-size: 0.74rem;
+                font-weight: 800;
+                color: #1f2937;
+                text-transform: uppercase;
+                line-height: 1.2;
+            }}
+
+            .flow-date {{
+                color: #475569;
+                font-size: 0.72rem;
+                line-height: 1.25;
+                margin-top: 4px;
+                overflow-wrap: anywhere;
+            }}
+
+            .flow-detail {{
+                color: #64748b;
+                font-size: 0.70rem;
+                line-height: 1.25;
+                margin-top: 4px;
+            }}
+
+            .flow-connector {{
+                flex: 1;
+                height: 5px;
+                min-width: 28px;
+                margin-top: 23px;
+                border-radius: 999px;
+                background: #cbd5e1;
+            }}
+
+            .flow-connector-ok {{
+                background: #22c55e;
+            }}
+
+            .flow-connector-active {{
+                background: repeating-linear-gradient(
+                    90deg,
+                    #3b82f6 0 14px,
+                    transparent 14px 22px
+                );
+            }}
+
+            .flow-summary {{
+                margin-top: 16px;
+                display: grid;
+                grid-template-columns: repeat(4, minmax(120px, 1fr));
+                gap: 10px;
+            }}
+
+            .flow-summary-item {{
+                background: #ffffff;
+                border: 1px solid #e2e8f0;
+                border-radius: 12px;
+                padding: 10px 12px;
+            }}
+
+            .flow-summary-label {{
+                color: #94a3b8;
+                font-size: 0.67rem;
+                font-weight: 800;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+                margin-bottom: 4px;
+            }}
+
+            .flow-summary-value {{
+                color: #0f172a;
+                font-size: 0.92rem;
+                font-weight: 800;
+                line-height: 1.25;
+                overflow-wrap: anywhere;
+            }}
+
+            .flow-note {{
+                margin-top: 12px;
+                color: #475569;
+                font-size: 0.84rem;
+                line-height: 1.45;
+            }}
+
+            .badge-flow {{
+                display: inline-block;
+                padding: 3px 9px;
+                border-radius: 999px;
+                font-size: 0.70rem;
+                font-weight: 800;
+                margin-top: 5px;
+            }}
+
+            .badge-ok {{
+                background: #dcfce7;
+                color: #166534;
+                border: 1px solid #bbf7d0;
+            }}
+
+            .badge-active {{
+                background: #dbeafe;
+                color: #1e40af;
+                border: 1px solid #bfdbfe;
+            }}
+
+            .badge-pending {{
+                background: #f1f5f9;
+                color: #475569;
+                border: 1px solid #e2e8f0;
+            }}
+
+            @media (max-width: 1000px) {{
+                .flow-summary {{
+                    grid-template-columns: repeat(2, minmax(120px, 1fr));
+                }}
+            }}
+
+            @media (max-width: 640px) {{
+                .flow-summary {{
+                    grid-template-columns: 1fr;
+                }}
+            }}
+        </style>
+    </head>
+
+    <body>
+        {contenido}
+    </body>
+    </html>
+    """
+
+
 def mostrar_flujo_profesional_solped(registro: pd.Series, columnas_clave: dict):
-    st.markdown(
-        html_diagrama_flujo_solped(
-            registro=registro,
-            columnas_clave=columnas_clave,
-        ),
-        unsafe_allow_html=True,
+    html_flujo = html_documento_flujo_solped(
+        registro=registro,
+        columnas_clave=columnas_clave,
+    )
+
+    components.html(
+        html_flujo,
+        height=390,
+        scrolling=True,
     )
 
 
