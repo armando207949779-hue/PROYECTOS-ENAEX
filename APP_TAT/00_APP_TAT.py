@@ -7,6 +7,7 @@
 import base64
 from pathlib import Path
 
+import pandas as pd
 import streamlit as st
 
 
@@ -156,14 +157,11 @@ def obtener_ruta_app(nombre_archivo: str) -> Path:
 
     candidatos = []
 
-    # 1. Nombre tal como viene configurado
     candidatos.append(BASE_DIR / nombre_archivo)
 
-    # 2. Si viene sin .py, probar con .py
     if not nombre_archivo.endswith(".py"):
         candidatos.append(BASE_DIR / f"{nombre_archivo}.py")
 
-    # 3. Si viene con .py, probar sin .py
     if nombre_archivo.endswith(".py"):
         candidatos.append(BASE_DIR / nombre_archivo.replace(".py", ""))
 
@@ -175,10 +173,6 @@ def obtener_ruta_app(nombre_archivo: str) -> Path:
 
 
 def validar_apps_disponibles() -> dict:
-    """
-    Valida que todos los archivos configurados existan.
-    Retorna un diccionario con las apps faltantes.
-    """
     apps_requeridas = {
         app["nombre"]: obtener_ruta_app(app["archivo"])
         for app in APPS
@@ -232,90 +226,56 @@ st.markdown(
     """
     <style>
         div[data-testid="stMetric"] {
-            background-color: #f8f9fa;
-            padding: 14px;
+            background-color: #fafafa;
+            padding: 12px;
             border-radius: 12px;
-            border: 1px solid #e9ecef;
+            border: 1px solid #eeeeee;
         }
 
-        .tat-home-title {
+        .tat-title {
             text-align: center;
-            font-size: 2.1rem;
+            font-size: 2rem;
             font-weight: 800;
             color: #111827;
-            margin-bottom: 0.25rem;
+            margin-top: 0.2rem;
+            margin-bottom: 0.2rem;
         }
 
-        .tat-home-subtitle {
+        .tat-subtitle {
             text-align: center;
-            font-size: 1rem;
-            color: #6b7280;
-            margin-bottom: 1.5rem;
-        }
-
-        .tat-section-card {
-            background: #ffffff;
-            border: 1px solid #e5e7eb;
-            border-radius: 16px;
-            padding: 18px 20px;
-            margin-bottom: 16px;
-        }
-
-        .tat-section-title {
-            font-size: 1.05rem;
-            font-weight: 800;
-            color: #111827;
-            margin-bottom: 4px;
-        }
-
-        .tat-section-description {
-            color: #6b7280;
-            font-size: 0.88rem;
-            margin-bottom: 12px;
-        }
-
-        .tat-app-card {
-            background: #f8fafc;
-            border: 1px solid #e5e7eb;
-            border-radius: 14px;
-            padding: 14px 16px;
-            min-height: 132px;
-            margin-bottom: 12px;
-        }
-
-        .tat-app-title {
             font-size: 0.98rem;
+            color: #6b7280;
+            margin-bottom: 1.4rem;
+        }
+
+        .tat-simple-card {
+            background: #ffffff;
+            border: 1px solid #eeeeee;
+            border-radius: 14px;
+            padding: 16px 18px;
+            min-height: 120px;
+        }
+
+        .tat-card-title {
+            font-size: 0.88rem;
             font-weight: 800;
             color: #111827;
             margin-bottom: 6px;
         }
 
-        .tat-app-description {
-            color: #4b5563;
-            font-size: 0.86rem;
-            line-height: 1.35;
-        }
-
-        .tat-flow-card {
-            background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
-            border: 1px solid #e5e7eb;
-            border-radius: 16px;
-            padding: 16px 18px;
-            margin-bottom: 12px;
-            min-height: 145px;
-        }
-
-        .tat-flow-step {
-            font-size: 0.82rem;
-            font-weight: 700;
-            color: #374151;
-            margin-bottom: 4px;
-        }
-
-        .tat-flow-detail {
-            font-size: 0.82rem;
+        .tat-card-text {
+            font-size: 0.84rem;
             color: #6b7280;
-            line-height: 1.35;
+            line-height: 1.38;
+        }
+
+        .tat-section-label {
+            color: #6b7280;
+            font-size: 0.78rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.35rem;
         }
     </style>
     """,
@@ -328,9 +288,6 @@ st.markdown(
 # ============================================================
 
 def estado_archivo_activo() -> str:
-    """
-    Retorna un texto simple indicando si existe df_tat en sesión.
-    """
     if "df_tat" in st.session_state and st.session_state.get("df_tat") is not None:
         nombre = st.session_state.get("nombre_archivo_tat", "Archivo activo")
         filas = len(st.session_state["df_tat"])
@@ -340,104 +297,104 @@ def estado_archivo_activo() -> str:
     return "Sin archivo activo"
 
 
-def mostrar_resumen_portal() -> None:
+def mostrar_resumen_minimo() -> None:
     total_apps = len(APPS)
     total_secciones = len(APP_SECTIONS)
     archivo_activo = estado_archivo_activo()
 
-    col1, col2, col3 = st.columns(3)
+    c1, c2, c3 = st.columns(3)
 
-    col1.metric("Apps disponibles", total_apps)
-    col2.metric("Secciones", total_secciones)
-    col3.metric("Archivo activo", archivo_activo)
-
-
-def mostrar_flujo_recomendado() -> None:
-    st.markdown("### Flujo recomendado")
-
-    pasos = [
-        {
-            "titulo": "1. Preparar datos",
-            "detalle": "Ejecutar limpieza ME5A, Ariba y ME80FN. Luego cruzar fuentes en Match y calcular indicadores TAT.",
-        },
-        {
-            "titulo": "2. Cargar archivo final",
-            "detalle": "Usar 06_CARGAR_ARCHIVO para dejar disponible el archivo consolidado en sesión.",
-        },
-        {
-            "titulo": "3. Consultar registros",
-            "detalle": "Usar 07_FILTRO para buscar SolPed, pedidos, posiciones, materiales y revisar el estado detallado.",
-        },
-        {
-            "titulo": "4. Analizar performance",
-            "detalle": "Revisar 08 y 09 para análisis mensual, cumplimiento por planta y detalle semanal.",
-        },
-        {
-            "titulo": "5. Gestionar alertas",
-            "detalle": "Usar 10_ALERTAS para revisar vencimientos, pedidos críticos y expedientes de seguimiento.",
-        },
-    ]
-
-    cols = st.columns(len(pasos))
-
-    for col, paso in zip(cols, pasos):
-        with col:
-            st.markdown(
-                f"""
-                <div class="tat-flow-card">
-                    <div class="tat-flow-step">{paso["titulo"]}</div>
-                    <div class="tat-flow-detail">{paso["detalle"]}</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+    c1.metric("Apps", total_apps)
+    c2.metric("Secciones", total_secciones)
+    c3.metric("Archivo activo", archivo_activo)
 
 
-def mostrar_catalogo_apps() -> None:
-    st.markdown("### Apps disponibles por sección")
+def mostrar_flujo_minimalista() -> None:
+    st.markdown("### Flujo de trabajo")
 
-    for seccion in APP_SECTIONS:
+    c1, c2, c3, c4 = st.columns(4)
+
+    with c1:
         st.markdown(
-            f"""
-            <div class="tat-section-card">
-                <div class="tat-section-title">{seccion["grupo"]}</div>
-                <div class="tat-section-description">{seccion["descripcion"]}</div>
+            """
+            <div class="tat-simple-card">
+                <div class="tat-card-title">1. Preparar</div>
+                <div class="tat-card-text">
+                    Limpieza de ME5A, Ariba, ME80FN, match y cálculos base.
+                </div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-        columnas = st.columns(2)
+    with c2:
+        st.markdown(
+            """
+            <div class="tat-simple-card">
+                <div class="tat-card-title">2. Cargar</div>
+                <div class="tat-card-text">
+                    Carga del archivo consolidado para dejarlo activo en sesión.
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-        for i, app in enumerate(seccion["apps"]):
-            ruta_app = obtener_ruta_app(app["archivo"])
-            existe = ruta_app.exists()
+    with c3:
+        st.markdown(
+            """
+            <div class="tat-simple-card">
+                <div class="tat-card-title">3. Analizar</div>
+                <div class="tat-card-text">
+                    Filtros, consultas, performance mensual y comparativa por planta.
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-            estado = "Disponible" if existe else "No encontrado"
-            estado_color = "#16a34a" if existe else "#dc2626"
+    with c4:
+        st.markdown(
+            """
+            <div class="tat-simple-card">
+                <div class="tat-card-title">4. Gestionar</div>
+                <div class="tat-card-text">
+                    Revisión de alertas, vencimientos y expedientes de seguimiento.
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-            with columnas[i % 2]:
-                st.markdown(
-                    f"""
-                    <div class="tat-app-card">
-                        <div class="tat-app-title">
-                            {app["icono"]} {app["titulo"]}
-                        </div>
-                        <div class="tat-app-description">
-                            {app["descripcion"]}
-                        </div>
-                        <div style="
-                            margin-top: 10px;
-                            font-size: 0.76rem;
-                            font-weight: 700;
-                            color: {estado_color};
-                        ">
-                            {estado}
-                        </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+
+def construir_mapa_apps() -> pd.DataFrame:
+    registros = []
+
+    for seccion in APP_SECTIONS:
+        for app in seccion["apps"]:
+            ruta = obtener_ruta_app(app["archivo"])
+
+            registros.append(
+                {
+                    "Sección": seccion["grupo"],
+                    "App": app["titulo"],
+                    "Archivo": app["archivo"],
+                    "Estado": "Disponible" if ruta.exists() else "No encontrado",
+                }
+            )
+
+    return pd.DataFrame(registros)
+
+
+def mostrar_mapa_apps_colapsado() -> None:
+    with st.expander("Ver mapa de apps disponibles", expanded=False):
+        mapa_apps = construir_mapa_apps()
+
+        st.dataframe(
+            mapa_apps,
+            use_container_width=True,
+            hide_index=True,
+        )
 
 
 def mostrar_validacion_apps(apps_faltantes: dict) -> None:
@@ -460,31 +417,29 @@ def pagina_inicio() -> None:
 
     st.markdown(
         """
-        <div class="tat-home-title">
+        <div class="tat-title">
             Portal TAT ENAEX
         </div>
-        <div class="tat-home-subtitle">
-            Portal modular para preparar, consultar, analizar y gestionar información TAT.
+        <div class="tat-subtitle">
+            Preparación, consulta, performance y alertas TAT en un solo flujo.
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    mostrar_resumen_portal()
+    mostrar_resumen_minimo()
 
     st.divider()
 
-    mostrar_flujo_recomendado()
-
-    st.divider()
-
-    mostrar_catalogo_apps()
+    mostrar_flujo_minimalista()
 
     st.divider()
 
     st.info(
-        "Selecciona una app desde el menú lateral de navegación para comenzar."
+        "Selecciona una sección desde el menú lateral para comenzar."
     )
+
+    mostrar_mapa_apps_colapsado()
 
 
 # ============================================================
