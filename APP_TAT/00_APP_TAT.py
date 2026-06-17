@@ -7,7 +7,6 @@
 import base64
 from pathlib import Path
 
-import pandas as pd
 import streamlit as st
 
 
@@ -219,187 +218,52 @@ def mostrar_logo():
 
 
 # ============================================================
-# ESTILOS DEL PORTAL
-# ============================================================
-
-st.markdown(
-    """
-    <style>
-        div[data-testid="stMetric"] {
-            background-color: #fafafa;
-            padding: 12px;
-            border-radius: 12px;
-            border: 1px solid #eeeeee;
-        }
-
-        .tat-title {
-            text-align: center;
-            font-size: 2rem;
-            font-weight: 800;
-            color: #111827;
-            margin-top: 0.2rem;
-            margin-bottom: 0.2rem;
-        }
-
-        .tat-subtitle {
-            text-align: center;
-            font-size: 0.98rem;
-            color: #6b7280;
-            margin-bottom: 1.4rem;
-        }
-
-        .tat-simple-card {
-            background: #ffffff;
-            border: 1px solid #eeeeee;
-            border-radius: 14px;
-            padding: 16px 18px;
-            min-height: 120px;
-        }
-
-        .tat-card-title {
-            font-size: 0.88rem;
-            font-weight: 800;
-            color: #111827;
-            margin-bottom: 6px;
-        }
-
-        .tat-card-text {
-            font-size: 0.84rem;
-            color: #6b7280;
-            line-height: 1.38;
-        }
-
-        .tat-section-label {
-            color: #6b7280;
-            font-size: 0.78rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            margin-bottom: 0.35rem;
-        }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-
-# ============================================================
 # COMPONENTES DE LA PÁGINA DE INICIO
 # ============================================================
 
-def estado_archivo_activo() -> str:
+def mostrar_estado_archivo_activo() -> None:
     if "df_tat" in st.session_state and st.session_state.get("df_tat") is not None:
         nombre = st.session_state.get("nombre_archivo_tat", "Archivo activo")
         filas = len(st.session_state["df_tat"])
 
-        return f"{nombre} · {filas:,} registros".replace(",", ".")
-
-    return "Sin archivo activo"
-
-
-def mostrar_resumen_minimo() -> None:
-    total_apps = len(APPS)
-    total_secciones = len(APP_SECTIONS)
-    archivo_activo = estado_archivo_activo()
-
-    c1, c2, c3 = st.columns(3)
-
-    c1.metric("Apps", total_apps)
-    c2.metric("Secciones", total_secciones)
-    c3.metric("Archivo activo", archivo_activo)
-
-
-def mostrar_flujo_minimalista() -> None:
-    st.markdown("### Flujo de trabajo")
-
-    c1, c2, c3, c4 = st.columns(4)
-
-    with c1:
-        st.markdown(
-            """
-            <div class="tat-simple-card">
-                <div class="tat-card-title">1. Preparar</div>
-                <div class="tat-card-text">
-                    Limpieza de ME5A, Ariba, ME80FN, match y cálculos base.
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
+        st.success(
+            f"Archivo activo en sesión: **{nombre}** · **{filas:,} registros**".replace(",", ".")
         )
-
-    with c2:
-        st.markdown(
-            """
-            <div class="tat-simple-card">
-                <div class="tat-card-title">2. Cargar</div>
-                <div class="tat-card-text">
-                    Carga del archivo consolidado para dejarlo activo en sesión.
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    with c3:
-        st.markdown(
-            """
-            <div class="tat-simple-card">
-                <div class="tat-card-title">3. Analizar</div>
-                <div class="tat-card-text">
-                    Filtros, consultas, performance mensual y comparativa por planta.
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    with c4:
-        st.markdown(
-            """
-            <div class="tat-simple-card">
-                <div class="tat-card-title">4. Gestionar</div>
-                <div class="tat-card-text">
-                    Revisión de alertas, vencimientos y expedientes de seguimiento.
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
+    else:
+        st.info(
+            "No hay archivo activo en sesión. Para analizar datos, primero usa **06 Cargar Archivo**."
         )
 
 
-def construir_mapa_apps() -> pd.DataFrame:
-    registros = []
+def mostrar_apps_disponibles() -> None:
+    st.subheader("Apps disponibles")
 
     for seccion in APP_SECTIONS:
-        for app in seccion["apps"]:
-            ruta = obtener_ruta_app(app["archivo"])
+        st.markdown(f"#### {seccion['grupo']}")
+        st.caption(seccion["descripcion"])
 
-            registros.append(
-                {
-                    "Sección": seccion["grupo"],
-                    "App": app["titulo"],
-                    "Archivo": app["archivo"],
-                    "Estado": "Disponible" if ruta.exists() else "No encontrado",
-                }
-            )
+        columnas = st.columns(2)
 
-    return pd.DataFrame(registros)
+        for i, app in enumerate(seccion["apps"]):
+            ruta_app = obtener_ruta_app(app["archivo"])
+            existe = ruta_app.exists()
 
+            estado = "Disponible" if existe else "No encontrado"
 
-def mostrar_mapa_apps_colapsado() -> None:
-    with st.expander("Ver mapa de apps disponibles", expanded=False):
-        mapa_apps = construir_mapa_apps()
+            with columnas[i % 2]:
+                st.info(
+                    f"""
+                    **{app["icono"]} {app["titulo"]}**
 
-        st.dataframe(
-            mapa_apps,
-            use_container_width=True,
-            hide_index=True,
-        )
+                    {app["descripcion"]}
+
+                    Estado: **{estado}**
+                    """
+                )
 
 
 def mostrar_validacion_apps(apps_faltantes: dict) -> None:
     if not apps_faltantes:
-        st.success("Todas las apps configuradas fueron encontradas correctamente.")
         return
 
     st.error("No se encontraron una o más apps requeridas.")
@@ -416,30 +280,33 @@ def pagina_inicio() -> None:
     mostrar_logo()
 
     st.markdown(
+        "<h1 style='text-align: center;'>Portal TAT ENAEX</h1>",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
         """
-        <div class="tat-title">
-            Portal TAT ENAEX
-        </div>
-        <div class="tat-subtitle">
-            Preparación, consulta, performance y alertas TAT en un solo flujo.
-        </div>
+        <p style='text-align: center; font-size: 18px; color: #555;'>
+            Portal modular para consultar, analizar y gestionar información
+            relacionada con TAT mediante distintas apps operativas.
+        </p>
         """,
         unsafe_allow_html=True,
     )
 
-    mostrar_resumen_minimo()
+    st.markdown("---")
 
-    st.divider()
+    mostrar_estado_archivo_activo()
 
-    mostrar_flujo_minimalista()
+    st.markdown("---")
 
-    st.divider()
+    mostrar_apps_disponibles()
 
-    st.info(
-        "Selecciona una sección desde el menú lateral para comenzar."
+    st.markdown("---")
+
+    st.success(
+        "Para comenzar, selecciona una app desde el menú de navegación del portal."
     )
-
-    mostrar_mapa_apps_colapsado()
 
 
 # ============================================================
