@@ -25,10 +25,12 @@ BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
 LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
 
-COLOR_CUMPLE = "#606060"
-COLOR_NO_CUMPLE = "#EF3E52"
-COLOR_SIN_DATOS = "#BFC3C7"
-COLOR_META = "#008060"
+COLOR_CUMPLE = "#2E7D32"
+COLOR_NO_CUMPLE = "#D32F2F"
+COLOR_EN_PROCESO = "#F9A825"
+COLOR_OTROS = "#9E9E9E"
+COLOR_SIN_DATOS = "#BDBDBD"
+COLOR_META = "#1565C0"
 COLOR_TEXTO = "#1F2937"
 COLOR_MUTED = "#6B7280"
 
@@ -868,44 +870,75 @@ def crear_resumen_mensual(df: pd.DataFrame) -> pd.DataFrame:
     if "performance_tat_total" not in df.columns:
         return pd.DataFrame()
 
-    base = df[
-        df["performance_tat_total"].isin(["Cumple", "No cumple"])
-        & df["periodo_fecha"].notna()
-    ].copy()
+    base = df[df["periodo_fecha"].notna()].copy()
 
     if base.empty:
         return pd.DataFrame()
 
+    base["estado_mensual"] = base["performance_tat_total"].apply(normalizar_estado_performance)
+
     resumen = (
         base
-        .groupby(["periodo_fecha", "periodo_label", "performance_tat_total"])
+        .groupby(["periodo_fecha", "periodo_label", "estado_mensual"])
         .size()
         .reset_index(name="cantidad")
     )
 
     tabla = resumen.pivot_table(
         index=["periodo_fecha", "periodo_label"],
-        columns="performance_tat_total",
+        columns="estado_mensual",
         values="cantidad",
         aggfunc="sum",
         fill_value=0,
     ).reset_index()
 
-    for col in ["Cumple", "No cumple"]:
+    for col in ["Cumple", "No cumple", "En proceso", "No aplica", "Sin datos"]:
         if col not in tabla.columns:
             tabla[col] = 0
 
-    tabla["Total"] = tabla["Cumple"] + tabla["No cumple"]
+    tabla["Otros"] = tabla["No aplica"] + tabla["Sin datos"]
+    tabla["Total registros"] = (
+        tabla["Cumple"]
+        + tabla["No cumple"]
+        + tabla["En proceso"]
+        + tabla["Otros"]
+    )
 
-    tabla["% Cumple"] = np.where(
-        tabla["Total"] > 0,
-        tabla["Cumple"] / tabla["Total"] * 100,
+    tabla["Evaluables"] = tabla["Cumple"] + tabla["No cumple"]
+
+    tabla["% Cumple total"] = np.where(
+        tabla["Total registros"] > 0,
+        tabla["Cumple"] / tabla["Total registros"] * 100,
         0,
     )
 
-    tabla["% No cumple"] = np.where(
-        tabla["Total"] > 0,
-        tabla["No cumple"] / tabla["Total"] * 100,
+    tabla["% No cumple total"] = np.where(
+        tabla["Total registros"] > 0,
+        tabla["No cumple"] / tabla["Total registros"] * 100,
+        0,
+    )
+
+    tabla["% En proceso total"] = np.where(
+        tabla["Total registros"] > 0,
+        tabla["En proceso"] / tabla["Total registros"] * 100,
+        0,
+    )
+
+    tabla["% Otros total"] = np.where(
+        tabla["Total registros"] > 0,
+        tabla["Otros"] / tabla["Total registros"] * 100,
+        0,
+    )
+
+    tabla["% Cumple evaluables"] = np.where(
+        tabla["Evaluables"] > 0,
+        tabla["Cumple"] / tabla["Evaluables"] * 100,
+        0,
+    )
+
+    tabla["% No cumple evaluables"] = np.where(
+        tabla["Evaluables"] > 0,
+        tabla["No cumple"] / tabla["Evaluables"] * 100,
         0,
     )
 
@@ -978,18 +1011,18 @@ def obtener_mejor_peor_mes(tabla: pd.DataFrame):
     if tabla.empty:
         return None, None
 
-    evaluables = tabla[tabla["Total"].gt(0)].copy()
+    evaluables = tabla[tabla["Evaluables"].gt(0)].copy()
 
     if evaluables.empty:
         return None, None
 
     mejor = evaluables.sort_values(
-        ["% Cumple", "Total", "periodo_fecha"],
+        ["% Cumple evaluables", "Evaluables", "periodo_fecha"],
         ascending=[False, False, True],
     ).iloc[0]
 
     peor = evaluables.sort_values(
-        ["% Cumple", "Total", "periodo_fecha"],
+        ["% Cumple evaluables", "Evaluables", "periodo_fecha"],
         ascending=[True, False, True],
     ).iloc[0]
 
@@ -1002,23 +1035,30 @@ def obtener_mejor_peor_mes(tabla: pd.DataFrame):
 
 def grafico_mensual_principal(tabla: pd.DataFrame):
     if tabla.empty:
-        st.info("No hay datos evaluables para el gráfico mensual.")
+        st.info("No hay datos para el gráfico mensual.")
         return
 
     labels = tabla["periodo_label"].astype(str).tolist()
     x = np.arange(len(labels))
 
-    pct_cumple = pd.to_numeric(tabla["% Cumple"], errors="coerce").fillna(0).to_numpy()
-    pct_no_cumple = pd.to_numeric(tabla["% No cumple"], errors="coerce").fillna(0).to_numpy()
+    pct_cumple = pd.to_numeric(tabla["% Cumple total"], errors="coerce").fillna(0).to_numpy()
+    pct_no_cumple = pd.to_numeric(tabla["% No cumple total"], errors="coerce").fillna(0).to_numpy()
+    pct_en_proceso = pd.to_numeric(tabla["% En proceso total"], errors="coerce").fillna(0).to_numpy()
+    pct_otros = pd.to_numeric(tabla["% Otros total"], errors="coerce").fillna(0).to_numpy()
 
-    fig, ax = plt.subplots(figsize=(15, 6))
+    cumple_eval = pd.to_numeric(tabla["% Cumple evaluables"], errors="coerce").fillna(0).to_numpy()
+
+    total = pd.to_numeric(tabla["Total registros"], errors="coerce").fillna(0).astype(int).to_numpy()
+    evaluables = pd.to_numeric(tabla["Evaluables"], errors="coerce").fillna(0).astype(int).to_numpy()
+
+    fig, ax = plt.subplots(figsize=(16, 6.8))
 
     ax.bar(
         x,
         pct_cumple,
         label="Cumple",
         color=COLOR_CUMPLE,
-        width=0.58,
+        width=0.62,
     )
 
     ax.bar(
@@ -1027,31 +1067,72 @@ def grafico_mensual_principal(tabla: pd.DataFrame):
         bottom=pct_cumple,
         label="No cumple",
         color=COLOR_NO_CUMPLE,
-        width=0.58,
+        width=0.62,
     )
 
-    for i, (cumple, no_cumple) in enumerate(zip(pct_cumple, pct_no_cumple)):
-        if cumple > 6:
-            ax.text(
-                i,
-                cumple / 2,
-                f"{cumple:.0f}%",
-                ha="center",
-                va="center",
-                color="white",
-                fontsize=10,
-                fontweight="bold",
-            )
+    ax.bar(
+        x,
+        pct_en_proceso,
+        bottom=pct_cumple + pct_no_cumple,
+        label="En proceso",
+        color=COLOR_EN_PROCESO,
+        width=0.62,
+    )
 
-        if no_cumple > 6:
+    ax.bar(
+        x,
+        pct_otros,
+        bottom=pct_cumple + pct_no_cumple + pct_en_proceso,
+        label="Otros / sin datos",
+        color=COLOR_OTROS,
+        width=0.62,
+    )
+
+    for i in range(len(labels)):
+        acumulado = 0
+
+        segmentos = [
+            ("Cumple", pct_cumple[i], COLOR_CUMPLE),
+            ("No cumple", pct_no_cumple[i], COLOR_NO_CUMPLE),
+            ("En proceso", pct_en_proceso[i], COLOR_EN_PROCESO),
+            ("Otros", pct_otros[i], COLOR_OTROS),
+        ]
+
+        for nombre, valor, color in segmentos:
+            if valor >= 7:
+                ax.text(
+                    i,
+                    acumulado + valor / 2,
+                    f"{valor:.0f}%",
+                    ha="center",
+                    va="center",
+                    color="white" if nombre != "En proceso" else COLOR_TEXTO,
+                    fontsize=9,
+                    fontweight="bold",
+                )
+
+            acumulado += valor
+
+        ax.text(
+            i,
+            103,
+            f"n={total[i]:,}",
+            ha="center",
+            va="bottom",
+            fontsize=9,
+            color=COLOR_MUTED,
+            fontweight="bold",
+        )
+
+        if evaluables[i] > 0:
             ax.text(
                 i,
-                cumple + no_cumple / 2,
-                f"{no_cumple:.0f}%",
+                -9,
+                f"Eval: {cumple_eval[i]:.0f}%",
                 ha="center",
-                va="center",
-                color="white",
-                fontsize=10,
+                va="top",
+                fontsize=9,
+                color=COLOR_META if cumple_eval[i] >= META_CUMPLIMIENTO else COLOR_NO_CUMPLE,
                 fontweight="bold",
             )
 
@@ -1065,14 +1146,14 @@ def grafico_mensual_principal(tabla: pd.DataFrame):
     ax.text(
         -0.45,
         META_CUMPLIMIENTO + 2,
-        f"Meta {META_CUMPLIMIENTO}%",
+        f"Meta evaluable {META_CUMPLIMIENTO}%",
         color=COLOR_META,
         fontsize=11,
         fontweight="bold",
     )
 
-    ax.set_ylim(0, 105)
-    ax.set_ylabel("% sobre TAT evaluables", color=COLOR_TEXTO)
+    ax.set_ylim(-14, 110)
+    ax.set_ylabel("% sobre total mensual", color=COLOR_TEXTO)
     ax.set_xticks(x)
 
     rotacion = 30 if len(labels) > 8 else 0
@@ -1085,27 +1166,35 @@ def grafico_mensual_principal(tabla: pd.DataFrame):
         color=COLOR_MUTED,
     )
 
+    ax.set_yticks([0, 25, 50, 75, 100])
     ax.set_yticklabels(
-        [f"{int(tick)}%" for tick in ax.get_yticks()],
+        ["0%", "25%", "50%", "75%", "100%"],
         color=COLOR_MUTED,
     )
 
     ax.legend(
         loc="upper center",
-        bbox_to_anchor=(0.5, -0.08),
-        ncol=2,
+        bbox_to_anchor=(0.5, -0.12),
+        ncol=4,
         frameon=False,
     )
 
     ax.set_title(
-        "Performance TAT mensual",
+        "Performance TAT mensual por estado",
         fontsize=18,
         fontweight="bold",
         color=COLOR_TEXTO,
-        pad=18,
+        pad=20,
     )
 
-    preparar_figura(fig, ax)
+    ax.grid(False)
+
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+    ax.tick_params(axis="both", length=0)
+    ax.set_facecolor("none")
+    fig.patch.set_alpha(0)
     fig.tight_layout()
 
     st.pyplot(fig, clear_figure=True, use_container_width=True)
@@ -1119,27 +1208,27 @@ def grafico_linea_mensual(tabla: pd.DataFrame):
     labels = tabla["periodo_label"].astype(str).tolist()
     x = np.arange(len(labels))
 
-    pct_cumple = pd.to_numeric(tabla["% Cumple"], errors="coerce").fillna(0).to_numpy()
-    pct_no_cumple = pd.to_numeric(tabla["% No cumple"], errors="coerce").fillna(0).to_numpy()
+    pct_cumple_eval = pd.to_numeric(tabla["% Cumple evaluables"], errors="coerce").fillna(0).to_numpy()
+    pct_no_cumple_eval = pd.to_numeric(tabla["% No cumple evaluables"], errors="coerce").fillna(0).to_numpy()
 
-    fig, ax = plt.subplots(figsize=(14, 4.2))
+    fig, ax = plt.subplots(figsize=(14, 4.4))
 
     ax.plot(
         x,
-        pct_cumple,
+        pct_cumple_eval,
         marker="o",
-        linewidth=2.5,
+        linewidth=2.8,
         color=COLOR_CUMPLE,
-        label="Cumple",
+        label="Cumple evaluable",
     )
 
     ax.plot(
         x,
-        pct_no_cumple,
+        pct_no_cumple_eval,
         marker="o",
-        linewidth=2.5,
+        linewidth=2.8,
         color=COLOR_NO_CUMPLE,
-        label="No cumple",
+        label="No cumple evaluable",
     )
 
     ax.axhline(
@@ -1150,7 +1239,7 @@ def grafico_linea_mensual(tabla: pd.DataFrame):
     )
 
     ax.set_ylim(0, 105)
-    ax.set_ylabel("% sobre TAT evaluables", color=COLOR_TEXTO)
+    ax.set_ylabel("% sobre evaluables", color=COLOR_TEXTO)
     ax.set_xticks(x)
 
     rotacion = 30 if len(labels) > 8 else 0
@@ -1163,8 +1252,9 @@ def grafico_linea_mensual(tabla: pd.DataFrame):
         color=COLOR_MUTED,
     )
 
+    ax.set_yticks([0, 25, 50, 75, 100])
     ax.set_yticklabels(
-        [f"{int(tick)}%" for tick in ax.get_yticks()],
+        ["0%", "25%", "50%", "75%", "100%"],
         color=COLOR_MUTED,
     )
 
@@ -1176,14 +1266,21 @@ def grafico_linea_mensual(tabla: pd.DataFrame):
     )
 
     ax.set_title(
-        "Evolución mensual del cumplimiento TAT",
+        "Evolución mensual sobre TAT evaluables",
         fontsize=14,
         fontweight="bold",
         color=COLOR_TEXTO,
         pad=14,
     )
 
-    preparar_figura(fig, ax)
+    ax.grid(False)
+
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+    ax.tick_params(axis="both", length=0)
+    ax.set_facecolor("none")
+    fig.patch.set_alpha(0)
     fig.tight_layout()
 
     st.pyplot(fig, clear_figure=True, use_container_width=True)
@@ -1226,8 +1323,9 @@ def grafico_etapas(resumen_etapas: pd.DataFrame):
     ax.set_yticklabels(etiquetas, color=COLOR_MUTED)
     ax.set_xlabel("% Cumple", color=COLOR_TEXTO)
 
+    ax.set_xticks([0, 25, 50, 75, 100])
     ax.set_xticklabels(
-        [f"{int(tick)}%" for tick in ax.get_xticks()],
+        ["0%", "25%", "50%", "75%", "100%"],
         color=COLOR_MUTED,
     )
 
@@ -1239,7 +1337,14 @@ def grafico_etapas(resumen_etapas: pd.DataFrame):
         pad=14,
     )
 
-    preparar_figura(fig, ax)
+    ax.grid(False)
+
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+    ax.tick_params(axis="both", length=0)
+    ax.set_facecolor("none")
+    fig.patch.set_alpha(0)
     fig.tight_layout()
 
     st.pyplot(fig, clear_figure=True, use_container_width=True)
@@ -1280,29 +1385,32 @@ def grafico_rangos_incumplimiento(df: pd.DataFrame):
     valores = data["Cantidad"].astype(int).to_numpy()
     etiquetas = data["Rango"].astype(str).tolist()
 
-    colores = [
-        COLOR_CUMPLE,
-        "#9CA3AF",
-        "#F59E0B",
-        "#F97316",
-        COLOR_NO_CUMPLE,
-        COLOR_SIN_DATOS,
-    ]
+    colores = []
 
-    colores_data = colores[:len(data)]
+    for rango in etiquetas:
+        if rango == "Sin incumplimiento":
+            colores.append(COLOR_CUMPLE)
+        elif rango == "Sin datos":
+            colores.append(COLOR_SIN_DATOS)
+        elif rango in ["1-5 días", "6-15 días"]:
+            colores.append(COLOR_EN_PROCESO)
+        else:
+            colores.append(COLOR_NO_CUMPLE)
 
-    fig, ax = plt.subplots(figsize=(10, 4.4))
+    fig, ax = plt.subplots(figsize=(10, 4.5))
 
     ax.barh(
         y,
         valores,
-        color=colores_data,
+        color=colores,
         height=0.55,
     )
 
+    max_valor = valores.max() if len(valores) else 1
+
     for i, valor in enumerate(valores):
         ax.text(
-            valor + max(valores.max() * 0.01, 1),
+            valor + max(max_valor * 0.01, 1),
             i,
             f"{valor:,.0f}",
             va="center",
@@ -1324,7 +1432,14 @@ def grafico_rangos_incumplimiento(df: pd.DataFrame):
         pad=14,
     )
 
-    preparar_figura(fig, ax)
+    ax.grid(False)
+
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+    ax.tick_params(axis="both", length=0)
+    ax.set_facecolor("none")
+    fig.patch.set_alpha(0)
     fig.tight_layout()
 
     st.pyplot(fig, clear_figure=True, use_container_width=True)
@@ -1397,8 +1512,7 @@ except Exception as e:
 
 st.markdown("### Filtros")
 st.caption(
-    "Selecciona filtros y presiona Aplicar filtros. "
-    "El dashboard no recalcula en cada cambio, solo cuando aplicas."
+    "E002 queda seleccionado por defecto si existe. Puedes agregar o quitar centros antes de aplicar."
 )
 
 col_centro = obtener_columna_centro(df_final)
@@ -1427,10 +1541,7 @@ centros = (
     else []
 )
 
-if "E002" in centros:
-    centros_default = ["E002"]
-else:
-    centros_default = centros
+centros_default = ["E002"] if "E002" in centros else centros
 
 perf_options = [
     "Cumple",
@@ -1483,7 +1594,7 @@ with st.form("form_filtros_performance_mensual"):
 
     with col_f4:
         perf_default = [
-            x for x in ["Cumple", "No cumple"]
+            x for x in ["Cumple", "No cumple", "En proceso"]
             if x in perf_existentes
         ]
 
@@ -1578,33 +1689,32 @@ else:
     else:
         df_dashboard = df_final.copy()
 
-        if "E002" in centros and col_centro is not None:
+        if centros_default and col_centro is not None:
             df_dashboard = df_dashboard[
                 df_dashboard[col_centro]
                 .astype("string")
                 .str.strip()
-                .eq("E002")
+                .isin([str(x).strip() for x in centros_default])
             ].copy()
 
-        if "performance_tat_total" in df_dashboard.columns and perf_existentes:
-            perf_default_inicial = [
-                x for x in ["Cumple", "No cumple"]
-                if x in perf_existentes
-            ]
+        perf_default_inicial = [
+            x for x in ["Cumple", "No cumple", "En proceso"]
+            if x in perf_existentes
+        ]
 
-            if perf_default_inicial:
-                df_dashboard = df_dashboard[
-                    df_dashboard["performance_tat_total"]
-                    .astype("string")
-                    .isin(perf_default_inicial)
-                ].copy()
+        if "performance_tat_total" in df_dashboard.columns and perf_default_inicial:
+            df_dashboard = df_dashboard[
+                df_dashboard["performance_tat_total"]
+                .astype("string")
+                .isin(perf_default_inicial)
+            ].copy()
 
         resumen_filtros_df = pd.DataFrame(
             [
                 {
                     "Paso": "Base inicial",
                     "Filtro aplicado": "Filtro por defecto",
-                    "Valor": "Centro E002 si existe; Performance Cumple/No cumple",
+                    "Valor": "Centro E002 si existe; Performance Cumple/No cumple/En proceso",
                     "Registros antes": len(df_final),
                     "Registros después": len(df_dashboard),
                     "Registros excluidos": len(df_final) - len(df_dashboard),
@@ -1641,6 +1751,16 @@ en_proceso_tat = (
     else 0
 )
 
+otros_tat = (
+    int(
+        df_dashboard["performance_tat_total"]
+        .isin(["No aplica", "Sin datos"])
+        .sum()
+    )
+    if "performance_tat_total" in df_dashboard.columns
+    else 0
+)
+
 evaluables_tat = cumple_tat + no_cumple_tat
 
 pct_cumple_tat = cumple_tat / evaluables_tat * 100 if evaluables_tat else 0
@@ -1648,13 +1768,14 @@ pct_no_cumple_tat = no_cumple_tat / evaluables_tat * 100 if evaluables_tat else 
 
 pct_filtrado = total_filtrado / total_inicial * 100 if total_inicial else 0
 
-col_k1, col_k2, col_k3, col_k4, col_k5 = st.columns(5)
+col_k1, col_k2, col_k3, col_k4, col_k5, col_k6 = st.columns(6)
 
 col_k1.metric("Registros base", f"{total_inicial:,}")
 col_k2.metric("Registros filtrados", f"{total_filtrado:,}", f"{pct_filtrado:.1f}%")
-col_k3.metric("% Cumple TAT", f"{pct_cumple_tat:.1f}%", f"{cumple_tat:,} registros")
-col_k4.metric("% No cumple TAT", f"{pct_no_cumple_tat:.1f}%", f"{no_cumple_tat:,} registros")
+col_k3.metric("% Cumple evaluable", f"{pct_cumple_tat:.1f}%", f"{cumple_tat:,} cumple")
+col_k4.metric("% No cumple evaluable", f"{pct_no_cumple_tat:.1f}%", f"{no_cumple_tat:,} no cumple")
 col_k5.metric("En proceso", f"{en_proceso_tat:,}")
+col_k6.metric("Otros / sin datos", f"{otros_tat:,}")
 
 
 # ============================================================
@@ -1663,7 +1784,9 @@ col_k5.metric("En proceso", f"{en_proceso_tat:,}")
 
 st.markdown("### Performance TAT mensual")
 st.caption(
-    "Gráfico principal del dashboard. Muestra la distribución mensual de cumplimiento TAT sobre registros evaluables."
+    "Barra porcentual mensual sobre el total de registros del mes. "
+    "Incluye Cumple, No cumple, En proceso y Otros/Sin datos. "
+    "La etiqueta inferior muestra el cumplimiento sobre registros evaluables."
 )
 
 tabla_mensual = crear_resumen_mensual(df_dashboard)
@@ -1678,15 +1801,15 @@ if mejor_mes is not None and peor_mes is not None:
     with col_m1:
         st.success(
             f"Mejor mes: {mejor_mes['periodo_label']} · "
-            f"{mejor_mes['% Cumple']:.1f}% de cumplimiento "
-            f"({int(mejor_mes['Cumple']):,} de {int(mejor_mes['Total']):,} evaluables)."
+            f"{mejor_mes['% Cumple evaluables']:.1f}% de cumplimiento evaluable "
+            f"({int(mejor_mes['Cumple']):,} de {int(mejor_mes['Evaluables']):,} evaluables)."
         )
 
     with col_m2:
         st.error(
             f"Peor mes: {peor_mes['periodo_label']} · "
-            f"{peor_mes['% Cumple']:.1f}% de cumplimiento "
-            f"({int(peor_mes['Cumple']):,} de {int(peor_mes['Total']):,} evaluables)."
+            f"{peor_mes['% Cumple evaluables']:.1f}% de cumplimiento evaluable "
+            f"({int(peor_mes['Cumple']):,} de {int(peor_mes['Evaluables']):,} evaluables)."
         )
 
 else:
@@ -1697,7 +1820,7 @@ else:
 # Serie temporal secundaria
 # ============================================================
 
-with st.expander("Serie temporal mensual", expanded=False):
+with st.expander("Serie temporal mensual evaluable", expanded=False):
     grafico_linea_mensual(tabla_mensual)
 
 
