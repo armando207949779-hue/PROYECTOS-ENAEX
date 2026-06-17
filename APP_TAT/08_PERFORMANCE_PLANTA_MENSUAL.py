@@ -1790,17 +1790,24 @@ def grafico_torta_rangos_incumplimiento(tabla: pd.DataFrame):
 
     total = int(data["Cantidad"].sum())
 
+    # Paleta más coherente:
+    # verde = sin incumplimiento
+    # amarillo = incumplimiento leve
+    # naranja = incumplimiento medio
+    # rojo original = incumplimiento alto
+    # rojo oscuro = incumplimiento severo
+    # gris = sin datos
     colores_mapa = {
-        "Sin incumplimiento": "#2E7D32",   # Verde
-        "1-5 días": "#F59E0B",             # Ámbar
-        "6-15 días": "#F97316",            # Naranja
-        "16-30 días": COLOR_CUMPLE,        # Rojo original
-        "Mayor a un mes": "#7C2D12",       # Rojo/marrón oscuro
-        "Sin datos": "#94A3B8",            # Gris azulado
+        "Sin incumplimiento": "#2E7D32",
+        "1-5 días": "#F4B400",
+        "6-15 días": "#FB8C00",
+        "16-30 días": "#EF3E52",
+        "Mayor a un mes": "#B71C1C",
+        "Sin datos": "#B0B4BB",
     }
 
     colores = [
-        colores_mapa.get(str(rango), COLOR_OTROS)
+        colores_mapa.get(str(rango), "#9CA3AF")
         for rango in data["Rango"].astype(str)
     ]
 
@@ -1819,7 +1826,7 @@ def grafico_torta_rangos_incumplimiento(tabla: pd.DataFrame):
 
     etiquetas = data["Rango"].astype(str).tolist()
 
-    fig, ax = plt.subplots(figsize=(10.5, 6.4))
+    fig, ax = plt.subplots(figsize=(10, 6.2))
 
     wedges, _ = ax.pie(
         cantidades,
@@ -1828,19 +1835,20 @@ def grafico_torta_rangos_incumplimiento(tabla: pd.DataFrame):
         counterclock=False,
         colors=colores,
         wedgeprops={
-            "width": 0.40,
-            "linewidth": 1.6,
+            "width": 0.42,
+            "linewidth": 1.5,
             "edgecolor": "white",
         },
     )
 
+    # Texto central
     ax.text(
         0,
-        0.06,
+        0.05,
         f"{total:,}",
         ha="center",
         va="center",
-        fontsize=20,
+        fontsize=19,
         fontweight="bold",
         color=COLOR_TEXTO,
     )
@@ -1852,78 +1860,92 @@ def grafico_torta_rangos_incumplimiento(tabla: pd.DataFrame):
         ha="center",
         va="center",
         fontsize=10,
-        fontweight="bold",
         color=COLOR_MUTED,
+        fontweight="bold",
     )
 
+    # Etiquetas sobre el gráfico
     for i, wedge in enumerate(wedges):
         angulo = (wedge.theta2 + wedge.theta1) / 2
         angulo_rad = np.deg2rad(angulo)
-
-        x = np.cos(angulo_rad)
-        y = np.sin(angulo_rad)
 
         porcentaje = porcentajes[i]
         cantidad = cantidades[i]
         etiqueta = etiquetas[i]
 
-        if porcentaje < 2:
-            continue
+        # Posición del texto en la mitad del anillo
+        r_texto = 0.78
+        x = r_texto * np.cos(angulo_rad)
+        y = r_texto * np.sin(angulo_rad)
 
-        x_texto = 1.28 * np.sign(x)
-        y_texto = 1.18 * y
+        # Para segmentos pequeños, mover la etiqueta fuera
+        if porcentaje < 7:
+            r_linea = 1.0
+            r_fuera = 1.18
 
-        alineacion = "left" if x >= 0 else "right"
+            x_linea = r_linea * np.cos(angulo_rad)
+            y_linea = r_linea * np.sin(angulo_rad)
 
-        texto = f"{porcentaje:.1f}%\n{cantidad:,}"
+            x_texto = r_fuera * np.cos(angulo_rad)
+            y_texto = r_fuera * np.sin(angulo_rad)
 
-        ax.annotate(
-            texto,
-            xy=(0.82 * x, 0.82 * y),
-            xytext=(x_texto, y_texto),
-            ha=alineacion,
-            va="center",
-            fontsize=10,
-            fontweight="bold",
-            color=COLOR_TEXTO,
-            arrowprops={
-                "arrowstyle": "-",
-                "color": COLOR_MUTED,
-                "lw": 1.2,
-                "connectionstyle": "angle3,angleA=0,angleB=90",
-            },
-        )
+            ha = "left" if x_texto >= 0 else "right"
 
-    etiquetas_leyenda = []
+            ax.annotate(
+                f"{etiqueta}\n{porcentaje:.1f}%",
+                xy=(x_linea, y_linea),
+                xytext=(x_texto, y_texto),
+                ha=ha,
+                va="center",
+                fontsize=9,
+                fontweight="bold",
+                color=COLOR_TEXTO,
+                arrowprops={
+                    "arrowstyle": "-",
+                    "lw": 1.0,
+                    "color": COLOR_MUTED,
+                },
+            )
+        else:
+            ax.text(
+                x,
+                y,
+                f"{etiqueta}\n{porcentaje:.1f}%",
+                ha="center",
+                va="center",
+                fontsize=9,
+                fontweight="bold",
+                color="white",
+            )
 
-    for _, fila in data.iterrows():
-        etiquetas_leyenda.append(
-            f"{fila['Rango']} · {int(fila['Cantidad']):,} · {fila['% del total']:.1f}%"
-        )
+    etiquetas_leyenda = [
+        f"{rango} · {cantidad:,} · {pct:.1f}%"
+        for rango, cantidad, pct in zip(etiquetas, cantidades, porcentajes)
+    ]
 
-    leyenda = ax.legend(
+    legend = ax.legend(
         wedges,
         etiquetas_leyenda,
-        title="Rango de incumplimiento",
+        title="Rango",
         loc="center left",
-        bbox_to_anchor=(1.10, 0.5),
+        bbox_to_anchor=(1.02, 0.5),
         frameon=False,
         fontsize=10,
         title_fontsize=11,
     )
 
-    for texto in leyenda.get_texts():
-        texto.set_color(COLOR_TEXTO)
+    for txt in legend.get_texts():
+        txt.set_color(COLOR_TEXTO)
 
-    leyenda.get_title().set_color(COLOR_TEXTO)
-    leyenda.get_title().set_fontweight("bold")
+    legend.get_title().set_color(COLOR_TEXTO)
+    legend.get_title().set_fontweight("bold")
 
     ax.set_title(
         "Distribución porcentual de incumplimiento TAT",
-        fontsize=15,
+        fontsize=14,
         fontweight="bold",
         color=COLOR_TEXTO,
-        pad=18,
+        pad=16,
     )
 
     ax.axis("equal")
@@ -1931,7 +1953,6 @@ def grafico_torta_rangos_incumplimiento(tabla: pd.DataFrame):
     fig.tight_layout()
 
     st.pyplot(fig, clear_figure=True, use_container_width=True)
-
 
 # ============================================================
 # Exportación
