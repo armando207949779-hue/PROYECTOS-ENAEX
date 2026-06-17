@@ -49,14 +49,14 @@ APP_SECTIONS = [
             },
             {
                 "nombre": "02_LIMPIEZA_ARIBA",
-                "archivo": "02_LIMPIEZA_ARIBA.py",
+                "archivo": "02_LIMPIEZA_ARIBA",
                 "titulo": "02 Limpieza Ariba",
                 "icono": "🧹",
                 "descripcion": "Limpieza y preparación de información desde Ariba.",
             },
             {
                 "nombre": "03_LIMPIEZA_ME80FN",
-                "archivo": "03_LIMPIEZA_ME80FN.py",
+                "archivo": "03_LIMPIEZA_ME80FN",
                 "titulo": "03 Limpieza ME80FN",
                 "icono": "🧹",
                 "descripcion": "Limpieza y procesamiento de datos ME80FN.",
@@ -147,22 +147,31 @@ def obtener_ruta_app(nombre_archivo: str) -> Path:
     """
     Devuelve la ruta de una app dentro de la carpeta APP_TAT.
 
-    Permite validar:
-    - nombre_archivo
-    - nombre_archivo.py
+    Valida distintas variantes:
+    - nombre exacto
+    - nombre.py
+    - nombre sin .py
     """
-    ruta = BASE_DIR / nombre_archivo
+    nombre_archivo = str(nombre_archivo).strip()
 
-    if ruta.exists():
-        return ruta
+    candidatos = []
 
+    # 1. Nombre tal como viene configurado
+    candidatos.append(BASE_DIR / nombre_archivo)
+
+    # 2. Si viene sin .py, probar con .py
     if not nombre_archivo.endswith(".py"):
-        ruta_py = BASE_DIR / f"{nombre_archivo}.py"
+        candidatos.append(BASE_DIR / f"{nombre_archivo}.py")
 
-        if ruta_py.exists():
-            return ruta_py
+    # 3. Si viene con .py, probar sin .py
+    if nombre_archivo.endswith(".py"):
+        candidatos.append(BASE_DIR / nombre_archivo.replace(".py", ""))
 
-    return ruta
+    for ruta in candidatos:
+        if ruta.exists():
+            return ruta
+
+    return candidatos[0]
 
 
 def validar_apps_disponibles() -> dict:
@@ -293,6 +302,7 @@ st.markdown(
             border-radius: 16px;
             padding: 16px 18px;
             margin-bottom: 12px;
+            min-height: 145px;
         }
 
         .tat-flow-step {
@@ -493,7 +503,7 @@ if apps_faltantes:
 # CONSTRUCCIÓN DE PÁGINAS
 # ============================================================
 
-def crear_pagina_app(app: dict) -> st.Page:
+def crear_pagina_app(app: dict):
     ruta_app = obtener_ruta_app(app["archivo"])
 
     return st.Page(
