@@ -7,7 +7,6 @@
 import base64
 from html import escape
 from pathlib import Path
-from textwrap import dedent
 from typing import Any
 
 import numpy as np
@@ -157,46 +156,6 @@ ETAPAS_LINEA_PEDIDO = [
 ]
 
 
-ETAPAS_ALERTA = [
-    {
-        "nombre": "Liberación SolPed",
-        "fecha_inicio": "fecha_solicitud_final",
-        "fecha_fin": "fecha_liberacion_final",
-        "dias": "dias_liberacion_solped",
-        "umbral": "umbral_liberacion_solped",
-        "performance": "performance_liberacion_solped",
-        "responsable": "Solicitante / Aprobador",
-    },
-    {
-        "nombre": "Comprador",
-        "fecha_inicio": "fecha_liberacion_final",
-        "fecha_fin": "fecha_pedido_final",
-        "dias": "dias_comprador",
-        "umbral": "umbral_comprador",
-        "performance": "performance_comprador",
-        "responsable": "Compras",
-    },
-    {
-        "nombre": "Proveedor",
-        "fecha_inicio": "fecha_pedido_final",
-        "fecha_fin": "fecha_facturacion_final",
-        "dias": "dias_proveedor",
-        "umbral": "umbral_proveedor",
-        "performance": "performance_proveedor",
-        "responsable": "Proveedor",
-    },
-    {
-        "nombre": "Logística",
-        "fecha_inicio": "fecha_facturacion_final",
-        "fecha_fin": "fecha_recepcion_final",
-        "dias": "dias_logistica",
-        "umbral": "umbral_logistica",
-        "performance": "performance_logistica",
-        "responsable": "Logística / Bodega",
-    },
-]
-
-
 CENTROS_NOMBRES = {
     "E002": "Prillex",
     "E021": "CM-Enaex Servicios",
@@ -264,8 +223,7 @@ CENTROS_NOMBRES = {
 
 
 # ============================================================
-# CSS Streamlit nativo
-# Sin modificar .block-container
+# Estilos Streamlit
 # ============================================================
 
 ESTILOS_GLOBALES = """
@@ -331,7 +289,7 @@ st.markdown(ESTILOS_GLOBALES, unsafe_allow_html=True)
 
 
 # ============================================================
-# CSS para componentes HTML
+# CSS componentes HTML
 # ============================================================
 
 CSS_COMPONENTES = """
@@ -1117,23 +1075,6 @@ def valor_numerico(valor: Any) -> float:
         return np.nan
 
 
-def formato_numero_corto(valor: Any, decimales: int = 0) -> str:
-    numero = valor_numerico(valor)
-
-    if pd.isna(numero):
-        return "-"
-
-    if decimales == 0:
-        return f"{int(round(numero)):,}".replace(",", ".")
-
-    return (
-        f"{numero:,.{decimales}f}"
-        .replace(",", "X")
-        .replace(".", ",")
-        .replace("X", ".")
-    )
-
-
 def formato_monto(valor: Any, moneda: Any = None) -> str:
     numero = valor_numerico(valor)
 
@@ -1197,24 +1138,6 @@ def normalizar_valor_busqueda(valor) -> str:
         texto = texto[:-2]
 
     return texto
-
-
-def aplicar_filtro_texto(df: pd.DataFrame, columna: str, texto: str, modo: str) -> pd.DataFrame:
-    if columna not in df.columns:
-        return df
-
-    texto = str(texto).strip()
-
-    if not texto:
-        return df
-
-    serie = df[columna].apply(normalizar_valor_busqueda)
-    texto_norm = normalizar_valor_busqueda(texto)
-
-    if modo == "Exacta":
-        return df[serie.eq(texto_norm)].copy()
-
-    return df[serie.str.contains(texto_norm, na=False, regex=False)].copy()
 
 
 def texto_dias_y_meses(dias: Any) -> str:
@@ -1322,6 +1245,20 @@ def formato_dias_restantes_operativo(dias: Any) -> str:
         return "Vence hoy"
 
     return f"Vence en {formato_tiempo_transcurrido(valor)}"
+
+
+def formatear_exceso_umbral(valor) -> str:
+    numero = pd.to_numeric(valor, errors="coerce")
+
+    if pd.isna(numero):
+        return "Sin dato"
+
+    numero = int(round(float(numero)))
+
+    if numero >= 0:
+        return f"{numero:,} días sobre el umbral".replace(",", ".")
+
+    return f"{abs(numero):,} días disponibles".replace(",", ".")
 
 
 def nombre_fecha_faltante(columna: str) -> str:
@@ -1449,9 +1386,12 @@ def preparar_panel_filtro(df_original: pd.DataFrame, hoy: pd.Timestamp) -> pd.Da
 
     df["umbral_tat_calculado"] = umbral
 
-    df["fecha_vencimiento_tat"] = (
-        df["fecha_inicio_tat"] + pd.to_timedelta(df["umbral_tat_calculado"], unit="D")
+    umbral_td = pd.to_timedelta(
+        pd.to_numeric(df["umbral_tat_calculado"], errors="coerce"),
+        unit="D",
     )
+
+    df["fecha_vencimiento_tat"] = df["fecha_inicio_tat"] + umbral_td
 
     df["dias_restantes_int"] = (
         df["fecha_vencimiento_tat"] - hoy
@@ -1476,17 +1416,12 @@ def preparar_panel_filtro(df_original: pd.DataFrame, hoy: pd.Timestamp) -> pd.Da
     )
 
     df["tiempo_excedido_umbral_dias"] = (
-        df["tiempo_transcurrido_dias"] - df["umbral_tat_calculado"]
+        pd.to_numeric(df["tiempo_transcurrido_dias"], errors="coerce")
+        - pd.to_numeric(df["umbral_tat_calculado"], errors="coerce")
     )
 
-    df["tiempo_excedido_umbral_texto"] = np.where(
-        pd.to_numeric(df["tiempo_excedido_umbral_dias"], errors="coerce").notna(),
-        df["tiempo_excedido_umbral_dias"].apply(
-            lambda x: f"{int(round(x)):,} días".replace(",", ".")
-            if x >= 0
-            else f"{abs(int(round(x))):,} días disponibles".replace(",", ".")
-        ),
-        "Sin dato",
+    df["tiempo_excedido_umbral_texto"] = df["tiempo_excedido_umbral_dias"].apply(
+        formatear_exceso_umbral
     )
 
     condiciones_clasificacion = [
@@ -1774,7 +1709,6 @@ def html_resumen_expediente(row: pd.Series) -> str:
 def html_kpis_expediente(row: pd.Series) -> str:
     dias_tat = row.get(COL_DIAS_TAT, np.nan)
     performance = row.get(COL_PERF_TAT, np.nan)
-    dias_desde_inicio = row.get("tiempo_transcurrido_tat", np.nan)
 
     return f"""
     <div class="exp-kpis">
@@ -1786,7 +1720,7 @@ def html_kpis_expediente(row: pd.Series) -> str:
 
         <div class="exp-kpi exp-kpi-red">
             <div class="exp-kpi-label">Desde solicitud hasta hoy</div>
-            <div class="exp-kpi-value">{html_texto(dias_desde_inicio)}</div>
+            <div class="exp-kpi-value">{html_texto(row.get("tiempo_transcurrido_tat", np.nan))}</div>
             <div class="exp-kpi-note">Cálculo operativo contra la fecha actual</div>
         </div>
 
@@ -2330,6 +2264,54 @@ def mostrar_expediente(row: pd.Series):
 # Filtros
 # ============================================================
 
+def aplicar_filtro_texto(df: pd.DataFrame, columna: str, texto: str, modo: str) -> pd.DataFrame:
+    if columna not in df.columns:
+        return df
+
+    texto = str(texto).strip()
+
+    if not texto:
+        return df
+
+    serie = df[columna].apply(normalizar_valor_busqueda)
+    texto_norm = normalizar_valor_busqueda(texto)
+
+    if modo == "Exacta":
+        return df[serie.eq(texto_norm)].copy()
+
+    return df[serie.str.contains(texto_norm, na=False, regex=False)].copy()
+
+
+def aplicar_filtro_texto_multi(
+    df: pd.DataFrame,
+    columnas: list[str],
+    texto: str,
+    modo: str,
+) -> pd.DataFrame:
+    texto = str(texto).strip()
+
+    if not texto:
+        return df
+
+    texto_norm = normalizar_valor_busqueda(texto)
+
+    mascara = pd.Series(False, index=df.index)
+
+    for columna in columnas:
+        if columna in df.columns:
+            serie = df[columna].apply(normalizar_valor_busqueda)
+
+            if modo == "Exacta":
+                mascara = mascara | serie.eq(texto_norm)
+            else:
+                mascara = mascara | serie.str.contains(texto_norm, na=False, regex=False)
+
+    if not mascara.any():
+        return df.iloc[0:0].copy()
+
+    return df[mascara].copy()
+
+
 def aplicar_filtros_con_progreso(
     df_base: pd.DataFrame,
     filtro_solped: str,
@@ -2350,19 +2332,21 @@ def aplicar_filtros_con_progreso(
 
     barra.progress(32, text="Filtrando pedido...")
 
-    if COL_OC_ME5A in df.columns:
-        df = aplicar_filtro_texto(df, COL_OC_ME5A, filtro_pedido, modo_busqueda)
-
-    elif COL_OC_ME80FN in df.columns:
-        df = aplicar_filtro_texto(df, COL_OC_ME80FN, filtro_pedido, modo_busqueda)
+    df = aplicar_filtro_texto_multi(
+        df,
+        [COL_OC_ME5A, COL_OC_ME80FN, COL_OC_NME80FN],
+        filtro_pedido,
+        modo_busqueda,
+    )
 
     barra.progress(50, text="Filtrando posición...")
 
-    if COL_POS_SOLPED in df.columns:
-        df = aplicar_filtro_texto(df, COL_POS_SOLPED, filtro_posicion, modo_busqueda)
-
-    elif COL_POS_OC in df.columns:
-        df = aplicar_filtro_texto(df, COL_POS_OC, filtro_posicion, modo_busqueda)
+    df = aplicar_filtro_texto_multi(
+        df,
+        [COL_POS_SOLPED, COL_POS_OC],
+        filtro_posicion,
+        modo_busqueda,
+    )
 
     barra.progress(68, text="Filtrando material...")
 
