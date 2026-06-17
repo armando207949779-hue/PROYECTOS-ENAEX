@@ -1777,7 +1777,6 @@ def crear_desglose_sin_datos_incumplimiento(df: pd.DataFrame) -> pd.DataFrame:
 
     return desglose
 
-
 def grafico_torta_rangos_incumplimiento(tabla: pd.DataFrame):
     if tabla.empty:
         st.info("No hay datos para graficar rangos de incumplimiento.")
@@ -1791,54 +1790,57 @@ def grafico_torta_rangos_incumplimiento(tabla: pd.DataFrame):
 
     total = int(data["Cantidad"].sum())
 
-    colores = []
+    colores_mapa = {
+        "Sin incumplimiento": "#2E7D32",   # Verde
+        "1-5 días": "#F59E0B",             # Ámbar
+        "6-15 días": "#F97316",            # Naranja
+        "16-30 días": COLOR_CUMPLE,        # Rojo original
+        "Mayor a un mes": "#7C2D12",       # Rojo/marrón oscuro
+        "Sin datos": "#94A3B8",            # Gris azulado
+    }
 
-    for rango in data["Rango"].astype(str):
-        if rango == "Sin incumplimiento":
-            colores.append("#2E7D32")
-        elif rango in ["1-5 días", "6-15 días"]:
-            colores.append(COLOR_EN_PROCESO)
-        elif rango in ["16-30 días", "Mayor a un mes"]:
-            colores.append(COLOR_CUMPLE)
-        else:
-            colores.append(COLOR_SIN_DATOS)
+    colores = [
+        colores_mapa.get(str(rango), COLOR_OTROS)
+        for rango in data["Rango"].astype(str)
+    ]
 
-    etiquetas_leyenda = []
+    porcentajes = (
+        pd.to_numeric(data["% del total"], errors="coerce")
+        .fillna(0)
+        .to_numpy()
+    )
 
-    for _, fila in data.iterrows():
-        etiquetas_leyenda.append(
-            f"{fila['Rango']} · {int(fila['Cantidad']):,} · {fila['% del total']:.1f}%"
-        )
+    cantidades = (
+        pd.to_numeric(data["Cantidad"], errors="coerce")
+        .fillna(0)
+        .astype(int)
+        .to_numpy()
+    )
 
-    fig, ax = plt.subplots(figsize=(9.5, 5.8))
+    etiquetas = data["Rango"].astype(str).tolist()
 
-    wedges, texts, autotexts = ax.pie(
-        data["Cantidad"],
+    fig, ax = plt.subplots(figsize=(10.5, 6.4))
+
+    wedges, _ = ax.pie(
+        cantidades,
         labels=None,
-        autopct=lambda pct: f"{pct:.1f}%" if pct >= 4 else "",
         startangle=90,
         counterclock=False,
         colors=colores,
-        pctdistance=0.75,
-        textprops={
-            "fontsize": 10,
-            "color": "white",
-            "fontweight": "bold",
-        },
         wedgeprops={
-            "width": 0.42,
-            "linewidth": 1.4,
+            "width": 0.40,
+            "linewidth": 1.6,
             "edgecolor": "white",
         },
     )
 
     ax.text(
         0,
-        0.04,
+        0.06,
         f"{total:,}",
         ha="center",
         va="center",
-        fontsize=18,
+        fontsize=20,
         fontweight="bold",
         color=COLOR_TEXTO,
     )
@@ -1850,26 +1852,78 @@ def grafico_torta_rangos_incumplimiento(tabla: pd.DataFrame):
         ha="center",
         va="center",
         fontsize=10,
+        fontweight="bold",
         color=COLOR_MUTED,
     )
 
-    ax.legend(
+    for i, wedge in enumerate(wedges):
+        angulo = (wedge.theta2 + wedge.theta1) / 2
+        angulo_rad = np.deg2rad(angulo)
+
+        x = np.cos(angulo_rad)
+        y = np.sin(angulo_rad)
+
+        porcentaje = porcentajes[i]
+        cantidad = cantidades[i]
+        etiqueta = etiquetas[i]
+
+        if porcentaje < 2:
+            continue
+
+        x_texto = 1.28 * np.sign(x)
+        y_texto = 1.18 * y
+
+        alineacion = "left" if x >= 0 else "right"
+
+        texto = f"{porcentaje:.1f}%\n{cantidad:,}"
+
+        ax.annotate(
+            texto,
+            xy=(0.82 * x, 0.82 * y),
+            xytext=(x_texto, y_texto),
+            ha=alineacion,
+            va="center",
+            fontsize=10,
+            fontweight="bold",
+            color=COLOR_TEXTO,
+            arrowprops={
+                "arrowstyle": "-",
+                "color": COLOR_MUTED,
+                "lw": 1.2,
+                "connectionstyle": "angle3,angleA=0,angleB=90",
+            },
+        )
+
+    etiquetas_leyenda = []
+
+    for _, fila in data.iterrows():
+        etiquetas_leyenda.append(
+            f"{fila['Rango']} · {int(fila['Cantidad']):,} · {fila['% del total']:.1f}%"
+        )
+
+    leyenda = ax.legend(
         wedges,
         etiquetas_leyenda,
-        title="Rango",
+        title="Rango de incumplimiento",
         loc="center left",
-        bbox_to_anchor=(1.02, 0.5),
+        bbox_to_anchor=(1.10, 0.5),
         frameon=False,
         fontsize=10,
         title_fontsize=11,
     )
 
+    for texto in leyenda.get_texts():
+        texto.set_color(COLOR_TEXTO)
+
+    leyenda.get_title().set_color(COLOR_TEXTO)
+    leyenda.get_title().set_fontweight("bold")
+
     ax.set_title(
         "Distribución porcentual de incumplimiento TAT",
-        fontsize=14,
+        fontsize=15,
         fontweight="bold",
         color=COLOR_TEXTO,
-        pad=16,
+        pad=18,
     )
 
     ax.axis("equal")
