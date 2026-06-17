@@ -4,6 +4,7 @@
 # Usa df_tat cargado desde 06_CARGAR_ARCHIVO
 # ============================================================
 
+import io
 import base64
 from pathlib import Path
 from typing import Any
@@ -246,6 +247,37 @@ st.markdown(
         .alert-text {
             font-size: 0.88rem;
             color: #334155;
+            line-height: 1.45;
+        }
+
+        .section-transition {
+            padding: 18px 20px;
+            border-radius: 16px;
+            margin-top: 24px;
+            margin-bottom: 14px;
+            border: 1px solid #e5e7eb;
+        }
+
+        .section-danger {
+            background: #fef2f2;
+            border-left: 7px solid #dc2626;
+        }
+
+        .section-warning {
+            background: #fff7ed;
+            border-left: 7px solid #f97316;
+        }
+
+        .section-title {
+            font-size: 1.15rem;
+            font-weight: 900;
+            color: #111827;
+            margin-bottom: 4px;
+        }
+
+        .section-subtitle {
+            font-size: 0.90rem;
+            color: #4b5563;
             line-height: 1.45;
         }
     </style>
@@ -588,6 +620,19 @@ def mensaje_vista_previa(
             f"{titulo}: hay **{total_txt} registros disponibles**. "
             f"Se están mostrando **todos los registros**."
         )
+
+
+def convertir_tabla_a_excel(df: pd.DataFrame, nombre_hoja: str = "Datos") -> bytes:
+    salida = io.BytesIO()
+
+    with pd.ExcelWriter(salida, engine="openpyxl") as writer:
+        df.to_excel(
+            writer,
+            index=False,
+            sheet_name=nombre_hoja[:31],
+        )
+
+    return salida.getvalue()
 
 
 # ============================================================
@@ -1399,7 +1444,7 @@ def grafico_vencidos_por_anio(df_vencidos: pd.DataFrame):
         .groupby("anio_vencimiento")
         .size()
         .reset_index(name="Cantidad")
-        .sort_values("anio_vencimiento", ascending=False)
+        .sort_values("anio_vencimiento", ascending=True)
     )
 
     x = np.arange(len(tabla))
@@ -1516,6 +1561,33 @@ def mostrar_tabla_alertas(
         hide_index=True,
     )
 
+    nombre_archivo = (
+        titulo.lower()
+        .replace(" ", "_")
+        .replace("/", "_")
+        .replace("-", "_")
+        .replace("á", "a")
+        .replace("é", "e")
+        .replace("í", "i")
+        .replace("ó", "o")
+        .replace("ú", "u")
+        .replace("ñ", "n")
+    )
+
+    excel_bytes = convertir_tabla_a_excel(
+        tabla,
+        nombre_hoja="Datos",
+    )
+
+    st.download_button(
+        label="Descargar data en Excel",
+        data=excel_bytes,
+        file_name=f"{nombre_archivo}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+        key=f"descargar_excel_{nombre_archivo}",
+    )
+
 
 def mostrar_vencidos_por_anio(df_vencidos: pd.DataFrame):
     st.markdown("### Vencidos sin recepción por año")
@@ -1550,7 +1622,7 @@ def mostrar_vencidos_por_anio(df_vencidos: pd.DataFrame):
         df_temp["anio_vencimiento"]
         .dropna()
         .astype(int)
-        .sort_values(ascending=False)
+        .sort_values(ascending=True)
         .unique()
         .tolist()
     )
@@ -2012,9 +2084,35 @@ df_sin_fecha = df_filtrado[
     df_filtrado["nivel_alerta"].eq("Datos incompletos")
 ].copy()
 
+st.markdown(
+    """
+    <div class="section-transition section-danger">
+        <div class="section-title">Bloque 1 · Vencidos sin recepción</div>
+        <div class="section-subtitle">
+            Registros que ya superaron la fecha de vencimiento TAT y todavía no tienen recepción registrada.
+            Esta sección representa la prioridad más alta de gestión.
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
 grafico_vencidos_por_anio(df_vencidos)
 
 mostrar_vencidos_por_anio(df_vencidos)
+
+st.markdown(
+    """
+    <div class="section-transition section-warning">
+        <div class="section-title">Bloque 2 · Por vencer sin recepción</div>
+        <div class="section-subtitle">
+            Registros que aún no vencen, pero se encuentran dentro de la ventana de gestión preventiva.
+            Esta sección permite anticipar acciones antes del incumplimiento.
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 mostrar_proximos_por_rango(df_proximos)
 
