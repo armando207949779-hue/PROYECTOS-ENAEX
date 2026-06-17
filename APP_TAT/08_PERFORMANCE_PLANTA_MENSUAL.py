@@ -25,12 +25,12 @@ BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
 LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
 
-COLOR_CUMPLE = "#2E7D32"
-COLOR_NO_CUMPLE = "#D32F2F"
-COLOR_EN_PROCESO = "#F9A825"
-COLOR_OTROS = "#9E9E9E"
-COLOR_SIN_DATOS = "#BDBDBD"
-COLOR_META = "#1565C0"
+COLOR_CUMPLE = "#EF3E52"
+COLOR_NO_CUMPLE = "#BFC3C7"
+COLOR_EN_PROCESO = "#F4B400"
+COLOR_OTROS = "#9CA3AF"
+COLOR_SIN_DATOS = "#BFC3C7"
+COLOR_META = "#1F2937"
 COLOR_TEXTO = "#1F2937"
 COLOR_MUTED = "#6B7280"
 
@@ -316,8 +316,11 @@ def normalizar_estado_performance(valor) -> str:
     if texto == "en proceso":
         return "En proceso"
 
-    if texto in ["no aplica", "no aplica al analisis"]:
+    if texto in ["no aplica", "no aplica al analisis", "no aplica al análisis"]:
         return "No aplica"
+
+    if texto in ["nan", "none", "<na>", ""]:
+        return "Sin datos"
 
     return "Sin datos"
 
@@ -411,7 +414,7 @@ def evaluar_performance_tat(df: pd.DataFrame) -> pd.Series:
     mask_tipo_internacional = df["tipo_oc"].eq("47")
     mask_tipo_valido = df["tipo_oc"].isin(["35", "45", "47"])
 
-    resultado.loc[mask_negativos] = "No aplica al análisis"
+    resultado.loc[mask_negativos] = "No aplica"
     resultado.loc[~mask_negativos & mask_en_proceso] = "En proceso"
 
     mask_evaluable = ~mask_negativos & ~mask_en_proceso
@@ -696,6 +699,23 @@ def preparar_base_tat(df_original: pd.DataFrame) -> pd.DataFrame:
         if col in df.columns:
             df[col] = df[col].apply(normalizar_estado_performance)
 
+    if "rango_incumplimiento_tat" in df.columns:
+        df["rango_incumplimiento_tat"] = (
+            df["rango_incumplimiento_tat"]
+            .astype("string")
+            .str.strip()
+            .replace(
+                {
+                    "nan": "Sin datos",
+                    "NaN": "Sin datos",
+                    "None": "Sin datos",
+                    "<NA>": "Sin datos",
+                    "": "Sin datos",
+                }
+            )
+            .fillna("Sin datos")
+        )
+
     df["periodo_fecha"] = (
         df[COL_FECHA_RECEPCION_FINAL]
         .dt.to_period("M")
@@ -897,6 +917,7 @@ def crear_resumen_mensual(df: pd.DataFrame) -> pd.DataFrame:
             tabla[col] = 0
 
     tabla["Otros"] = tabla["No aplica"] + tabla["Sin datos"]
+
     tabla["Total registros"] = (
         tabla["Cumple"]
         + tabla["No cumple"]
@@ -905,30 +926,6 @@ def crear_resumen_mensual(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     tabla["Evaluables"] = tabla["Cumple"] + tabla["No cumple"]
-
-    tabla["% Cumple total"] = np.where(
-        tabla["Total registros"] > 0,
-        tabla["Cumple"] / tabla["Total registros"] * 100,
-        0,
-    )
-
-    tabla["% No cumple total"] = np.where(
-        tabla["Total registros"] > 0,
-        tabla["No cumple"] / tabla["Total registros"] * 100,
-        0,
-    )
-
-    tabla["% En proceso total"] = np.where(
-        tabla["Total registros"] > 0,
-        tabla["En proceso"] / tabla["Total registros"] * 100,
-        0,
-    )
-
-    tabla["% Otros total"] = np.where(
-        tabla["Total registros"] > 0,
-        tabla["Otros"] / tabla["Total registros"] * 100,
-        0,
-    )
 
     tabla["% Cumple evaluables"] = np.where(
         tabla["Evaluables"] > 0,
@@ -939,6 +936,12 @@ def crear_resumen_mensual(df: pd.DataFrame) -> pd.DataFrame:
     tabla["% No cumple evaluables"] = np.where(
         tabla["Evaluables"] > 0,
         tabla["No cumple"] / tabla["Evaluables"] * 100,
+        0,
+    )
+
+    tabla["% En proceso total"] = np.where(
+        tabla["Total registros"] > 0,
+        tabla["En proceso"] / tabla["Total registros"] * 100,
         0,
     )
 
@@ -1041,98 +1044,76 @@ def grafico_mensual_principal(tabla: pd.DataFrame):
     labels = tabla["periodo_label"].astype(str).tolist()
     x = np.arange(len(labels))
 
-    pct_cumple = pd.to_numeric(tabla["% Cumple total"], errors="coerce").fillna(0).to_numpy()
-    pct_no_cumple = pd.to_numeric(tabla["% No cumple total"], errors="coerce").fillna(0).to_numpy()
-    pct_en_proceso = pd.to_numeric(tabla["% En proceso total"], errors="coerce").fillna(0).to_numpy()
-    pct_otros = pd.to_numeric(tabla["% Otros total"], errors="coerce").fillna(0).to_numpy()
+    pct_cumple = (
+        pd.to_numeric(tabla["% Cumple evaluables"], errors="coerce")
+        .fillna(0)
+        .to_numpy()
+    )
 
-    cumple_eval = pd.to_numeric(tabla["% Cumple evaluables"], errors="coerce").fillna(0).to_numpy()
+    cumple = (
+        pd.to_numeric(tabla["Cumple"], errors="coerce")
+        .fillna(0)
+        .astype(int)
+        .to_numpy()
+    )
 
-    total = pd.to_numeric(tabla["Total registros"], errors="coerce").fillna(0).astype(int).to_numpy()
-    evaluables = pd.to_numeric(tabla["Evaluables"], errors="coerce").fillna(0).astype(int).to_numpy()
+    evaluables = (
+        pd.to_numeric(tabla["Evaluables"], errors="coerce")
+        .fillna(0)
+        .astype(int)
+        .to_numpy()
+    )
 
-    fig, ax = plt.subplots(figsize=(16, 6.8))
+    en_proceso = (
+        pd.to_numeric(tabla["En proceso"], errors="coerce")
+        .fillna(0)
+        .astype(int)
+        .to_numpy()
+    )
 
-    ax.bar(
+    fig, ax = plt.subplots(figsize=(16, 6.4))
+
+    barras = ax.bar(
         x,
         pct_cumple,
-        label="Cumple",
         color=COLOR_CUMPLE,
-        width=0.62,
+        width=0.58,
     )
 
-    ax.bar(
-        x,
-        pct_no_cumple,
-        bottom=pct_cumple,
-        label="No cumple",
-        color=COLOR_NO_CUMPLE,
-        width=0.62,
-    )
-
-    ax.bar(
-        x,
-        pct_en_proceso,
-        bottom=pct_cumple + pct_no_cumple,
-        label="En proceso",
-        color=COLOR_EN_PROCESO,
-        width=0.62,
-    )
-
-    ax.bar(
-        x,
-        pct_otros,
-        bottom=pct_cumple + pct_no_cumple + pct_en_proceso,
-        label="Otros / sin datos",
-        color=COLOR_OTROS,
-        width=0.62,
-    )
-
-    for i in range(len(labels)):
-        acumulado = 0
-
-        segmentos = [
-            ("Cumple", pct_cumple[i], COLOR_CUMPLE),
-            ("No cumple", pct_no_cumple[i], COLOR_NO_CUMPLE),
-            ("En proceso", pct_en_proceso[i], COLOR_EN_PROCESO),
-            ("Otros", pct_otros[i], COLOR_OTROS),
-        ]
-
-        for nombre, valor, color in segmentos:
-            if valor >= 7:
-                ax.text(
-                    i,
-                    acumulado + valor / 2,
-                    f"{valor:.0f}%",
-                    ha="center",
-                    va="center",
-                    color="white" if nombre != "En proceso" else COLOR_TEXTO,
-                    fontsize=9,
-                    fontweight="bold",
-                )
-
-            acumulado += valor
+    for i, barra in enumerate(barras):
+        alto = barra.get_height()
 
         ax.text(
-            i,
-            103,
-            f"n={total[i]:,}",
+            barra.get_x() + barra.get_width() / 2,
+            alto + 2,
+            f"{alto:.0f}%",
             ha="center",
             va="bottom",
-            fontsize=9,
-            color=COLOR_MUTED,
+            fontsize=10,
             fontweight="bold",
+            color=COLOR_TEXTO,
         )
 
-        if evaluables[i] > 0:
+        ax.text(
+            barra.get_x() + barra.get_width() / 2,
+            -8,
+            f"{cumple[i]:,}/{evaluables[i]:,}",
+            ha="center",
+            va="top",
+            fontsize=9,
+            fontweight="bold",
+            color=COLOR_MUTED,
+        )
+
+        if en_proceso[i] > 0:
             ax.text(
-                i,
-                -9,
-                f"Eval: {cumple_eval[i]:.0f}%",
+                barra.get_x() + barra.get_width() / 2,
+                -15,
+                f"EP: {en_proceso[i]:,}",
                 ha="center",
                 va="top",
-                fontsize=9,
-                color=COLOR_META if cumple_eval[i] >= META_CUMPLIMIENTO else COLOR_NO_CUMPLE,
+                fontsize=8,
+                color=COLOR_EN_PROCESO,
                 fontweight="bold",
             )
 
@@ -1146,14 +1127,15 @@ def grafico_mensual_principal(tabla: pd.DataFrame):
     ax.text(
         -0.45,
         META_CUMPLIMIENTO + 2,
-        f"Meta evaluable {META_CUMPLIMIENTO}%",
+        f"Meta {META_CUMPLIMIENTO}%",
         color=COLOR_META,
         fontsize=11,
         fontweight="bold",
     )
 
-    ax.set_ylim(-14, 110)
-    ax.set_ylabel("% sobre total mensual", color=COLOR_TEXTO)
+    ax.set_ylim(-20, 108)
+    ax.set_ylabel("% Cumple sobre evaluables", color=COLOR_TEXTO)
+
     ax.set_xticks(x)
 
     rotacion = 30 if len(labels) > 8 else 0
@@ -1172,15 +1154,8 @@ def grafico_mensual_principal(tabla: pd.DataFrame):
         color=COLOR_MUTED,
     )
 
-    ax.legend(
-        loc="upper center",
-        bbox_to_anchor=(0.5, -0.12),
-        ncol=4,
-        frameon=False,
-    )
-
     ax.set_title(
-        "Performance TAT mensual por estado",
+        "Cumplimiento TAT mensual",
         fontsize=18,
         fontweight="bold",
         color=COLOR_TEXTO,
@@ -1208,28 +1183,34 @@ def grafico_linea_mensual(tabla: pd.DataFrame):
     labels = tabla["periodo_label"].astype(str).tolist()
     x = np.arange(len(labels))
 
-    pct_cumple_eval = pd.to_numeric(tabla["% Cumple evaluables"], errors="coerce").fillna(0).to_numpy()
-    pct_no_cumple_eval = pd.to_numeric(tabla["% No cumple evaluables"], errors="coerce").fillna(0).to_numpy()
+    pct_cumple = (
+        pd.to_numeric(tabla["% Cumple evaluables"], errors="coerce")
+        .fillna(0)
+        .to_numpy()
+    )
 
     fig, ax = plt.subplots(figsize=(14, 4.4))
 
     ax.plot(
         x,
-        pct_cumple_eval,
+        pct_cumple,
         marker="o",
-        linewidth=2.8,
+        linewidth=3,
         color=COLOR_CUMPLE,
-        label="Cumple evaluable",
+        label="Cumplimiento TAT",
     )
 
-    ax.plot(
-        x,
-        pct_no_cumple_eval,
-        marker="o",
-        linewidth=2.8,
-        color=COLOR_NO_CUMPLE,
-        label="No cumple evaluable",
-    )
+    for i, valor in enumerate(pct_cumple):
+        ax.text(
+            i,
+            valor + 2,
+            f"{valor:.0f}%",
+            ha="center",
+            va="bottom",
+            fontsize=9,
+            fontweight="bold",
+            color=COLOR_TEXTO,
+        )
 
     ax.axhline(
         META_CUMPLIMIENTO,
@@ -1239,7 +1220,8 @@ def grafico_linea_mensual(tabla: pd.DataFrame):
     )
 
     ax.set_ylim(0, 105)
-    ax.set_ylabel("% sobre evaluables", color=COLOR_TEXTO)
+    ax.set_ylabel("% Cumple sobre evaluables", color=COLOR_TEXTO)
+
     ax.set_xticks(x)
 
     rotacion = 30 if len(labels) > 8 else 0
@@ -1258,15 +1240,8 @@ def grafico_linea_mensual(tabla: pd.DataFrame):
         color=COLOR_MUTED,
     )
 
-    ax.legend(
-        loc="upper center",
-        bbox_to_anchor=(0.5, -0.12),
-        ncol=2,
-        frameon=False,
-    )
-
     ax.set_title(
-        "Evolución mensual sobre TAT evaluables",
+        "Evolución mensual del cumplimiento TAT",
         fontsize=14,
         fontweight="bold",
         color=COLOR_TEXTO,
@@ -1355,6 +1330,22 @@ def grafico_rangos_incumplimiento(df: pd.DataFrame):
         st.info("No existe la columna rango_incumplimiento_tat.")
         return
 
+    serie_rango = (
+        df["rango_incumplimiento_tat"]
+        .astype("string")
+        .str.strip()
+        .replace(
+            {
+                "nan": "Sin datos",
+                "NaN": "Sin datos",
+                "None": "Sin datos",
+                "<NA>": "Sin datos",
+                "": "Sin datos",
+            }
+        )
+        .fillna("Sin datos")
+    )
+
     orden = [
         "Sin incumplimiento",
         "1-5 días",
@@ -1365,8 +1356,7 @@ def grafico_rangos_incumplimiento(df: pd.DataFrame):
     ]
 
     data = (
-        df["rango_incumplimiento_tat"]
-        .fillna("Sin datos")
+        serie_rango
         .value_counts()
         .reset_index()
     )
@@ -1593,15 +1583,10 @@ with st.form("form_filtros_performance_mensual"):
         )
 
     with col_f4:
-        perf_default = [
-            x for x in ["Cumple", "No cumple", "En proceso"]
-            if x in perf_existentes
-        ]
-
         perf_sel = st.multiselect(
             "Performance TAT",
             options=perf_existentes,
-            default=perf_default,
+            default=perf_existentes,
             key="mensual_performance",
         )
 
@@ -1697,16 +1682,11 @@ else:
                 .isin([str(x).strip() for x in centros_default])
             ].copy()
 
-        perf_default_inicial = [
-            x for x in ["Cumple", "No cumple", "En proceso"]
-            if x in perf_existentes
-        ]
-
-        if "performance_tat_total" in df_dashboard.columns and perf_default_inicial:
+        if "performance_tat_total" in df_dashboard.columns and perf_existentes:
             df_dashboard = df_dashboard[
                 df_dashboard["performance_tat_total"]
                 .astype("string")
-                .isin(perf_default_inicial)
+                .isin(perf_existentes)
             ].copy()
 
         resumen_filtros_df = pd.DataFrame(
@@ -1714,7 +1694,7 @@ else:
                 {
                     "Paso": "Base inicial",
                     "Filtro aplicado": "Filtro por defecto",
-                    "Valor": "Centro E002 si existe; Performance Cumple/No cumple/En proceso",
+                    "Valor": "Centro E002 si existe; Performance todos los estados",
                     "Registros antes": len(df_final),
                     "Registros después": len(df_dashboard),
                     "Registros excluidos": len(df_final) - len(df_dashboard),
@@ -1782,11 +1762,10 @@ col_k6.metric("Otros / sin datos", f"{otros_tat:,}")
 # Gráfico mensual principal
 # ============================================================
 
-st.markdown("### Performance TAT mensual")
+st.markdown("### Cumplimiento TAT mensual")
 st.caption(
-    "Barra porcentual mensual sobre el total de registros del mes. "
-    "Incluye Cumple, No cumple, En proceso y Otros/Sin datos. "
-    "La etiqueta inferior muestra el cumplimiento sobre registros evaluables."
+    "El gráfico muestra solo el porcentaje de cumplimiento sobre registros evaluables. "
+    "Debajo de cada mes se indica Cumple/Evaluables y, si existe, la cantidad en proceso."
 )
 
 tabla_mensual = crear_resumen_mensual(df_dashboard)
@@ -1820,7 +1799,7 @@ else:
 # Serie temporal secundaria
 # ============================================================
 
-with st.expander("Serie temporal mensual evaluable", expanded=False):
+with st.expander("Serie temporal mensual de cumplimiento", expanded=False):
     grafico_linea_mensual(tabla_mensual)
 
 
