@@ -33,7 +33,7 @@ LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
 
 
 # ============================================================
-# Estilos
+# Estilos mínimos
 # IMPORTANTE:
 # No se modifica .block-container para no afectar el logo.
 # ============================================================
@@ -51,103 +51,6 @@ st.markdown(
         div[data-testid="stFileUploader"] {
             padding: 10px;
             border-radius: 12px;
-        }
-
-        .app-header {
-            text-align: center;
-            margin-bottom: 1rem;
-        }
-
-        .app-title {
-            font-size: 30px;
-            font-weight: 700;
-            margin-bottom: 0;
-        }
-
-        .app-subtitle {
-            color: #6c757d;
-            font-size: 16px;
-            margin-top: 4px;
-        }
-
-        .step-box {
-            background-color: #f8f9fa;
-            border: 1px solid #e9ecef;
-            border-radius: 14px;
-            padding: 18px;
-            margin-bottom: 16px;
-        }
-
-        .small-muted {
-            color: #6c757d;
-            font-size: 14px;
-        }
-
-        .field-label {
-            font-weight: 700;
-            color: #495057;
-            font-size: 13px;
-            margin-bottom: 2px;
-        }
-
-        .field-value {
-            color: #212529;
-            font-size: 15px;
-            margin-bottom: 10px;
-            word-break: break-word;
-        }
-
-        .status-card {
-            background-color: #ffffff;
-            border: 1px solid #e9ecef;
-            border-radius: 14px;
-            padding: 16px;
-            margin-bottom: 12px;
-        }
-
-        .timeline-wrap {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            margin-top: 10px;
-            margin-bottom: 10px;
-        }
-
-        .timeline-item-done {
-            flex: 1;
-            min-width: 150px;
-            background-color: #ecfdf5;
-            border: 1px solid #a7f3d0;
-            border-radius: 14px;
-            padding: 12px;
-            text-align: center;
-        }
-
-        .timeline-item-pending {
-            flex: 1;
-            min-width: 150px;
-            background-color: #fef2f2;
-            border: 1px solid #fecaca;
-            border-radius: 14px;
-            padding: 12px;
-            text-align: center;
-        }
-
-        .timeline-icon {
-            font-size: 24px;
-            margin-bottom: 4px;
-        }
-
-        .timeline-title {
-            font-size: 14px;
-            font-weight: 700;
-            color: #212529;
-            margin-bottom: 4px;
-        }
-
-        .timeline-date {
-            font-size: 13px;
-            color: #495057;
         }
     </style>
     """,
@@ -192,12 +95,17 @@ def mostrar_logo():
 
 def formatear_valor(valor) -> str:
     if pd.isna(valor):
-        return ""
+        return "—"
 
     if isinstance(valor, pd.Timestamp):
         return valor.strftime("%Y-%m-%d")
 
-    return str(valor)
+    texto = str(valor).strip()
+
+    if texto == "":
+        return "—"
+
+    return texto
 
 
 def formatear_fecha(valor) -> str:
@@ -497,26 +405,26 @@ def construir_columnas_vista(df: pd.DataFrame, columnas_clave: dict) -> list[str
 # ============================================================
 
 def mostrar_campo(label: str, valor):
-    st.markdown(
-        f"""
-        <div class="field-label">{label}</div>
-        <div class="field-value">{formatear_valor(valor)}</div>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.caption(label)
+    st.write(formatear_valor(valor))
 
 
 def obtener_valor(registro: pd.Series, columna: str | None):
     if columna is None:
-        return ""
+        return pd.NA
 
     if columna not in registro.index:
-        return ""
+        return pd.NA
 
     return registro.get(columna)
 
 
 def mostrar_figura_estado_solped(registro: pd.Series, columnas_clave: dict):
+    """
+    Muestra el estado de la SOLPED sin HTML manual.
+    Evita que aparezcan textos como </div> en pantalla.
+    """
+
     etapas = [
         {
             "etapa": "Solicitud",
@@ -540,36 +448,146 @@ def mostrar_figura_estado_solped(registro: pd.Series, columnas_clave: dict):
         },
     ]
 
-    html_items = ""
+    st.markdown("#### Estado de la SOLPED")
 
-    for item in etapas:
+    cols = st.columns(len(etapas))
+
+    for col, item in zip(cols, etapas):
         fecha = pd.to_datetime(item["fecha"], errors="coerce")
         realizado = pd.notna(fecha)
-
-        clase = "timeline-item-done" if realizado else "timeline-item-pending"
-        icono = "✅" if realizado else "❌"
         fecha_texto = formatear_fecha(item["fecha"])
 
-        html_items += f"""
-        <div class="{clase}">
-            <div class="timeline-icon">{icono}</div>
-            <div class="timeline-title">{item['etapa']}</div>
-            <div class="timeline-date">{fecha_texto}</div>
-        </div>
-        """
+        with col:
+            if realizado:
+                st.success(
+                    f"✅ **{item['etapa']}**\n\n{fecha_texto}"
+                )
+            else:
+                st.error(
+                    f"❌ **{item['etapa']}**\n\nSin fecha"
+                )
 
-    st.markdown(
-        f"""
-        <div class="status-card">
-            <div style="font-weight:700; font-size:17px; margin-bottom:8px;">
-                Estado de la SOLPED
-            </div>
-            <div class="timeline-wrap">
-                {html_items}
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+
+def construir_validacion_temporal_tat(
+    registro: pd.Series,
+    columnas_clave: dict,
+) -> pd.DataFrame:
+    """
+    Valida que las fechas del flujo TAT estén ordenadas temporalmente.
+
+    Orden esperado:
+    Solicitud <= Liberación <= Pedido <= Facturación <= Recepción
+
+    También valida controles directos desde Solicitud hacia Facturación y Recepción,
+    para detectar casos raros aunque falten fechas intermedias.
+    """
+
+    etapas = {
+        "Solicitud": pd.to_datetime(
+            obtener_valor(registro, columnas_clave["fecha_solicitud"]),
+            errors="coerce",
+        ),
+        "Liberación": pd.to_datetime(
+            obtener_valor(registro, columnas_clave["fecha_liberacion"]),
+            errors="coerce",
+        ),
+        "Pedido": pd.to_datetime(
+            obtener_valor(registro, columnas_clave["fecha_pedido"]),
+            errors="coerce",
+        ),
+        "Facturación": pd.to_datetime(
+            obtener_valor(registro, columnas_clave["fecha_facturacion"]),
+            errors="coerce",
+        ),
+        "Recepción": pd.to_datetime(
+            obtener_valor(registro, columnas_clave["fecha_recepcion"]),
+            errors="coerce",
+        ),
+    }
+
+    comparaciones = [
+        ("Solicitud", "Liberación"),
+        ("Liberación", "Pedido"),
+        ("Pedido", "Facturación"),
+        ("Facturación", "Recepción"),
+        ("Solicitud", "Facturación"),
+        ("Solicitud", "Recepción"),
+    ]
+
+    validaciones = []
+
+    for inicio, fin in comparaciones:
+        fecha_inicio = etapas[inicio]
+        fecha_fin = etapas[fin]
+
+        if pd.isna(fecha_inicio) or pd.isna(fecha_fin):
+            estado = "Sin datos"
+            detalle = "No evaluable por fecha faltante"
+            dias = pd.NA
+
+        else:
+            dias = int((fecha_fin - fecha_inicio).days)
+
+            if fecha_fin >= fecha_inicio:
+                estado = "Correcto"
+                detalle = "Orden temporal válido"
+            else:
+                estado = "Revisar"
+                detalle = "La fecha final ocurre antes que la fecha inicial"
+
+        validaciones.append(
+            {
+                "Validación": f"{inicio} → {fin}",
+                "Fecha inicial": formatear_fecha(fecha_inicio),
+                "Fecha final": formatear_fecha(fecha_fin),
+                "Días entre fechas": dias,
+                "Estado": estado,
+                "Detalle": detalle,
+            }
+        )
+
+    return pd.DataFrame(validaciones)
+
+
+def mostrar_validacion_temporal_tat(
+    registro: pd.Series,
+    columnas_clave: dict,
+):
+    """
+    Muestra confirmación visual de si las fechas TAT están ordenadas.
+    """
+
+    st.markdown("#### Validación temporal de fechas")
+
+    validacion_df = construir_validacion_temporal_tat(
+        registro=registro,
+        columnas_clave=columnas_clave,
+    )
+
+    total_revisar = int(validacion_df["Estado"].eq("Revisar").sum())
+    total_sin_datos = int(validacion_df["Estado"].eq("Sin datos").sum())
+
+    if total_revisar > 0:
+        st.error(
+            "Se detectaron fechas fuera de orden temporal. "
+            "Revisa los casos marcados como 'Revisar'."
+        )
+
+    elif total_sin_datos > 0:
+        st.warning(
+            "Las fechas disponibles están ordenadas, pero existen etapas sin fecha. "
+            "El flujo no se puede validar completamente."
+        )
+
+    else:
+        st.success(
+            "Las fechas TAT están ordenadas temporalmente."
+        )
+
+    st.dataframe(
+        validacion_df,
+        use_container_width=True,
+        hide_index=True,
     )
 
 
@@ -617,6 +635,7 @@ def construir_tabla_etapas_tat(registro: pd.Series, columnas_clave: dict) -> pd.
 
 def mostrar_detalle_observacion(registro: pd.Series, columnas_clave: dict):
     mostrar_figura_estado_solped(registro, columnas_clave)
+    mostrar_validacion_temporal_tat(registro, columnas_clave)
 
     st.markdown("#### Datos principales")
 
@@ -719,16 +738,9 @@ def mostrar_detalle_observacion(registro: pd.Series, columnas_clave: dict):
 
 mostrar_logo()
 
-st.markdown(
-    """
-    <div class="app-header">
-        <div class="app-title">07_FILTRO</div>
-        <div class="app-subtitle">
-            Busca una SOLPED, filtra registros y visualiza el seguimiento TAT de la solicitud
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
+st.title("07_FILTRO")
+st.caption(
+    "Busca una SOLPED, filtra registros y visualiza el seguimiento TAT de la solicitud."
 )
 
 
@@ -763,16 +775,10 @@ if columnas_clave["solped"] is None:
 # Filtros en encabezado
 # ============================================================
 
-st.markdown(
-    """
-    <div class="step-box">
-        <h4 style="margin-top:0;">Filtros</h4>
-        <p class="small-muted">
-            Filtra por SOLPED, pedido, posición o material. Por defecto se selecciona la primera observación disponible.
-        </p>
-    </div>
-    """,
-    unsafe_allow_html=True,
+st.markdown("### Filtros")
+st.caption(
+    "Filtra por SOLPED, pedido, posición o material. "
+    "Por defecto se selecciona la primera observación disponible."
 )
 
 col_f1, col_f2, col_f3, col_f4, col_f5 = st.columns([1.4, 1.4, 1.1, 1.4, 1])
@@ -904,17 +910,10 @@ col_m4.metric("SOLPED filtradas", f"{total_solped_filtrado:,}")
 # Selección de observación optimizada
 # ============================================================
 
-st.markdown(
-    """
-    <div class="step-box">
-        <h4 style="margin-top:0;">Observación seleccionada</h4>
-        <p class="small-muted">
-            Selecciona una observación para visualizar el seguimiento de la SOLPED.
-            Por defecto se toma la primera observación filtrada.
-        </p>
-    </div>
-    """,
-    unsafe_allow_html=True,
+st.markdown("### Observación seleccionada")
+st.caption(
+    "Selecciona una observación para visualizar el seguimiento de la SOLPED. "
+    "Por defecto se toma la primera observación filtrada."
 )
 
 if df_filtrado.empty:
@@ -955,6 +954,11 @@ if columnas_clave["material"] is not None and columnas_clave["material"] in df_s
         + df_selector[columnas_clave["material"]].astype("string").fillna("")
     )
 
+df_selector["_etiqueta_observacion"] += (
+    " | Fila "
+    + df_selector["_id_observacion"].astype("string")
+)
+
 opciones_selector = dict(
     zip(
         df_selector["_etiqueta_observacion"],
@@ -986,17 +990,8 @@ mostrar_detalle_observacion(
 # Resultado filtrado
 # ============================================================
 
-st.markdown(
-    """
-    <div class="step-box">
-        <h4 style="margin-top:0;">Resultado filtrado</h4>
-        <p class="small-muted">
-            Tabla resumida de las observaciones disponibles con los filtros aplicados.
-        </p>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+st.markdown("### Resultado filtrado")
+st.caption("Tabla resumida de las observaciones disponibles con los filtros aplicados.")
 
 columnas_vista = construir_columnas_vista(df_filtrado, columnas_clave)
 
