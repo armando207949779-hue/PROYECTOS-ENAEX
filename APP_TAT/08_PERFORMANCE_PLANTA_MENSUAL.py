@@ -1843,7 +1843,7 @@ def grafico_torta_rangos_incumplimiento(tabla: pd.DataFrame):
     col_grafico, col_resumen = st.columns([1.15, 1])
 
     with col_grafico:
-        fig, ax = plt.subplots(figsize=(7.2, 6.4))
+        fig, ax = plt.subplots(figsize=(8.2, 6.4))
 
         def autopct_func(pct):
             if pct < 4:
@@ -1880,7 +1880,7 @@ def grafico_torta_rangos_incumplimiento(tabla: pd.DataFrame):
         ax.text(
             0,
             0.08,
-            f"{total:,}",
+            f"{total:,}".replace(",", "."),
             ha="center",
             va="center",
             fontsize=24,
@@ -1899,6 +1899,31 @@ def grafico_torta_rangos_incumplimiento(tabla: pd.DataFrame):
             color=COLOR_MUTED,
         )
 
+        etiquetas_leyenda = []
+
+        for rango, cantidad, porcentaje in zip(etiquetas, cantidades, porcentajes):
+            cantidad_txt = f"{int(cantidad):,}".replace(",", ".")
+            etiquetas_leyenda.append(
+                f"{rango} · {cantidad_txt} · {porcentaje:.1f}%"
+            )
+
+        legend = ax.legend(
+            wedges,
+            etiquetas_leyenda,
+            title="Leyenda",
+            loc="center left",
+            bbox_to_anchor=(1.02, 0.5),
+            frameon=False,
+            fontsize=9.5,
+            title_fontsize=10,
+        )
+
+        for texto in legend.get_texts():
+            texto.set_color(COLOR_TEXTO)
+
+        legend.get_title().set_color(COLOR_TEXTO)
+        legend.get_title().set_fontweight("bold")
+
         ax.set_title(
             "Distribución de incumplimiento TAT",
             fontsize=15,
@@ -1910,80 +1935,13 @@ def grafico_torta_rangos_incumplimiento(tabla: pd.DataFrame):
         ax.axis("equal")
         fig.patch.set_alpha(0)
         fig.tight_layout()
+        fig.subplots_adjust(right=0.72)
 
         st.pyplot(fig, clear_figure=True, use_container_width=True)
 
     with col_resumen:
         st.markdown("#### Resumen por rango")
         st.caption("Cantidad y participación sobre el total filtrado.")
-
-        st.markdown("#### Leyenda de colores")
-
-        leyenda_html = """
-        <div style="
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            margin-bottom: 16px;
-        ">
-        """
-
-        for _, fila in data.iterrows():
-            rango = str(fila["Rango"])
-            color = colores_mapa.get(rango, "#9CA3AF")
-            cantidad = int(fila["Cantidad"])
-            porcentaje = float(fila["% del total"])
-            cantidad_txt = f"{cantidad:,}".replace(",", ".")
-
-            leyenda_html += f"""
-            <div style="
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                gap: 10px;
-                padding: 8px 10px;
-                border: 1px solid #E5E7EB;
-                border-radius: 10px;
-                background: #FFFFFF;
-            ">
-                <div style="
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                ">
-                    <span style="
-                        width: 13px;
-                        height: 13px;
-                        border-radius: 50%;
-                        display: inline-block;
-                        background: {color};
-                    "></span>
-                    <span style="
-                        font-size: 0.86rem;
-                        font-weight: 700;
-                        color: #1F2937;
-                    ">
-                        {rango}
-                    </span>
-                </div>
-
-                <div style="
-                    font-size: 0.80rem;
-                    font-weight: 700;
-                    color: #6B7280;
-                    white-space: nowrap;
-                ">
-                    {cantidad_txt} · {porcentaje:.1f}%
-                </div>
-            </div>
-            """
-
-        leyenda_html += "</div>"
-
-        st.markdown(
-            leyenda_html,
-            unsafe_allow_html=True,
-        )
 
         tabla_resumen = data.copy()
 
@@ -2039,7 +1997,6 @@ def grafico_torta_rangos_incumplimiento(tabla: pd.DataFrame):
             f"con **{cantidad_mayor_txt} registros** "
             f"(**{porcentaje_mayor:.1f}%**)."
         )
-
 # ============================================================
 # Exportación
 # ============================================================
