@@ -107,36 +107,51 @@ CSS_COMPONENTES = """
     }
 
     .modern-hero {
-        background: linear-gradient(135deg, #eff6ff 0%, #ffffff 48%, #f8fafc 100%);
-        border: 1px solid #dbeafe;
-        border-radius: 22px;
-        padding: 20px 24px;
+        background:
+            radial-gradient(circle at top left, rgba(239, 62, 82, 0.14), transparent 30%),
+            radial-gradient(circle at top right, rgba(37, 99, 235, 0.18), transparent 34%),
+            linear-gradient(135deg, #fff7ed 0%, #ffffff 45%, #eff6ff 100%);
+        border: 1px solid #bfdbfe;
+        border-radius: 24px;
+        padding: 22px 26px;
         margin: 0;
-        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+        box-shadow: 0 4px 14px rgba(15, 23, 42, 0.07);
     }
 
     .modern-eyebrow {
-        color: #1e40af;
+        color: #ef3e52;
         font-size: 0.72rem;
-        font-weight: 900;
+        font-weight: 950;
         text-transform: uppercase;
-        letter-spacing: 0.08em;
+        letter-spacing: 0.09em;
         margin-bottom: 6px;
     }
 
     .modern-title {
         color: #0f172a;
-        font-size: 1.65rem;
-        font-weight: 900;
-        letter-spacing: -0.03em;
-        margin-bottom: 4px;
+        font-size: 1.70rem;
+        font-weight: 950;
+        letter-spacing: -0.035em;
+        margin-bottom: 6px;
     }
 
     .modern-subtitle {
         color: #475569;
         font-size: 0.95rem;
-        line-height: 1.45;
-        max-width: 900px;
+        line-height: 1.48;
+        max-width: 960px;
+    }
+
+    .flow-bridge {
+        display: inline-block;
+        margin-top: 12px;
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: #fee2e2;
+        color: #991b1b;
+        border: 1px solid #fecaca;
+        font-size: 0.74rem;
+        font-weight: 900;
     }
 
     .modern-section {
@@ -164,14 +179,14 @@ CSS_COMPONENTES = """
         display: flex;
         align-items: center;
         justify-content: center;
-        font-weight: 900;
+        font-weight: 950;
         font-size: 0.95rem;
         flex: 0 0 auto;
     }
 
     .modern-section-title {
         font-size: 1.05rem;
-        font-weight: 900;
+        font-weight: 950;
         color: #0f172a;
         margin-bottom: 1px;
     }
@@ -192,28 +207,98 @@ CSS_COMPONENTES = """
     .summary-card {
         background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
         border: 1px solid #e2e8f0;
-        border-radius: 14px;
+        border-radius: 15px;
         padding: 12px 14px;
-        min-height: 82px;
+        min-height: 84px;
+        position: relative;
+        overflow: hidden;
     }
 
-    .summary-card-primary {
+    .summary-card::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 4px;
+        background: #cbd5e1;
+    }
+
+    .card-blue {
         background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
         border-color: #bfdbfe;
     }
 
+    .card-blue::before {
+        background: #2563eb;
+    }
+
+    .card-red {
+        background: linear-gradient(180deg, #fff1f2 0%, #ffffff 100%);
+        border-color: #fecdd3;
+    }
+
+    .card-red::before {
+        background: #ef3e52;
+    }
+
+    .card-orange {
+        background: linear-gradient(180deg, #fff7ed 0%, #ffffff 100%);
+        border-color: #fed7aa;
+    }
+
+    .card-orange::before {
+        background: #f97316;
+    }
+
+    .card-green {
+        background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%);
+        border-color: #bbf7d0;
+    }
+
+    .card-green::before {
+        background: #22c55e;
+    }
+
+    .card-purple {
+        background: linear-gradient(180deg, #faf5ff 0%, #ffffff 100%);
+        border-color: #e9d5ff;
+    }
+
+    .card-purple::before {
+        background: #9333ea;
+    }
+
+    .card-cyan {
+        background: linear-gradient(180deg, #ecfeff 0%, #ffffff 100%);
+        border-color: #a5f3fc;
+    }
+
+    .card-cyan::before {
+        background: #06b6d4;
+    }
+
+    .card-yellow {
+        background: linear-gradient(180deg, #fefce8 0%, #ffffff 100%);
+        border-color: #fde68a;
+    }
+
+    .card-yellow::before {
+        background: #eab308;
+    }
+
     .summary-label {
-        color: #94a3b8;
+        color: #64748b;
         font-size: 0.66rem;
-        font-weight: 900;
+        font-weight: 950;
         text-transform: uppercase;
         letter-spacing: 0.06em;
-        margin-bottom: 5px;
+        margin-bottom: 6px;
     }
 
     .summary-value {
         color: #0f172a;
-        font-size: 0.95rem;
+        font-size: 0.96rem;
         font-weight: 850;
         line-height: 1.25;
         overflow-wrap: anywhere;
@@ -236,28 +321,80 @@ CSS_COMPONENTES = """
     .kpi-card {
         background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
         border: 1px solid #e2e8f0;
-        border-radius: 14px;
+        border-radius: 15px;
         padding: 13px 14px;
+        position: relative;
+        overflow: hidden;
     }
 
-    .kpi-card-primary {
+    .kpi-card::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 4px;
+        width: 100%;
+        background: #94a3b8;
+    }
+
+    .kpi-blue {
         background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
         border-color: #bfdbfe;
     }
 
+    .kpi-blue::before {
+        background: #2563eb;
+    }
+
+    .kpi-red {
+        background: linear-gradient(180deg, #fff1f2 0%, #ffffff 100%);
+        border-color: #fecdd3;
+    }
+
+    .kpi-red::before {
+        background: #ef3e52;
+    }
+
+    .kpi-orange {
+        background: linear-gradient(180deg, #fff7ed 0%, #ffffff 100%);
+        border-color: #fed7aa;
+    }
+
+    .kpi-orange::before {
+        background: #f97316;
+    }
+
+    .kpi-green {
+        background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%);
+        border-color: #bbf7d0;
+    }
+
+    .kpi-green::before {
+        background: #22c55e;
+    }
+
+    .kpi-purple {
+        background: linear-gradient(180deg, #faf5ff 0%, #ffffff 100%);
+        border-color: #e9d5ff;
+    }
+
+    .kpi-purple::before {
+        background: #9333ea;
+    }
+
     .kpi-label {
-        color: #94a3b8;
+        color: #64748b;
         font-size: 0.66rem;
-        font-weight: 900;
+        font-weight: 950;
         text-transform: uppercase;
         letter-spacing: 0.06em;
-        margin-bottom: 5px;
+        margin-bottom: 6px;
     }
 
     .kpi-value {
         color: #0f172a;
-        font-size: 1.10rem;
-        font-weight: 900;
+        font-size: 1.08rem;
+        font-weight: 950;
         line-height: 1.25;
         overflow-wrap: anywhere;
     }
@@ -267,7 +404,7 @@ CSS_COMPONENTES = """
         padding: 4px 10px;
         border-radius: 999px;
         font-size: 0.72rem;
-        font-weight: 900;
+        font-weight: 950;
         margin-top: 6px;
     }
 
@@ -289,6 +426,12 @@ CSS_COMPONENTES = """
         border: 1px solid #fde68a;
     }
 
+    .status-orange {
+        background: #ffedd5;
+        color: #9a3412;
+        border: 1px solid #fed7aa;
+    }
+
     .status-blue {
         background: #dbeafe;
         color: #1e40af;
@@ -299,6 +442,114 @@ CSS_COMPONENTES = """
         background: #f1f5f9;
         color: #475569;
         border: 1px solid #e2e8f0;
+    }
+
+    .alert-panel {
+        border-radius: 18px;
+        padding: 18px 20px;
+        margin: 0;
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.07);
+    }
+
+    .alert-red {
+        background:
+            radial-gradient(circle at top right, rgba(239, 62, 82, 0.18), transparent 32%),
+            linear-gradient(180deg, #fff1f2 0%, #ffffff 100%);
+        border: 1px solid #fecdd3;
+        border-left: 6px solid #ef3e52;
+    }
+
+    .alert-orange {
+        background:
+            radial-gradient(circle at top right, rgba(249, 115, 22, 0.18), transparent 32%),
+            linear-gradient(180deg, #fff7ed 0%, #ffffff 100%);
+        border: 1px solid #fed7aa;
+        border-left: 6px solid #f97316;
+    }
+
+    .alert-yellow {
+        background:
+            radial-gradient(circle at top right, rgba(234, 179, 8, 0.18), transparent 32%),
+            linear-gradient(180deg, #fefce8 0%, #ffffff 100%);
+        border: 1px solid #fde68a;
+        border-left: 6px solid #eab308;
+    }
+
+    .alert-green {
+        background:
+            radial-gradient(circle at top right, rgba(34, 197, 94, 0.18), transparent 32%),
+            linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%);
+        border: 1px solid #bbf7d0;
+        border-left: 6px solid #22c55e;
+    }
+
+    .alert-blue {
+        background:
+            radial-gradient(circle at top right, rgba(37, 99, 235, 0.18), transparent 32%),
+            linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+        border: 1px solid #bfdbfe;
+        border-left: 6px solid #2563eb;
+    }
+
+    .alert-gray {
+        background:
+            radial-gradient(circle at top right, rgba(100, 116, 139, 0.14), transparent 32%),
+            linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+        border: 1px solid #e2e8f0;
+        border-left: 6px solid #64748b;
+    }
+
+    .alert-title {
+        font-size: 0.78rem;
+        font-weight: 950;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: #475569;
+        margin-bottom: 5px;
+    }
+
+    .alert-main {
+        font-size: 1.25rem;
+        font-weight: 950;
+        color: #0f172a;
+        line-height: 1.25;
+        margin-bottom: 8px;
+    }
+
+    .alert-text {
+        font-size: 0.90rem;
+        color: #334155;
+        line-height: 1.45;
+    }
+
+    .alert-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(130px, 1fr));
+        gap: 10px;
+        margin-top: 14px;
+    }
+
+    .alert-item {
+        background: rgba(255,255,255,0.76);
+        border: 1px solid rgba(226,232,240,0.95);
+        border-radius: 13px;
+        padding: 10px 12px;
+    }
+
+    .alert-item-label {
+        color: #64748b;
+        font-size: 0.66rem;
+        font-weight: 950;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        margin-bottom: 4px;
+    }
+
+    .alert-item-value {
+        color: #0f172a;
+        font-size: 0.94rem;
+        font-weight: 900;
+        line-height: 1.25;
     }
 
     .message-card {
@@ -312,7 +563,7 @@ CSS_COMPONENTES = """
 
     .message-title {
         font-size: 0.86rem;
-        font-weight: 900;
+        font-weight: 950;
         color: #1e3a8a;
         margin-bottom: 3px;
     }
@@ -324,18 +575,20 @@ CSS_COMPONENTES = """
     }
 
     .search-card {
-        background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
-        border: 1px solid #e2e8f0;
-        border-left: 5px solid #2563eb;
+        background:
+            radial-gradient(circle at top right, rgba(6, 182, 212, 0.16), transparent 28%),
+            linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+        border: 1px solid #bae6fd;
+        border-left: 5px solid #06b6d4;
         border-radius: 16px;
         padding: 14px 16px;
         margin: 0;
     }
 
     .search-title {
-        color: #1e3a8a;
+        color: #0e7490;
         font-size: 0.82rem;
-        font-weight: 900;
+        font-weight: 950;
         text-transform: uppercase;
         letter-spacing: 0.06em;
         margin-bottom: 4px;
@@ -348,7 +601,9 @@ CSS_COMPONENTES = """
     }
 
     .flow-shell {
-        background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+        background:
+            radial-gradient(circle at top left, rgba(37, 99, 235, 0.16), transparent 28%),
+            linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
         border: 1px solid #dbeafe;
         border-radius: 18px;
         padding: 18px 20px 16px;
@@ -358,7 +613,7 @@ CSS_COMPONENTES = """
 
     .flow-title {
         font-size: 0.78rem;
-        font-weight: 800;
+        font-weight: 900;
         color: #1e3a8a;
         text-transform: uppercase;
         letter-spacing: 0.06em;
@@ -387,7 +642,7 @@ CSS_COMPONENTES = """
         display: flex;
         align-items: center;
         justify-content: center;
-        font-weight: 900;
+        font-weight: 950;
         font-size: 1rem;
     }
 
@@ -411,7 +666,7 @@ CSS_COMPONENTES = """
 
     .flow-label {
         font-size: 0.74rem;
-        font-weight: 800;
+        font-weight: 900;
         color: #1f2937;
         text-transform: uppercase;
         line-height: 1.2;
@@ -468,9 +723,9 @@ CSS_COMPONENTES = """
     }
 
     .flow-summary-label {
-        color: #94a3b8;
+        color: #64748b;
         font-size: 0.67rem;
-        font-weight: 800;
+        font-weight: 950;
         text-transform: uppercase;
         letter-spacing: 0.05em;
         margin-bottom: 4px;
@@ -479,7 +734,7 @@ CSS_COMPONENTES = """
     .flow-summary-value {
         color: #0f172a;
         font-size: 0.92rem;
-        font-weight: 800;
+        font-weight: 900;
         line-height: 1.25;
         overflow-wrap: anywhere;
     }
@@ -496,7 +751,7 @@ CSS_COMPONENTES = """
         padding: 3px 9px;
         border-radius: 999px;
         font-size: 0.70rem;
-        font-weight: 800;
+        font-weight: 900;
         margin-top: 5px;
     }
 
@@ -530,6 +785,10 @@ CSS_COMPONENTES = """
         .flow-summary {
             grid-template-columns: repeat(2, minmax(120px, 1fr));
         }
+
+        .alert-grid {
+            grid-template-columns: repeat(2, minmax(130px, 1fr));
+        }
     }
 
     @media (max-width: 680px) {
@@ -542,6 +801,10 @@ CSS_COMPONENTES = """
         }
 
         .flow-summary {
+            grid-template-columns: 1fr;
+        }
+
+        .alert-grid {
             grid-template-columns: 1fr;
         }
 
@@ -641,6 +904,42 @@ def formatear_entero(valor) -> str:
         return formatear_valor(valor)
 
     return f"{int(round(numero)):,}".replace(",", ".")
+
+
+def formatear_decimal(valor, decimales: int = 1) -> str:
+    if pd.isna(valor):
+        return "—"
+
+    numero = pd.to_numeric(valor, errors="coerce")
+
+    if pd.isna(numero):
+        return formatear_valor(valor)
+
+    return (
+        f"{numero:,.{decimales}f}"
+        .replace(",", "X")
+        .replace(".", ",")
+        .replace("X", ".")
+    )
+
+
+def formatear_monto(valor, moneda) -> str:
+    if pd.isna(valor):
+        return "—"
+
+    numero = pd.to_numeric(valor, errors="coerce")
+
+    if pd.isna(numero):
+        return formatear_valor(valor)
+
+    moneda_txt = formatear_valor(moneda)
+
+    if moneda_txt == "—":
+        moneda_txt = ""
+
+    monto = f"{int(round(numero)):,}".replace(",", ".")
+
+    return f"{monto} {moneda_txt}".strip()
 
 
 def formatear_fecha(valor) -> str:
@@ -775,6 +1074,186 @@ def hay_criterio_busqueda(
     ]
 
     return any(str(valor).strip() for valor in valores)
+
+
+def texto_tiempo_extendido(dias) -> str:
+    if pd.isna(dias):
+        return "Sin fecha de solicitud"
+
+    dias = int(dias)
+
+    if dias < 0:
+        return "La fecha de solicitud está en el futuro"
+
+    if dias < 30:
+        return f"{dias:,} días".replace(",", ".")
+
+    meses = dias / 30.44
+
+    if dias < 365:
+        meses_txt = (
+            f"{meses:,.1f}"
+            .replace(",", "X")
+            .replace(".", ",")
+            .replace("X", ".")
+        )
+
+        return f"{dias:,} días · {meses_txt} meses aprox.".replace(",", ".")
+
+    anos = dias / 365.25
+
+    meses_txt = (
+        f"{meses:,.1f}"
+        .replace(",", "X")
+        .replace(".", ",")
+        .replace("X", ".")
+    )
+
+    anos_txt = (
+        f"{anos:,.1f}"
+        .replace(",", "X")
+        .replace(".", ",")
+        .replace("X", ".")
+    )
+
+    return f"{dias:,} días · {meses_txt} meses · {anos_txt} años aprox.".replace(",", ".")
+
+
+def obtener_umbral_operativo(registro: pd.Series, columnas_clave: dict):
+    umbral = pd.to_numeric(
+        obtener_valor(registro, columnas_clave["umbral_tat_total"]),
+        errors="coerce",
+    )
+
+    if pd.notna(umbral):
+        return float(umbral)
+
+    tipo_oc = str(
+        obtener_valor(registro, columnas_clave["tipo_oc"])
+    ).strip().replace(".0", "")
+
+    if tipo_oc in ["35", "45"]:
+        return 40.0
+
+    if tipo_oc == "47":
+        return 70.0
+
+    return pd.NA
+
+
+def calcular_estado_alerta_registro(registro: pd.Series, columnas_clave: dict) -> dict:
+    hoy = pd.Timestamp.today().normalize()
+
+    fecha_solicitud = pd.to_datetime(
+        obtener_valor(registro, columnas_clave["fecha_solicitud"]),
+        errors="coerce",
+    )
+
+    fecha_recepcion = pd.to_datetime(
+        obtener_valor(registro, columnas_clave["fecha_recepcion"]),
+        errors="coerce",
+    )
+
+    umbral = obtener_umbral_operativo(registro, columnas_clave)
+
+    dias_desde_solicitud = pd.NA
+
+    if pd.notna(fecha_solicitud):
+        dias_desde_solicitud = int((hoy - fecha_solicitud).days)
+
+    fecha_vencimiento = pd.NaT
+
+    if pd.notna(fecha_solicitud) and pd.notna(umbral):
+        fecha_vencimiento = fecha_solicitud + pd.to_timedelta(int(round(umbral)), unit="D")
+
+    dias_restantes = pd.NA
+
+    if pd.notna(fecha_vencimiento):
+        dias_restantes = int((fecha_vencimiento - hoy).days)
+
+    if pd.notna(fecha_recepcion):
+        estado = "Recepcionado"
+        clase = "alert-green"
+        titulo = "Pedido recepcionado"
+        mensaje = (
+            "El registro ya tiene recepción registrada. "
+            "La revisión en Filtro sirve para validar el historial y la trazabilidad completa."
+        )
+
+    elif pd.isna(fecha_solicitud):
+        estado = "Sin fecha de solicitud"
+        clase = "alert-gray"
+        titulo = "No se puede calcular vencimiento"
+        mensaje = (
+            "No existe una fecha de solicitud válida. "
+            "Revisa la data base para calcular el avance TAT."
+        )
+
+    elif pd.isna(umbral):
+        estado = "Sin umbral TAT"
+        clase = "alert-gray"
+        titulo = "No se puede calcular vencimiento"
+        mensaje = (
+            "Existe fecha de solicitud, pero no hay umbral TAT disponible. "
+            "Revisa el tipo OC o el campo umbral_tat_total."
+        )
+
+    elif dias_restantes < 0:
+        estado = "Vencido"
+        clase = "alert-red"
+        titulo = f"Vencido hace {abs(dias_restantes):,} días".replace(",", ".")
+        mensaje = (
+            "Este registro ya superó su fecha estimada de vencimiento TAT y no tiene recepción. "
+            "Desde Alertas se identifica como prioridad, y desde Filtro puedes revisar el detalle específico de la SOLPED."
+        )
+
+    elif dias_restantes == 0:
+        estado = "Vence hoy"
+        clase = "alert-orange"
+        titulo = "Vence hoy"
+        mensaje = (
+            "Este registro vence hoy y todavía no tiene recepción. "
+            "Conviene revisar la etapa pendiente y gestionar el cierre operativo."
+        )
+
+    elif dias_restantes <= 7:
+        estado = "Por vencer"
+        clase = "alert-orange"
+        titulo = f"Por vencer en {dias_restantes:,} días".replace(",", ".")
+        mensaje = (
+            "Este registro está próximo a vencer. "
+            "Alertas ayuda a detectarlo y Filtro permite revisar el detalle de la SOLPED."
+        )
+
+    elif dias_restantes <= 30:
+        estado = "Seguimiento"
+        clase = "alert-yellow"
+        titulo = f"Vence en {dias_restantes:,} días".replace(",", ".")
+        mensaje = (
+            "Este registro aún no vence, pero está dentro de la ventana de seguimiento preventivo."
+        )
+
+    else:
+        estado = "Controlado"
+        clase = "alert-blue"
+        titulo = f"Vence en {dias_restantes:,} días".replace(",", ".")
+        mensaje = (
+            "Este registro todavía tiene margen antes del vencimiento TAT. "
+            "Se recomienda mantener seguimiento preventivo."
+        )
+
+    return {
+        "estado": estado,
+        "clase": clase,
+        "titulo": titulo,
+        "mensaje": mensaje,
+        "dias_desde_solicitud": dias_desde_solicitud,
+        "dias_desde_solicitud_texto": texto_tiempo_extendido(dias_desde_solicitud),
+        "umbral": umbral,
+        "fecha_vencimiento": fecha_vencimiento,
+        "fecha_vencimiento_texto": formatear_fecha_corta(fecha_vencimiento),
+        "dias_restantes": dias_restantes,
+    }
 
 
 def aplicar_filtros_con_progreso(
@@ -1007,6 +1486,49 @@ def detectar_columnas_clave(df: pd.DataFrame) -> dict:
             df,
             [
                 "rango_incumplimiento_tat",
+            ],
+        ),
+        "cantidad_solicitada": buscar_columna(
+            df,
+            [
+                "Cantidad solicitada - ME5A",
+                "Cantidad solicitada",
+            ],
+        ),
+        "unidad_medida": buscar_columna(
+            df,
+            [
+                "Unidad de medida - ME5A",
+                "Unidad de medida",
+            ],
+        ),
+        "precio_valoracion": buscar_columna(
+            df,
+            [
+                "Precio de valoración",
+                "Precio valoración",
+                "Precio valorización",
+            ],
+        ),
+        "moneda": buscar_columna(
+            df,
+            [
+                "Moneda - ME5A",
+                "Moneda",
+            ],
+        ),
+        "solicitante": buscar_columna(
+            df,
+            [
+                "Solicitante",
+                "Solicitante - ME5A",
+            ],
+        ),
+        "autor": buscar_columna(
+            df,
+            [
+                "Autor",
+                "Autor - ME5A",
             ],
         ),
     }
@@ -1264,11 +1786,14 @@ def clase_estado_tat(valor: str) -> str:
 def html_hero() -> str:
     return """
     <div class="modern-hero">
-        <div class="modern-eyebrow">Consulta operativa TAT</div>
+        <div class="modern-eyebrow">Flujo operativo Alertas → Filtro</div>
         <div class="modern-title">07_FILTRO</div>
         <div class="modern-subtitle">
-            Ingresa un criterio de búsqueda, ejecuta la consulta y confirma qué registro quieres revisar.
-            La información se presenta de forma progresiva: primero el resultado general, luego el seguimiento visual y finalmente las validaciones.
+            Alertas identifica las SOLPED críticas o próximas a vencer. Filtro permite entrar al detalle específico:
+            compra, responsable, cantidades, valor, estado TAT, fechas y seguimiento completo de la solicitud.
+        </div>
+        <div class="flow-bridge">
+            Alertas y Filtro funcionan como pestañas hermanas: detectar → investigar → gestionar.
         </div>
     </div>
     """
@@ -1277,9 +1802,10 @@ def html_hero() -> str:
 def html_search_intro() -> str:
     return """
     <div class="search-card">
-        <div class="search-title">Búsqueda</div>
+        <div class="search-title">Búsqueda específica de SOLPED</div>
         <div class="search-text">
-            Completa al menos un campo y presiona <b>Buscar</b>. La página no mostrará resultados hasta que ejecutes una búsqueda.
+            Usa esta pestaña después de revisar Alertas. Busca por SOLPED, pedido, posición, material o texto breve
+            para abrir el expediente operativo de esa línea.
         </div>
     </div>
     """
@@ -1294,21 +1820,80 @@ def html_message_card(titulo: str, texto: str) -> str:
     """
 
 
+def html_alerta_operativa(registro: pd.Series, columnas_clave: dict) -> str:
+    alerta = calcular_estado_alerta_registro(registro, columnas_clave)
+
+    umbral = alerta["umbral"]
+
+    if pd.isna(umbral):
+        umbral_txt = "Sin umbral"
+    else:
+        umbral_txt = f"{int(round(umbral)):,} días".replace(",", ".")
+
+    dias_restantes = alerta["dias_restantes"]
+
+    if pd.isna(dias_restantes):
+        dias_restantes_txt = "Sin dato"
+    elif dias_restantes < 0:
+        dias_restantes_txt = f"{abs(dias_restantes):,} días vencido".replace(",", ".")
+    elif dias_restantes == 0:
+        dias_restantes_txt = "Vence hoy"
+    else:
+        dias_restantes_txt = f"{dias_restantes:,} días restantes".replace(",", ".")
+
+    return f"""
+    <div class="alert-panel {escape(alerta["clase"])}">
+        <div class="alert-title">Lectura operativa desde Alertas</div>
+        <div class="alert-main">{escape(alerta["titulo"])}</div>
+        <div class="alert-text">{escape(alerta["mensaje"])}</div>
+
+        <div class="alert-grid">
+            <div class="alert-item">
+                <div class="alert-item-label">Estado alerta</div>
+                <div class="alert-item-value">{escape(alerta["estado"])}</div>
+            </div>
+
+            <div class="alert-item">
+                <div class="alert-item-label">Desde solicitud hasta hoy</div>
+                <div class="alert-item-value">{escape(alerta["dias_desde_solicitud_texto"])}</div>
+            </div>
+
+            <div class="alert-item">
+                <div class="alert-item-label">Fecha vencimiento</div>
+                <div class="alert-item-value">{escape(alerta["fecha_vencimiento_texto"])}</div>
+            </div>
+
+            <div class="alert-item">
+                <div class="alert-item-label">Contra umbral</div>
+                <div class="alert-item-value">{escape(dias_restantes_txt)} · {escape(umbral_txt)}</div>
+            </div>
+        </div>
+    </div>
+    """
+
+
 def html_resumen_general(registro: pd.Series, columnas_clave: dict) -> str:
     estado_match = formatear_valor(obtener_valor(registro, columnas_clave["estado_match"]))
+    moneda = obtener_valor(registro, columnas_clave["moneda"])
 
     campos = [
-        ("SOLPED", obtener_valor(registro, columnas_clave["solped"]), "summary-card-primary"),
-        ("Pedido", obtener_valor(registro, columnas_clave["pedido"]), "summary-card-primary"),
-        ("Posición", obtener_valor(registro, columnas_clave["posicion"]), ""),
-        ("Centro", obtener_valor(registro, columnas_clave["centro"]), ""),
-        ("Material", obtener_valor(registro, columnas_clave["material"]), ""),
-        ("Texto breve", obtener_valor(registro, columnas_clave["texto_breve"]), ""),
-        ("Grupo de compras", obtener_valor(registro, columnas_clave["grupo_compras"]), ""),
-        ("Tipo OC", obtener_valor(registro, columnas_clave["tipo_oc"]), ""),
-        ("Sistema", obtener_valor(registro, columnas_clave["sistema"]), ""),
-        ("Origen", obtener_valor(registro, columnas_clave["origen"]), ""),
-        ("Estado del match", estado_match, ""),
+        ("SOLPED", obtener_valor(registro, columnas_clave["solped"]), "card-blue"),
+        ("Pedido", obtener_valor(registro, columnas_clave["pedido"]), "card-blue"),
+        ("Posición", obtener_valor(registro, columnas_clave["posicion"]), "card-cyan"),
+        ("Centro", obtener_valor(registro, columnas_clave["centro"]), "card-cyan"),
+        ("Material", obtener_valor(registro, columnas_clave["material"]), "card-purple"),
+        ("Texto breve", obtener_valor(registro, columnas_clave["texto_breve"]), "card-purple"),
+        ("Cantidad solicitada", formatear_decimal(obtener_valor(registro, columnas_clave["cantidad_solicitada"])), "card-green"),
+        ("Unidad de medida", obtener_valor(registro, columnas_clave["unidad_medida"]), "card-green"),
+        ("Precio valoración", formatear_monto(obtener_valor(registro, columnas_clave["precio_valoracion"]), moneda), "card-yellow"),
+        ("Moneda", moneda, "card-yellow"),
+        ("Solicitante", obtener_valor(registro, columnas_clave["solicitante"]), "card-orange"),
+        ("Autor", obtener_valor(registro, columnas_clave["autor"]), "card-orange"),
+        ("Grupo de compras", obtener_valor(registro, columnas_clave["grupo_compras"]), "card-red"),
+        ("Tipo OC", obtener_valor(registro, columnas_clave["tipo_oc"]), "card-red"),
+        ("Sistema", obtener_valor(registro, columnas_clave["sistema"]), "card-blue"),
+        ("Origen", obtener_valor(registro, columnas_clave["origen"]), "card-cyan"),
+        ("Estado del match", estado_match, "card-red"),
     ]
 
     cards = []
@@ -1325,7 +1910,7 @@ def html_resumen_general(registro: pd.Series, columnas_clave: dict) -> str:
 
     return f"""
     <div class="modern-section">
-        {html_section_header("1", "Información general", "Datos principales del registro confirmado.")}
+        {html_section_header("1", "Información general y datos de compra", "Datos principales del registro confirmado, incluyendo cantidad, valor, responsables y origen.")}
         <div class="summary-grid">
             {''.join(cards)}
         </div>
@@ -1339,37 +1924,50 @@ def html_indicadores_tat(registro: pd.Series, columnas_clave: dict) -> str:
     )
 
     estado_class = clase_estado_tat(performance)
+    alerta = calcular_estado_alerta_registro(registro, columnas_clave)
 
     kpis = [
+        (
+            "Días desde solicitud",
+            alerta["dias_desde_solicitud_texto"],
+            "Solicitud hasta hoy",
+            "kpi-red" if alerta["estado"] == "Vencido" else "kpi-blue",
+        ),
+        (
+            "Fecha vencimiento",
+            alerta["fecha_vencimiento_texto"],
+            "Según fecha solicitud + umbral TAT",
+            "kpi-orange",
+        ),
         (
             "Días TAT total",
             formatear_entero(obtener_valor(registro, columnas_clave["dias_tat_total"])),
             "Solicitud a recepción",
-            "kpi-card-primary",
+            "kpi-blue",
         ),
         (
             "Umbral TAT total",
-            formatear_entero(obtener_valor(registro, columnas_clave["umbral_tat_total"])),
-            "Límite definido",
-            "",
+            formatear_entero(alerta["umbral"]),
+            "Límite definido o inferido",
+            "kpi-purple",
         ),
         (
             "Performance TAT",
             performance,
             f'<span class="status-pill {estado_class}">{escape(performance)}</span>',
-            "kpi-card-primary",
+            "kpi-green",
         ),
         (
             "Días incumplimiento",
             formatear_entero(obtener_valor(registro, columnas_clave["dias_incumplimiento"])),
             "Días sobre umbral",
-            "",
+            "kpi-red",
         ),
         (
             "Rango incumplimiento",
             formatear_valor(obtener_valor(registro, columnas_clave["rango_incumplimiento"])),
             "Clasificación TAT",
-            "",
+            "kpi-orange",
         ),
     ]
 
@@ -1380,7 +1978,7 @@ def html_indicadores_tat(registro: pd.Series, columnas_clave: dict) -> str:
             f"""
             <div class="kpi-card {extra_class}">
                 <div class="kpi-label">{escape(label)}</div>
-                <div class="kpi-value">{escape(value)}</div>
+                <div class="kpi-value">{escape(str(value))}</div>
                 <div class="summary-note">{note}</div>
             </div>
             """
@@ -1388,7 +1986,7 @@ def html_indicadores_tat(registro: pd.Series, columnas_clave: dict) -> str:
 
     return f"""
     <div class="modern-section">
-        {html_section_header("4", "Indicadores TAT", "Resumen de tiempos, umbrales y cumplimiento del registro.")}
+        {html_section_header("4", "Indicadores TAT y lectura temporal", "Resumen de tiempos, umbrales, vencimiento y cumplimiento del registro.")}
         <div class="kpi-grid">
             {''.join(cards)}
         </div>
@@ -1498,7 +2096,7 @@ def html_diagrama_flujo_solped(registro: pd.Series, columnas_clave: dict) -> str
     if pd.isna(dias_transcurridos):
         dias_texto = "Sin dato"
     else:
-        dias_texto = f"{dias_transcurridos:,} días".replace(",", ".")
+        dias_texto = texto_tiempo_extendido(dias_transcurridos)
 
     nota = (
         f"Última etapa registrada: {resumen['ultima_etapa']} "
@@ -1552,7 +2150,7 @@ def html_diagrama_flujo_solped(registro: pd.Series, columnas_clave: dict) -> str
 def mostrar_hero():
     render_html(
         html_hero(),
-        height=150,
+        height=170,
         scrolling=False,
     )
 
@@ -1579,8 +2177,19 @@ def mostrar_resumen_general_moderno(registro: pd.Series, columnas_clave: dict):
             registro=registro,
             columnas_clave=columnas_clave,
         ),
-        height=405,
+        height=565,
         scrolling=True,
+    )
+
+
+def mostrar_alerta_operativa_moderno(registro: pd.Series, columnas_clave: dict):
+    render_html(
+        html_alerta_operativa(
+            registro=registro,
+            columnas_clave=columnas_clave,
+        ),
+        height=265,
+        scrolling=False,
     )
 
 
@@ -1590,7 +2199,7 @@ def mostrar_indicadores_tat_moderno(registro: pd.Series, columnas_clave: dict):
             registro=registro,
             columnas_clave=columnas_clave,
         ),
-        height=235,
+        height=335,
         scrolling=True,
     )
 
@@ -1601,7 +2210,7 @@ def mostrar_flujo_profesional_solped(registro: pd.Series, columnas_clave: dict):
             registro=registro,
             columnas_clave=columnas_clave,
         ),
-        height=390,
+        height=405,
         scrolling=True,
     )
 
@@ -1648,7 +2257,12 @@ def mostrar_validacion_temporal_tat(
 def mostrar_detalle_observacion(registro: pd.Series, columnas_clave: dict):
     mostrar_message_card(
         titulo="Registro confirmado",
-        texto="Se muestra el detalle de la observación seleccionada, ordenado desde información general hasta validaciones específicas.",
+        texto="Se muestra el expediente operativo de la observación seleccionada. Esta vista complementa Alertas con detalle específico para investigar y gestionar.",
+    )
+
+    mostrar_alerta_operativa_moderno(
+        registro=registro,
+        columnas_clave=columnas_clave,
     )
 
     mostrar_resumen_general_moderno(
