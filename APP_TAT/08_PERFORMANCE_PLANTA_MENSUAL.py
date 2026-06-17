@@ -8,7 +8,7 @@ import io
 import base64
 from pathlib import Path
 
-import altair as alt
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -195,12 +195,7 @@ def normalizar_columnas_me80fn(df: pd.DataFrame) -> pd.DataFrame:
 
     df = df.rename(columns=renombrar)
 
-    columnas_texto = [
-        "Estado del match",
-        "estado_match",
-    ]
-
-    for col in columnas_texto:
+    for col in ["Estado del match", "estado_match"]:
         if col in df.columns:
             df[col] = (
                 df[col]
@@ -299,18 +294,6 @@ def formatear_porcentaje(valor) -> str:
     return f"{numero:.1f}%"
 
 
-def formatear_decimal(valor) -> str:
-    if pd.isna(valor):
-        return "—"
-
-    numero = pd.to_numeric(valor, errors="coerce")
-
-    if pd.isna(numero):
-        return "—"
-
-    return f"{numero:,.1f}"
-
-
 def normalizar_estado_performance(valor) -> str:
     texto = str(valor).strip().lower()
 
@@ -368,6 +351,22 @@ def validar_fechas_finales(df: pd.DataFrame):
             f"Faltan columnas requeridas de fechas finales: {faltantes}. "
             "Primero ejecuta 05_CALCULOS o carga un archivo con fechas finales."
         )
+
+
+def limpiar_eje_matplotlib(ax):
+    ax.grid(False)
+
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+    ax.tick_params(axis="both", length=0, colors=COLOR_MUTED)
+    ax.set_facecolor("none")
+
+
+def preparar_figura(fig, ax):
+    fig.patch.set_alpha(0)
+    ax.set_frame_on(False)
+    limpiar_eje_matplotlib(ax)
 
 
 # ============================================================
@@ -862,7 +861,7 @@ def aplicar_filtros_con_progreso(
 
 
 # ============================================================
-# Resúmenes y gráficos
+# Resúmenes
 # ============================================================
 
 def crear_resumen_mensual(df: pd.DataFrame) -> pd.DataFrame:
@@ -913,47 +912,6 @@ def crear_resumen_mensual(df: pd.DataFrame) -> pd.DataFrame:
     return tabla.sort_values("periodo_fecha").reset_index(drop=True)
 
 
-def resumen_performance_general(df: pd.DataFrame) -> pd.DataFrame:
-    metricas = [
-        ("performance_liberacion_solped", "Liberación SolPed"),
-        ("performance_comprador", "Comprador"),
-        ("performance_liberacion_pedido", "Liberación Pedido"),
-        ("performance_proveedor", "Proveedor"),
-        ("performance_logistica", "Logística"),
-        ("performance_tat_total", "TAT Total"),
-    ]
-
-    data = []
-
-    for col, nombre in metricas:
-        if col not in df.columns:
-            continue
-
-        serie = df[col].astype("object")
-
-        cumple = int(serie.eq("Cumple").sum())
-        no_cumple = int(serie.eq("No cumple").sum())
-        no_aplica = int(serie.isin(["No aplica", "No aplica al análisis"]).sum())
-        sin_datos = int(serie.isin(["Sin datos", "En proceso"]).sum())
-
-        evaluables = cumple + no_cumple
-        pct = cumple / evaluables * 100 if evaluables else 0
-
-        data.append(
-            {
-                "Métrica": nombre,
-                "Cumple": cumple,
-                "No cumple": no_cumple,
-                "No aplica": no_aplica,
-                "Sin datos / En proceso": sin_datos,
-                "Evaluables": evaluables,
-                "% Cumple": round(pct, 2),
-            }
-        )
-
-    return pd.DataFrame(data)
-
-
 def datos_etapa(df: pd.DataFrame, etapa: dict) -> dict:
     col_perf = etapa["col_perf"]
     col_dias = etapa["col_dias"]
@@ -992,338 +950,6 @@ def datos_etapa(df: pd.DataFrame, etapa: dict) -> dict:
         "promedio_dias": promedio,
         "n_promedio": n_promedio,
     }
-
-
-def grafico_mensual_principal(tabla: pd.DataFrame):
-    if tabla.empty:
-        st.info("No hay datos evaluables para el gráfico mensual.")
-        return
-
-    plot = tabla.melt(
-        id_vars=["periodo_fecha", "periodo_label", "Total"],
-        value_vars=["Cumple", "No cumple"],
-        var_name="Estado",
-        value_name="Cantidad",
-    )
-
-    plot["Porcentaje"] = np.where(
-        plot["Total"] > 0,
-        plot["Cantidad"] / plot["Total"] * 100,
-        0,
-    )
-
-    plot["Estado gráfico"] = plot["Estado"].replace(
-        {
-            "No cumple": "No Cumple",
-        }
-    )
-
-    plot["Orden"] = plot["Estado"].map(
-        {
-            "Cumple": 1,
-            "No cumple": 2,
-        }
-    )
-
-    orden_meses = tabla["periodo_label"].tolist()
-
-    barras = (
-        alt.Chart(plot)
-        .mark_bar(
-            size=42,
-            cornerRadiusTopLeft=5,
-            cornerRadiusTopRight=5,
-        )
-        .encode(
-            x=alt.X(
-                "periodo_label:N",
-                sort=orden_meses,
-                title=None,
-                axis=alt.Axis(
-                    labelAngle=0,
-                    labelFontSize=12,
-                    labelLimit=120,
-                ),
-            ),
-            y=alt.Y(
-                "Porcentaje:Q",
-                stack="zero",
-                title="% sobre TAT evaluables",
-                scale=alt.Scale(domain=[0, 100]),
-                axis=alt.Axis(
-                    values=[0, 25, 50, 65, 75, 100],
-                    labelExpr="datum.value + '%'",
-                    grid=True,
-                ),
-            ),
-            color=alt.Color(
-                "Estado gráfico:N",
-                scale=alt.Scale(
-                    domain=["Cumple", "No Cumple"],
-                    range=[COLOR_CUMPLE, COLOR_NO_CUMPLE],
-                ),
-                legend=alt.Legend(title=None, orient="bottom"),
-            ),
-            order=alt.Order("Orden:Q", sort="ascending"),
-            tooltip=[
-                alt.Tooltip("periodo_label:N", title="Mes"),
-                alt.Tooltip("Estado gráfico:N", title="Estado"),
-                alt.Tooltip("Cantidad:Q", title="Cantidad", format=",.0f"),
-                alt.Tooltip("Porcentaje:Q", title="Porcentaje", format=".1f"),
-                alt.Tooltip("Total:Q", title="Total evaluable", format=",.0f"),
-            ],
-        )
-    )
-
-    labels = (
-        alt.Chart(plot[plot["Cantidad"].gt(0)])
-        .mark_text(
-            color="white",
-            fontWeight="bold",
-            fontSize=12,
-        )
-        .encode(
-            x=alt.X("periodo_label:N", sort=orden_meses),
-            y=alt.Y("Porcentaje:Q", stack="zero"),
-            detail="Estado gráfico:N",
-            text=alt.Text("Porcentaje:Q", format=".0f"),
-            order=alt.Order("Orden:Q", sort="ascending"),
-        )
-    )
-
-    linea_meta = (
-        alt.Chart(pd.DataFrame({"Meta": [META_CUMPLIMIENTO]}))
-        .mark_rule(
-            color=COLOR_META,
-            strokeDash=[6, 4],
-            strokeWidth=2.5,
-        )
-        .encode(
-            y=alt.Y("Meta:Q"),
-        )
-    )
-
-    texto_meta = (
-        alt.Chart(pd.DataFrame({"Meta": [META_CUMPLIMIENTO], "x": [orden_meses[0]]}))
-        .mark_text(
-            align="left",
-            dx=5,
-            dy=-8,
-            color=COLOR_META,
-            fontWeight="bold",
-            fontSize=12,
-            text=f"Meta {META_CUMPLIMIENTO}%",
-        )
-        .encode(
-            x=alt.X("x:N", sort=orden_meses),
-            y=alt.Y("Meta:Q"),
-        )
-    )
-
-    chart = (
-        alt.layer(barras, labels, linea_meta, texto_meta)
-        .properties(height=430)
-        .configure_view(strokeWidth=0)
-        .configure_axis(labelColor=COLOR_MUTED, titleColor=COLOR_TEXTO)
-        .configure_legend(labelColor=COLOR_MUTED, titleColor=COLOR_TEXTO)
-    )
-
-    st.altair_chart(chart, use_container_width=True)
-
-
-def grafico_linea_mensual(tabla: pd.DataFrame):
-    if tabla.empty:
-        st.info("No hay datos evaluables para la serie mensual.")
-        return
-
-    plot = tabla.copy()
-
-    plot["% Cumple"] = pd.to_numeric(plot["% Cumple"], errors="coerce").fillna(0)
-    plot["% No cumple"] = pd.to_numeric(plot["% No cumple"], errors="coerce").fillna(0)
-
-    lineas = plot.melt(
-        id_vars=["periodo_fecha", "periodo_label", "Total"],
-        value_vars=["% Cumple", "% No cumple"],
-        var_name="Indicador",
-        value_name="Porcentaje",
-    )
-
-    lineas["Indicador"] = (
-        lineas["Indicador"]
-        .str.replace("% ", "", regex=False)
-        .replace({"No cumple": "No Cumple"})
-    )
-
-    chart = (
-        alt.Chart(lineas)
-        .mark_line(point=True, strokeWidth=3)
-        .encode(
-            x=alt.X(
-                "periodo_fecha:T",
-                title=None,
-                axis=alt.Axis(format="%b %Y", labelAngle=0),
-            ),
-            y=alt.Y(
-                "Porcentaje:Q",
-                title="% sobre TAT evaluables",
-                scale=alt.Scale(domain=[0, 100]),
-                axis=alt.Axis(labelExpr="datum.value + '%'"),
-            ),
-            color=alt.Color(
-                "Indicador:N",
-                scale=alt.Scale(
-                    domain=["Cumple", "No Cumple"],
-                    range=[COLOR_CUMPLE, COLOR_NO_CUMPLE],
-                ),
-                legend=alt.Legend(title=None, orient="bottom"),
-            ),
-            tooltip=[
-                alt.Tooltip("periodo_label:N", title="Mes"),
-                alt.Tooltip("Indicador:N", title="Indicador"),
-                alt.Tooltip("Porcentaje:Q", title="Porcentaje", format=".1f"),
-                alt.Tooltip("Total:Q", title="Total evaluable", format=",.0f"),
-            ],
-        )
-    )
-
-    linea_meta = (
-        alt.Chart(pd.DataFrame({"Meta": [META_CUMPLIMIENTO]}))
-        .mark_rule(
-            color=COLOR_META,
-            strokeDash=[6, 4],
-            strokeWidth=2,
-        )
-        .encode(
-            y="Meta:Q",
-        )
-    )
-
-    st.altair_chart(
-        (chart + linea_meta).properties(height=300).configure_view(strokeWidth=0),
-        use_container_width=True,
-    )
-
-
-def grafico_rangos_incumplimiento(df: pd.DataFrame):
-    if "rango_incumplimiento_tat" not in df.columns:
-        st.info("No existe la columna rango_incumplimiento_tat.")
-        return
-
-    orden = [
-        "Sin incumplimiento",
-        "1-5 días",
-        "6-15 días",
-        "16-30 días",
-        "Mayor a un mes",
-        "Sin datos",
-    ]
-
-    data = (
-        df["rango_incumplimiento_tat"]
-        .fillna("Sin datos")
-        .value_counts()
-        .reset_index()
-    )
-
-    data.columns = ["Rango", "Cantidad"]
-
-    data["Rango"] = pd.Categorical(
-        data["Rango"],
-        categories=orden,
-        ordered=True,
-    )
-
-    data = data.sort_values("Rango")
-
-    chart = (
-        alt.Chart(data)
-        .mark_bar(cornerRadius=5)
-        .encode(
-            x=alt.X("Cantidad:Q", title="Cantidad"),
-            y=alt.Y("Rango:N", sort=orden, title=None),
-            color=alt.Color(
-                "Rango:N",
-                legend=None,
-                scale=alt.Scale(
-                    range=[
-                        COLOR_CUMPLE,
-                        "#9CA3AF",
-                        "#F59E0B",
-                        "#F97316",
-                        COLOR_NO_CUMPLE,
-                        COLOR_SIN_DATOS,
-                    ]
-                ),
-            ),
-            tooltip=[
-                alt.Tooltip("Rango:N", title="Rango"),
-                alt.Tooltip("Cantidad:Q", title="Cantidad", format=",.0f"),
-            ],
-        )
-    )
-
-    text = (
-        chart
-        .mark_text(
-            align="left",
-            dx=4,
-            color=COLOR_TEXTO,
-            fontWeight="bold",
-        )
-        .encode(
-            text=alt.Text("Cantidad:Q", format=",.0f")
-        )
-    )
-
-    st.altair_chart(
-        (chart + text).properties(height=290).configure_view(strokeWidth=0),
-        use_container_width=True,
-    )
-
-
-def grafico_etapas(resumen_etapas: pd.DataFrame):
-    if resumen_etapas.empty:
-        st.info("No hay información de etapas para graficar.")
-        return
-
-    chart = (
-        alt.Chart(resumen_etapas)
-        .mark_bar(cornerRadius=5)
-        .encode(
-            x=alt.X(
-                "% Cumple:Q",
-                title="% Cumple",
-                scale=alt.Scale(domain=[0, 100]),
-                axis=alt.Axis(labelExpr="datum.value + '%'"),
-            ),
-            y=alt.Y("Etapa:N", sort="-x", title=None),
-            color=alt.value(COLOR_CUMPLE),
-            tooltip=[
-                alt.Tooltip("Etapa:N"),
-                alt.Tooltip("% Cumple:Q", format=".1f"),
-                alt.Tooltip("Evaluables:Q", format=",.0f"),
-                alt.Tooltip("Promedio días > 0:Q", format=".1f"),
-            ],
-        )
-    )
-
-    text = (
-        chart
-        .mark_text(
-            align="left",
-            dx=5,
-            color=COLOR_TEXTO,
-            fontWeight="bold",
-        )
-        .encode(
-            text=alt.Text("% Cumple:Q", format=".1f")
-        )
-    )
-
-    st.altair_chart(
-        (chart + text).properties(height=260).configure_view(strokeWidth=0),
-        use_container_width=True,
-    )
 
 
 def crear_resumen_etapas(df: pd.DataFrame) -> pd.DataFrame:
@@ -1369,6 +995,344 @@ def obtener_mejor_peor_mes(tabla: pd.DataFrame):
 
     return mejor, peor
 
+
+# ============================================================
+# Gráficos Matplotlib
+# ============================================================
+
+def grafico_mensual_principal(tabla: pd.DataFrame):
+    if tabla.empty:
+        st.info("No hay datos evaluables para el gráfico mensual.")
+        return
+
+    labels = tabla["periodo_label"].astype(str).tolist()
+    x = np.arange(len(labels))
+
+    pct_cumple = pd.to_numeric(tabla["% Cumple"], errors="coerce").fillna(0).to_numpy()
+    pct_no_cumple = pd.to_numeric(tabla["% No cumple"], errors="coerce").fillna(0).to_numpy()
+
+    fig, ax = plt.subplots(figsize=(15, 6))
+
+    ax.bar(
+        x,
+        pct_cumple,
+        label="Cumple",
+        color=COLOR_CUMPLE,
+        width=0.58,
+    )
+
+    ax.bar(
+        x,
+        pct_no_cumple,
+        bottom=pct_cumple,
+        label="No cumple",
+        color=COLOR_NO_CUMPLE,
+        width=0.58,
+    )
+
+    for i, (cumple, no_cumple) in enumerate(zip(pct_cumple, pct_no_cumple)):
+        if cumple > 6:
+            ax.text(
+                i,
+                cumple / 2,
+                f"{cumple:.0f}%",
+                ha="center",
+                va="center",
+                color="white",
+                fontsize=10,
+                fontweight="bold",
+            )
+
+        if no_cumple > 6:
+            ax.text(
+                i,
+                cumple + no_cumple / 2,
+                f"{no_cumple:.0f}%",
+                ha="center",
+                va="center",
+                color="white",
+                fontsize=10,
+                fontweight="bold",
+            )
+
+    ax.axhline(
+        META_CUMPLIMIENTO,
+        color=COLOR_META,
+        linestyle="--",
+        linewidth=2,
+    )
+
+    ax.text(
+        -0.45,
+        META_CUMPLIMIENTO + 2,
+        f"Meta {META_CUMPLIMIENTO}%",
+        color=COLOR_META,
+        fontsize=11,
+        fontweight="bold",
+    )
+
+    ax.set_ylim(0, 105)
+    ax.set_ylabel("% sobre TAT evaluables", color=COLOR_TEXTO)
+    ax.set_xticks(x)
+
+    rotacion = 30 if len(labels) > 8 else 0
+
+    ax.set_xticklabels(
+        labels,
+        rotation=rotacion,
+        ha="right" if rotacion else "center",
+        fontsize=10,
+        color=COLOR_MUTED,
+    )
+
+    ax.set_yticklabels(
+        [f"{int(tick)}%" for tick in ax.get_yticks()],
+        color=COLOR_MUTED,
+    )
+
+    ax.legend(
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.08),
+        ncol=2,
+        frameon=False,
+    )
+
+    ax.set_title(
+        "Performance TAT mensual",
+        fontsize=18,
+        fontweight="bold",
+        color=COLOR_TEXTO,
+        pad=18,
+    )
+
+    preparar_figura(fig, ax)
+    fig.tight_layout()
+
+    st.pyplot(fig, clear_figure=True, use_container_width=True)
+
+
+def grafico_linea_mensual(tabla: pd.DataFrame):
+    if tabla.empty:
+        st.info("No hay datos evaluables para la serie mensual.")
+        return
+
+    labels = tabla["periodo_label"].astype(str).tolist()
+    x = np.arange(len(labels))
+
+    pct_cumple = pd.to_numeric(tabla["% Cumple"], errors="coerce").fillna(0).to_numpy()
+    pct_no_cumple = pd.to_numeric(tabla["% No cumple"], errors="coerce").fillna(0).to_numpy()
+
+    fig, ax = plt.subplots(figsize=(14, 4.2))
+
+    ax.plot(
+        x,
+        pct_cumple,
+        marker="o",
+        linewidth=2.5,
+        color=COLOR_CUMPLE,
+        label="Cumple",
+    )
+
+    ax.plot(
+        x,
+        pct_no_cumple,
+        marker="o",
+        linewidth=2.5,
+        color=COLOR_NO_CUMPLE,
+        label="No cumple",
+    )
+
+    ax.axhline(
+        META_CUMPLIMIENTO,
+        color=COLOR_META,
+        linestyle="--",
+        linewidth=2,
+    )
+
+    ax.set_ylim(0, 105)
+    ax.set_ylabel("% sobre TAT evaluables", color=COLOR_TEXTO)
+    ax.set_xticks(x)
+
+    rotacion = 30 if len(labels) > 8 else 0
+
+    ax.set_xticklabels(
+        labels,
+        rotation=rotacion,
+        ha="right" if rotacion else "center",
+        fontsize=10,
+        color=COLOR_MUTED,
+    )
+
+    ax.set_yticklabels(
+        [f"{int(tick)}%" for tick in ax.get_yticks()],
+        color=COLOR_MUTED,
+    )
+
+    ax.legend(
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.12),
+        ncol=2,
+        frameon=False,
+    )
+
+    ax.set_title(
+        "Evolución mensual del cumplimiento TAT",
+        fontsize=14,
+        fontweight="bold",
+        color=COLOR_TEXTO,
+        pad=14,
+    )
+
+    preparar_figura(fig, ax)
+    fig.tight_layout()
+
+    st.pyplot(fig, clear_figure=True, use_container_width=True)
+
+
+def grafico_etapas(resumen_etapas: pd.DataFrame):
+    if resumen_etapas.empty:
+        st.info("No hay información de etapas para graficar.")
+        return
+
+    data = resumen_etapas.sort_values("% Cumple", ascending=True).copy()
+
+    y = np.arange(len(data))
+    valores = pd.to_numeric(data["% Cumple"], errors="coerce").fillna(0).to_numpy()
+    etiquetas = data["Etapa"].astype(str).tolist()
+
+    fig, ax = plt.subplots(figsize=(10, 4.2))
+
+    ax.barh(
+        y,
+        valores,
+        color=COLOR_CUMPLE,
+        height=0.55,
+    )
+
+    for i, valor in enumerate(valores):
+        ax.text(
+            valor + 1,
+            i,
+            f"{valor:.1f}%",
+            va="center",
+            ha="left",
+            fontsize=10,
+            fontweight="bold",
+            color=COLOR_TEXTO,
+        )
+
+    ax.set_xlim(0, 105)
+    ax.set_yticks(y)
+    ax.set_yticklabels(etiquetas, color=COLOR_MUTED)
+    ax.set_xlabel("% Cumple", color=COLOR_TEXTO)
+
+    ax.set_xticklabels(
+        [f"{int(tick)}%" for tick in ax.get_xticks()],
+        color=COLOR_MUTED,
+    )
+
+    ax.set_title(
+        "Cumplimiento por etapa",
+        fontsize=14,
+        fontweight="bold",
+        color=COLOR_TEXTO,
+        pad=14,
+    )
+
+    preparar_figura(fig, ax)
+    fig.tight_layout()
+
+    st.pyplot(fig, clear_figure=True, use_container_width=True)
+
+
+def grafico_rangos_incumplimiento(df: pd.DataFrame):
+    if "rango_incumplimiento_tat" not in df.columns:
+        st.info("No existe la columna rango_incumplimiento_tat.")
+        return
+
+    orden = [
+        "Sin incumplimiento",
+        "1-5 días",
+        "6-15 días",
+        "16-30 días",
+        "Mayor a un mes",
+        "Sin datos",
+    ]
+
+    data = (
+        df["rango_incumplimiento_tat"]
+        .fillna("Sin datos")
+        .value_counts()
+        .reset_index()
+    )
+
+    data.columns = ["Rango", "Cantidad"]
+
+    data["Rango"] = pd.Categorical(
+        data["Rango"],
+        categories=orden,
+        ordered=True,
+    )
+
+    data = data.sort_values("Rango")
+
+    y = np.arange(len(data))
+    valores = data["Cantidad"].astype(int).to_numpy()
+    etiquetas = data["Rango"].astype(str).tolist()
+
+    colores = [
+        COLOR_CUMPLE,
+        "#9CA3AF",
+        "#F59E0B",
+        "#F97316",
+        COLOR_NO_CUMPLE,
+        COLOR_SIN_DATOS,
+    ]
+
+    colores_data = colores[:len(data)]
+
+    fig, ax = plt.subplots(figsize=(10, 4.4))
+
+    ax.barh(
+        y,
+        valores,
+        color=colores_data,
+        height=0.55,
+    )
+
+    for i, valor in enumerate(valores):
+        ax.text(
+            valor + max(valores.max() * 0.01, 1),
+            i,
+            f"{valor:,.0f}",
+            va="center",
+            ha="left",
+            fontsize=10,
+            fontweight="bold",
+            color=COLOR_TEXTO,
+        )
+
+    ax.set_yticks(y)
+    ax.set_yticklabels(etiquetas, color=COLOR_MUTED)
+    ax.set_xlabel("Cantidad", color=COLOR_TEXTO)
+
+    ax.set_title(
+        "Rango de incumplimiento TAT",
+        fontsize=14,
+        fontweight="bold",
+        color=COLOR_TEXTO,
+        pad=14,
+    )
+
+    preparar_figura(fig, ax)
+    fig.tight_layout()
+
+    st.pyplot(fig, clear_figure=True, use_container_width=True)
+
+
+# ============================================================
+# Exportación
+# ============================================================
 
 def convertir_a_parquet(df: pd.DataFrame) -> bytes:
     output = io.BytesIO()
@@ -1463,6 +1427,11 @@ centros = (
     else []
 )
 
+if "E002" in centros:
+    centros_default = ["E002"]
+else:
+    centros_default = centros
+
 perf_options = [
     "Cumple",
     "No cumple",
@@ -1508,7 +1477,7 @@ with st.form("form_filtros_performance_mensual"):
         centros_sel = st.multiselect(
             "Centro / Planta",
             options=centros,
-            default=centros,
+            default=centros_default,
             key="mensual_centros",
         )
 
@@ -1608,16 +1577,40 @@ else:
         resumen_filtros_df = st.session_state["mensual_resumen_filtros"].copy()
     else:
         df_dashboard = df_final.copy()
+
+        if "E002" in centros and col_centro is not None:
+            df_dashboard = df_dashboard[
+                df_dashboard[col_centro]
+                .astype("string")
+                .str.strip()
+                .eq("E002")
+            ].copy()
+
+        if "performance_tat_total" in df_dashboard.columns and perf_existentes:
+            perf_default_inicial = [
+                x for x in ["Cumple", "No cumple"]
+                if x in perf_existentes
+            ]
+
+            if perf_default_inicial:
+                df_dashboard = df_dashboard[
+                    df_dashboard["performance_tat_total"]
+                    .astype("string")
+                    .isin(perf_default_inicial)
+                ].copy()
+
         resumen_filtros_df = pd.DataFrame(
             [
                 {
                     "Paso": "Base inicial",
-                    "Filtro aplicado": "Sin filtro",
-                    "Valor": "Base completa",
+                    "Filtro aplicado": "Filtro por defecto",
+                    "Valor": "Centro E002 si existe; Performance Cumple/No cumple",
                     "Registros antes": len(df_final),
-                    "Registros después": len(df_final),
-                    "Registros excluidos": 0,
-                    "% retenido": 100.0,
+                    "Registros después": len(df_dashboard),
+                    "Registros excluidos": len(df_final) - len(df_dashboard),
+                    "% retenido": round(len(df_dashboard) / len(df_final) * 100, 2)
+                    if len(df_final)
+                    else 0,
                 }
             ]
         )
@@ -1741,7 +1734,7 @@ grafico_rangos_incumplimiento(df_dashboard)
 
 
 # ============================================================
-# Auditoría y trazabilidad
+# Auditoría y datos
 # ============================================================
 
 with st.expander("Auditoría de filtros aplicados", expanded=False):
