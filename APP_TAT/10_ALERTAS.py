@@ -242,7 +242,7 @@ st.markdown(
             border: 1px solid #e5e7eb;
             border-radius: 12px;
             padding: 12px;
-            min-height: 120px;
+            min-height: 135px;
             text-align: center;
         }
 
@@ -574,6 +574,13 @@ def opciones_columna(df: pd.DataFrame, col: str, max_opciones: int = 800) -> lis
 
 def columnas_existentes(df: pd.DataFrame, columnas: list[str]) -> list[str]:
     return [col for col in columnas if col in df.columns]
+
+
+def obtener_fecha_segura(row: pd.Series, columna: str):
+    if columna not in row.index:
+        return pd.NaT
+
+    return pd.to_datetime(row.get(columna, pd.NaT), errors="coerce")
 
 
 # ============================================================
@@ -1400,18 +1407,105 @@ def mostrar_card_estado(resumen: dict):
     )
 
 
+def crear_detalle_etapas_pedido(row: pd.Series) -> pd.DataFrame:
+    registros = []
+    fecha_anterior = pd.NaT
+    etapa_anterior = None
+
+    for nombre, columna in ETAPAS_LINEA_PEDIDO:
+        fecha = obtener_fecha_segura(row, columna)
+
+        if pd.notna(fecha):
+            estado = "Registrado"
+            fecha_texto = fecha.strftime("%d-%m-%Y")
+        else:
+            estado = "Pendiente"
+            fecha_texto = "Pendiente"
+
+        dias_desde_anterior = np.nan
+
+        if pd.notna(fecha) and pd.notna(fecha_anterior):
+            dias_desde_anterior = int((fecha - fecha_anterior).days)
+
+        registros.append(
+            {
+                "Etapa": nombre,
+                "Columna fecha": columna,
+                "Fecha": fecha_texto,
+                "Estado": estado,
+                "Etapa anterior": etapa_anterior if etapa_anterior else "-",
+                "Días desde etapa anterior": dias_desde_anterior,
+            }
+        )
+
+        if pd.notna(fecha):
+            fecha_anterior = fecha
+            etapa_anterior = nombre
+
+    detalle = pd.DataFrame(registros)
+
+    detalle["Días desde etapa anterior"] = detalle["Días desde etapa anterior"].apply(
+        lambda x: "-" if pd.isna(x) else int(x)
+    )
+
+    return detalle
+
+
 def mostrar_timeline_pedido(row: pd.Series):
-    st.markdown("#### Línea de pedido")
+    st.markdown("#### Diagrama de avance del pedido")
+    st.caption(
+        "Este diagrama muestra las fechas registradas por etapa. "
+        "Si una fecha aparece como pendiente, el registro todavía no tiene ese hito informado."
+    )
+
+    fechas = [
+        obtener_fecha_segura(row, columna)
+        for _, columna in ETAPAS_LINEA_PEDIDO
+    ]
+
+    completadas = [
+        pd.notna(fecha)
+        for fecha in fechas
+    ]
+
+    try:
+        primera_pendiente = completadas.index(False)
+    except ValueError:
+        primera_pendiente = None
 
     cols = st.columns(len(ETAPAS_LINEA_PEDIDO))
 
-    for idx, (nombre, col_fecha) in enumerate(ETAPAS_LINEA_PEDIDO):
-        fecha = row.get(col_fecha, pd.NaT)
+    for idx, (nombre, columna) in enumerate(ETAPAS_LINEA_PEDIDO):
+        fecha = obtener_fecha_segura(row, columna)
         completada = pd.notna(fecha)
 
-        clase = "stage-box stage-done" if completada else "stage-box stage-pending"
-        estado = "✓ Registrado" if completada else "Pendiente"
-        fecha_txt = formato_fecha(fecha)
+        if completada:
+            clase = "stage-box stage-done"
+            estado = "✓ Registrado"
+            fecha_txt = fecha.strftime("%d-%m-%Y")
+        elif primera_pendiente == idx:
+            clase = "stage-box stage-pending"
+            estado = "Pendiente actual"
+            fecha_txt = "Pendiente"
+        else:
+            clase = "stage-box stage-neutral"
+            estado = "Pendiente"
+            fecha_txt = "Pendiente"
+
+        dias_desde_anterior = "-"
+
+        if idx > 0 and completada:
+            fecha_anterior = None
+
+            for j in range(idx - 1, -1, -1):
+                posible_fecha = fechas[j]
+
+                if pd.notna(posible_fecha):
+                    fecha_anterior = posible_fecha
+                    break
+
+            if fecha_anterior is not None and pd.notna(fecha_anterior):
+                dias_desde_anterior = int((fecha - fecha_anterior).days)
 
         with cols[idx]:
             st.markdown(
@@ -1420,14 +1514,32 @@ def mostrar_timeline_pedido(row: pd.Series):
                     <div class="stage-title">{nombre}</div>
                     <div class="stage-date">{fecha_txt}</div>
                     <div class="stage-status">{estado}</div>
+                    <div style="
+                        margin-top: 8px;
+                        font-size: 0.72rem;
+                        color: #64748b;
+                        font-weight: 600;
+                    ">
+                        Días desde etapa anterior: {dias_desde_anterior}
+                    </div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
 
+    detalle_etapas = crear_detalle_etapas_pedido(row)
+
+    st.markdown("#### Detalle de fechas por etapa")
+
+    st.dataframe(
+        detalle_etapas,
+        use_container_width=True,
+        hide_index=True,
+    )
+
 
 def mostrar_expediente(row: pd.Series):
-    st.markdown("### Expediente del pedido seleccionado")
+    st.markdown("### Expediente del registro seleccionado")
 
     oc_principal = row.get(COL_OC_ME5A, row.get(COL_OC_ME80FN, np.nan))
 
@@ -1437,14 +1549,22 @@ def mostrar_expediente(row: pd.Series):
     col_e2.metric("Pedido", formato_id(oc_principal))
     col_e3.metric("Centro", formato_valor(row.get(COL_CENTRO, np.nan)))
     col_e4.metric("Nivel alerta", formato_valor(row.get("nivel_alerta", np.nan)))
-    col_e5.metric("Vencimiento", formato_valor(row.get("dias_hasta_vencimiento", np.nan)))
+    col_e5.metric("Estado", formato_valor(row.get("clasificacion_vencimiento", np.nan)))
 
-    col_i1, col_i2, col_i3, col_i4 = st.columns(4)
+    col_i1, col_i2, col_i3, col_i4, col_i5 = st.columns(5)
 
-    col_i1.metric("Última etapa", formato_valor(row.get("ultima_etapa_registrada", np.nan)))
-    col_i2.metric("Fecha pendiente", formato_valor(row.get("fecha_pendiente", np.nan)))
-    col_i3.metric("TAT transcurrido", formato_valor(row.get("tiempo_transcurrido_tat", np.nan)))
-    col_i4.metric("Exceso umbral", formato_valor(row.get("tiempo_excedido_umbral_texto", np.nan)))
+    col_i1.metric("Fecha vencimiento", formato_valor(row.get("fecha_vencimiento_texto", np.nan)))
+    col_i2.metric("Vencimiento", formato_valor(row.get("dias_hasta_vencimiento", np.nan)))
+    col_i3.metric("Última etapa", formato_valor(row.get("ultima_etapa_registrada", np.nan)))
+    col_i4.metric("Fecha pendiente", formato_valor(row.get("fecha_pendiente", np.nan)))
+    col_i5.metric("Score riesgo", formato_valor(row.get("score_riesgo", np.nan)))
+
+    col_t1, col_t2, col_t3, col_t4 = st.columns(4)
+
+    col_t1.metric("TAT transcurrido", formato_valor(row.get("tiempo_transcurrido_tat", np.nan)))
+    col_t2.metric("Exceso umbral", formato_valor(row.get("tiempo_excedido_umbral_texto", np.nan)))
+    col_t3.metric("Performance TAT", formato_valor(row.get(COL_PERF_TAT, np.nan)))
+    col_t4.metric("Rango incumplimiento", formato_valor(row.get(COL_RANGO_INC, np.nan)))
 
     st.info(f"Acción sugerida: {formato_valor(row.get('accion_sugerida', np.nan))}")
 
@@ -1459,6 +1579,7 @@ def mostrar_expediente(row: pd.Series):
         COL_MATERIAL,
         COL_TEXTO,
         COL_CENTRO,
+        "centro_label",
         COL_GRUPO_COMPRAS,
         COL_SOLICITANTE,
         COL_AUTOR,
@@ -1475,15 +1596,23 @@ def mostrar_expediente(row: pd.Series):
         COL_FECHA_PEDIDO_FINAL,
         COL_FECHA_FACTURACION_FINAL,
         COL_FECHA_RECEPCION_FINAL,
+        "fecha_inicio_tat",
         "fecha_vencimiento_tat",
+        "fecha_recepcion_alerta",
+        "dias_restantes_int",
+        "dias_transcurridos_alerta",
+        "exceso_umbral_alerta",
         "nivel_alerta",
         "clasificacion_vencimiento",
+        "ultima_etapa_registrada",
+        "fecha_pendiente",
+        "accion_sugerida",
         "score_riesgo",
     ]
 
     detalle_cols = columnas_existentes(pd.DataFrame([row]), detalle_cols)
 
-    with st.expander("Detalle completo del registro", expanded=False):
+    with st.expander("Detalle completo del registro", expanded=True):
         st.dataframe(
             pd.DataFrame([row])[detalle_cols],
             use_container_width=True,
@@ -1605,7 +1734,7 @@ with st.form("form_filtros_alertas"):
     with f1:
         buscar_solped = st.text_input(
             "Buscar SolPed",
-            placeholder="Ej: 10001234",
+            placeholder="Ej: 1001973319",
             key="alertas_buscar_solped",
         )
 
@@ -1911,45 +2040,62 @@ with st.expander("Registros con datos incompletos", expanded=True):
 
 
 # ============================================================
-# EXPEDIENTE / GESTIÓN DE CRÍTICOS
+# EXPEDIENTE / SEGUIMIENTO DE REGISTRO
 # ============================================================
 
-st.markdown("### Gestión de pedido crítico")
-st.caption("Selecciona un registro priorizado para revisar su expediente y etapas TAT.")
-
-df_prioridad = crear_tabla_prioridad(
-    df_filtrado[
-        df_filtrado["nivel_alerta"].isin(["Crítico", "Atención", "Seguimiento", "Datos incompletos"])
-    ].copy()
+st.markdown("### Expediente / seguimiento del registro")
+st.caption(
+    "Esta sección muestra el detalle completo del registro seleccionado, "
+    "aunque el estado sea Controlado, Cerrado o no crítico."
 )
 
-if df_prioridad.empty:
-    st.success("No hay pedidos críticos o de atención para gestionar con los filtros actuales.")
+df_expediente = df_filtrado.copy()
+
+if df_expediente.empty:
+    st.info("No hay registros disponibles para mostrar expediente con los filtros actuales.")
 else:
-    def etiqueta_registro(idx):
-        row = df_prioridad.loc[idx]
+    if "score_riesgo" in df_expediente.columns:
+        df_expediente = df_expediente.sort_values(
+            "score_riesgo",
+            ascending=False,
+        ).reset_index(drop=True)
+    else:
+        df_expediente = df_expediente.reset_index(drop=True)
 
-        solped = formato_id(row.get(COL_SOLPED, np.nan))
-        pedido = formato_id(row.get(COL_OC_ME5A, row.get(COL_OC_ME80FN, np.nan)))
-        nivel = formato_valor(row.get("nivel_alerta", np.nan))
-        venc = formato_valor(row.get("dias_hasta_vencimiento", np.nan))
-        centro = formato_valor(row.get(COL_CENTRO, np.nan))
+    if len(df_expediente) == 1:
+        registro = df_expediente.iloc[0]
 
-        return f"{nivel} · SolPed {solped} · Pedido {pedido} · {centro} · {venc}"
+        st.success(
+            "Se encontró un único registro con los filtros actuales. "
+            "El expediente se muestra automáticamente."
+        )
 
-    indices = list(df_prioridad.index)
+        mostrar_expediente(registro)
 
-    seleccionado_idx = st.selectbox(
-        "Registro a revisar",
-        options=indices,
-        index=0,
-        format_func=etiqueta_registro,
-        key="alertas_selector_expediente",
-    )
+    else:
+        def etiqueta_registro(idx):
+            row = df_expediente.iloc[idx]
 
-    registro = df_prioridad.loc[seleccionado_idx]
+            solped = formato_id(row.get(COL_SOLPED, np.nan))
+            pedido = formato_id(row.get(COL_OC_ME5A, row.get(COL_OC_ME80FN, np.nan)))
+            nivel = formato_valor(row.get("nivel_alerta", np.nan))
+            estado = formato_valor(row.get("clasificacion_vencimiento", np.nan))
+            venc = formato_valor(row.get("dias_hasta_vencimiento", np.nan))
+            centro = formato_valor(row.get(COL_CENTRO, np.nan))
 
-    mostrar_expediente(registro)
+            return f"{nivel} · {estado} · SolPed {solped} · Pedido {pedido} · {centro} · {venc}"
+
+        seleccionado_idx = st.selectbox(
+            "Registro a revisar",
+            options=list(range(len(df_expediente))),
+            index=0,
+            format_func=etiqueta_registro,
+            key="alertas_selector_expediente",
+        )
+
+        registro = df_expediente.iloc[seleccionado_idx]
+
+        mostrar_expediente(registro)
 
 
 # ============================================================
