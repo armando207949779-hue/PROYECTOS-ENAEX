@@ -23,7 +23,7 @@ LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
 
 
 # ============================================================
-# Estilos mínimos
+# Estilos modernos
 # No se modifica .block-container para no afectar el logo.
 # ============================================================
 
@@ -31,33 +31,320 @@ st.markdown(
     """
     <style>
         div[data-testid="stMetric"] {
-            background-color: #f8f9fa;
-            padding: 14px;
-            border-radius: 12px;
-            border: 1px solid #e9ecef;
-        }
-
-        .result-card {
-            background: #ffffff;
-            border: 1px solid #e5e7eb;
+            background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+            padding: 14px 16px;
             border-radius: 14px;
-            padding: 16px 18px;
-            margin-top: 12px;
-            margin-bottom: 12px;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04);
         }
 
-        .section-title {
-            font-size: 1.08rem;
-            font-weight: 800;
-            color: #1f2937;
-            margin-top: 20px;
+        div[data-testid="stMetric"] label {
+            color: #64748b !important;
+            font-size: 0.72rem !important;
+            font-weight: 700 !important;
+            text-transform: uppercase !important;
+            letter-spacing: 0.05em !important;
+        }
+
+        div[data-testid="stMetric"] [data-testid="stMetricValue"] {
+            color: #0f172a !important;
+            font-size: 1.35rem !important;
+            font-weight: 800 !important;
+        }
+
+        [data-testid="stDataFrame"] {
+            border-radius: 14px !important;
+            overflow: hidden !important;
+            border: 1px solid #e2e8f0 !important;
+            box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04);
+        }
+
+        [data-testid="stForm"] {
+            background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+            border: 1px solid #e2e8f0;
+            border-radius: 18px;
+            padding: 18px 20px;
+            box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04);
+        }
+
+        [data-testid="stFormSubmitButton"] button,
+        [data-testid="stButton"] button {
+            border-radius: 12px !important;
+            font-weight: 800 !important;
+            border: 1px solid #dbeafe !important;
+            box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+        }
+
+        .modern-hero {
+            background: linear-gradient(135deg, #eff6ff 0%, #ffffff 48%, #f8fafc 100%);
+            border: 1px solid #dbeafe;
+            border-radius: 22px;
+            padding: 20px 24px;
+            margin: 10px 0 18px 0;
+            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+        }
+
+        .modern-eyebrow {
+            color: #1e40af;
+            font-size: 0.72rem;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 6px;
+        }
+
+        .modern-title {
+            color: #0f172a;
+            font-size: 1.65rem;
+            font-weight: 900;
+            letter-spacing: -0.03em;
             margin-bottom: 4px;
         }
 
-        .section-subtitle {
-            font-size: 0.88rem;
-            color: #6b7280;
+        .modern-subtitle {
+            color: #475569;
+            font-size: 0.95rem;
+            line-height: 1.45;
+            max-width: 900px;
+        }
+
+        .modern-section {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 18px;
+            padding: 18px 20px;
+            margin: 16px 0;
+            box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04);
+        }
+
+        .modern-section-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
             margin-bottom: 12px;
+        }
+
+        .modern-section-icon {
+            width: 34px;
+            height: 34px;
+            border-radius: 12px;
+            background: #dbeafe;
+            color: #1e40af;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 900;
+            font-size: 0.95rem;
+        }
+
+        .modern-section-title {
+            font-size: 1.05rem;
+            font-weight: 900;
+            color: #0f172a;
+            margin-bottom: 1px;
+        }
+
+        .modern-section-subtitle {
+            font-size: 0.82rem;
+            color: #64748b;
+            line-height: 1.35;
+        }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(140px, 1fr));
+            gap: 10px;
+            margin-top: 8px;
+        }
+
+        .summary-card {
+            background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+            border: 1px solid #e2e8f0;
+            border-radius: 14px;
+            padding: 12px 14px;
+            min-height: 82px;
+        }
+
+        .summary-card-primary {
+            background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+            border-color: #bfdbfe;
+        }
+
+        .summary-label {
+            color: #94a3b8;
+            font-size: 0.66rem;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: 5px;
+        }
+
+        .summary-value {
+            color: #0f172a;
+            font-size: 0.95rem;
+            font-weight: 850;
+            line-height: 1.25;
+            overflow-wrap: anywhere;
+        }
+
+        .summary-note {
+            color: #64748b;
+            font-size: 0.74rem;
+            line-height: 1.30;
+            margin-top: 4px;
+        }
+
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(130px, 1fr));
+            gap: 10px;
+            margin-top: 8px;
+        }
+
+        .kpi-card {
+            background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+            border: 1px solid #e2e8f0;
+            border-radius: 14px;
+            padding: 13px 14px;
+        }
+
+        .kpi-card-primary {
+            background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+            border-color: #bfdbfe;
+        }
+
+        .kpi-label {
+            color: #94a3b8;
+            font-size: 0.66rem;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: 5px;
+        }
+
+        .kpi-value {
+            color: #0f172a;
+            font-size: 1.10rem;
+            font-weight: 900;
+            line-height: 1.25;
+            overflow-wrap: anywhere;
+        }
+
+        .status-pill {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 0.72rem;
+            font-weight: 900;
+            margin-top: 6px;
+        }
+
+        .status-green {
+            background: #dcfce7;
+            color: #166534;
+            border: 1px solid #bbf7d0;
+        }
+
+        .status-red {
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #fecaca;
+        }
+
+        .status-yellow {
+            background: #fef9c3;
+            color: #854d0e;
+            border: 1px solid #fde68a;
+        }
+
+        .status-blue {
+            background: #dbeafe;
+            color: #1e40af;
+            border: 1px solid #bfdbfe;
+        }
+
+        .status-gray {
+            background: #f1f5f9;
+            color: #475569;
+            border: 1px solid #e2e8f0;
+        }
+
+        .search-intro {
+            background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+            border: 1px solid #e2e8f0;
+            border-left: 5px solid #2563eb;
+            border-radius: 16px;
+            padding: 14px 16px;
+            margin-bottom: 12px;
+        }
+
+        .search-intro-title {
+            color: #1e3a8a;
+            font-size: 0.82rem;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: 4px;
+        }
+
+        .search-intro-text {
+            color: #475569;
+            font-size: 0.88rem;
+            line-height: 1.45;
+        }
+
+        .match-card {
+            background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+            border: 1px solid #bfdbfe;
+            border-left: 5px solid #2563eb;
+            border-radius: 16px;
+            padding: 14px 16px;
+            margin: 12px 0;
+        }
+
+        .match-title {
+            font-size: 0.86rem;
+            font-weight: 900;
+            color: #1e3a8a;
+            margin-bottom: 3px;
+        }
+
+        .match-text {
+            font-size: 0.86rem;
+            color: #475569;
+            line-height: 1.4;
+        }
+
+        div[data-testid="stInfo"],
+        div[data-testid="stWarning"],
+        div[data-testid="stSuccess"],
+        div[data-testid="stError"] {
+            border-radius: 14px !important;
+            font-weight: 600 !important;
+        }
+
+        @media (max-width: 1100px) {
+            .summary-grid {
+                grid-template-columns: repeat(2, minmax(140px, 1fr));
+            }
+
+            .kpi-grid {
+                grid-template-columns: repeat(2, minmax(130px, 1fr));
+            }
+        }
+
+        @media (max-width: 680px) {
+            .summary-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .kpi-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .modern-title {
+                font-size: 1.35rem;
+            }
         }
     </style>
     """,
@@ -200,6 +487,10 @@ def obtener_valor(registro: pd.Series, columna: str | None):
         return pd.NA
 
     return registro.get(columna)
+
+
+def valor_html(valor) -> str:
+    return escape(formatear_valor(valor))
 
 
 def normalizar_valor_busqueda(valor) -> str:
@@ -765,6 +1056,139 @@ def construir_validacion_temporal_tat(
 
 
 # ============================================================
+# HTML moderno para secciones
+# ============================================================
+
+def html_section_header(icono: str, titulo: str, subtitulo: str) -> str:
+    return f"""
+    <div class="modern-section-header">
+        <div class="modern-section-icon">{escape(icono)}</div>
+        <div>
+            <div class="modern-section-title">{escape(titulo)}</div>
+            <div class="modern-section-subtitle">{escape(subtitulo)}</div>
+        </div>
+    </div>
+    """
+
+
+def clase_estado_tat(valor: str) -> str:
+    texto = str(valor).strip().lower()
+
+    if texto == "cumple":
+        return "status-green"
+
+    if texto == "no cumple":
+        return "status-red"
+
+    if texto in ["en proceso", "sin datos"]:
+        return "status-yellow"
+
+    return "status-gray"
+
+
+def html_resumen_general(registro: pd.Series, columnas_clave: dict) -> str:
+    estado_match = formatear_valor(obtener_valor(registro, columnas_clave["estado_match"]))
+
+    campos = [
+        ("SOLPED", obtener_valor(registro, columnas_clave["solped"]), "summary-card-primary"),
+        ("Pedido", obtener_valor(registro, columnas_clave["pedido"]), "summary-card-primary"),
+        ("Posición", obtener_valor(registro, columnas_clave["posicion"]), ""),
+        ("Centro", obtener_valor(registro, columnas_clave["centro"]), ""),
+        ("Material", obtener_valor(registro, columnas_clave["material"]), ""),
+        ("Texto breve", obtener_valor(registro, columnas_clave["texto_breve"]), ""),
+        ("Grupo de compras", obtener_valor(registro, columnas_clave["grupo_compras"]), ""),
+        ("Tipo OC", obtener_valor(registro, columnas_clave["tipo_oc"]), ""),
+        ("Sistema", obtener_valor(registro, columnas_clave["sistema"]), ""),
+        ("Origen", obtener_valor(registro, columnas_clave["origen"]), ""),
+        ("Estado del match", estado_match, ""),
+    ]
+
+    cards = []
+
+    for label, value, extra_class in campos:
+        cards.append(
+            f"""
+            <div class="summary-card {extra_class}">
+                <div class="summary-label">{escape(label)}</div>
+                <div class="summary-value">{valor_html(value)}</div>
+            </div>
+            """
+        )
+
+    return f"""
+    <div class="modern-section">
+        {html_section_header("1", "Información general", "Datos principales del registro confirmado.")}
+        <div class="summary-grid">
+            {''.join(cards)}
+        </div>
+    </div>
+    """
+
+
+def html_indicadores_tat(registro: pd.Series, columnas_clave: dict) -> str:
+    performance = formatear_valor(
+        obtener_valor(registro, columnas_clave["performance_tat_total"])
+    )
+
+    estado_class = clase_estado_tat(performance)
+
+    kpis = [
+        (
+            "Días TAT total",
+            formatear_entero(obtener_valor(registro, columnas_clave["dias_tat_total"])),
+            "Solicitud a recepción",
+            "kpi-card-primary",
+        ),
+        (
+            "Umbral TAT total",
+            formatear_entero(obtener_valor(registro, columnas_clave["umbral_tat_total"])),
+            "Límite definido",
+            "",
+        ),
+        (
+            "Performance TAT",
+            performance,
+            f'<span class="status-pill {estado_class}">{escape(performance)}</span>',
+            "kpi-card-primary",
+        ),
+        (
+            "Días incumplimiento",
+            formatear_entero(obtener_valor(registro, columnas_clave["dias_incumplimiento"])),
+            "Días sobre umbral",
+            "",
+        ),
+        (
+            "Rango incumplimiento",
+            formatear_valor(obtener_valor(registro, columnas_clave["rango_incumplimiento"])),
+            "Clasificación TAT",
+            "",
+        ),
+    ]
+
+    cards = []
+
+    for label, value, note, extra_class in kpis:
+        cards.append(
+            f"""
+            <div class="kpi-card {extra_class}">
+                <div class="kpi-label">{escape(label)}</div>
+                <div class="kpi-value">{escape(value)}</div>
+                <div class="summary-note">{note}</div>
+            </div>
+            """
+        )
+
+    return f"""
+    <div class="modern-section">
+        {html_section_header("4", "Indicadores TAT", "Resumen de tiempos, umbrales y cumplimiento del registro.")}
+        <div class="kpi-grid">
+            {''.join(cards)}
+        </div>
+    </div>
+    """
+
+
+# ============================================================
 # Visualización profesional de flujo
 # ============================================================
 
@@ -1145,7 +1569,21 @@ def mostrar_validacion_temporal_tat(
     registro: pd.Series,
     columnas_clave: dict,
 ):
-    st.markdown("#### Validación temporal")
+    st.markdown(
+        """
+        <div class="modern-section">
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        html_section_header(
+            icono="6",
+            titulo="Validación temporal",
+            subtitulo="Revisión automática del orden lógico de fechas entre etapas.",
+        ),
+        unsafe_allow_html=True,
+    )
 
     validacion_df = construir_validacion_temporal_tat(
         registro=registro,
@@ -1178,49 +1616,78 @@ def mostrar_validacion_temporal_tat(
         hide_index=True,
     )
 
+    st.markdown(
+        """
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
 
 def mostrar_detalle_observacion(registro: pd.Series, columnas_clave: dict):
-    st.markdown("### Resultado confirmado")
-    st.caption("Detalle ordenado desde información general hasta validaciones específicas.")
-
-    st.markdown("#### 1. Información general")
-
-    col_g1, col_g2, col_g3, col_g4 = st.columns(4)
-
-    col_g1.metric(
-        "SOLPED",
-        formatear_valor(obtener_valor(registro, columnas_clave["solped"])),
+    st.markdown(
+        """
+        <div class="match-card">
+            <div class="match-title">Registro confirmado</div>
+            <div class="match-text">
+                Se muestra el detalle de la observación seleccionada, ordenado desde información general hasta validaciones específicas.
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
-    col_g2.metric(
-        "Pedido",
-        formatear_valor(obtener_valor(registro, columnas_clave["pedido"])),
+    st.markdown(
+        html_resumen_general(
+            registro=registro,
+            columnas_clave=columnas_clave,
+        ),
+        unsafe_allow_html=True,
     )
 
-    col_g3.metric(
-        "Posición",
-        formatear_valor(obtener_valor(registro, columnas_clave["posicion"])),
+    st.markdown(
+        """
+        <div class="modern-section">
+        """,
+        unsafe_allow_html=True,
     )
 
-    col_g4.metric(
-        "Centro",
-        formatear_valor(obtener_valor(registro, columnas_clave["centro"])),
+    st.markdown(
+        html_section_header(
+            icono="2",
+            titulo="Seguimiento visual de la SOLPED",
+            subtitulo="Vista profesional del avance por etapas: solicitud, liberación, pedido, facturación y recepción.",
+        ),
+        unsafe_allow_html=True,
     )
-
-    st.dataframe(
-        construir_tabla_general(registro, columnas_clave),
-        use_container_width=True,
-        hide_index=True,
-    )
-
-    st.markdown("#### 2. Seguimiento visual de la SOLPED")
 
     mostrar_flujo_profesional_solped(
         registro=registro,
         columnas_clave=columnas_clave,
     )
 
-    st.markdown("#### 3. Fechas principales")
+    st.markdown(
+        """
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        """
+        <div class="modern-section">
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        html_section_header(
+            icono="3",
+            titulo="Fechas principales",
+            subtitulo="Fechas registradas para cada etapa del flujo TAT.",
+        ),
+        unsafe_allow_html=True,
+    )
 
     st.dataframe(
         construir_tabla_fechas(registro, columnas_clave),
@@ -1228,36 +1695,36 @@ def mostrar_detalle_observacion(registro: pd.Series, columnas_clave: dict):
         hide_index=True,
     )
 
-    st.markdown("#### 4. Indicadores TAT")
-
-    col_t1, col_t2, col_t3, col_t4, col_t5 = st.columns(5)
-
-    col_t1.metric(
-        "Días TAT total",
-        formatear_entero(obtener_valor(registro, columnas_clave["dias_tat_total"])),
+    st.markdown(
+        """
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
-    col_t2.metric(
-        "Umbral TAT total",
-        formatear_entero(obtener_valor(registro, columnas_clave["umbral_tat_total"])),
+    st.markdown(
+        html_indicadores_tat(
+            registro=registro,
+            columnas_clave=columnas_clave,
+        ),
+        unsafe_allow_html=True,
     )
 
-    col_t3.metric(
-        "Performance TAT",
-        formatear_valor(obtener_valor(registro, columnas_clave["performance_tat_total"])),
+    st.markdown(
+        """
+        <div class="modern-section">
+        """,
+        unsafe_allow_html=True,
     )
 
-    col_t4.metric(
-        "Días incumplimiento",
-        formatear_entero(obtener_valor(registro, columnas_clave["dias_incumplimiento"])),
+    st.markdown(
+        html_section_header(
+            icono="5",
+            titulo="Estado de etapas",
+            subtitulo="Detalle tabular del estado de cada hito y los días entre etapas.",
+        ),
+        unsafe_allow_html=True,
     )
-
-    col_t5.metric(
-        "Rango incumplimiento",
-        formatear_valor(obtener_valor(registro, columnas_clave["rango_incumplimiento"])),
-    )
-
-    st.markdown("#### 5. Estado de etapas")
 
     st.dataframe(
         construir_tabla_etapas_tat(registro, columnas_clave),
@@ -1265,7 +1732,12 @@ def mostrar_detalle_observacion(registro: pd.Series, columnas_clave: dict):
         hide_index=True,
     )
 
-    st.markdown("#### 6. Validación temporal")
+    st.markdown(
+        """
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     mostrar_validacion_temporal_tat(
         registro=registro,
@@ -1294,9 +1766,18 @@ def mostrar_detalle_observacion(registro: pd.Series, columnas_clave: dict):
 
 mostrar_logo()
 
-st.title("07_FILTRO")
-st.caption(
-    "Ingresa un criterio de búsqueda, ejecuta la consulta y confirma qué registro quieres revisar."
+st.markdown(
+    """
+    <div class="modern-hero">
+        <div class="modern-eyebrow">Consulta operativa TAT</div>
+        <div class="modern-title">07_FILTRO</div>
+        <div class="modern-subtitle">
+            Ingresa un criterio de búsqueda, ejecuta la consulta y confirma qué registro quieres revisar.
+            La información se presenta de forma progresiva: primero el resultado general, luego el seguimiento visual y finalmente las validaciones.
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
 )
 
 
@@ -1331,9 +1812,16 @@ if columnas_clave["solped"] is None:
 # Filtros iniciales
 # ============================================================
 
-st.markdown("### Búsqueda")
-st.caption(
-    "Completa al menos un campo. Luego presiona **Buscar** para cargar los resultados."
+st.markdown(
+    """
+    <div class="search-intro">
+        <div class="search-intro-title">Búsqueda</div>
+        <div class="search-intro-text">
+            Completa al menos un campo y presiona <b>Buscar</b>. La página no mostrará resultados hasta que ejecutes una búsqueda.
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
 )
 
 with st.form("form_busqueda_solped"):
@@ -1497,12 +1985,30 @@ total_resultados = len(df_filtrado)
 
 if total_resultados == 1:
     registro_seleccionado = df_filtrado.iloc[0]
-    st.success("Se encontró una única coincidencia. Se muestra el detalle del registro.")
+
+    st.markdown(
+        """
+        <div class="match-card">
+            <div class="match-title">Coincidencia única encontrada</div>
+            <div class="match-text">
+                Se encontró un único registro con los criterios ingresados. Se muestra el detalle automáticamente.
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 else:
-    st.markdown("### Coincidencias encontradas")
-    st.caption(
-        "Se encontró más de una coincidencia. Selecciona cuál registro quieres revisar y confirma."
+    st.markdown(
+        """
+        <div class="match-card">
+            <div class="match-title">Coincidencias encontradas</div>
+            <div class="match-text">
+                Se encontró más de una coincidencia. Selecciona cuál registro quieres revisar y confirma para desplegar el detalle.
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
     st.info(
