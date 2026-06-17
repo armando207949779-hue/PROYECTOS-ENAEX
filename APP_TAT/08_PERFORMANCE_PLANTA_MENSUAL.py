@@ -25,12 +25,12 @@ BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
 LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
 
-COLOR_CUMPLE = "#EF3E52"
+COLOR_CUMPLE = "#EF3E52"        # Rojo original
 COLOR_NO_CUMPLE = "#BFC3C7"
 COLOR_EN_PROCESO = "#F4B400"
 COLOR_OTROS = "#9CA3AF"
 COLOR_SIN_DATOS = "#BFC3C7"
-COLOR_META = "#1F2937"
+COLOR_META = "#0057B8"          # Azul visible para meta
 COLOR_TEXTO = "#1F2937"
 COLOR_MUTED = "#6B7280"
 
@@ -356,22 +356,6 @@ def validar_fechas_finales(df: pd.DataFrame):
             f"Faltan columnas requeridas de fechas finales: {faltantes}. "
             "Primero ejecuta 05_CALCULOS o carga un archivo con fechas finales."
         )
-
-
-def limpiar_eje_matplotlib(ax):
-    ax.grid(False)
-
-    for spine in ax.spines.values():
-        spine.set_visible(False)
-
-    ax.tick_params(axis="both", length=0, colors=COLOR_MUTED)
-    ax.set_facecolor("none")
-
-
-def preparar_figura(fig, ax):
-    fig.patch.set_alpha(0)
-    ax.set_frame_on(False)
-    limpiar_eje_matplotlib(ax)
 
 
 # ============================================================
@@ -1057,27 +1041,14 @@ def grafico_mensual_principal(tabla: pd.DataFrame):
         .to_numpy()
     )
 
-    evaluables = (
-        pd.to_numeric(tabla["Evaluables"], errors="coerce")
-        .fillna(0)
-        .astype(int)
-        .to_numpy()
-    )
-
-    en_proceso = (
-        pd.to_numeric(tabla["En proceso"], errors="coerce")
-        .fillna(0)
-        .astype(int)
-        .to_numpy()
-    )
-
-    fig, ax = plt.subplots(figsize=(16, 6.4))
+    fig, ax = plt.subplots(figsize=(16, 6.6))
 
     barras = ax.bar(
         x,
         pct_cumple,
         color=COLOR_CUMPLE,
         width=0.58,
+        label="Cumplimiento TAT",
     )
 
     for i, barra in enumerate(barras):
@@ -1094,63 +1065,42 @@ def grafico_mensual_principal(tabla: pd.DataFrame):
             color=COLOR_TEXTO,
         )
 
-        ax.text(
-            barra.get_x() + barra.get_width() / 2,
-            -8,
-            f"{cumple[i]:,}/{evaluables[i]:,}",
-            ha="center",
-            va="top",
-            fontsize=9,
-            fontweight="bold",
-            color=COLOR_MUTED,
-        )
-
-        if en_proceso[i] > 0:
+        if alto >= 8:
             ax.text(
                 barra.get_x() + barra.get_width() / 2,
-                -15,
-                f"EP: {en_proceso[i]:,}",
+                alto / 2,
+                f"{cumple[i]:,}",
                 ha="center",
-                va="top",
-                fontsize=8,
-                color=COLOR_EN_PROCESO,
+                va="center",
+                fontsize=9,
                 fontweight="bold",
+                color="white",
             )
 
     ax.axhline(
         META_CUMPLIMIENTO,
         color=COLOR_META,
         linestyle="--",
-        linewidth=2,
+        linewidth=2.5,
+        label=f"Meta {META_CUMPLIMIENTO}%",
     )
 
-    ax.text(
-        -0.45,
-        META_CUMPLIMIENTO + 2,
-        f"Meta {META_CUMPLIMIENTO}%",
-        color=COLOR_META,
-        fontsize=11,
-        fontweight="bold",
-    )
-
-    ax.set_ylim(-20, 108)
+    ax.set_ylim(0, 108)
     ax.set_ylabel("% Cumple sobre evaluables", color=COLOR_TEXTO)
 
     ax.set_xticks(x)
 
-    rotacion = 30 if len(labels) > 8 else 0
-
     ax.set_xticklabels(
         labels,
-        rotation=rotacion,
-        ha="right" if rotacion else "center",
-        fontsize=10,
+        rotation=90,
+        ha="center",
+        fontsize=9,
         color=COLOR_MUTED,
     )
 
-    ax.set_yticks([0, 25, 50, 75, 100])
+    ax.set_yticks([0, 25, 50, 65, 75, 100])
     ax.set_yticklabels(
-        ["0%", "25%", "50%", "75%", "100%"],
+        ["0%", "25%", "50%", "65%", "75%", "100%"],
         color=COLOR_MUTED,
     )
 
@@ -1160,6 +1110,14 @@ def grafico_mensual_principal(tabla: pd.DataFrame):
         fontweight="bold",
         color=COLOR_TEXTO,
         pad=20,
+    )
+
+    ax.legend(
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.20),
+        ncol=2,
+        frameon=False,
+        fontsize=10,
     )
 
     ax.grid(False)
@@ -1189,7 +1147,7 @@ def grafico_linea_mensual(tabla: pd.DataFrame):
         .to_numpy()
     )
 
-    fig, ax = plt.subplots(figsize=(14, 4.4))
+    fig, ax = plt.subplots(figsize=(14, 4.8))
 
     ax.plot(
         x,
@@ -1216,27 +1174,26 @@ def grafico_linea_mensual(tabla: pd.DataFrame):
         META_CUMPLIMIENTO,
         color=COLOR_META,
         linestyle="--",
-        linewidth=2,
+        linewidth=2.5,
+        label=f"Meta {META_CUMPLIMIENTO}%",
     )
 
-    ax.set_ylim(0, 105)
+    ax.set_ylim(0, 108)
     ax.set_ylabel("% Cumple sobre evaluables", color=COLOR_TEXTO)
 
     ax.set_xticks(x)
 
-    rotacion = 30 if len(labels) > 8 else 0
-
     ax.set_xticklabels(
         labels,
-        rotation=rotacion,
-        ha="right" if rotacion else "center",
-        fontsize=10,
+        rotation=90,
+        ha="center",
+        fontsize=9,
         color=COLOR_MUTED,
     )
 
-    ax.set_yticks([0, 25, 50, 75, 100])
+    ax.set_yticks([0, 25, 50, 65, 75, 100])
     ax.set_yticklabels(
-        ["0%", "25%", "50%", "75%", "100%"],
+        ["0%", "25%", "50%", "65%", "75%", "100%"],
         color=COLOR_MUTED,
     )
 
@@ -1248,6 +1205,14 @@ def grafico_linea_mensual(tabla: pd.DataFrame):
         pad=14,
     )
 
+    ax.legend(
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.25),
+        ncol=2,
+        frameon=False,
+        fontsize=10,
+    )
+
     ax.grid(False)
 
     for spine in ax.spines.values():
@@ -1261,55 +1226,62 @@ def grafico_linea_mensual(tabla: pd.DataFrame):
     st.pyplot(fig, clear_figure=True, use_container_width=True)
 
 
-def grafico_etapas(resumen_etapas: pd.DataFrame):
-    if resumen_etapas.empty:
-        st.info("No hay información de etapas para graficar.")
-        return
+def grafico_etapa_individual(fila: pd.Series):
+    etapa = str(fila["Etapa"])
+    pct_cumple = pd.to_numeric(fila["% Cumple"], errors="coerce")
 
-    data = resumen_etapas.sort_values("% Cumple", ascending=True).copy()
+    if pd.isna(pct_cumple):
+        pct_cumple = 0
 
-    y = np.arange(len(data))
-    valores = pd.to_numeric(data["% Cumple"], errors="coerce").fillna(0).to_numpy()
-    etiquetas = data["Etapa"].astype(str).tolist()
-
-    fig, ax = plt.subplots(figsize=(10, 4.2))
+    fig, ax = plt.subplots(figsize=(7.5, 2.2))
 
     ax.barh(
-        y,
-        valores,
+        [etapa],
+        [pct_cumple],
         color=COLOR_CUMPLE,
-        height=0.55,
+        height=0.45,
     )
 
-    for i, valor in enumerate(valores):
-        ax.text(
-            valor + 1,
-            i,
-            f"{valor:.1f}%",
-            va="center",
-            ha="left",
-            fontsize=10,
-            fontweight="bold",
-            color=COLOR_TEXTO,
-        )
+    ax.text(
+        pct_cumple + 1,
+        0,
+        f"{pct_cumple:.1f}%",
+        va="center",
+        ha="left",
+        fontsize=11,
+        fontweight="bold",
+        color=COLOR_TEXTO,
+    )
 
     ax.set_xlim(0, 105)
-    ax.set_yticks(y)
-    ax.set_yticklabels(etiquetas, color=COLOR_MUTED)
     ax.set_xlabel("% Cumple", color=COLOR_TEXTO)
 
-    ax.set_xticks([0, 25, 50, 75, 100])
+    ax.set_xticks([0, 25, 50, 65, 75, 100])
     ax.set_xticklabels(
-        ["0%", "25%", "50%", "75%", "100%"],
+        ["0%", "25%", "50%", "65%", "75%", "100%"],
         color=COLOR_MUTED,
     )
 
+    ax.axvline(
+        META_CUMPLIMIENTO,
+        color=COLOR_META,
+        linestyle="--",
+        linewidth=2,
+        label=f"Meta {META_CUMPLIMIENTO}%",
+    )
+
     ax.set_title(
-        "Cumplimiento por etapa",
-        fontsize=14,
+        etapa,
+        fontsize=13,
         fontweight="bold",
         color=COLOR_TEXTO,
-        pad=14,
+        pad=10,
+    )
+
+    ax.legend(
+        loc="lower right",
+        frameon=False,
+        fontsize=9,
     )
 
     ax.grid(False)
@@ -1325,10 +1297,9 @@ def grafico_etapas(resumen_etapas: pd.DataFrame):
     st.pyplot(fig, clear_figure=True, use_container_width=True)
 
 
-def grafico_rangos_incumplimiento(df: pd.DataFrame):
+def preparar_tabla_rangos_incumplimiento(df: pd.DataFrame) -> pd.DataFrame:
     if "rango_incumplimiento_tat" not in df.columns:
-        st.info("No existe la columna rango_incumplimiento_tat.")
-        return
+        return pd.DataFrame()
 
     serie_rango = (
         df["rango_incumplimiento_tat"]
@@ -1355,80 +1326,84 @@ def grafico_rangos_incumplimiento(df: pd.DataFrame):
         "Sin datos",
     ]
 
-    data = (
-        serie_rango
-        .value_counts()
-        .reset_index()
-    )
+    tabla = serie_rango.value_counts().reset_index()
+    tabla.columns = ["Rango", "Cantidad"]
 
-    data.columns = ["Rango", "Cantidad"]
-
-    data["Rango"] = pd.Categorical(
-        data["Rango"],
+    tabla["Rango"] = pd.Categorical(
+        tabla["Rango"],
         categories=orden,
         ordered=True,
     )
 
-    data = data.sort_values("Rango")
+    tabla = tabla.sort_values("Rango").reset_index(drop=True)
 
-    y = np.arange(len(data))
-    valores = data["Cantidad"].astype(int).to_numpy()
-    etiquetas = data["Rango"].astype(str).tolist()
+    total = tabla["Cantidad"].sum()
+
+    tabla["% del total"] = np.where(
+        total > 0,
+        tabla["Cantidad"] / total * 100,
+        0,
+    )
+
+    return tabla
+
+
+def grafico_torta_rangos_incumplimiento(tabla: pd.DataFrame):
+    if tabla.empty:
+        st.info("No hay datos para graficar rangos de incumplimiento.")
+        return
+
+    data = tabla[tabla["Cantidad"].gt(0)].copy()
+
+    if data.empty:
+        st.info("No hay datos con cantidad mayor a cero.")
+        return
 
     colores = []
 
-    for rango in etiquetas:
+    for rango in data["Rango"].astype(str):
         if rango == "Sin incumplimiento":
-            colores.append(COLOR_CUMPLE)
-        elif rango == "Sin datos":
-            colores.append(COLOR_SIN_DATOS)
+            colores.append("#2E7D32")
         elif rango in ["1-5 días", "6-15 días"]:
             colores.append(COLOR_EN_PROCESO)
+        elif rango in ["16-30 días", "Mayor a un mes"]:
+            colores.append(COLOR_CUMPLE)
         else:
-            colores.append(COLOR_NO_CUMPLE)
+            colores.append(COLOR_SIN_DATOS)
 
-    fig, ax = plt.subplots(figsize=(10, 4.5))
+    fig, ax = plt.subplots(figsize=(8, 5.8))
 
-    ax.barh(
-        y,
-        valores,
-        color=colores,
-        height=0.55,
+    wedges, texts, autotexts = ax.pie(
+        data["Cantidad"],
+        labels=data["Rango"].astype(str),
+        autopct=lambda pct: f"{pct:.1f}%" if pct >= 3 else "",
+        startangle=90,
+        colors=colores,
+        textprops={
+            "fontsize": 9,
+            "color": COLOR_TEXTO,
+            "fontweight": "bold",
+        },
+        wedgeprops={
+            "linewidth": 1,
+            "edgecolor": "white",
+        },
     )
 
-    max_valor = valores.max() if len(valores) else 1
-
-    for i, valor in enumerate(valores):
-        ax.text(
-            valor + max(max_valor * 0.01, 1),
-            i,
-            f"{valor:,.0f}",
-            va="center",
-            ha="left",
-            fontsize=10,
-            fontweight="bold",
-            color=COLOR_TEXTO,
-        )
-
-    ax.set_yticks(y)
-    ax.set_yticklabels(etiquetas, color=COLOR_MUTED)
-    ax.set_xlabel("Cantidad", color=COLOR_TEXTO)
+    for autotext in autotexts:
+        autotext.set_color("white")
+        autotext.set_fontweight("bold")
+        autotext.set_fontsize(9)
 
     ax.set_title(
-        "Rango de incumplimiento TAT",
+        "Distribución porcentual de incumplimiento TAT",
         fontsize=14,
         fontweight="bold",
         color=COLOR_TEXTO,
-        pad=14,
+        pad=16,
     )
 
-    ax.grid(False)
-
-    for spine in ax.spines.values():
-        spine.set_visible(False)
-
-    ax.tick_params(axis="both", length=0)
-    ax.set_facecolor("none")
+    ax.axis("equal")
     fig.patch.set_alpha(0)
     fig.tight_layout()
 
@@ -1765,7 +1740,7 @@ col_k6.metric("Otros / sin datos", f"{otros_tat:,}")
 st.markdown("### Cumplimiento TAT mensual")
 st.caption(
     "El gráfico muestra solo el porcentaje de cumplimiento sobre registros evaluables. "
-    "Debajo de cada mes se indica Cumple/Evaluables y, si existe, la cantidad en proceso."
+    "La línea segmentada indica la meta de cumplimiento."
 )
 
 tabla_mensual = crear_resumen_mensual(df_dashboard)
@@ -1799,30 +1774,39 @@ else:
 # Serie temporal secundaria
 # ============================================================
 
-with st.expander("Serie temporal mensual de cumplimiento", expanded=False):
+with st.expander("Serie temporal mensual de cumplimiento", expanded=True):
     grafico_linea_mensual(tabla_mensual)
 
 
 # ============================================================
-# Etapas del proceso
+# Cumplimiento por etapa
 # ============================================================
 
 st.markdown("### Cumplimiento por etapa")
-st.caption("Resumen de cumplimiento por etapa del TAT usando estados Cumple / No cumple.")
+st.caption(
+    "Cada etapa se muestra de manera individual. "
+    "La tabla a la derecha contiene el detalle absoluto de esa etapa."
+)
 
 resumen_etapas_df = crear_resumen_etapas(df_dashboard)
 
-col_e1, col_e2 = st.columns([1.3, 1])
+if resumen_etapas_df.empty:
+    st.info("No hay información de etapas para mostrar.")
+else:
+    for _, fila_etapa in resumen_etapas_df.iterrows():
+        col_grafico, col_tabla = st.columns([1.25, 1])
 
-with col_e1:
-    grafico_etapas(resumen_etapas_df)
+        with col_grafico:
+            grafico_etapa_individual(fila_etapa)
 
-with col_e2:
-    st.dataframe(
-        resumen_etapas_df,
-        use_container_width=True,
-        hide_index=True,
-    )
+        with col_tabla:
+            st.dataframe(
+                pd.DataFrame([fila_etapa]),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+        st.divider()
 
 
 # ============================================================
@@ -1830,9 +1814,25 @@ with col_e2:
 # ============================================================
 
 st.markdown("### Incumplimiento TAT")
-st.caption("Distribución de los rangos de incumplimiento del TAT total.")
+st.caption(
+    "Distribución porcentual de rangos de incumplimiento. "
+    "El detalle absoluto se muestra en la tabla inferior."
+)
 
-grafico_rangos_incumplimiento(df_dashboard)
+tabla_rangos_incumplimiento = preparar_tabla_rangos_incumplimiento(df_dashboard)
+
+grafico_torta_rangos_incumplimiento(tabla_rangos_incumplimiento)
+
+st.markdown("#### Detalle absoluto por rango")
+
+if tabla_rangos_incumplimiento.empty:
+    st.info("No hay detalle disponible.")
+else:
+    st.dataframe(
+        tabla_rangos_incumplimiento,
+        use_container_width=True,
+        hide_index=True,
+    )
 
 
 # ============================================================
