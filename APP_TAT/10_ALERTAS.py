@@ -37,6 +37,7 @@ COLOR_ATENCION = "#F97316"
 COLOR_SEGUIMIENTO = "#F4B400"
 COLOR_CONTROLADO = "#16A34A"
 COLOR_DATOS = "#CA8A04"
+COLOR_SIN_DATOS = "#B0B4BB"
 COLOR_CERRADO = "#64748B"
 
 COL_SOLPED = "Solicitud de pedido - ME5A"
@@ -549,23 +550,6 @@ def texto_dias_restantes(valor: Any) -> str:
     return f"Vence en {dias:,} días".replace(",", ".")
 
 
-def obtener_umbral_tat(row: pd.Series) -> float:
-    umbral = valor_numerico(row.get(COL_UMBRAL_TAT, np.nan))
-
-    if pd.notna(umbral):
-        return umbral
-
-    tipo_oc = str(row.get(COL_TIPO_OC, "")).strip().replace(".0", "")
-
-    if tipo_oc in ["35", "45"]:
-        return 40
-
-    if tipo_oc == "47":
-        return 70
-
-    return np.nan
-
-
 def primera_columna_existente(df: pd.DataFrame, candidatas: list[str]) -> pd.Series:
     for col in candidatas:
         if col in df.columns:
@@ -618,17 +602,8 @@ def preparar_panel_alertas(df_original: pd.DataFrame, hoy: pd.Timestamp) -> pd.D
         ],
     )
 
-    fecha_pedido = primera_columna_existente(
-        df,
-        [
-            COL_FECHA_PEDIDO_FINAL,
-            "Fecha de pedido - ME5A",
-        ],
-    )
-
     fecha_recepcion = pd.to_datetime(fecha_recepcion, errors="coerce")
     fecha_solicitud = pd.to_datetime(fecha_solicitud, errors="coerce")
-    fecha_pedido = pd.to_datetime(fecha_pedido, errors="coerce")
 
     df["fecha_inicio_tat"] = fecha_solicitud
     df["fecha_recepcion_alerta"] = fecha_recepcion
@@ -654,7 +629,12 @@ def preparar_panel_alertas(df_original: pd.DataFrame, hoy: pd.Timestamp) -> pd.D
     else:
         umbral = pd.Series(np.nan, index=df.index, dtype="float64")
 
-    tipo_oc = df[COL_TIPO_OC].astype("string").str.strip().str.replace(".0", "", regex=False)
+    tipo_oc = (
+        df[COL_TIPO_OC]
+        .astype("string")
+        .str.strip()
+        .str.replace(".0", "", regex=False)
+    )
 
     umbral = umbral.mask(umbral.isna() & tipo_oc.isin(["35", "45"]), 40)
     umbral = umbral.mask(umbral.isna() & tipo_oc.eq("47"), 70)
@@ -1320,7 +1300,7 @@ def grafico_vencimientos(df: pd.DataFrame):
         "2 días": COLOR_ATENCION,
         "7 días": COLOR_SEGUIMIENTO,
         "+7 días": COLOR_CONTROLADO,
-        "Sin datos": COLOR_DATOS,
+        "Sin datos": COLOR_SIN_DATOS,
         "Recepcionado": COLOR_CERRADO,
     }
 
