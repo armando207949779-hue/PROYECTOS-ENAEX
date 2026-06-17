@@ -44,6 +44,7 @@ COL_SOLPED = "Solicitud de pedido - ME5A"
 COL_OC_ME5A = "Pedido - ME5A"
 COL_OC_ME80FN = "Documento de compras - ME80FN"
 COL_POS_SOLPED = "Posición solicitud de pedido - ME5A"
+COL_POS_OC = "Posición de pedido - ME5A"
 COL_MATERIAL = "Material - ME5A"
 COL_TEXTO = "Texto breve - ME5A"
 COL_CENTRO = "Centro - ME5A"
@@ -569,6 +570,16 @@ def primera_columna_existente(df: pd.DataFrame, candidatas: list[str]) -> pd.Ser
     return pd.Series(pd.NaT, index=df.index)
 
 
+def serie_combinada(df: pd.DataFrame, columnas: list[str]) -> pd.Series:
+    resultado = pd.Series(pd.NA, index=df.index)
+
+    for col in columnas:
+        if col in df.columns:
+            resultado = resultado.where(resultado.notna(), df[col])
+
+    return resultado
+
+
 def opciones_columna(df: pd.DataFrame, col: str, max_opciones: int = 800) -> list:
     if col not in df.columns:
         return []
@@ -973,56 +984,48 @@ def crear_desglose_alertas(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def crear_tabla_prioridad(df: pd.DataFrame) -> pd.DataFrame:
-    columnas = [
-        COL_NIVEL_ALERTA_DESC,
-        "nivel_alerta",
-        "clasificacion_vencimiento",
-        "dias_hasta_vencimiento",
-        "fecha_vencimiento_texto",
-        "fecha_pendiente",
-        "accion_sugerida",
-        COL_SOLPED,
-        COL_OC_ME5A,
-        COL_OC_ME80FN,
-        COL_POS_SOLPED,
-        COL_MATERIAL,
-        COL_TEXTO,
-        COL_CENTRO,
-        "centro_label",
-        COL_GRUPO_COMPRAS,
-        COL_TIPO_OC,
-        COL_SISTEMA,
-        COL_ORIGEN,
-        COL_PERF_TAT,
-        COL_DIAS_TAT,
-        COL_DIAS_INC,
-        "score_riesgo",
-    ]
-
-    columnas = columnas_existentes(df, columnas)
-
-    if not columnas:
+    if df.empty:
         return pd.DataFrame()
 
-    tabla = (
-        df[columnas]
-        .sort_values("score_riesgo", ascending=False)
-        .reset_index(drop=True)
+    base = df.copy()
+
+    if "score_riesgo" in base.columns:
+        base = base.sort_values(
+            "score_riesgo",
+            ascending=False,
+        ).copy()
+
+    solped = serie_combinada(base, [COL_SOLPED]).apply(formato_id)
+    pedido = serie_combinada(base, [COL_OC_ME5A, COL_OC_ME80FN]).apply(formato_id)
+    posicion = serie_combinada(base, [COL_POS_SOLPED, COL_POS_OC]).apply(formato_id)
+
+    tabla = pd.DataFrame(
+        {
+            "Días hasta vencimiento": base.get(
+                "dias_hasta_vencimiento",
+                pd.Series("-", index=base.index),
+            ),
+            "Fecha vencimiento": base.get(
+                "fecha_vencimiento_texto",
+                pd.Series("-", index=base.index),
+            ),
+            "SolPed": solped,
+            "Pedido": pedido,
+            "Posición": posicion,
+            "Material": serie_combinada(base, [COL_MATERIAL]).fillna("-"),
+            "Texto breve": serie_combinada(base, [COL_TEXTO]).fillna("-"),
+            "Centro": serie_combinada(base, [COL_CENTRO]).fillna("-"),
+            "Grupo de compras": serie_combinada(base, [COL_GRUPO_COMPRAS]).fillna("-"),
+            "Tipo OC": serie_combinada(base, [COL_TIPO_OC]).fillna("-"),
+            "Sistema": serie_combinada(base, [COL_SISTEMA]).fillna("-"),
+            "Origen": serie_combinada(base, [COL_ORIGEN]).fillna("-"),
+            "Performance TAT total": serie_combinada(base, [COL_PERF_TAT]).fillna("-"),
+            "Días TAT total": serie_combinada(base, [COL_DIAS_TAT]).fillna("-"),
+            "Días incumplimiento": serie_combinada(base, [COL_DIAS_INC]).fillna("-"),
+        }
     )
 
-    if COL_NIVEL_ALERTA_DESC in tabla.columns:
-        tabla.insert(
-            0,
-            "Nivel alerta",
-            tabla[COL_NIVEL_ALERTA_DESC],
-        )
-
-        tabla = tabla.drop(columns=[COL_NIVEL_ALERTA_DESC])
-
-    if "nivel_alerta" in tabla.columns:
-        tabla = tabla.drop(columns=["nivel_alerta"])
-
-    return tabla
+    return tabla.reset_index(drop=True)
 
 
 # ============================================================
