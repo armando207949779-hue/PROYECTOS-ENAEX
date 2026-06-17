@@ -1265,138 +1265,21 @@ def aplicar_filtros_alertas(
 
 
 # ============================================================
-# GRÁFICOS DONUT
+# GRÁFICOS
 # ============================================================
 
-def grafico_donut_generico(
-    tabla: pd.DataFrame,
-    columna_categoria: str,
-    columna_cantidad: str,
-    titulo: str,
-    colores: list[str],
-    centro_texto: str = "registros",
-):
-    if tabla.empty:
-        st.info("No hay datos para graficar.")
-        return
+def formatear_ejes(ax):
+    ax.grid(False)
 
-    data = tabla.copy()
-    data = data[pd.to_numeric(data[columna_cantidad], errors="coerce").fillna(0).gt(0)].copy()
+    for spine in ax.spines.values():
+        spine.set_visible(False)
 
-    if data.empty:
-        st.info("No hay categorías con registros para graficar.")
-        return
-
-    data[columna_cantidad] = (
-        pd.to_numeric(data[columna_cantidad], errors="coerce")
-        .fillna(0)
-        .astype(int)
-    )
-
-    total = int(data[columna_cantidad].sum())
-
-    data["%"] = np.where(
-        total > 0,
-        data[columna_cantidad] / total * 100,
-        0,
-    )
-
-    cantidades = data[columna_cantidad].to_numpy()
-    etiquetas = data[columna_categoria].astype(str).tolist()
-    porcentajes = data["%"].to_numpy()
-
-    fig, ax = plt.subplots(figsize=(8.2, 5.9))
-
-    def autopct_func(pct):
-        if pct < 4:
-            return ""
-
-        return f"{pct:.1f}%"
-
-    wedges, texts, autotexts = ax.pie(
-        cantidades,
-        labels=None,
-        startangle=90,
-        counterclock=False,
-        colors=colores[:len(data)],
-        autopct=autopct_func,
-        pctdistance=0.78,
-        wedgeprops={
-            "width": 0.38,
-            "linewidth": 2.5,
-            "edgecolor": "white",
-        },
-    )
-
-    for autotext in autotexts:
-        autotext.set_fontweight("bold")
-        autotext.set_fontsize(9.5)
-        autotext.set_color("white")
-
-    ax.text(
-        0,
-        0.08,
-        formato_cantidad(total),
-        ha="center",
-        va="center",
-        fontsize=23,
-        fontweight="bold",
-        color=COLOR_TEXTO,
-    )
-
-    ax.text(
-        0,
-        -0.12,
-        centro_texto,
-        ha="center",
-        va="center",
-        fontsize=10,
-        fontweight="bold",
-        color=COLOR_MUTED,
-    )
-
-    etiquetas_leyenda = []
-
-    for etiqueta, cantidad, pct in zip(etiquetas, cantidades, porcentajes):
-        etiquetas_leyenda.append(
-            f"{etiqueta} · {formato_cantidad(cantidad)} · {pct:.1f}%"
-        )
-
-    legend = ax.legend(
-        wedges,
-        etiquetas_leyenda,
-        title="Leyenda",
-        loc="center left",
-        bbox_to_anchor=(1.02, 0.5),
-        frameon=False,
-        fontsize=8.5,
-        title_fontsize=9.5,
-    )
-
-    for texto in legend.get_texts():
-        texto.set_color(COLOR_TEXTO)
-
-    legend.get_title().set_color(COLOR_TEXTO)
-    legend.get_title().set_fontweight("bold")
-
-    ax.set_title(
-        titulo,
-        fontsize=14,
-        fontweight="bold",
-        color=COLOR_TEXTO,
-        pad=16,
-    )
-
-    ax.axis("equal")
-    fig.patch.set_alpha(0)
-    fig.tight_layout()
-    fig.subplots_adjust(right=0.67)
-
-    st.pyplot(fig, clear_figure=True, use_container_width=True)
+    ax.tick_params(axis="both", length=0, colors=COLOR_MUTED)
+    ax.set_facecolor("none")
 
 
-def grafico_distribucion_alertas(df: pd.DataFrame):
-    st.markdown("### Distribución de alertas")
+def grafico_donut_alertas_porcentual(df: pd.DataFrame):
+    st.markdown("### Porcentaje por tipo de alerta")
 
     if df.empty or "nivel_alerta" not in df.columns:
         st.info("No hay datos para graficar.")
@@ -1429,18 +1312,107 @@ def grafico_distribucion_alertas(df: pd.DataFrame):
     tabla["Tipo de alerta"] = tabla["Nivel"].apply(describir_nivel_alerta)
     tabla["Color"] = tabla["Nivel"].map(colores_mapa).fillna(COLOR_MUTED)
 
-    grafico_donut_generico(
-        tabla=tabla,
-        columna_categoria="Tipo de alerta",
-        columna_cantidad="Cantidad",
-        titulo="Distribución porcentual por tipo de alerta",
-        colores=tabla["Color"].tolist(),
-        centro_texto="registros",
+    total = int(tabla["Cantidad"].sum())
+    cantidades = tabla["Cantidad"].astype(int).to_numpy()
+    etiquetas = tabla["Tipo de alerta"].astype(str).tolist()
+    colores = tabla["Color"].tolist()
+
+    fig, ax = plt.subplots(figsize=(8.2, 5.8))
+
+    def autopct_func(pct):
+        if pct < 4:
+            return ""
+
+        return f"{pct:.1f}%"
+
+    wedges, texts, autotexts = ax.pie(
+        cantidades,
+        labels=None,
+        startangle=90,
+        counterclock=False,
+        colors=colores,
+        autopct=autopct_func,
+        pctdistance=0.78,
+        wedgeprops={
+            "width": 0.38,
+            "linewidth": 2.5,
+            "edgecolor": "white",
+        },
     )
 
+    for autotext in autotexts:
+        autotext.set_fontweight("bold")
+        autotext.set_fontsize(9.5)
+        autotext.set_color("white")
 
-def grafico_vencimientos(df: pd.DataFrame):
-    st.markdown("### Distribución por vencimiento")
+    ax.text(
+        0,
+        0.08,
+        formato_cantidad(total),
+        ha="center",
+        va="center",
+        fontsize=23,
+        fontweight="bold",
+        color=COLOR_TEXTO,
+    )
+
+    ax.text(
+        0,
+        -0.12,
+        "registros",
+        ha="center",
+        va="center",
+        fontsize=10,
+        fontweight="bold",
+        color=COLOR_MUTED,
+    )
+
+    porcentajes = np.where(
+        total > 0,
+        cantidades / total * 100,
+        0,
+    )
+
+    etiquetas_leyenda = [
+        f"{etiqueta} · {pct:.1f}%"
+        for etiqueta, pct in zip(etiquetas, porcentajes)
+    ]
+
+    legend = ax.legend(
+        wedges,
+        etiquetas_leyenda,
+        title="Leyenda porcentual",
+        loc="center left",
+        bbox_to_anchor=(1.02, 0.5),
+        frameon=False,
+        fontsize=8.5,
+        title_fontsize=9.5,
+    )
+
+    for texto in legend.get_texts():
+        texto.set_color(COLOR_TEXTO)
+
+    legend.get_title().set_color(COLOR_TEXTO)
+    legend.get_title().set_fontweight("bold")
+
+    ax.set_title(
+        "Distribución porcentual por tipo de alerta",
+        fontsize=14,
+        fontweight="bold",
+        color=COLOR_TEXTO,
+        pad=16,
+    )
+
+    ax.axis("equal")
+    fig.patch.set_alpha(0)
+    fig.tight_layout()
+    fig.subplots_adjust(right=0.67)
+
+    st.pyplot(fig, clear_figure=True, use_container_width=True)
+
+
+def grafico_alertas_valores_absolutos(df: pd.DataFrame):
+    st.markdown("### Valores absolutos por vencimiento")
 
     if df.empty or "clasificacion_vencimiento" not in df.columns:
         st.info("No hay datos para graficar.")
@@ -1482,16 +1454,51 @@ def grafico_vencimientos(df: pd.DataFrame):
         st.info("No hay clasificación de vencimientos.")
         return
 
-    tabla["Color"] = tabla["Clasificación"].map(colores_mapa).fillna(COLOR_MUTED)
+    tabla = tabla.sort_values("Cantidad", ascending=True)
 
-    grafico_donut_generico(
-        tabla=tabla,
-        columna_categoria="Clasificación",
-        columna_cantidad="Cantidad",
-        titulo="Distribución porcentual por vencimiento",
-        colores=tabla["Color"].tolist(),
-        centro_texto="registros",
+    y = np.arange(len(tabla))
+
+    fig, ax = plt.subplots(figsize=(8.2, 5.4))
+
+    ax.barh(
+        y,
+        tabla["Cantidad"],
+        color=[colores_mapa.get(x, COLOR_MUTED) for x in tabla["Clasificación"]],
+        height=0.55,
     )
+
+    max_cantidad = max(tabla["Cantidad"]) if len(tabla) else 0
+
+    for i, cantidad in enumerate(tabla["Cantidad"]):
+        ax.text(
+            cantidad + max_cantidad * 0.01,
+            i,
+            formato_cantidad(cantidad),
+            va="center",
+            ha="left",
+            fontsize=10,
+            fontweight="bold",
+            color=COLOR_TEXTO,
+        )
+
+    ax.set_yticks(y)
+    ax.set_yticklabels(tabla["Clasificación"], color=COLOR_MUTED)
+    ax.set_xlabel("Cantidad de registros", color=COLOR_TEXTO)
+
+    ax.set_title(
+        "Valores absolutos por clasificación de vencimiento",
+        fontsize=14,
+        fontweight="bold",
+        color=COLOR_TEXTO,
+        pad=12,
+    )
+
+    formatear_ejes(ax)
+
+    fig.patch.set_alpha(0)
+    fig.tight_layout()
+
+    st.pyplot(fig, clear_figure=True, use_container_width=True)
 
 
 # ============================================================
@@ -1786,10 +1793,23 @@ def mostrar_vencidos_por_anio(df_vencidos: pd.DataFrame):
         return
 
     df_temp = df_vencidos.copy()
-    df_temp["anio_vencimiento"] = pd.to_datetime(
+
+    df_temp["fecha_vencimiento_tat"] = pd.to_datetime(
         df_temp["fecha_vencimiento_tat"],
         errors="coerce",
-    ).dt.year
+    )
+
+    df_temp["anio_vencimiento"] = df_temp["fecha_vencimiento_tat"].dt.year
+
+    df_temp["dias_vencido"] = (
+        pd.Timestamp.today().normalize()
+        - df_temp["fecha_vencimiento_tat"]
+    ).dt.days
+
+    df_temp["dias_vencido"] = pd.to_numeric(
+        df_temp["dias_vencido"],
+        errors="coerce",
+    )
 
     anios_validos = (
         df_temp["anio_vencimiento"]
@@ -1808,23 +1828,26 @@ def mostrar_vencidos_por_anio(df_vencidos: pd.DataFrame):
         f"Total vencidos sin recepción: **{formato_cantidad(total_vencidos)} registros**."
     )
 
-    if not anios_validos and not tiene_sin_anio:
-        mostrar_tabla_alertas(
-            df_temp,
-            "Vencidos sin recepción",
-            "Registros vencidos sin recepción.",
-        )
-        return
-
-    for i, anio in enumerate(anios_validos):
+    for anio in anios_validos:
         df_anio = df_temp[
             df_temp["anio_vencimiento"].eq(anio)
         ].copy()
 
+        dias_validos = df_anio["dias_vencido"].dropna()
+
+        dias_min = int(dias_validos.min()) if not dias_validos.empty else 0
+        dias_max = int(dias_validos.max()) if not dias_validos.empty else 0
+
         with st.expander(
             f"Año {anio} · {formato_cantidad(len(df_anio))} registros",
-            expanded=i == 0,
+            expanded=True,
         ):
+            m1, m2, m3 = st.columns(3)
+
+            m1.metric("Vencidos", formato_cantidad(len(df_anio)))
+            m2.metric("Mínimo días vencido", formato_cantidad(dias_min))
+            m3.metric("Máximo días vencido", formato_cantidad(dias_max))
+
             mostrar_tabla_alertas(
                 df_anio,
                 f"Vencidos sin recepción {anio}",
@@ -1839,12 +1862,92 @@ def mostrar_vencidos_por_anio(df_vencidos: pd.DataFrame):
 
         with st.expander(
             f"Sin año de vencimiento · {formato_cantidad(len(df_sin_anio))} registros",
-            expanded=False,
+            expanded=True,
         ):
             mostrar_tabla_alertas(
                 df_sin_anio,
                 "Vencidos sin recepción sin año calculable",
                 "Registros vencidos sin recepción sin fecha de vencimiento TAT válida.",
+                limite=300,
+            )
+
+
+def mostrar_proximos_por_rango(df_proximos: pd.DataFrame):
+    st.markdown("### Vencen en 0 a 30 días sin recepción")
+    st.caption(
+        "Los próximos vencimientos se separan por rangos de días restantes para priorizar la gestión."
+    )
+
+    if df_proximos.empty:
+        st.success("No hay registros próximos a vencer con los filtros actuales.")
+        return
+
+    df_temp = df_proximos.copy()
+
+    df_temp["dias_restantes_int"] = pd.to_numeric(
+        df_temp["dias_restantes_int"],
+        errors="coerce",
+    )
+
+    rangos = [
+        {
+            "nombre": "Vence hoy",
+            "descripcion": "Registros que vencen hoy y aún no tienen recepción.",
+            "mask": df_temp["dias_restantes_int"].eq(0),
+        },
+        {
+            "nombre": "Vencen en 1 a 2 días",
+            "descripcion": "Registros que vencen entre 1 y 2 días.",
+            "mask": df_temp["dias_restantes_int"].between(1, 2, inclusive="both"),
+        },
+        {
+            "nombre": "Vencen en 3 a 7 días",
+            "descripcion": "Registros que vencen entre 3 y 7 días.",
+            "mask": df_temp["dias_restantes_int"].between(3, 7, inclusive="both"),
+        },
+        {
+            "nombre": "Vencen en 8 a 15 días",
+            "descripcion": "Registros que vencen entre 8 y 15 días.",
+            "mask": df_temp["dias_restantes_int"].between(8, 15, inclusive="both"),
+        },
+        {
+            "nombre": "Vencen en 16 a 30 días",
+            "descripcion": "Registros que vencen entre 16 y 30 días.",
+            "mask": df_temp["dias_restantes_int"].between(16, 30, inclusive="both"),
+        },
+    ]
+
+    total_proximos = len(df_temp)
+
+    st.info(
+        f"Total próximos 0-30 días sin recepción: **{formato_cantidad(total_proximos)} registros**."
+    )
+
+    for item in rangos:
+        df_rango = df_temp[item["mask"]].copy()
+
+        if df_rango.empty:
+            continue
+
+        dias_validos = df_rango["dias_restantes_int"].dropna()
+
+        dias_min = int(dias_validos.min()) if not dias_validos.empty else 0
+        dias_max = int(dias_validos.max()) if not dias_validos.empty else 0
+
+        with st.expander(
+            f"{item['nombre']} · {formato_cantidad(len(df_rango))} registros",
+            expanded=True,
+        ):
+            r1, r2, r3 = st.columns(3)
+
+            r1.metric("Registros", formato_cantidad(len(df_rango)))
+            r2.metric("Mínimo días restantes", formato_cantidad(dias_min))
+            r3.metric("Máximo días restantes", formato_cantidad(dias_max))
+
+            mostrar_tabla_alertas(
+                df_rango,
+                item["nombre"],
+                item["descripcion"],
                 limite=300,
             )
 
@@ -1929,8 +2032,22 @@ opciones_nivel = [
 ]
 
 opciones_clasificacion = [
-    x for x in ["Vencido", "Vence hoy", "1 día", "2 días", "7 días", "+7 días", "Sin datos", "Recepcionado"]
+    x for x in [
+        "Vencido",
+        "Vence hoy",
+        "1 día",
+        "2 días",
+        "7 días",
+        "+7 días",
+        "Sin datos",
+        "Recepcionado",
+    ]
     if x in df_panel["clasificacion_vencimiento"].astype(str).unique()
+]
+
+clasificaciones_default = [
+    x for x in opciones_clasificacion
+    if x not in ["Sin datos", "Recepcionado"]
 ]
 
 opciones_estado_recepcion = opciones_columna(df_panel, COL_ESTADO_RECEPCION_ALERTA)
@@ -1938,6 +2055,12 @@ opciones_centros = opciones_columna(df_panel, COL_CENTRO)
 opciones_grupos_compras = opciones_columna(df_panel, COL_GRUPO_COMPRAS)
 opciones_sistemas = opciones_columna(df_panel, COL_SISTEMA)
 opciones_tipo_oc = opciones_columna(df_panel, COL_TIPO_OC)
+
+centros_default = [
+    centro
+    for centro in opciones_centros
+    if str(centro).strip().upper() == "E002"
+]
 
 with st.form("form_filtros_alertas"):
     f1, f2, f3, f4 = st.columns(4)
@@ -1997,8 +2120,9 @@ with st.form("form_filtros_alertas"):
         clasificaciones = st.multiselect(
             "Clasificación vencimiento",
             options=opciones_clasificacion,
-            default=opciones_clasificacion,
+            default=clasificaciones_default,
             key="alertas_clasificaciones",
+            help="Por defecto se excluyen 'Sin datos' y 'Recepcionado'.",
         )
 
     with f8:
@@ -2015,9 +2139,9 @@ with st.form("form_filtros_alertas"):
         centros = st.multiselect(
             "Centro",
             options=opciones_centros,
-            default=[],
+            default=centros_default,
             key="alertas_centros",
-            help="Si no seleccionas centro, se consideran todos.",
+            help="Por defecto se selecciona E002 si existe.",
         )
 
     with f10:
@@ -2131,20 +2255,9 @@ else:
         df_filtrado = st.session_state["alertas_df_filtrado"].copy()
         resumen_filtros_df = st.session_state["alertas_resumen_filtros"].copy()
     else:
-        df_filtrado = df_panel.copy()
-
-        resumen_filtros_df = pd.DataFrame(
-            [
-                {
-                    "Paso": "Base inicial",
-                    "Filtro aplicado": "Sin filtro aplicado",
-                    "Valor": "Base completa procesada",
-                    "Registros antes": len(df_panel),
-                    "Registros después": len(df_panel),
-                    "Registros excluidos": 0,
-                    "% retenido": 100.0,
-                }
-            ]
+        df_filtrado, resumen_filtros_df = aplicar_filtros_alertas(
+            df_base=df_panel,
+            filtros=filtros,
         )
 
 
@@ -2193,19 +2306,22 @@ mostrar_card_estado(resumen_ejecutivo)
 
 
 # ============================================================
-# DESGLOSE / DONUTS
+# DESGLOSE VISUAL
 # ============================================================
 
-st.markdown("### Desglose porcentual de alertas")
-st.caption("Distribución porcentual de registros por tipo de alerta y por clasificación de vencimiento.")
+st.markdown("### Desglose visual de alertas")
+st.caption(
+    "El primer gráfico muestra la distribución porcentual. "
+    "El segundo gráfico muestra valores absolutos para evitar duplicar la misma información."
+)
 
 col_g1, col_g2 = st.columns(2)
 
 with col_g1:
-    grafico_distribucion_alertas(df_filtrado)
+    grafico_donut_alertas_porcentual(df_filtrado)
 
 with col_g2:
-    grafico_vencimientos(df_filtrado)
+    grafico_alertas_valores_absolutos(df_filtrado)
 
 desglose_alertas = crear_desglose_alertas(df_filtrado)
 
@@ -2238,11 +2354,7 @@ df_sin_fecha = df_filtrado[
 
 mostrar_vencidos_por_anio(df_vencidos)
 
-mostrar_tabla_alertas(
-    df_proximos,
-    "Vencen en 0 a 30 días sin recepción",
-    "Registros sin recepción que vencen dentro de los próximos 30 días o requieren seguimiento preventivo.",
-)
+mostrar_proximos_por_rango(df_proximos)
 
 with st.expander("Datos incompletos para calcular vencimiento", expanded=True):
     mostrar_tabla_alertas(
