@@ -1790,32 +1790,28 @@ def grafico_torta_rangos_incumplimiento(tabla: pd.DataFrame):
 
     total = int(data["Cantidad"].sum())
 
-    # Paleta más coherente:
-    # verde = sin incumplimiento
-    # amarillo = incumplimiento leve
-    # naranja = incumplimiento medio
-    # rojo original = incumplimiento alto
-    # rojo oscuro = incumplimiento severo
-    # gris = sin datos
+    # Paleta más coherente visualmente
     colores_mapa = {
-        "Sin incumplimiento": "#2E7D32",
-        "1-5 días": "#F4B400",
-        "6-15 días": "#FB8C00",
-        "16-30 días": "#EF3E52",
-        "Mayor a un mes": "#B71C1C",
-        "Sin datos": "#B0B4BB",
+        "Sin incumplimiento": "#2E7D32",   # verde
+        "1-5 días": "#F4B400",             # amarillo
+        "6-15 días": "#FB8C00",            # naranja
+        "16-30 días": "#EF3E52",           # rojo original
+        "Mayor a un mes": "#B71C1C",       # rojo oscuro
+        "Sin datos": "#B0B4BB",            # gris
     }
 
-    colores = [
-        colores_mapa.get(str(rango), "#9CA3AF")
-        for rango in data["Rango"].astype(str)
-    ]
+    # Etiquetas compactas para mostrar en el gráfico
+    etiquetas_cortas = {
+        "Sin incumplimiento": "Sin\nincumplimiento",
+        "1-5 días": "1-5 días",
+        "6-15 días": "6-15 días",
+        "16-30 días": "16-30 días",
+        "Mayor a un mes": "Mayor a\nun mes",
+        "Sin datos": "Sin datos",
+    }
 
-    porcentajes = (
-        pd.to_numeric(data["% del total"], errors="coerce")
-        .fillna(0)
-        .to_numpy()
-    )
+    data["Color"] = data["Rango"].astype(str).map(colores_mapa).fillna("#9CA3AF")
+    data["Etiqueta_corta"] = data["Rango"].astype(str).map(etiquetas_cortas).fillna(data["Rango"].astype(str))
 
     cantidades = (
         pd.to_numeric(data["Cantidad"], errors="coerce")
@@ -1824,9 +1820,17 @@ def grafico_torta_rangos_incumplimiento(tabla: pd.DataFrame):
         .to_numpy()
     )
 
-    etiquetas = data["Rango"].astype(str).tolist()
+    porcentajes = (
+        pd.to_numeric(data["% del total"], errors="coerce")
+        .fillna(0)
+        .to_numpy()
+    )
 
-    fig, ax = plt.subplots(figsize=(10, 6.2))
+    colores = data["Color"].tolist()
+    etiquetas = data["Rango"].astype(str).tolist()
+    etiquetas_cortas_list = data["Etiqueta_corta"].tolist()
+
+    fig, ax = plt.subplots(figsize=(12, 6.8))
 
     wedges, _ = ax.pie(
         cantidades,
@@ -1835,8 +1839,8 @@ def grafico_torta_rangos_incumplimiento(tabla: pd.DataFrame):
         counterclock=False,
         colors=colores,
         wedgeprops={
-            "width": 0.42,
-            "linewidth": 1.5,
+            "width": 0.40,
+            "linewidth": 2,
             "edgecolor": "white",
         },
     )
@@ -1844,11 +1848,11 @@ def grafico_torta_rangos_incumplimiento(tabla: pd.DataFrame):
     # Texto central
     ax.text(
         0,
-        0.05,
+        0.06,
         f"{total:,}",
         ha="center",
         va="center",
-        fontsize=19,
+        fontsize=20,
         fontweight="bold",
         color=COLOR_TEXTO,
     )
@@ -1860,64 +1864,68 @@ def grafico_torta_rangos_incumplimiento(tabla: pd.DataFrame):
         ha="center",
         va="center",
         fontsize=10,
-        color=COLOR_MUTED,
         fontweight="bold",
+        color=COLOR_MUTED,
     )
 
-    # Etiquetas sobre el gráfico
+    # Etiquetas dentro / fuera según tamaño del segmento
     for i, wedge in enumerate(wedges):
         angulo = (wedge.theta2 + wedge.theta1) / 2
-        angulo_rad = np.deg2rad(angulo)
+        rad = np.deg2rad(angulo)
 
-        porcentaje = porcentajes[i]
-        cantidad = cantidades[i]
-        etiqueta = etiquetas[i]
+        x = np.cos(rad)
+        y = np.sin(rad)
 
-        # Posición del texto en la mitad del anillo
-        r_texto = 0.78
-        x = r_texto * np.cos(angulo_rad)
-        y = r_texto * np.sin(angulo_rad)
+        pct = porcentajes[i]
+        etiqueta = etiquetas_cortas_list[i]
 
-        # Para segmentos pequeños, mover la etiqueta fuera
-        if porcentaje < 7:
-            r_linea = 1.0
-            r_fuera = 1.18
-
-            x_linea = r_linea * np.cos(angulo_rad)
-            y_linea = r_linea * np.sin(angulo_rad)
-
-            x_texto = r_fuera * np.cos(angulo_rad)
-            y_texto = r_fuera * np.sin(angulo_rad)
-
-            ha = "left" if x_texto >= 0 else "right"
-
-            ax.annotate(
-                f"{etiqueta}\n{porcentaje:.1f}%",
-                xy=(x_linea, y_linea),
-                xytext=(x_texto, y_texto),
-                ha=ha,
-                va="center",
-                fontsize=9,
-                fontweight="bold",
-                color=COLOR_TEXTO,
-                arrowprops={
-                    "arrowstyle": "-",
-                    "lw": 1.0,
-                    "color": COLOR_MUTED,
-                },
-            )
-        else:
+        # Segmentos grandes: etiqueta dentro
+        if pct >= 8:
+            r_text = 0.78
             ax.text(
-                x,
-                y,
-                f"{etiqueta}\n{porcentaje:.1f}%",
+                r_text * x,
+                r_text * y,
+                f"{etiqueta}\n{pct:.1f}%",
                 ha="center",
                 va="center",
-                fontsize=9,
+                fontsize=10,
                 fontweight="bold",
                 color="white",
             )
 
+        # Segmentos medianos o pequeños: etiqueta afuera con línea guía
+        else:
+            r_line = 1.00
+            r_text = 1.16
+
+            x_line = r_line * x
+            y_line = r_line * y
+
+            x_text = r_text * x
+            y_text = r_text * y
+
+            ha = "left" if x_text >= 0 else "right"
+
+            ax.annotate(
+                f"{etiqueta.replace(chr(10), ' ')}\n{pct:.1f}%",
+                xy=(x_line, y_line),
+                xytext=(x_text, y_text),
+                ha=ha,
+                va="center",
+                fontsize=9.5,
+                fontweight="bold",
+                color=COLOR_TEXTO,
+                arrowprops={
+                    "arrowstyle": "-",
+                    "lw": 1.2,
+                    "color": COLOR_MUTED,
+                    "shrinkA": 0,
+                    "shrinkB": 0,
+                    "connectionstyle": "arc3,rad=0.15",
+                },
+            )
+
+    # Leyenda
     etiquetas_leyenda = [
         f"{rango} · {cantidad:,} · {pct:.1f}%"
         for rango, cantidad, pct in zip(etiquetas, cantidades, porcentajes)
@@ -1942,16 +1950,15 @@ def grafico_torta_rangos_incumplimiento(tabla: pd.DataFrame):
 
     ax.set_title(
         "Distribución porcentual de incumplimiento TAT",
-        fontsize=14,
+        fontsize=15,
         fontweight="bold",
         color=COLOR_TEXTO,
-        pad=16,
+        pad=18,
     )
 
     ax.axis("equal")
     fig.patch.set_alpha(0)
-    fig.tight_layout()
-
+    fig.subplots_adjust(right=0.78)
     st.pyplot(fig, clear_figure=True, use_container_width=True)
 
 # ============================================================
