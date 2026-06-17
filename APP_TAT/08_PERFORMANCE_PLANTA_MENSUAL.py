@@ -319,10 +319,57 @@ def normalizar_estado_performance(valor) -> str:
     if texto in ["no aplica", "no aplica al analisis", "no aplica al análisis"]:
         return "No aplica"
 
-    if texto in ["nan", "none", "<na>", ""]:
+    if texto in ["nan", "none", "<na>", "null", ""]:
         return "Sin datos"
 
     return "Sin datos"
+
+
+def normalizar_rango_incumplimiento(serie: pd.Series) -> pd.Series:
+    """
+    Normaliza valores faltantes o inválidos del rango de incumplimiento.
+
+    Convierte a 'Sin datos':
+    - NaN real
+    - texto 'nan'
+    - texto 'None'
+    - texto '<NA>'
+    - string vacío ''
+    - espacios en blanco
+    - valores fuera de los rangos esperados
+    """
+
+    orden_valido = [
+        "Sin incumplimiento",
+        "1-5 días",
+        "6-15 días",
+        "16-30 días",
+        "Mayor a un mes",
+        "Sin datos",
+    ]
+
+    texto = (
+        serie
+        .astype("string")
+        .str.strip()
+    )
+
+    texto_lower = texto.str.lower()
+
+    mask_sin_datos = (
+        texto.isna()
+        | texto.eq("")
+        | texto_lower.isin(["nan", "none", "<na>", "null"])
+    )
+
+    texto = texto.mask(mask_sin_datos, "Sin datos")
+
+    texto = texto.where(
+        texto.isin(orden_valido),
+        "Sin datos",
+    )
+
+    return texto
 
 
 def buscar_columna(df: pd.DataFrame, candidatos: list[str]) -> str | None:
@@ -684,20 +731,8 @@ def preparar_base_tat(df_original: pd.DataFrame) -> pd.DataFrame:
             df[col] = df[col].apply(normalizar_estado_performance)
 
     if "rango_incumplimiento_tat" in df.columns:
-        df["rango_incumplimiento_tat"] = (
+        df["rango_incumplimiento_tat"] = normalizar_rango_incumplimiento(
             df["rango_incumplimiento_tat"]
-            .astype("string")
-            .str.strip()
-            .replace(
-                {
-                    "nan": "Sin datos",
-                    "NaN": "Sin datos",
-                    "None": "Sin datos",
-                    "<NA>": "Sin datos",
-                    "": "Sin datos",
-                }
-            )
-            .fillna("Sin datos")
         )
 
     df["periodo_fecha"] = (
@@ -867,7 +902,7 @@ def aplicar_filtros_con_progreso(
 
 
 # ============================================================
-# Resúmenes
+# Resúmenes y detalles
 # ============================================================
 
 def crear_resumen_mensual(df: pd.DataFrame) -> pd.DataFrame:
@@ -1014,6 +1049,290 @@ def obtener_mejor_peor_mes(tabla: pd.DataFrame):
     ).iloc[0]
 
     return mejor, peor
+
+
+def mostrar_detalle_filtros_aplicados(resumen_filtros_df: pd.DataFrame):
+    st.markdown("### Detalle de filtros aplicados")
+    st.caption(
+        "Esta sección muestra cómo cambia la cantidad de registros después de cada filtro."
+    )
+
+    if resumen_filtros_df is None or resumen_filtros_df.empty:
+        st.info("No hay detalle de filtros disponible.")
+        return
+
+    resumen = resumen_filtros_df.copy()
+
+    registros_iniciales = int(resumen.iloc[0]["Registros antes"])
+    registros_finales = int(resumen.iloc[-1]["Registros después"])
+    registros_excluidos = registros_iniciales - registros_finales
+
+    pct_retenido = (
+        registros_finales / registros_iniciales * 100
+        if registros_iniciales
+        else 0
+    )
+
+    col_f1, col_f2, col_f3, col_f4 = st.columns(4)
+
+    col_f1.metric("Registros iniciales", f"{registros_iniciales:,}")
+    col_f2.metric("Registros finales", f"{registros_finales:,}")
+    col_f3.metric("Registros excluidos", f"{registros_excluidos:,}")
+    col_f4.metric("% retenido", f"{pct_retenido:.1f}%")
+
+    columnas_mostrar = [
+        "Paso",
+        "Filtro aplicado",
+        "Valor",
+        "Registros antes",
+        "Registros después",
+        "Registros excluidos",
+        "% retenido",
+    ]
+
+    columnas_mostrar = [
+        col for col in columnas_mostrar
+        if col in resumen.columns
+    ]
+
+    st.dataframe(
+        resumen[columnas_mostrar],
+        use_container_width=True,
+        hide_index=True,
+    )
+
+
+def generar_resumen_nan_sin_datos(
+    df: pd.DataFrame,
+    columnas_revision: list[str],
+) -> pd.DataFrame:
+
+    registros = []
+
+    for col in columnas_revision:
+        if col not in df.columns:
+            continue
+
+        serie_original = df[col]
+
+        serie_texto = (
+            serie_original
+            .astype("string")
+            .str.strip()
+        )
+
+        serie_texto_lower = serie_texto.str.lower()
+
+        total = len(df)
+        nan_real = int(serie_original.isna().sum())
+
+        texto_nan = int(
+            serie_texto_lower
+            .isin(["nan", "none", "<na>", "null"])
+            .sum()
+        )
+
+        texto_sin_datos = int(
+            serie_texto_lower
+            .eq("sin datos")
+            .sum()
+        )
+
+        vacio_texto = int(
+            serie_texto
+            .fillna("")
+            .eq("")
+            .sum()
+        )
+
+        total_sin_informacion = (
+            nan_real
+            + texto_nan
+            + texto_sin_datos
+            + vacio_texto
+        )
+
+        registros.append(
+            {
+                "Columna": col,
+                "Total registros": total,
+                "NaN real": nan_real,
+                "Texto 'nan'": texto_nan,
+                "Texto 'Sin datos'": texto_sin_datos,
+                "Texto vacío": vacio_texto,
+                "Total sin información": total_sin_informacion,
+                "% sin información": round(
+                    total_sin_informacion / total * 100,
+                    2,
+                ) if total else 0,
+            }
+        )
+
+    return pd.DataFrame(registros)
+
+
+def obtener_registros_nan_sin_datos(
+    df: pd.DataFrame,
+    columna_revision: str,
+    columnas_contexto: list[str],
+    tipo: str,
+    limite: int = 300,
+) -> pd.DataFrame:
+
+    if columna_revision not in df.columns:
+        return pd.DataFrame()
+
+    serie_original = df[columna_revision]
+
+    serie_texto = (
+        serie_original
+        .astype("string")
+        .str.strip()
+    )
+
+    serie_texto_lower = serie_texto.str.lower()
+
+    if tipo == "nan_real":
+        mask = serie_original.isna()
+
+    elif tipo == "texto_nan":
+        mask = serie_texto_lower.isin(["nan", "none", "<na>", "null"])
+
+    elif tipo == "sin_datos":
+        mask = serie_texto_lower.eq("sin datos")
+
+    else:
+        mask = pd.Series(False, index=df.index)
+
+    columnas_disponibles = [
+        col for col in columnas_contexto
+        if col is not None and col in df.columns
+    ]
+
+    if columna_revision not in columnas_disponibles:
+        columnas_disponibles.append(columna_revision)
+
+    return (
+        df.loc[mask, columnas_disponibles]
+        .head(limite)
+        .copy()
+    )
+
+
+def mostrar_detalle_nan_sin_datos(df: pd.DataFrame, col_centro: str | None):
+    st.markdown("### Calidad de datos: NaN vs Sin datos")
+
+    st.info(
+        "NaN es un valor nulo real del dataframe. "
+        "'Sin datos' es una etiqueta usada para visualizar o reportar valores faltantes. "
+        "El texto 'nan' aparece cuando un valor nulo fue convertido a texto."
+    )
+
+    columnas_revision = [
+        "performance_tat_total",
+        "rango_incumplimiento_tat",
+        "dias_incumplimiento_tat",
+        "dias_tat_total",
+        "umbral_tat_total",
+        COL_FECHA_SOLICITUD_FINAL,
+        COL_FECHA_RECEPCION_FINAL,
+    ]
+
+    columnas_revision = [
+        col for col in columnas_revision
+        if col in df.columns
+    ]
+
+    if not columnas_revision:
+        st.info("No hay columnas disponibles para revisar NaN o Sin datos.")
+        return
+
+    resumen_calidad = generar_resumen_nan_sin_datos(
+        df=df,
+        columnas_revision=columnas_revision,
+    )
+
+    st.dataframe(
+        resumen_calidad,
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.markdown("#### Detalle de registros")
+
+    columna_detalle = st.selectbox(
+        "Columna a revisar",
+        options=columnas_revision,
+        index=0,
+        key="columna_revision_nan_sin_datos",
+    )
+
+    columnas_contexto = [
+        "Solicitud de pedido - ME5A",
+        COL_PEDIDO,
+        COL_DOCUMENTO_COMPRAS,
+        col_centro,
+        "tipo_oc",
+        "origen",
+        "sistema",
+        "performance_tat_total",
+        "rango_incumplimiento_tat",
+        "dias_tat_total",
+        "dias_incumplimiento_tat",
+        COL_FECHA_SOLICITUD_FINAL,
+        COL_FECHA_RECEPCION_FINAL,
+    ]
+
+    with st.expander("Registros con NaN real", expanded=False):
+        df_nan_real = obtener_registros_nan_sin_datos(
+            df=df,
+            columna_revision=columna_detalle,
+            columnas_contexto=columnas_contexto,
+            tipo="nan_real",
+        )
+
+        if df_nan_real.empty:
+            st.success("No hay registros con NaN real en esta columna.")
+        else:
+            st.dataframe(
+                df_nan_real,
+                use_container_width=True,
+                hide_index=True,
+            )
+
+    with st.expander("Registros con texto 'nan'", expanded=False):
+        df_texto_nan = obtener_registros_nan_sin_datos(
+            df=df,
+            columna_revision=columna_detalle,
+            columnas_contexto=columnas_contexto,
+            tipo="texto_nan",
+        )
+
+        if df_texto_nan.empty:
+            st.success("No hay registros con texto 'nan' en esta columna.")
+        else:
+            st.dataframe(
+                df_texto_nan,
+                use_container_width=True,
+                hide_index=True,
+            )
+
+    with st.expander("Registros con texto 'Sin datos'", expanded=False):
+        df_sin_datos = obtener_registros_nan_sin_datos(
+            df=df,
+            columna_revision=columna_detalle,
+            columnas_contexto=columnas_contexto,
+            tipo="sin_datos",
+        )
+
+        if df_sin_datos.empty:
+            st.success("No hay registros con texto 'Sin datos' en esta columna.")
+        else:
+            st.dataframe(
+                df_sin_datos,
+                use_container_width=True,
+                hide_index=True,
+            )
 
 
 # ============================================================
@@ -1301,20 +1620,8 @@ def preparar_tabla_rangos_incumplimiento(df: pd.DataFrame) -> pd.DataFrame:
     if "rango_incumplimiento_tat" not in df.columns:
         return pd.DataFrame()
 
-    serie_rango = (
+    serie_rango = normalizar_rango_incumplimiento(
         df["rango_incumplimiento_tat"]
-        .astype("string")
-        .str.strip()
-        .replace(
-            {
-                "nan": "Sin datos",
-                "NaN": "Sin datos",
-                "None": "Sin datos",
-                "<NA>": "Sin datos",
-                "": "Sin datos",
-            }
-        )
-        .fillna("Sin datos")
     )
 
     orden = [
@@ -1836,15 +2143,23 @@ else:
 
 
 # ============================================================
-# Auditoría y datos
+# Calidad de datos
 # ============================================================
 
-with st.expander("Auditoría de filtros aplicados", expanded=False):
-    st.dataframe(
-        resumen_filtros_df,
-        use_container_width=True,
-        hide_index=True,
-    )
+mostrar_detalle_nan_sin_datos(df_dashboard, col_centro)
+
+
+# ============================================================
+# Detalle de filtros aplicados
+# ============================================================
+
+with st.expander("Detalle de filtros aplicados", expanded=False):
+    mostrar_detalle_filtros_aplicados(resumen_filtros_df)
+
+
+# ============================================================
+# Tabla mensual y datos
+# ============================================================
 
 with st.expander("Tabla mensual", expanded=False):
     if tabla_mensual.empty:
