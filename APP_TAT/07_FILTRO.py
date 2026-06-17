@@ -1,13 +1,16 @@
 # ============================================================
 # 07_FILTRO
-# Filtro, búsqueda y seguimiento de solicitudes de compra
+# Filtro, búsqueda y expediente de seguimiento TAT
 # Usa df_tat cargado desde 06_CARGAR_ARCHIVO
 # ============================================================
 
 import base64
 from html import escape
 from pathlib import Path
+from textwrap import dedent
+from typing import Any
 
+import numpy as np
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
@@ -23,566 +26,883 @@ LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
 
 
 # ============================================================
+# Columnas principales
+# ============================================================
+
+COL_SOLPED = "Solicitud de pedido - ME5A"
+COL_OC_ME5A = "Pedido - ME5A"
+COL_OC_ME80FN = "Documento de compras - ME80FN"
+COL_OC_NME80FN = "Documento de compras - NME80FN"
+
+COL_POS_SOLPED = "Posición solicitud de pedido - ME5A"
+COL_POS_OC = "Posición de pedido - ME5A"
+
+COL_MATERIAL = "Material - ME5A"
+COL_TEXTO = "Texto breve - ME5A"
+COL_CENTRO = "Centro - ME5A"
+
+COL_SOLICITANTE = "Solicitante"
+COL_AUTOR = "Autor"
+COL_GRUPO_COMPRAS = "Grupo de compras"
+COL_TIPO_IMPUTACION = "Tipo de imputación"
+COL_TIPO_OC = "tipo_oc"
+COL_ORIGEN = "origen"
+COL_SISTEMA = "sistema"
+COL_NOMBRE_TIPO_COMPRA = "nombre_tipo_compra"
+
+COL_ESTADO_MATCH = "Estado del match"
+
+COL_PERF_TAT = "performance_tat_total"
+COL_RANGO_INC = "rango_incumplimiento_tat"
+COL_INC_TAT = "incumplimiento_tat"
+COL_DIAS_TAT = "dias_tat_total"
+COL_DIAS_INC = "dias_incumplimiento_tat"
+COL_UMBRAL_TAT = "umbral_tat_total"
+
+COL_MONTO = "monto"
+COL_FECHAS_INCONSISTENTES = "tiene_fechas_inconsistentes"
+COL_ESTADO_RECEPCION_ALERTA = "estado_recepcion"
+
+COL_CANTIDAD = "Cantidad solicitada - ME5A"
+COL_UNIDAD = "Unidad de medida - ME5A"
+COL_PRECIO_VALORACION = "Precio de valoración"
+COL_MONEDA = "Moneda - ME5A"
+
+
+FECHAS_CANDIDATAS = [
+    "fecha_solicitud_final",
+    "fecha_liberacion_final",
+    "fecha_pedido_final",
+    "fecha_facturacion_final",
+    "fecha_recepcion_final",
+    "Fecha de solicitud - ME5A",
+    "Fecha modificación",
+    "Fecha de liberación - ME5A",
+    "Fecha de pedido - ME5A",
+    "Fecha de entrega - ME5A",
+    "Fecha de liberación",
+    "Fecha solicitud de compra - ARIBA",
+    "Fecha de aprobación - ARIBA",
+    "Fecha de entrada - ME80FN",
+    "Fecha de documento - ME80FN",
+    "Fecha contabilización - ME80FN",
+    "Fecha facturación proveedor - ME80FN",
+    "Fecha recepción mercancía - ME80FN",
+    "Fecha de entrada - NME80FN",
+    "Fecha de documento - NME80FN",
+    "Fecha contabilización - NME80FN",
+    "Fecha facturación proveedor - NME80FN",
+    "Fecha recepción mercancía - NME80FN",
+]
+
+
+ETAPAS_PEDIDO = [
+    {
+        "titulo": "1. Solicitud",
+        "fecha": "fecha_solicitud_final",
+        "dias": None,
+        "umbral": None,
+        "performance": None,
+        "nota": "Inicio SolPed",
+    },
+    {
+        "titulo": "2. Liberación SolPed",
+        "fecha": "fecha_liberacion_final",
+        "dias": "dias_liberacion_solped",
+        "umbral": "umbral_liberacion_solped",
+        "performance": "performance_liberacion_solped",
+        "nota": "Solicitud → Liberación",
+    },
+    {
+        "titulo": "3. Comprador",
+        "fecha": "fecha_pedido_final",
+        "dias": "dias_comprador",
+        "umbral": "umbral_comprador",
+        "performance": "performance_comprador",
+        "nota": "Liberación → Pedido",
+    },
+    {
+        "titulo": "4. Proveedor",
+        "fecha": "fecha_facturacion_final",
+        "dias": "dias_proveedor",
+        "umbral": "umbral_proveedor",
+        "performance": "performance_proveedor",
+        "nota": "Pedido → Facturación",
+    },
+    {
+        "titulo": "5. Logística",
+        "fecha": "fecha_recepcion_final",
+        "dias": "dias_logistica",
+        "umbral": "umbral_logistica",
+        "performance": "performance_logistica",
+        "nota": "Facturación → Recepción",
+    },
+    {
+        "titulo": "6. TAT Total",
+        "fecha": "fecha_recepcion_final",
+        "dias": "dias_tat_total",
+        "umbral": "umbral_tat_total",
+        "performance": "performance_tat_total",
+        "nota": "Solicitud → Recepción",
+    },
+]
+
+
+ETAPAS_LINEA_PEDIDO = [
+    ("Solicitud", "fecha_solicitud_final"),
+    ("Liberación", "fecha_liberacion_final"),
+    ("Pedido", "fecha_pedido_final"),
+    ("Facturación", "fecha_facturacion_final"),
+    ("Recepción", "fecha_recepcion_final"),
+]
+
+
+ETAPAS_ALERTA = [
+    {
+        "nombre": "Liberación SolPed",
+        "fecha_inicio": "fecha_solicitud_final",
+        "fecha_fin": "fecha_liberacion_final",
+        "dias": "dias_liberacion_solped",
+        "umbral": "umbral_liberacion_solped",
+        "performance": "performance_liberacion_solped",
+        "responsable": "Solicitante / Aprobador",
+    },
+    {
+        "nombre": "Comprador",
+        "fecha_inicio": "fecha_liberacion_final",
+        "fecha_fin": "fecha_pedido_final",
+        "dias": "dias_comprador",
+        "umbral": "umbral_comprador",
+        "performance": "performance_comprador",
+        "responsable": "Compras",
+    },
+    {
+        "nombre": "Proveedor",
+        "fecha_inicio": "fecha_pedido_final",
+        "fecha_fin": "fecha_facturacion_final",
+        "dias": "dias_proveedor",
+        "umbral": "umbral_proveedor",
+        "performance": "performance_proveedor",
+        "responsable": "Proveedor",
+    },
+    {
+        "nombre": "Logística",
+        "fecha_inicio": "fecha_facturacion_final",
+        "fecha_fin": "fecha_recepcion_final",
+        "dias": "dias_logistica",
+        "umbral": "umbral_logistica",
+        "performance": "performance_logistica",
+        "responsable": "Logística / Bodega",
+    },
+]
+
+
+CENTROS_NOMBRES = {
+    "E002": "Prillex",
+    "E021": "CM-Enaex Servicios",
+    "E024": "Río Loa",
+    "E025": "Planta La Chimba",
+    "E026": "Teatinos",
+    "E029": "Chuquicamata",
+    "E030": "El Tesoro",
+    "E031": "La Escondida",
+    "E032": "Loma Bayas",
+    "E033": "Los Pelambres",
+    "E034": "Los Sauces",
+    "E035": "Mantos Blancos",
+    "E036": "Michilla",
+    "E037": "RT",
+    "E038": "El Soldado",
+    "E039": "Polpaico",
+    "E040": "Peldehue",
+    "E041": "Esperanza",
+    "E042": "Gaby",
+    "E044": "Atacama Kozan",
+    "E045": "Franke",
+    "E046": "Manto Verde",
+    "E047": "Polvorín Copiapó",
+    "E069": "Guanaco",
+    "E071": "Teniente",
+    "E076": "Mejillones",
+    "E077": "Ministro Hales",
+    "E078": "Sierra Gorda",
+    "E079": "Planta Quebrada Blanca",
+    "E081": "Chuqui Subte",
+    "E086": "Antucoya",
+    "E087": "Alto Maipo",
+    "E088": "Encuentro",
+    "E089": "Cerro Colorado",
+    "E090": "Collahuasi",
+    "E091": "Romeral",
+    "E095": "Planta Andina",
+    "E097": "Andina",
+    "E099": "Salvador",
+    "E103": "Zaldívar",
+    "E104": "Salares Norte",
+    "E105": "Los Colorados",
+    "E106": "Cerro N.N.",
+    "E107": "Pleito",
+    "E108": "Plasma Enaex Servicios",
+    "E109": "Carola",
+    "E110": "Alto Hospicio SKC Enaex Servicios",
+    "E113": "Copiapó SKC Enaex Servicios",
+    "E114": "FullRPM Nogales Enaex Servicios",
+    "E082": "Nittra Casa Matriz",
+    "E083": "Nittra Prillex",
+    "E084": "Nittra Paine",
+    "E101": "Plasma",
+    "E003": "Planta Río Loa",
+    "E009": "Planta Chuquicamata",
+    "E020": "Planta Polpaico",
+    "E057": "Esperanza",
+    "E102": "SCL Bodega Arriendo",
+    "E043": "El Peñón Subte",
+    "E115": "Enaex SKC ING",
+    "E027": "Faena Teniente Rajo",
+    "E052": "Faena Spence",
+}
+
+
+# ============================================================
 # CSS Streamlit nativo
-# No se modifica .block-container para no afectar el logo.
+# Sin modificar .block-container
 # ============================================================
 
-st.markdown(
-    """
-    <style>
-        div[data-testid="stMetric"] {
-            background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
-            padding: 14px 16px;
-            border-radius: 14px;
-            border: 1px solid #e2e8f0;
-            box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04);
-        }
+ESTILOS_GLOBALES = """
+<style>
+html, body, [class*="css"] {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+}
 
-        div[data-testid="stMetric"] label {
-            color: #64748b !important;
-            font-size: 0.72rem !important;
-            font-weight: 700 !important;
-            text-transform: uppercase !important;
-            letter-spacing: 0.05em !important;
-        }
+div[data-testid="metric-container"] {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    padding: 14px 16px;
+    box-shadow: 0 1px 3px rgba(15,23,42,0.04);
+}
 
-        div[data-testid="stMetric"] [data-testid="stMetricValue"] {
-            color: #0f172a !important;
-            font-size: 1.35rem !important;
-            font-weight: 800 !important;
-        }
+div[data-testid="metric-container"] label {
+    color: #64748b !important;
+    font-size: 0.72rem !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.05em !important;
+}
 
-        [data-testid="stDataFrame"] {
-            border-radius: 14px !important;
-            overflow: hidden !important;
-            border: 1px solid #e2e8f0 !important;
-            box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04);
-        }
+div[data-testid="metric-container"] [data-testid="stMetricValue"] {
+    color: #0f172a !important;
+    font-size: 1.55rem !important;
+    font-weight: 800 !important;
+    letter-spacing: -0.02em !important;
+}
 
-        [data-testid="stForm"] {
-            background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
-            border: 1px solid #e2e8f0;
-            border-radius: 18px;
-            padding: 18px 20px;
-            box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04);
-        }
+[data-testid="stDataFrame"] {
+    border-radius: 12px !important;
+    overflow: hidden !important;
+    border: 1px solid #e2e8f0 !important;
+}
 
-        [data-testid="stFormSubmitButton"] button,
-        [data-testid="stButton"] button {
-            border-radius: 12px !important;
-            font-weight: 800 !important;
-            border: 1px solid #dbeafe !important;
-            box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
-        }
+[data-testid="stForm"] {
+    background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+    border: 1px solid #e2e8f0;
+    border-radius: 18px;
+    padding: 18px 20px;
+    box-shadow: 0 1px 4px rgba(15,23,42,0.04);
+}
 
-        div[data-testid="stInfo"],
-        div[data-testid="stWarning"],
-        div[data-testid="stSuccess"],
-        div[data-testid="stError"] {
-            border-radius: 14px !important;
-            font-weight: 600 !important;
-        }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+[data-testid="stFormSubmitButton"] button,
+[data-testid="stButton"] button {
+    border-radius: 12px !important;
+    font-weight: 800 !important;
+}
+
+div[data-testid="stInfo"],
+div[data-testid="stWarning"],
+div[data-testid="stSuccess"],
+div[data-testid="stError"] {
+    border-radius: 14px !important;
+    font-weight: 600 !important;
+}
+</style>
+"""
+
+st.markdown(ESTILOS_GLOBALES, unsafe_allow_html=True)
 
 
 # ============================================================
-# CSS para componentes HTML modernos
+# CSS para componentes HTML
 # ============================================================
 
 CSS_COMPONENTES = """
 <style>
-    html, body {
-        margin: 0;
-        padding: 0;
-        background: transparent;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        color: #0f172a;
-    }
-
-    * {
-        box-sizing: border-box;
-    }
-
-    .hero {
-        background:
-            radial-gradient(circle at top left, rgba(239, 62, 82, 0.20), transparent 30%),
-            radial-gradient(circle at top right, rgba(37, 99, 235, 0.22), transparent 34%),
-            linear-gradient(135deg, #fff7ed 0%, #ffffff 45%, #eff6ff 100%);
-        border: 1px solid #bfdbfe;
-        border-radius: 24px;
-        padding: 22px 26px;
-        box-shadow: 0 4px 14px rgba(15, 23, 42, 0.07);
-    }
-
-    .eyebrow {
-        color: #ef3e52;
-        font-size: 0.72rem;
-        font-weight: 950;
-        text-transform: uppercase;
-        letter-spacing: 0.09em;
-        margin-bottom: 6px;
-    }
-
-    .hero-title {
-        color: #0f172a;
-        font-size: 1.72rem;
-        font-weight: 950;
-        letter-spacing: -0.035em;
-        margin-bottom: 6px;
-    }
-
-    .hero-subtitle {
-        color: #475569;
-        font-size: 0.95rem;
-        line-height: 1.48;
-        max-width: 980px;
-    }
-
-    .flow-bridge {
-        display: inline-block;
-        margin-top: 12px;
-        padding: 6px 12px;
-        border-radius: 999px;
-        background: #fee2e2;
-        color: #991b1b;
-        border: 1px solid #fecaca;
-        font-size: 0.74rem;
-        font-weight: 950;
-    }
-
-    .section {
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 18px;
-        padding: 18px 20px;
-        margin: 0;
-        box-shadow: 0 1px 4px rgba(15, 23, 42, 0.05);
-    }
-
-    .section-header {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        margin-bottom: 12px;
-    }
-
-    .section-icon {
-        width: 34px;
-        height: 34px;
-        border-radius: 12px;
-        background: #dbeafe;
-        color: #1e40af;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: 950;
-        font-size: 0.95rem;
-        flex: 0 0 auto;
-    }
-
-    .section-title {
-        font-size: 1.05rem;
-        font-weight: 950;
-        color: #0f172a;
-        margin-bottom: 1px;
-    }
-
-    .section-subtitle {
-        font-size: 0.82rem;
-        color: #64748b;
-        line-height: 1.35;
-    }
-
-    .grid {
-        display: grid;
-        grid-template-columns: repeat(4, minmax(140px, 1fr));
-        gap: 10px;
-        margin-top: 8px;
-    }
-
-    .card {
-        background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
-        border: 1px solid #e2e8f0;
-        border-radius: 15px;
-        padding: 12px 14px;
-        min-height: 84px;
-        position: relative;
-        overflow: hidden;
-    }
-
-    .card::before {
-        content: "";
-        position: absolute;
-        top: 0;
-        left: 0;
-        height: 4px;
-        width: 100%;
-        background: #cbd5e1;
-    }
-
-    .blue { background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%); border-color: #bfdbfe; }
-    .blue::before { background: #2563eb; }
-
-    .red { background: linear-gradient(180deg, #fff1f2 0%, #ffffff 100%); border-color: #fecdd3; }
-    .red::before { background: #ef3e52; }
-
-    .orange { background: linear-gradient(180deg, #fff7ed 0%, #ffffff 100%); border-color: #fed7aa; }
-    .orange::before { background: #f97316; }
-
-    .green { background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%); border-color: #bbf7d0; }
-    .green::before { background: #22c55e; }
-
-    .purple { background: linear-gradient(180deg, #faf5ff 0%, #ffffff 100%); border-color: #e9d5ff; }
-    .purple::before { background: #9333ea; }
-
-    .cyan { background: linear-gradient(180deg, #ecfeff 0%, #ffffff 100%); border-color: #a5f3fc; }
-    .cyan::before { background: #06b6d4; }
-
-    .yellow { background: linear-gradient(180deg, #fefce8 0%, #ffffff 100%); border-color: #fde68a; }
-    .yellow::before { background: #eab308; }
-
-    .label {
-        color: #64748b;
-        font-size: 0.66rem;
-        font-weight: 950;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        margin-bottom: 6px;
-    }
-
-    .value {
-        color: #0f172a;
-        font-size: 0.96rem;
-        font-weight: 850;
-        line-height: 1.25;
-        overflow-wrap: anywhere;
-    }
-
-    .note {
-        color: #64748b;
-        font-size: 0.74rem;
-        line-height: 1.30;
-        margin-top: 4px;
-    }
-
-    .kpi-grid {
-        display: grid;
-        grid-template-columns: repeat(4, minmax(130px, 1fr));
-        gap: 10px;
-        margin-top: 8px;
-    }
-
-    .pill {
-        display: inline-block;
-        padding: 4px 10px;
-        border-radius: 999px;
-        font-size: 0.72rem;
-        font-weight: 950;
-        margin-top: 6px;
-    }
-
-    .pill-green { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
-    .pill-red { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
-    .pill-yellow { background: #fef9c3; color: #854d0e; border: 1px solid #fde68a; }
-    .pill-orange { background: #ffedd5; color: #9a3412; border: 1px solid #fed7aa; }
-    .pill-blue { background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; }
-    .pill-gray { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
-
-    .alert-panel {
-        border-radius: 18px;
-        padding: 18px 20px;
-        margin: 0;
-        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.07);
-    }
-
-    .alert-red {
-        background:
-            radial-gradient(circle at top right, rgba(239, 62, 82, 0.22), transparent 32%),
-            linear-gradient(180deg, #fff1f2 0%, #ffffff 100%);
-        border: 1px solid #fecdd3;
-        border-left: 7px solid #ef3e52;
-    }
-
-    .alert-orange {
-        background:
-            radial-gradient(circle at top right, rgba(249, 115, 22, 0.22), transparent 32%),
-            linear-gradient(180deg, #fff7ed 0%, #ffffff 100%);
-        border: 1px solid #fed7aa;
-        border-left: 7px solid #f97316;
-    }
-
-    .alert-yellow {
-        background:
-            radial-gradient(circle at top right, rgba(234, 179, 8, 0.22), transparent 32%),
-            linear-gradient(180deg, #fefce8 0%, #ffffff 100%);
-        border: 1px solid #fde68a;
-        border-left: 7px solid #eab308;
-    }
-
-    .alert-green {
-        background:
-            radial-gradient(circle at top right, rgba(34, 197, 94, 0.22), transparent 32%),
-            linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%);
-        border: 1px solid #bbf7d0;
-        border-left: 7px solid #22c55e;
-    }
-
-    .alert-blue {
-        background:
-            radial-gradient(circle at top right, rgba(37, 99, 235, 0.22), transparent 32%),
-            linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
-        border: 1px solid #bfdbfe;
-        border-left: 7px solid #2563eb;
-    }
-
-    .alert-gray {
-        background:
-            radial-gradient(circle at top right, rgba(100, 116, 139, 0.16), transparent 32%),
-            linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
-        border: 1px solid #e2e8f0;
-        border-left: 7px solid #64748b;
-    }
-
-    .alert-title {
-        font-size: 0.78rem;
-        font-weight: 950;
-        text-transform: uppercase;
-        letter-spacing: 0.07em;
-        color: #475569;
-        margin-bottom: 5px;
-    }
-
-    .alert-main {
-        font-size: 1.25rem;
-        font-weight: 950;
-        color: #0f172a;
-        line-height: 1.25;
-        margin-bottom: 8px;
-    }
-
-    .alert-text {
-        font-size: 0.90rem;
-        color: #334155;
-        line-height: 1.45;
-    }
-
-    .alert-grid {
-        display: grid;
-        grid-template-columns: repeat(4, minmax(130px, 1fr));
-        gap: 10px;
-        margin-top: 14px;
-    }
-
-    .alert-item {
-        background: rgba(255,255,255,0.78);
-        border: 1px solid rgba(226,232,240,0.95);
-        border-radius: 13px;
-        padding: 10px 12px;
-    }
-
-    .message-card {
-        background:
-            radial-gradient(circle at top right, rgba(37, 99, 235, 0.14), transparent 30%),
-            linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
-        border: 1px solid #bfdbfe;
-        border-left: 5px solid #2563eb;
-        border-radius: 16px;
-        padding: 14px 16px;
-        margin: 0;
-    }
-
-    .message-title {
-        font-size: 0.86rem;
-        font-weight: 950;
-        color: #1e3a8a;
-        margin-bottom: 3px;
-    }
-
-    .message-text {
-        font-size: 0.86rem;
-        color: #475569;
-        line-height: 1.4;
-    }
-
-    .search-card {
-        background:
-            radial-gradient(circle at top right, rgba(6, 182, 212, 0.18), transparent 28%),
-            linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
-        border: 1px solid #bae6fd;
-        border-left: 5px solid #06b6d4;
-        border-radius: 16px;
-        padding: 14px 16px;
-        margin: 0;
-    }
-
-    .search-title {
-        color: #0e7490;
-        font-size: 0.82rem;
-        font-weight: 950;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        margin-bottom: 4px;
-    }
-
-    .search-text {
-        color: #475569;
-        font-size: 0.88rem;
-        line-height: 1.45;
-    }
-
-    .flow-shell {
-        background:
-            radial-gradient(circle at top left, rgba(37, 99, 235, 0.18), transparent 28%),
-            linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
-        border: 1px solid #dbeafe;
-        border-radius: 18px;
-        padding: 18px 20px 16px;
-        margin: 0;
-        box-shadow: 0 1px 4px rgba(15, 23, 42, 0.06);
-    }
-
-    .flow-title {
-        font-size: 0.78rem;
-        font-weight: 900;
-        color: #1e3a8a;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        margin-bottom: 14px;
-    }
-
-    .flow-track {
-        display: flex;
-        align-items: flex-start;
-        width: 100%;
-        overflow-x: auto;
-        padding-bottom: 8px;
-    }
-
-    .flow-step {
-        flex: 0 0 145px;
-        text-align: center;
-        min-width: 0;
-    }
-
-    .flow-dot {
-        width: 50px;
-        height: 50px;
-        border-radius: 50%;
-        margin: 0 auto 8px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: 950;
-        font-size: 1rem;
-    }
-
-    .flow-dot-ok {
-        background: #22c55e;
-        color: #ffffff;
-        border: 3px solid #22c55e;
-    }
-
-    .flow-dot-active {
-        background: #ffffff;
-        color: #2563eb;
-        border: 5px solid #3b82f6;
-    }
-
-    .flow-dot-pending {
-        background: #ffffff;
-        color: #94a3b8;
-        border: 4px solid #cbd5e1;
-    }
-
-    .flow-label {
-        font-size: 0.74rem;
-        font-weight: 900;
-        color: #1f2937;
-        text-transform: uppercase;
-        line-height: 1.2;
-    }
-
-    .flow-date {
-        color: #475569;
-        font-size: 0.72rem;
-        line-height: 1.25;
-        margin-top: 4px;
-        overflow-wrap: anywhere;
-    }
-
-    .flow-detail {
-        color: #64748b;
-        font-size: 0.70rem;
-        line-height: 1.25;
-        margin-top: 4px;
-    }
-
-    .flow-connector {
-        flex: 1;
-        height: 5px;
-        min-width: 28px;
-        margin-top: 23px;
-        border-radius: 999px;
-        background: #cbd5e1;
-    }
-
-    .flow-connector-ok {
-        background: #22c55e;
-    }
-
-    .flow-connector-active {
-        background: repeating-linear-gradient(
-            90deg,
-            #3b82f6 0 14px,
-            transparent 14px 22px
-        );
-    }
-
-    .flow-summary {
-        margin-top: 16px;
-        display: grid;
-        grid-template-columns: repeat(4, minmax(120px, 1fr));
-        gap: 10px;
-    }
-
-    .flow-summary-item {
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 12px;
-        padding: 10px 12px;
-    }
-
-    .badge-flow {
-        display: inline-block;
-        padding: 3px 9px;
-        border-radius: 999px;
-        font-size: 0.70rem;
-        font-weight: 900;
-        margin-top: 5px;
-    }
-
-    .badge-ok { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
-    .badge-active { background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; }
-    .badge-pending { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
-
-    @media (max-width: 1100px) {
-        .grid, .kpi-grid, .alert-grid, .flow-summary {
-            grid-template-columns: repeat(2, minmax(130px, 1fr));
-        }
-    }
-
-    @media (max-width: 680px) {
-        .grid, .kpi-grid, .alert-grid, .flow-summary {
-            grid-template-columns: 1fr;
-        }
-
-        .hero-title {
-            font-size: 1.35rem;
-        }
-    }
+html,body{
+    margin:0;
+    padding:0;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    color:#0f172a;
+    background:transparent;
+}
+*{box-sizing:border-box;}
+
+.hero{
+    background:
+        radial-gradient(circle at top left,rgba(239,62,82,.18),transparent 30%),
+        radial-gradient(circle at top right,rgba(37,99,235,.20),transparent 34%),
+        linear-gradient(135deg,#fff7ed 0%,#ffffff 44%,#eff6ff 100%);
+    border:1px solid #bfdbfe;
+    border-radius:24px;
+    padding:22px 26px;
+    box-shadow:0 4px 14px rgba(15,23,42,.07);
+}
+.hero-eyebrow{
+    color:#ef3e52;
+    font-size:.72rem;
+    font-weight:900;
+    text-transform:uppercase;
+    letter-spacing:.08em;
+    margin-bottom:6px;
+}
+.hero-title{
+    color:#0f172a;
+    font-size:1.65rem;
+    font-weight:900;
+    letter-spacing:-.03em;
+    margin-bottom:6px;
+}
+.hero-text{
+    color:#475569;
+    font-size:.95rem;
+    line-height:1.45;
+    max-width:980px;
+}
+.hero-pill{
+    display:inline-block;
+    margin-top:12px;
+    padding:6px 12px;
+    border-radius:999px;
+    background:#fee2e2;
+    color:#991b1b;
+    border:1px solid #fecaca;
+    font-size:.74rem;
+    font-weight:900;
+}
+
+.message-card{
+    background:
+        radial-gradient(circle at top right,rgba(37,99,235,.14),transparent 30%),
+        linear-gradient(180deg,#eff6ff 0%,#fff 100%);
+    border:1px solid #bfdbfe;
+    border-left:5px solid #2563eb;
+    border-radius:16px;
+    padding:14px 16px;
+}
+.message-title{
+    font-size:.86rem;
+    font-weight:900;
+    color:#1e3a8a;
+    margin-bottom:3px;
+}
+.message-text{
+    font-size:.86rem;
+    color:#475569;
+    line-height:1.4;
+}
+
+.search-card{
+    background:
+        radial-gradient(circle at top right,rgba(6,182,212,.18),transparent 28%),
+        linear-gradient(180deg,#f8fafc 0%,#fff 100%);
+    border:1px solid #bae6fd;
+    border-left:5px solid #06b6d4;
+    border-radius:16px;
+    padding:14px 16px;
+}
+.search-title{
+    color:#0e7490;
+    font-size:.82rem;
+    font-weight:900;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+    margin-bottom:4px;
+}
+.search-text{
+    color:#475569;
+    font-size:.88rem;
+    line-height:1.45;
+}
+
+.alert-panel{
+    border-radius:18px;
+    padding:18px 20px;
+    box-shadow:0 2px 8px rgba(15,23,42,.07);
+}
+.alert-red{
+    background:radial-gradient(circle at top right,rgba(239,62,82,.22),transparent 32%),linear-gradient(180deg,#fff1f2 0%,#fff 100%);
+    border:1px solid #fecdd3;
+    border-left:7px solid #ef3e52;
+}
+.alert-orange{
+    background:radial-gradient(circle at top right,rgba(249,115,22,.22),transparent 32%),linear-gradient(180deg,#fff7ed 0%,#fff 100%);
+    border:1px solid #fed7aa;
+    border-left:7px solid #f97316;
+}
+.alert-yellow{
+    background:radial-gradient(circle at top right,rgba(234,179,8,.22),transparent 32%),linear-gradient(180deg,#fefce8 0%,#fff 100%);
+    border:1px solid #fde68a;
+    border-left:7px solid #eab308;
+}
+.alert-green{
+    background:radial-gradient(circle at top right,rgba(34,197,94,.22),transparent 32%),linear-gradient(180deg,#f0fdf4 0%,#fff 100%);
+    border:1px solid #bbf7d0;
+    border-left:7px solid #22c55e;
+}
+.alert-blue{
+    background:radial-gradient(circle at top right,rgba(37,99,235,.22),transparent 32%),linear-gradient(180deg,#eff6ff 0%,#fff 100%);
+    border:1px solid #bfdbfe;
+    border-left:7px solid #2563eb;
+}
+.alert-gray{
+    background:radial-gradient(circle at top right,rgba(100,116,139,.16),transparent 32%),linear-gradient(180deg,#f8fafc 0%,#fff 100%);
+    border:1px solid #e2e8f0;
+    border-left:7px solid #64748b;
+}
+.alert-title{
+    font-size:.78rem;
+    font-weight:900;
+    text-transform:uppercase;
+    letter-spacing:.07em;
+    color:#475569;
+    margin-bottom:5px;
+}
+.alert-main{
+    font-size:1.25rem;
+    font-weight:900;
+    color:#0f172a;
+    line-height:1.25;
+    margin-bottom:8px;
+}
+.alert-text{
+    font-size:.90rem;
+    color:#334155;
+    line-height:1.45;
+}
+.alert-grid{
+    display:grid;
+    grid-template-columns:repeat(4,minmax(130px,1fr));
+    gap:10px;
+    margin-top:14px;
+}
+.alert-item{
+    background:rgba(255,255,255,.80);
+    border:1px solid rgba(226,232,240,.95);
+    border-radius:13px;
+    padding:10px 12px;
+}
+
+.exp-header{
+    background:#fff;
+    border:1px solid #e2e8f0;
+    border-radius:18px;
+    padding:18px 20px;
+    box-shadow:0 1px 4px rgba(15,23,42,.04);
+}
+.exp-header-title{
+    font-size:1.08rem;
+    font-weight:900;
+    color:#0f172a;
+    margin-bottom:3px;
+}
+.exp-header-sub{
+    font-size:.84rem;
+    color:#64748b;
+    margin-bottom:14px;
+}
+.exp-fields{
+    display:grid;
+    grid-template-columns:repeat(5,minmax(110px,1fr));
+    gap:8px;
+}
+.exp-field{
+    background:#f8fafc;
+    border:1px solid #e2e8f0;
+    border-radius:12px;
+    padding:10px 12px;
+}
+.exp-field-blue{background:#eff6ff;border-color:#bfdbfe;}
+.exp-field-red{background:#fff1f2;border-color:#fecdd3;}
+.exp-field-green{background:#f0fdf4;border-color:#bbf7d0;}
+.exp-field-orange{background:#fff7ed;border-color:#fed7aa;}
+.exp-field-purple{background:#faf5ff;border-color:#e9d5ff;}
+.exp-field-yellow{background:#fefce8;border-color:#fde68a;}
+.exp-field-cyan{background:#ecfeff;border-color:#a5f3fc;}
+.exp-field-label{
+    color:#64748b;
+    font-size:.67rem;
+    font-weight:900;
+    text-transform:uppercase;
+    letter-spacing:.05em;
+    margin-bottom:4px;
+}
+.exp-field-value{
+    color:#0f172a;
+    font-size:.94rem;
+    font-weight:850;
+    line-height:1.2;
+    overflow-wrap:anywhere;
+}
+
+.exp-kpis{
+    display:grid;
+    grid-template-columns:repeat(5,minmax(130px,1fr));
+    gap:10px;
+}
+.exp-kpi{
+    background:#fff;
+    border:1px solid #e2e8f0;
+    border-radius:14px;
+    padding:13px 14px;
+    position:relative;
+    overflow:hidden;
+}
+.exp-kpi::before{
+    content:"";
+    position:absolute;
+    top:0;
+    left:0;
+    width:100%;
+    height:4px;
+    background:#94a3b8;
+}
+.exp-kpi-blue{background:linear-gradient(180deg,#eff6ff 0%,#fff 100%);border-color:#bfdbfe;}
+.exp-kpi-blue::before{background:#2563eb;}
+.exp-kpi-red{background:linear-gradient(180deg,#fff1f2 0%,#fff 100%);border-color:#fecdd3;}
+.exp-kpi-red::before{background:#ef3e52;}
+.exp-kpi-orange{background:linear-gradient(180deg,#fff7ed 0%,#fff 100%);border-color:#fed7aa;}
+.exp-kpi-orange::before{background:#f97316;}
+.exp-kpi-green{background:linear-gradient(180deg,#f0fdf4 0%,#fff 100%);border-color:#bbf7d0;}
+.exp-kpi-green::before{background:#22c55e;}
+.exp-kpi-purple{background:linear-gradient(180deg,#faf5ff 0%,#fff 100%);border-color:#e9d5ff;}
+.exp-kpi-purple::before{background:#9333ea;}
+.exp-kpi-label{
+    color:#64748b;
+    font-size:.67rem;
+    font-weight:900;
+    text-transform:uppercase;
+    letter-spacing:.05em;
+    margin-bottom:5px;
+}
+.exp-kpi-value{
+    color:#0f172a;
+    font-size:1.05rem;
+    font-weight:900;
+    line-height:1.2;
+    overflow-wrap:anywhere;
+}
+.exp-kpi-note{
+    color:#64748b;
+    font-size:.73rem;
+    margin-top:4px;
+    line-height:1.3;
+}
+
+.avance-card{
+    background:#fff;
+    border:1px solid #dbeafe;
+    border-left:5px solid #2563eb;
+    border-radius:16px;
+    padding:15px 18px;
+}
+.avance-title{
+    color:#1e3a8a;
+    font-size:.78rem;
+    font-weight:900;
+    text-transform:uppercase;
+    letter-spacing:.05em;
+    margin-bottom:10px;
+}
+.avance-grid{
+    display:grid;
+    grid-template-columns:repeat(4,minmax(130px,1fr));
+    gap:10px;
+}
+.avance-item{
+    background:#f8fafc;
+    border:1px solid #e2e8f0;
+    border-radius:12px;
+    padding:10px 11px;
+}
+.avance-label{
+    color:#64748b;
+    font-size:.67rem;
+    font-weight:900;
+    text-transform:uppercase;
+    letter-spacing:.04em;
+    margin-bottom:3px;
+}
+.avance-value{
+    color:#0f172a;
+    font-size:.92rem;
+    font-weight:850;
+    overflow-wrap:anywhere;
+}
+.avance-note{
+    color:#475569;
+    font-size:.84rem;
+    line-height:1.4;
+    margin-top:10px;
+}
+
+.critico-selected{
+    background:linear-gradient(180deg,#fef2f2 0%,#fff 100%);
+    border:1px solid #fecaca;
+    border-left:7px solid #dc2626;
+    border-radius:18px;
+    padding:15px 18px;
+}
+.critico-title{
+    color:#7f1d1d;
+    font-size:.78rem;
+    font-weight:900;
+    text-transform:uppercase;
+    letter-spacing:.05em;
+    margin-bottom:10px;
+}
+.critico-grid{
+    display:grid;
+    grid-template-columns:repeat(5,minmax(120px,1fr));
+    gap:8px;
+}
+.critico-field{
+    background:#fff;
+    border:1px solid #fee2e2;
+    border-radius:12px;
+    padding:9px 11px;
+}
+
+.pipe-card{
+    background:linear-gradient(180deg,#f0fdf4 0%,#fff 100%);
+    border:1px solid #bbf7d0;
+    border-radius:18px;
+    padding:18px 20px 16px;
+}
+.pipe-title{
+    font-size:.78rem;
+    font-weight:900;
+    color:#14532d;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+    margin-bottom:14px;
+}
+.pipe-line{
+    display:flex;
+    align-items:flex-start;
+    width:100%;
+    overflow-x:auto;
+}
+.pipe-step{
+    flex:0 0 108px;
+    text-align:center;
+    min-width:0;
+}
+.pipe-dot{
+    width:48px;
+    height:48px;
+    border-radius:50%;
+    margin:0 auto 8px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-weight:900;
+    font-size:1.4rem;
+}
+.pipe-dot-ok{background:#22c55e;color:#fff;border:3px solid #22c55e;}
+.pipe-dot-active{background:#fff;color:#15803d;border:5px solid #22c55e;}
+.pipe-dot-nd{background:#fff;color:#94a3b8;border:4px solid #cbd5e1;}
+.pipe-label{
+    font-size:.78rem;
+    font-weight:900;
+    color:#1f2937;
+    text-transform:uppercase;
+}
+.pipe-date{
+    color:#64748b;
+    font-size:.72rem;
+    margin-top:3px;
+    overflow-wrap:anywhere;
+}
+.pipe-conn{
+    flex:1;
+    height:5px;
+    min-width:24px;
+    margin-top:22px;
+    border-radius:99px;
+    background:#cbd5e1;
+}
+.pipe-conn-ok{background:#22c55e;}
+.pipe-conn-dashed{background:repeating-linear-gradient(90deg,#22c55e 0 14px,transparent 14px 22px);}
+.pipe-note{
+    color:#475569;
+    font-size:.82rem;
+    line-height:1.4;
+    margin-top:12px;
+}
+
+.tat-card{
+    background:
+        radial-gradient(circle at top left,rgba(37,99,235,.16),transparent 28%),
+        linear-gradient(180deg,#f8fafc 0%,#fff 100%);
+    border:1px solid #dbeafe;
+    border-radius:18px;
+    padding:18px 20px 16px;
+}
+.tat-card-title{
+    font-size:.78rem;
+    font-weight:900;
+    color:#1e3a8a;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+    margin-bottom:14px;
+}
+.tat-flow{
+    display:flex;
+    align-items:stretch;
+    width:100%;
+    overflow-x:auto;
+    padding-bottom:4px;
+}
+.tat-step{
+    flex:0 0 142px;
+    text-align:center;
+    min-width:0;
+}
+.tat-dot{
+    width:48px;
+    height:48px;
+    border-radius:50%;
+    margin:0 auto 8px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-weight:900;
+    font-size:1rem;
+}
+.tat-dot-ok{background:#22c55e;color:#fff;border:3px solid #22c55e;}
+.tat-dot-bad{background:#fef2f2;color:#991b1b;border:4px solid #ef4444;}
+.tat-dot-risk{background:#fff7ed;color:#c2410c;border:4px solid #fb923c;}
+.tat-dot-active{background:#fff;color:#1d4ed8;border:5px solid #3b82f6;}
+.tat-dot-nd{background:#fff;color:#94a3b8;border:4px solid #cbd5e1;}
+.tat-step-label{
+    font-size:.75rem;
+    font-weight:900;
+    color:#1f2937;
+    text-transform:uppercase;
+}
+.tat-step-date{
+    color:#475569;
+    font-size:.70rem;
+    line-height:1.22;
+    margin-top:3px;
+    overflow-wrap:anywhere;
+}
+.tat-step-detail{
+    color:#334155;
+    font-size:.70rem;
+    line-height:1.22;
+    margin-top:4px;
+}
+.tat-conn{
+    flex:1;
+    height:5px;
+    min-width:28px;
+    margin-top:22px;
+    border-radius:99px;
+    background:#cbd5e1;
+}
+.tat-conn-ok{background:#22c55e;}
+.tat-conn-active{background:repeating-linear-gradient(90deg,#3b82f6 0 14px,transparent 14px 22px);}
+.tat-note{
+    color:#475569;
+    font-size:.82rem;
+    line-height:1.4;
+    margin-top:12px;
+}
+
+.stage-grid{
+    display:grid;
+    grid-template-columns:repeat(6,minmax(130px,1fr));
+    gap:8px;
+}
+.stage{
+    border-radius:14px;
+    padding:12px 13px;
+    border:1px solid #e5e7eb;
+    min-height:140px;
+    position:relative;
+}
+.stage::after{
+    content:"→";
+    position:absolute;
+    right:-7px;
+    top:50%;
+    transform:translateY(-50%);
+    color:#94a3b8;
+    font-weight:900;
+}
+.stage:last-child::after{content:"";}
+.stage-green{background:#f0fdf4;border-color:#bbf7d0;}
+.stage-red{background:#fef2f2;border-color:#fecaca;}
+.stage-yellow{background:#fefce8;border-color:#fde68a;}
+.stage-gray{background:#f8fafc;border-color:#e2e8f0;}
+.stage-blue{background:#eff6ff;border-color:#bfdbfe;}
+.stage-title{
+    font-size:.78rem;
+    font-weight:900;
+    color:#0f172a;
+    margin-bottom:5px;
+}
+.stage-date{
+    font-size:1rem;
+    font-weight:900;
+    color:#111827;
+    margin-bottom:4px;
+}
+.stage-note{
+    color:#64748b;
+    font-size:.72rem;
+    line-height:1.25;
+    min-height:26px;
+    margin-bottom:8px;
+}
+.stage-days{
+    font-size:.84rem;
+    color:#334155;
+    margin-bottom:6px;
+}
+.pill{
+    display:inline-block;
+    border-radius:999px;
+    padding:3px 9px;
+    font-size:.72rem;
+    font-weight:900;
+    border:1px solid transparent;
+    white-space:nowrap;
+}
+.pill-green{background:#dcfce7;color:#166534;border-color:#bbf7d0;}
+.pill-red{background:#fee2e2;color:#991b1b;border-color:#fecaca;}
+.pill-yellow{background:#fef9c3;color:#854d0e;border-color:#fde68a;}
+.pill-gray{background:#f1f5f9;color:#475569;border-color:#e2e8f0;}
+.pill-blue{background:#dbeafe;color:#1e40af;border-color:#bfdbfe;}
+
+@media(max-width:1200px){
+    .exp-fields,.exp-kpis,.alert-grid,.avance-grid,.critico-grid{grid-template-columns:repeat(2,minmax(120px,1fr));}
+    .stage-grid{grid-template-columns:repeat(3,minmax(130px,1fr));}
+}
+@media(max-width:760px){
+    .exp-fields,.exp-kpis,.alert-grid,.avance-grid,.critico-grid,.stage-grid{grid-template-columns:1fr;}
+    .stage::after{content:"↓";right:50%;bottom:-12px;top:auto;transform:translateX(50%);}
+    .stage:last-child::after{content:"";}
+}
 </style>
 """
 
@@ -613,7 +933,7 @@ def render_html(contenido: str, height: int, scrolling: bool = False):
 
 
 # ============================================================
-# Logo
+# Logo exacto
 # ============================================================
 
 def mostrar_logo():
@@ -644,100 +964,32 @@ def mostrar_logo():
 
 
 # ============================================================
-# Funciones generales
+# Utilidades
 # ============================================================
 
-def formatear_valor(valor) -> str:
+def normalizar_codigo_centro(valor: Any) -> str:
     if pd.isna(valor):
-        return "—"
-
-    if isinstance(valor, pd.Timestamp):
-        return valor.strftime("%Y-%m-%d")
+        return "Sin dato"
 
     texto = str(valor).strip()
 
-    if texto == "":
-        return "—"
+    if not texto or texto.lower() in ["nan", "none", "nat"]:
+        return "Sin dato"
 
     if texto.endswith(".0"):
         texto = texto[:-2]
 
-    return texto
+    return texto.upper()
 
 
-def formatear_entero(valor) -> str:
-    if pd.isna(valor):
-        return "—"
+def etiqueta_centro(valor: Any) -> str:
+    codigo = normalizar_codigo_centro(valor)
+    nombre = CENTROS_NOMBRES.get(codigo)
 
-    numero = pd.to_numeric(valor, errors="coerce")
-
-    if pd.isna(numero):
-        return formatear_valor(valor)
-
-    return f"{int(round(numero)):,}".replace(",", ".")
+    return f"{codigo} · {nombre}" if nombre else codigo
 
 
-def formatear_decimal(valor, decimales: int = 1) -> str:
-    if pd.isna(valor):
-        return "—"
-
-    numero = pd.to_numeric(valor, errors="coerce")
-
-    if pd.isna(numero):
-        return formatear_valor(valor)
-
-    return (
-        f"{numero:,.{decimales}f}"
-        .replace(",", "X")
-        .replace(".", ",")
-        .replace("X", ".")
-    )
-
-
-def formatear_monto(valor, moneda) -> str:
-    if pd.isna(valor):
-        return "—"
-
-    numero = pd.to_numeric(valor, errors="coerce")
-
-    if pd.isna(numero):
-        return formatear_valor(valor)
-
-    moneda_txt = formatear_valor(moneda)
-
-    if moneda_txt == "—":
-        moneda_txt = ""
-
-    monto = f"{int(round(numero)):,}".replace(",", ".")
-
-    return f"{monto} {moneda_txt}".strip()
-
-
-def formatear_fecha(valor) -> str:
-    if pd.isna(valor):
-        return "Sin fecha"
-
-    fecha = pd.to_datetime(valor, errors="coerce")
-
-    if pd.isna(fecha):
-        return "Sin fecha"
-
-    return fecha.strftime("%Y-%m-%d")
-
-
-def formatear_fecha_corta(valor) -> str:
-    if pd.isna(valor):
-        return "Pendiente"
-
-    fecha = pd.to_datetime(valor, errors="coerce")
-
-    if pd.isna(fecha):
-        return "Pendiente"
-
-    return fecha.strftime("%d-%m-%Y")
-
-
-def limpiar_nombres_columnas(df: pd.DataFrame) -> pd.DataFrame:
+def limpiar_columnas(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df.columns = df.columns.astype(str).str.strip()
     return df
@@ -754,36 +1006,185 @@ def normalizar_columnas_me80fn(df: pd.DataFrame) -> pd.DataFrame:
 
     df = df.rename(columns=renombrar)
 
-    if "Estado del match" in df.columns:
-        df["Estado del match"] = (
-            df["Estado del match"]
-            .astype("string")
-            .str.replace("NME80FN", "ME80FN", regex=False)
-        )
+    for col in df.columns:
+        if df[col].dtype == "object":
+            try:
+                df[col] = df[col].astype("string").str.replace("NME80FN", "ME80FN", regex=False)
+            except Exception:
+                pass
 
     return df
 
 
-def buscar_columna(df: pd.DataFrame, candidatos: list[str]) -> str | None:
-    for col in candidatos:
+def convertir_columna_fecha(serie: pd.Series) -> pd.Series:
+    if pd.api.types.is_datetime64_any_dtype(serie):
+        return pd.to_datetime(serie, errors="coerce")
+
+    serie_num = pd.to_numeric(serie, errors="coerce")
+    resultado = pd.Series(pd.NaT, index=serie.index, dtype="datetime64[ns]")
+
+    mask_num = serie_num.notna()
+
+    if mask_num.any():
+        mask_ms = mask_num & serie_num.abs().ge(10**11)
+        mask_s = mask_num & serie_num.abs().lt(10**11)
+
+        if mask_ms.any():
+            resultado.loc[mask_ms] = pd.to_datetime(serie_num.loc[mask_ms], unit="ms", errors="coerce")
+
+        if mask_s.any():
+            resultado.loc[mask_s] = pd.to_datetime(serie_num.loc[mask_s], unit="s", errors="coerce")
+
+    mask_texto = ~mask_num
+
+    if mask_texto.any():
+        resultado.loc[mask_texto] = pd.to_datetime(
+            serie.loc[mask_texto],
+            errors="coerce",
+            dayfirst=True,
+        )
+
+    return resultado
+
+
+def convertir_fechas_visuales(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+
+    for col in FECHAS_CANDIDATAS:
         if col in df.columns:
-            return col
+            convertido = convertir_columna_fecha(df[col])
 
-    return None
+            if convertido.notna().any():
+                df[col] = convertido
 
-
-def obtener_valor(registro: pd.Series, columna: str | None):
-    if columna is None:
-        return pd.NA
-
-    if columna not in registro.index:
-        return pd.NA
-
-    return registro.get(columna)
+    return df
 
 
-def valor_html(valor) -> str:
-    return escape(formatear_valor(valor))
+def formato_valor(valor: Any) -> str:
+    if pd.isna(valor):
+        return "-"
+
+    if isinstance(valor, pd.Timestamp):
+        return valor.strftime("%d-%m-%Y")
+
+    if isinstance(valor, float):
+        if np.isfinite(valor) and valor.is_integer():
+            return f"{int(valor):,}".replace(",", ".")
+
+        return (
+            f"{valor:,.1f}"
+            .replace(",", "X")
+            .replace(".", ",")
+            .replace("X", ".")
+        )
+
+    if isinstance(valor, int):
+        return f"{valor:,}".replace(",", ".")
+
+    texto = str(valor).strip()
+
+    if texto.endswith(".0"):
+        texto = texto[:-2]
+
+    return texto if texto else "-"
+
+
+def formato_id(valor: Any) -> str:
+    if pd.isna(valor):
+        return "-"
+
+    texto = str(valor).strip()
+
+    try:
+        numero = float(texto)
+
+        if np.isfinite(numero) and numero.is_integer():
+            return str(int(numero))
+
+    except Exception:
+        pass
+
+    if texto.endswith(".0"):
+        texto = texto[:-2]
+
+    return texto if texto else "-"
+
+
+def valor_numerico(valor: Any) -> float:
+    try:
+        return float(pd.to_numeric(pd.Series([valor]), errors="coerce").iloc[0])
+    except Exception:
+        return np.nan
+
+
+def formato_numero_corto(valor: Any, decimales: int = 0) -> str:
+    numero = valor_numerico(valor)
+
+    if pd.isna(numero):
+        return "-"
+
+    if decimales == 0:
+        return f"{int(round(numero)):,}".replace(",", ".")
+
+    return (
+        f"{numero:,.{decimales}f}"
+        .replace(",", "X")
+        .replace(".", ",")
+        .replace("X", ".")
+    )
+
+
+def formato_monto(valor: Any, moneda: Any = None) -> str:
+    numero = valor_numerico(valor)
+
+    if pd.isna(numero):
+        return "-"
+
+    monto = f"{int(round(numero)):,}".replace(",", ".")
+    moneda_txt = formato_valor(moneda)
+
+    if moneda_txt == "-":
+        return monto
+
+    return f"{monto} {moneda_txt}"
+
+
+def fecha_texto_simple(valor: Any) -> str:
+    fecha = pd.to_datetime(valor, errors="coerce")
+
+    if pd.isna(fecha):
+        return "Sin fecha calculable"
+
+    return fecha.strftime("%d-%m-%Y")
+
+
+def fecha_etapa_texto(row: pd.Series, columna: str) -> str:
+    valor = row.get(columna, np.nan)
+
+    if pd.isna(valor):
+        return "Pendiente"
+
+    if isinstance(valor, pd.Timestamp):
+        return valor.strftime("%d-%m-%Y")
+
+    return formato_valor(valor)
+
+
+def fecha_valida(row: pd.Series, columna: str):
+    valor = row.get(columna, np.nan)
+
+    if pd.isna(valor):
+        return pd.NaT
+
+    return pd.to_datetime(valor, errors="coerce")
+
+
+def html_texto(valor: Any) -> str:
+    return escape(formato_valor(valor))
+
+
+def html_id(valor: Any) -> str:
+    return escape(formato_id(valor))
 
 
 def normalizar_valor_busqueda(valor) -> str:
@@ -798,18 +1199,8 @@ def normalizar_valor_busqueda(valor) -> str:
     return texto
 
 
-def normalizar_serie_busqueda(serie: pd.Series) -> pd.Series:
-    return serie.apply(normalizar_valor_busqueda)
-
-
-def aplicar_filtro_texto(
-    df: pd.DataFrame,
-    columna: str | None,
-    texto: str,
-    modo: str = "Exacta",
-) -> pd.DataFrame:
-
-    if columna is None or columna not in df.columns:
+def aplicar_filtro_texto(df: pd.DataFrame, columna: str, texto: str, modo: str) -> pd.DataFrame:
+    if columna not in df.columns:
         return df
 
     texto = str(texto).strip()
@@ -817,7 +1208,7 @@ def aplicar_filtro_texto(
     if not texto:
         return df
 
-    serie = normalizar_serie_busqueda(df[columna])
+    serie = df[columna].apply(normalizar_valor_busqueda)
     texto_norm = normalizar_valor_busqueda(texto)
 
     if modo == "Exacta":
@@ -826,39 +1217,40 @@ def aplicar_filtro_texto(
     return df[serie.str.contains(texto_norm, na=False, regex=False)].copy()
 
 
-def hay_criterio_busqueda(
-    filtro_solped: str,
-    filtro_pedido: str,
-    filtro_posicion: str,
-    filtro_material: str,
-    filtro_texto_breve: str,
-) -> bool:
-    valores = [
-        filtro_solped,
-        filtro_pedido,
-        filtro_posicion,
-        filtro_material,
-        filtro_texto_breve,
-    ]
+def texto_dias_y_meses(dias: Any) -> str:
+    dias_num = valor_numerico(dias)
 
-    return any(str(valor).strip() for valor in valores)
+    if pd.isna(dias_num):
+        return "Sin dato"
 
+    dias_int = int(round(dias_num))
+    texto_dias = f"{dias_int:,}".replace(",", ".")
 
-def texto_tiempo_extendido(dias) -> str:
-    if pd.isna(dias):
-        return "Sin fecha de solicitud"
+    if dias_int < 0:
+        return f"{texto_dias} días · revisar fechas"
 
-    dias = int(dias)
+    if dias_int >= 30:
+        meses = dias_num / 30.44
 
-    if dias < 0:
-        return "La fecha de solicitud está en el futuro"
+        if meses < 12:
+            meses_txt = (
+                f"{meses:,.1f}"
+                .replace(",", "X")
+                .replace(".", ",")
+                .replace("X", ".")
+            )
 
-    if dias < 30:
-        return f"{dias:,} días".replace(",", ".")
+            return f"{texto_dias} días · {meses_txt} meses aprox."
 
-    meses = dias / 30.44
+        anos = meses / 12
 
-    if dias < 365:
+        anos_txt = (
+            f"{anos:,.1f}"
+            .replace(",", "X")
+            .replace(".", ",")
+            .replace("X", ".")
+        )
+
         meses_txt = (
             f"{meses:,.1f}"
             .replace(",", "X")
@@ -866,703 +1258,390 @@ def texto_tiempo_extendido(dias) -> str:
             .replace("X", ".")
         )
 
-        return f"{dias:,} días · {meses_txt} meses aprox.".replace(",", ".")
+        return f"{texto_dias} días · {meses_txt} meses · {anos_txt} años aprox."
 
-    anos = dias / 365.25
+    return f"{texto_dias} días"
 
-    meses_txt = (
-        f"{meses:,.1f}"
+
+def formato_tiempo_transcurrido(dias: Any) -> str:
+    valor = valor_numerico(dias)
+
+    if pd.isna(valor):
+        return "Sin dato"
+
+    signo = "-" if valor < 0 else ""
+    abs_dias = abs(float(valor))
+
+    if abs_dias <= 30:
+        return f"{signo}{int(round(abs_dias)):,} días".replace(",", ".")
+
+    meses = abs_dias / 30.44
+
+    if meses <= 12:
+        return (
+            f"{signo}{meses:,.1f} meses"
+            .replace(",", "X")
+            .replace(".", ",")
+            .replace("X", ".")
+        )
+
+    anos = meses / 12
+
+    return (
+        f"{signo}{anos:,.1f} años"
         .replace(",", "X")
         .replace(".", ",")
         .replace("X", ".")
     )
 
-    anos_txt = (
-        f"{anos:,.1f}"
-        .replace(",", "X")
-        .replace(".", ",")
-        .replace("X", ".")
-    )
 
-    return f"{dias:,} días · {meses_txt} meses · {anos_txt} años aprox.".replace(",", ".")
+def texto_dias_restantes(dias_restantes: Any) -> str:
+    valor = valor_numerico(dias_restantes)
+
+    if pd.isna(valor):
+        return "Sin dato"
+
+    valor_int = int(round(valor))
+
+    if valor_int >= 0:
+        return f"{valor_int:,} días disponibles".replace(",", ".")
+
+    return f"{abs(valor_int):,} días sobre el umbral".replace(",", ".")
 
 
-def obtener_umbral_operativo(registro: pd.Series, columnas_clave: dict):
-    umbral = pd.to_numeric(
-        obtener_valor(registro, columnas_clave["umbral_tat_total"]),
-        errors="coerce",
-    )
+def formato_dias_restantes_operativo(dias: Any) -> str:
+    valor = valor_numerico(dias)
+
+    if pd.isna(valor):
+        return "Sin dato"
+
+    if valor < 0:
+        return f"Vencido hace {formato_tiempo_transcurrido(abs(valor))}"
+
+    if valor == 0:
+        return "Vence hoy"
+
+    return f"Vence en {formato_tiempo_transcurrido(valor)}"
+
+
+def nombre_fecha_faltante(columna: str) -> str:
+    mapa = {
+        "fecha_solicitud_final": "fecha de solicitud",
+        "fecha_liberacion_final": "fecha de liberación",
+        "fecha_pedido_final": "fecha de pedido",
+        "fecha_facturacion_final": "fecha de facturación",
+        "fecha_recepcion_final": "fecha de recepción",
+    }
+
+    return mapa.get(columna, "fecha pendiente")
+
+
+def obtener_umbral_tat(row: pd.Series) -> float:
+    umbral = valor_numerico(row.get(COL_UMBRAL_TAT, np.nan))
 
     if pd.notna(umbral):
-        return float(umbral)
+        return umbral
 
-    tipo_oc = str(
-        obtener_valor(registro, columnas_clave["tipo_oc"])
-    ).strip().replace(".0", "")
+    tipo_oc = str(row.get(COL_TIPO_OC, "")).strip().replace(".0", "")
 
     if tipo_oc in ["35", "45"]:
-        return 40.0
+        return 40
 
     if tipo_oc == "47":
-        return 70.0
+        return 70
 
-    return pd.NA
+    return np.nan
 
 
-def calcular_estado_alerta_registro(registro: pd.Series, columnas_clave: dict) -> dict:
-    hoy = pd.Timestamp.today().normalize()
-
-    fecha_solicitud = pd.to_datetime(
-        obtener_valor(registro, columnas_clave["fecha_solicitud"]),
-        errors="coerce",
-    )
-
-    fecha_recepcion = pd.to_datetime(
-        obtener_valor(registro, columnas_clave["fecha_recepcion"]),
-        errors="coerce",
-    )
-
-    umbral = obtener_umbral_operativo(registro, columnas_clave)
-
-    dias_desde_solicitud = pd.NA
-
-    if pd.notna(fecha_solicitud):
-        dias_desde_solicitud = int((hoy - fecha_solicitud).days)
-
-    fecha_vencimiento = pd.NaT
-
-    if pd.notna(fecha_solicitud) and pd.notna(umbral):
-        fecha_vencimiento = fecha_solicitud + pd.to_timedelta(int(round(umbral)), unit="D")
-
-    dias_restantes = pd.NA
-
-    if pd.notna(fecha_vencimiento):
-        dias_restantes = int((fecha_vencimiento - hoy).days)
-
-    if pd.notna(fecha_recepcion):
-        estado = "Recepcionado"
-        clase = "alert-green"
-        titulo = "Pedido recepcionado"
-        mensaje = (
-            "El registro ya tiene recepción registrada. "
-            "Filtro permite revisar la trazabilidad completa del caso que pudo venir desde Alertas."
-        )
-
-    elif pd.isna(fecha_solicitud):
-        estado = "Sin fecha de solicitud"
-        clase = "alert-gray"
-        titulo = "No se puede calcular vencimiento"
-        mensaje = (
-            "No existe una fecha de solicitud válida. "
-            "Revisa la data base para calcular el avance TAT."
-        )
-
-    elif pd.isna(umbral):
-        estado = "Sin umbral TAT"
-        clase = "alert-gray"
-        titulo = "No se puede calcular vencimiento"
-        mensaje = (
-            "Existe fecha de solicitud, pero no hay umbral TAT disponible. "
-            "Revisa el tipo OC o el campo umbral_tat_total."
-        )
-
-    elif dias_restantes < 0:
-        estado = "Vencido"
-        clase = "alert-red"
-        titulo = f"Vencido hace {abs(dias_restantes):,} días".replace(",", ".")
-        mensaje = (
-            "Este registro ya superó su fecha estimada de vencimiento TAT y no tiene recepción. "
-            "Desde Alertas se identifica como prioridad, y desde Filtro puedes revisar el detalle específico de la SOLPED."
-        )
-
-    elif dias_restantes == 0:
-        estado = "Vence hoy"
-        clase = "alert-orange"
-        titulo = "Vence hoy"
-        mensaje = (
-            "Este registro vence hoy y todavía no tiene recepción. "
-            "Conviene revisar la etapa pendiente y gestionar el cierre operativo."
-        )
-
-    elif dias_restantes <= 7:
-        estado = "Por vencer"
-        clase = "alert-orange"
-        titulo = f"Por vencer en {dias_restantes:,} días".replace(",", ".")
-        mensaje = (
-            "Este registro está próximo a vencer. "
-            "Alertas ayuda a detectarlo y Filtro permite revisar el detalle de la SOLPED."
-        )
-
-    elif dias_restantes <= 30:
-        estado = "Seguimiento"
-        clase = "alert-yellow"
-        titulo = f"Vence en {dias_restantes:,} días".replace(",", ".")
-        mensaje = (
-            "Este registro aún no vence, pero está dentro de la ventana de seguimiento preventivo."
-        )
-
-    else:
-        estado = "Controlado"
-        clase = "alert-blue"
-        titulo = f"Vence en {dias_restantes:,} días".replace(",", ".")
-        mensaje = (
-            "Este registro todavía tiene margen antes del vencimiento TAT. "
-            "Se recomienda mantener seguimiento preventivo."
-        )
-
-    return {
-        "estado": estado,
-        "clase": clase,
-        "titulo": titulo,
-        "mensaje": mensaje,
-        "dias_desde_solicitud": dias_desde_solicitud,
-        "dias_desde_solicitud_texto": texto_tiempo_extendido(dias_desde_solicitud),
-        "umbral": umbral,
-        "fecha_vencimiento": fecha_vencimiento,
-        "fecha_vencimiento_texto": formatear_fecha_corta(fecha_vencimiento),
-        "dias_restantes": dias_restantes,
-    }
-
-
-def aplicar_filtros_con_progreso(
-    df_base: pd.DataFrame,
-    columnas_clave: dict,
-    filtro_solped: str,
-    filtro_pedido: str,
-    filtro_posicion: str,
-    filtro_material: str,
-    filtro_texto_breve: str,
-    modo_busqueda: str,
-) -> pd.DataFrame:
-
-    barra = st.progress(0, text="Preparando búsqueda...")
-
-    df_filtrado = df_base.copy()
-
-    barra.progress(15, text="Cargando base activa...")
-
-    df_filtrado = aplicar_filtro_texto(
-        df=df_filtrado,
-        columna=columnas_clave["solped"],
-        texto=filtro_solped,
-        modo=modo_busqueda,
-    )
-
-    barra.progress(35, text="Buscando SOLPED...")
-
-    df_filtrado = aplicar_filtro_texto(
-        df=df_filtrado,
-        columna=columnas_clave["pedido"],
-        texto=filtro_pedido,
-        modo=modo_busqueda,
-    )
-
-    barra.progress(50, text="Buscando pedido...")
-
-    df_filtrado = aplicar_filtro_texto(
-        df=df_filtrado,
-        columna=columnas_clave["posicion"],
-        texto=filtro_posicion,
-        modo=modo_busqueda,
-    )
-
-    barra.progress(65, text="Buscando posición...")
-
-    df_filtrado = aplicar_filtro_texto(
-        df=df_filtrado,
-        columna=columnas_clave["material"],
-        texto=filtro_material,
-        modo=modo_busqueda,
-    )
-
-    barra.progress(80, text="Buscando material...")
-
-    df_filtrado = aplicar_filtro_texto(
-        df=df_filtrado,
-        columna=columnas_clave["texto_breve"],
-        texto=filtro_texto_breve,
-        modo="Contiene",
-    )
-
-    barra.progress(100, text="Búsqueda finalizada.")
-
-    return df_filtrado
-
-
-# ============================================================
-# Detección de columnas
-# ============================================================
-
-def detectar_columnas_clave(df: pd.DataFrame) -> dict:
-    return {
-        "solped": buscar_columna(
-            df,
-            [
-                "Solicitud de pedido - ME5A",
-                "Solicitud de pedido",
-                "Solicitud de compra ERP - ARIBA",
-                "ariba_solicitud_compra_erp",
-            ],
-        ),
-        "pedido": buscar_columna(
-            df,
-            [
-                "Pedido - ME5A",
-                "Pedido",
-                "ID pedido - ARIBA",
-                "ariba_id_pedido",
-                "Documento de compras - ME80FN",
-            ],
-        ),
-        "posicion": buscar_columna(
-            df,
-            [
-                "Posición solicitud de pedido - ME5A",
-                "Pos.solicitud pedido",
-                "Posición de pedido - ME5A",
-                "Posición de pedido",
-                "Línea solicitud de compra - ARIBA",
-            ],
-        ),
-        "material": buscar_columna(
-            df,
-            [
-                "Material - ME5A",
-                "Material",
-                "Material - ME80FN",
-            ],
-        ),
-        "texto_breve": buscar_columna(
-            df,
-            [
-                "Texto breve - ME5A",
-                "Texto breve",
-                "Descripción - ARIBA",
-                "Texto breve - ME80FN",
-            ],
-        ),
-        "centro": buscar_columna(
-            df,
-            [
-                "Centro - ME5A",
-                "Centro",
-                "Centro - ME80FN",
-            ],
-        ),
-        "grupo_compras": buscar_columna(
-            df,
-            [
-                "Grupo de compras",
-                "Grupo compras",
-                "Grupo de compras - ME5A",
-            ],
-        ),
-        "tipo_oc": buscar_columna(
-            df,
-            [
-                "tipo_oc",
-                "Tipo OC",
-                "Clase de documento",
-            ],
-        ),
-        "sistema": buscar_columna(
-            df,
-            [
-                "sistema",
-                "Sistema",
-            ],
-        ),
-        "origen": buscar_columna(
-            df,
-            [
-                "origen",
-                "Origen",
-            ],
-        ),
-        "estado_match": buscar_columna(
-            df,
-            [
-                "Estado del match",
-                "estado_match",
-            ],
-        ),
-        "fecha_solicitud": buscar_columna(
-            df,
-            [
-                "fecha_solicitud_final",
-                "Fecha de solicitud - ME5A",
-                "Fecha de solicitud",
-            ],
-        ),
-        "fecha_liberacion": buscar_columna(
-            df,
-            [
-                "fecha_liberacion_final",
-                "Fecha de liberación - ME5A",
-                "Fecha de liberación",
-            ],
-        ),
-        "fecha_pedido": buscar_columna(
-            df,
-            [
-                "fecha_pedido_final",
-                "Fecha de pedido - ME5A",
-                "Fecha de pedido",
-            ],
-        ),
-        "fecha_facturacion": buscar_columna(
-            df,
-            [
-                "fecha_facturacion_final",
-                "Fecha facturación proveedor - ME80FN",
-                "Fecha facturación",
-            ],
-        ),
-        "fecha_recepcion": buscar_columna(
-            df,
-            [
-                "fecha_recepcion_final",
-                "Fecha recepción mercancía - ME80FN",
-                "Fecha recepción",
-            ],
-        ),
-        "dias_tat_total": buscar_columna(
-            df,
-            [
-                "dias_tat_total",
-            ],
-        ),
-        "umbral_tat_total": buscar_columna(
-            df,
-            [
-                "umbral_tat_total",
-            ],
-        ),
-        "performance_tat_total": buscar_columna(
-            df,
-            [
-                "performance_tat_total",
-            ],
-        ),
-        "dias_incumplimiento": buscar_columna(
-            df,
-            [
-                "dias_incumplimiento_tat",
-            ],
-        ),
-        "rango_incumplimiento": buscar_columna(
-            df,
-            [
-                "rango_incumplimiento_tat",
-            ],
-        ),
-        "cantidad_solicitada": buscar_columna(
-            df,
-            [
-                "Cantidad solicitada - ME5A",
-                "Cantidad solicitada",
-            ],
-        ),
-        "unidad_medida": buscar_columna(
-            df,
-            [
-                "Unidad de medida - ME5A",
-                "Unidad de medida",
-            ],
-        ),
-        "precio_valoracion": buscar_columna(
-            df,
-            [
-                "Precio de valoración",
-                "Precio valoración",
-                "Precio valorización",
-            ],
-        ),
-        "moneda": buscar_columna(
-            df,
-            [
-                "Moneda - ME5A",
-                "Moneda",
-            ],
-        ),
-        "solicitante": buscar_columna(
-            df,
-            [
-                "Solicitante",
-                "Solicitante - ME5A",
-            ],
-        ),
-        "autor": buscar_columna(
-            df,
-            [
-                "Autor",
-                "Autor - ME5A",
-            ],
-        ),
-    }
-
-
-# ============================================================
-# Construcción de etiquetas y tablas
-# ============================================================
-
-def construir_etiqueta_observacion(row: pd.Series, columnas_clave: dict) -> str:
-    solped = formatear_valor(obtener_valor(row, columnas_clave["solped"]))
-    pedido = formatear_valor(obtener_valor(row, columnas_clave["pedido"]))
-    posicion = formatear_valor(obtener_valor(row, columnas_clave["posicion"]))
-    material = formatear_valor(obtener_valor(row, columnas_clave["material"]))
-    texto = formatear_valor(obtener_valor(row, columnas_clave["texto_breve"]))
-    fila = formatear_valor(row.get("_id_observacion", ""))
-
-    etiqueta = f"SOLPED {solped}"
-
-    if pedido != "—":
-        etiqueta += f" | Pedido {pedido}"
-
-    if posicion != "—":
-        etiqueta += f" | Pos {posicion}"
-
-    if material != "—":
-        etiqueta += f" | Material {material}"
-
-    if texto != "—":
-        texto_corto = texto[:45] + "..." if len(texto) > 45 else texto
-        etiqueta += f" | {texto_corto}"
-
-    etiqueta += f" | Fila {fila}"
-
-    return etiqueta
-
-
-def construir_tabla_fechas(registro: pd.Series, columnas_clave: dict) -> pd.DataFrame:
-    datos = [
-        {
-            "Etapa": "Solicitud",
-            "Fecha": formatear_fecha(obtener_valor(registro, columnas_clave["fecha_solicitud"])),
-        },
-        {
-            "Etapa": "Liberación",
-            "Fecha": formatear_fecha(obtener_valor(registro, columnas_clave["fecha_liberacion"])),
-        },
-        {
-            "Etapa": "Pedido",
-            "Fecha": formatear_fecha(obtener_valor(registro, columnas_clave["fecha_pedido"])),
-        },
-        {
-            "Etapa": "Facturación",
-            "Fecha": formatear_fecha(obtener_valor(registro, columnas_clave["fecha_facturacion"])),
-        },
-        {
-            "Etapa": "Recepción",
-            "Fecha": formatear_fecha(obtener_valor(registro, columnas_clave["fecha_recepcion"])),
-        },
-    ]
-
-    return pd.DataFrame(datos)
-
-
-def obtener_etapas_flujo(registro: pd.Series, columnas_clave: dict) -> list[dict]:
-    definicion = [
-        {
-            "nombre": "Solicitud",
-            "columna": columnas_clave["fecha_solicitud"],
-        },
-        {
-            "nombre": "Liberación",
-            "columna": columnas_clave["fecha_liberacion"],
-        },
-        {
-            "nombre": "Pedido",
-            "columna": columnas_clave["fecha_pedido"],
-        },
-        {
-            "nombre": "Facturación",
-            "columna": columnas_clave["fecha_facturacion"],
-        },
-        {
-            "nombre": "Recepción",
-            "columna": columnas_clave["fecha_recepcion"],
-        },
-    ]
-
-    etapas = []
-
-    for item in definicion:
-        fecha = pd.to_datetime(
-            obtener_valor(registro, item["columna"]),
-            errors="coerce",
-        )
-
-        etapas.append(
-            {
-                "nombre": item["nombre"],
-                "fecha": fecha,
-                "fecha_texto": formatear_fecha_corta(fecha),
-                "completada": pd.notna(fecha),
-                "dias_desde_anterior": pd.NA,
-                "estado": "Completado" if pd.notna(fecha) else "Pendiente",
-            }
-        )
-
-    indice_pendiente_actual = None
-
-    for i, etapa in enumerate(etapas):
-        if not etapa["completada"]:
-            indice_pendiente_actual = i
-            break
-
-    if indice_pendiente_actual is not None:
-        etapas[indice_pendiente_actual]["estado"] = "Pendiente actual"
-
-    fecha_anterior = pd.NaT
-
-    for etapa in etapas:
-        fecha_actual = etapa["fecha"]
-
-        if pd.notna(fecha_actual) and pd.notna(fecha_anterior):
-            etapa["dias_desde_anterior"] = int((fecha_actual - fecha_anterior).days)
-
-        if pd.notna(fecha_actual):
-            fecha_anterior = fecha_actual
-
-    return etapas
-
-
-def construir_tabla_etapas_tat(registro: pd.Series, columnas_clave: dict) -> pd.DataFrame:
-    etapas = obtener_etapas_flujo(registro, columnas_clave)
-
-    registros = []
-
-    for etapa in etapas:
-        dias = etapa["dias_desde_anterior"]
-
-        registros.append(
-            {
-                "Etapa": etapa["nombre"],
-                "Fecha TAT": etapa["fecha_texto"],
-                "Estado": etapa["estado"],
-                "Días desde etapa anterior": "—" if pd.isna(dias) else dias,
-            }
-        )
-
-    return pd.DataFrame(registros)
-
-
-def construir_validacion_temporal_tat(
-    registro: pd.Series,
-    columnas_clave: dict,
-) -> pd.DataFrame:
-
-    etapas = {
-        "Solicitud": pd.to_datetime(
-            obtener_valor(registro, columnas_clave["fecha_solicitud"]),
-            errors="coerce",
-        ),
-        "Liberación": pd.to_datetime(
-            obtener_valor(registro, columnas_clave["fecha_liberacion"]),
-            errors="coerce",
-        ),
-        "Pedido": pd.to_datetime(
-            obtener_valor(registro, columnas_clave["fecha_pedido"]),
-            errors="coerce",
-        ),
-        "Facturación": pd.to_datetime(
-            obtener_valor(registro, columnas_clave["fecha_facturacion"]),
-            errors="coerce",
-        ),
-        "Recepción": pd.to_datetime(
-            obtener_valor(registro, columnas_clave["fecha_recepcion"]),
-            errors="coerce",
-        ),
-    }
-
-    comparaciones = [
-        ("Solicitud", "Liberación"),
-        ("Liberación", "Pedido"),
-        ("Pedido", "Facturación"),
-        ("Facturación", "Recepción"),
-        ("Solicitud", "Facturación"),
-        ("Solicitud", "Recepción"),
-    ]
-
-    validaciones = []
-
-    for inicio, fin in comparaciones:
-        fecha_inicio = etapas[inicio]
-        fecha_fin = etapas[fin]
-
-        if pd.isna(fecha_inicio) or pd.isna(fecha_fin):
-            estado = "Sin datos"
-            detalle = "No evaluable por fecha faltante"
-            dias = pd.NA
-
-        else:
-            dias = int((fecha_fin - fecha_inicio).days)
-
-            if fecha_fin >= fecha_inicio:
-                estado = "Correcto"
-                detalle = "Orden temporal válido"
-            else:
-                estado = "Revisar"
-                detalle = "La fecha final ocurre antes que la fecha inicial"
-
-        validaciones.append(
-            {
-                "Validación": f"{inicio} → {fin}",
-                "Fecha inicial": formatear_fecha(fecha_inicio),
-                "Fecha final": formatear_fecha(fecha_fin),
-                "Días entre fechas": dias,
-                "Estado": estado,
-                "Detalle": detalle,
-            }
-        )
-
-    return pd.DataFrame(validaciones)
-
-
-# ============================================================
-# HTML moderno
-# ============================================================
-
-def html_section_header(icono: str, titulo: str, subtitulo: str) -> str:
-    return f"""
-    <div class="section-header">
-        <div class="section-icon">{escape(icono)}</div>
-        <div>
-            <div class="section-title">{escape(titulo)}</div>
-            <div class="section-subtitle">{escape(subtitulo)}</div>
-        </div>
-    </div>
-    """
-
-
-def clase_estado_tat(valor: str) -> str:
+def clase_performance(valor: Any) -> str:
     texto = str(valor).strip().lower()
 
     if texto == "cumple":
-        return "pill-green"
+        return "green"
 
     if texto == "no cumple":
-        return "pill-red"
+        return "red"
 
     if texto in ["en proceso", "sin datos"]:
-        return "pill-yellow"
+        return "yellow"
 
-    return "pill-gray"
+    if "no aplica" in texto:
+        return "gray"
 
+    return "blue"
+
+
+def clase_dias(dias: Any, umbral: Any = None) -> str:
+    dias_num = valor_numerico(dias)
+    umbral_num = valor_numerico(umbral) if umbral is not None else np.nan
+
+    if pd.isna(dias_num) or dias_num < 0:
+        return "gray"
+
+    if pd.notna(umbral_num):
+        return "green" if dias_num <= umbral_num else "red"
+
+    return "green" if dias_num == 0 else "yellow"
+
+
+def pill(texto: Any, color: str) -> str:
+    return f'<span class="pill pill-{color}">{escape(formato_valor(texto))}</span>'
+
+
+# ============================================================
+# Preparación panel Filtro + Alertas
+# ============================================================
+
+def primera_columna_existente(df: pd.DataFrame, candidatas: list[str]) -> pd.Series:
+    for col in candidatas:
+        if col in df.columns:
+            return df[col]
+
+    return pd.Series(pd.NaT, index=df.index)
+
+
+@st.cache_data(show_spinner="Preparando datos del filtro...")
+def preparar_panel_filtro(df_original: pd.DataFrame, hoy: pd.Timestamp) -> pd.DataFrame:
+    df = limpiar_columnas(df_original.copy())
+    df = normalizar_columnas_me80fn(df)
+    df = convertir_fechas_visuales(df)
+
+    fecha_recepcion = primera_columna_existente(
+        df,
+        [
+            "fecha_recepcion_final",
+            "Fecha recepción mercancía - ME80FN",
+            "Fecha recepción mercancía - NME80FN",
+        ],
+    )
+
+    fecha_recepcion_dt = pd.to_datetime(fecha_recepcion, errors="coerce")
+
+    df[COL_ESTADO_RECEPCION_ALERTA] = np.where(
+        fecha_recepcion_dt.notna(),
+        "Recepcionado",
+        "Sin recepción",
+    )
+
+    fecha_inicio = primera_columna_existente(
+        df,
+        [
+            "fecha_solicitud_final",
+            "Fecha de solicitud - ME5A",
+        ],
+    )
+
+    df["fecha_inicio_tat"] = pd.to_datetime(fecha_inicio, errors="coerce")
+
+    if COL_UMBRAL_TAT in df.columns:
+        umbral = pd.to_numeric(df[COL_UMBRAL_TAT], errors="coerce")
+    else:
+        umbral = pd.Series(np.nan, index=df.index, dtype="float64")
+
+    tipo_oc = (
+        df[COL_TIPO_OC].astype(str).str.strip().str.replace(".0", "", regex=False)
+        if COL_TIPO_OC in df.columns
+        else pd.Series("", index=df.index)
+    )
+
+    umbral = umbral.mask(umbral.isna() & tipo_oc.isin(["35", "45"]), 40)
+    umbral = umbral.mask(umbral.isna() & tipo_oc.eq("47"), 70)
+
+    df["umbral_tat_calculado"] = umbral
+
+    df["fecha_vencimiento_tat"] = (
+        df["fecha_inicio_tat"] + pd.to_timedelta(df["umbral_tat_calculado"], unit="D")
+    )
+
+    df["dias_restantes_int"] = (
+        df["fecha_vencimiento_tat"] - hoy
+    ).dt.days
+
+    df["dias_hasta_vencimiento"] = df["dias_restantes_int"].apply(
+        formato_dias_restantes_operativo
+    )
+
+    df["fecha_vencimiento_texto"] = df["fecha_vencimiento_tat"].apply(fecha_texto_simple)
+
+    df["dias_restantes_texto"] = df["dias_restantes_int"].apply(texto_dias_restantes)
+
+    df["tiempo_transcurrido_dias"] = np.where(
+        df[COL_ESTADO_RECEPCION_ALERTA].eq("Recepcionado"),
+        (fecha_recepcion_dt - df["fecha_inicio_tat"]).dt.days,
+        (hoy - df["fecha_inicio_tat"]).dt.days,
+    )
+
+    df["tiempo_transcurrido_tat"] = df["tiempo_transcurrido_dias"].apply(
+        texto_dias_y_meses
+    )
+
+    df["tiempo_excedido_umbral_dias"] = (
+        df["tiempo_transcurrido_dias"] - df["umbral_tat_calculado"]
+    )
+
+    df["tiempo_excedido_umbral_texto"] = np.where(
+        pd.to_numeric(df["tiempo_excedido_umbral_dias"], errors="coerce").notna(),
+        df["tiempo_excedido_umbral_dias"].apply(
+            lambda x: f"{int(round(x)):,} días".replace(",", ".")
+            if x >= 0
+            else f"{abs(int(round(x))):,} días disponibles".replace(",", ".")
+        ),
+        "Sin dato",
+    )
+
+    condiciones_clasificacion = [
+        df[COL_ESTADO_RECEPCION_ALERTA].eq("Recepcionado"),
+        df["dias_restantes_int"].isna(),
+        df["dias_restantes_int"].lt(0),
+        df["dias_restantes_int"].eq(0),
+        df["dias_restantes_int"].between(1, 2),
+        df["dias_restantes_int"].between(3, 7),
+        df["dias_restantes_int"].gt(7),
+    ]
+
+    valores_clasificacion = [
+        "Recepcionado",
+        "Sin datos",
+        "Vencido",
+        "Vence hoy",
+        "1-2 días",
+        "3-7 días",
+        "+7 días",
+    ]
+
+    df["clasificacion_vencimiento"] = np.select(
+        condiciones_clasificacion,
+        valores_clasificacion,
+        default="Sin datos",
+    )
+
+    condiciones_nivel = [
+        df[COL_ESTADO_RECEPCION_ALERTA].eq("Recepcionado"),
+        df["dias_restantes_int"].isna(),
+        df["dias_restantes_int"].lt(0),
+        df["dias_restantes_int"].between(0, 7),
+        df["dias_restantes_int"].between(8, 30),
+        df["dias_restantes_int"].gt(30),
+    ]
+
+    valores_nivel = [
+        "Cerrado",
+        "Datos incompletos",
+        "Crítico",
+        "Atención",
+        "Seguimiento",
+        "Controlado",
+    ]
+
+    df["nivel_alerta"] = np.select(
+        condiciones_nivel,
+        valores_nivel,
+        default="Sin datos",
+    )
+
+    fechas_etapas = [
+        ("Solicitud", "fecha_solicitud_final"),
+        ("Liberación", "fecha_liberacion_final"),
+        ("Pedido", "fecha_pedido_final"),
+        ("Facturación", "fecha_facturacion_final"),
+        ("Recepción", "fecha_recepcion_final"),
+    ]
+
+    ultimas = []
+    ultimas_fechas = []
+    pendientes = []
+
+    for _, row in df.iterrows():
+        ultima = "Sin etapa registrada"
+        ultima_fecha = "Sin fecha"
+        pendiente = "Flujo cerrado"
+
+        for nombre, col in fechas_etapas:
+            fecha = row.get(col, pd.NaT)
+
+            if pd.notna(fecha):
+                ultima = nombre
+                ultima_fecha = fecha_texto_simple(fecha)
+            else:
+                pendiente = nombre
+                break
+
+        ultimas.append(ultima)
+        ultimas_fechas.append(ultima_fecha)
+        pendientes.append(pendiente)
+
+    df["ultima_etapa_registrada"] = ultimas
+    df["ultima_fecha_registrada"] = ultimas_fechas
+    df["fecha_pendiente"] = pendientes
+
+    df["accion_sugerida"] = np.select(
+        [
+            df["nivel_alerta"].eq("Crítico"),
+            df["nivel_alerta"].eq("Atención"),
+            df["nivel_alerta"].eq("Seguimiento"),
+            df["nivel_alerta"].eq("Controlado"),
+            df["nivel_alerta"].eq("Cerrado"),
+        ],
+        [
+            "Gestionar recepción o regularización inmediata",
+            "Revisar etapa pendiente y anticipar gestión",
+            "Mantener seguimiento preventivo",
+            "Control operativo normal",
+            "Sin acción urgente",
+        ],
+        default="Revisar datos base",
+    )
+
+    df["causa_probable"] = np.where(
+        df["fecha_pendiente"].eq("Liberación"),
+        "Pendiente de liberación/aprobación",
+        np.where(
+            df["fecha_pendiente"].eq("Pedido"),
+            "Pendiente de emisión de pedido",
+            np.where(
+                df["fecha_pendiente"].eq("Facturación"),
+                "Pendiente de facturación proveedor",
+                np.where(
+                    df["fecha_pendiente"].eq("Recepción"),
+                    "Pendiente de recepción logística",
+                    "Sin causa probable",
+                ),
+            ),
+        ),
+    )
+
+    df["score_riesgo"] = 0
+
+    df.loc[df["nivel_alerta"].eq("Crítico"), "score_riesgo"] += 100
+    df.loc[df["nivel_alerta"].eq("Atención"), "score_riesgo"] += 70
+    df.loc[df["nivel_alerta"].eq("Seguimiento"), "score_riesgo"] += 40
+    df.loc[df["nivel_alerta"].eq("Controlado"), "score_riesgo"] += 10
+
+    df["score_riesgo"] += (
+        pd.to_numeric(df["tiempo_excedido_umbral_dias"], errors="coerce")
+        .fillna(0)
+        .clip(lower=0)
+        .astype(int)
+    )
+
+    return df
+
+
+# ============================================================
+# HTML Expediente
+# ============================================================
 
 def html_hero() -> str:
     return """
     <div class="hero">
-        <div class="eyebrow">Flujo operativo Alertas → Filtro</div>
-        <div class="hero-title">07_FILTRO</div>
-        <div class="hero-subtitle">
-            Alertas identifica las SOLPED críticas o próximas a vencer. Filtro permite entrar al detalle específico:
-            compra, responsable, cantidades, valor, estado TAT, fechas y seguimiento completo de la solicitud.
+        <div class="hero-eyebrow">Flujo operativo Alertas → Filtro</div>
+        <div class="hero-title">07_FILTRO · Expediente TAT</div>
+        <div class="hero-text">
+            Alertas identifica los casos críticos, vencidos o próximos a vencer. 
+            Filtro permite abrir el expediente específico de la SOLPED para revisar compra, responsables,
+            fechas, etapas, estado TAT y acción sugerida.
         </div>
-        <div class="flow-bridge">
-            Alertas y Filtro funcionan como pestañas hermanas: detectar → investigar → gestionar.
-        </div>
+        <div class="hero-pill">Detectar en Alertas → Investigar en Filtro → Gestionar</div>
     </div>
     """
 
@@ -1570,10 +1649,10 @@ def html_hero() -> str:
 def html_search_intro() -> str:
     return """
     <div class="search-card">
-        <div class="search-title">Búsqueda específica de SOLPED</div>
+        <div class="search-title">Búsqueda específica de expediente</div>
         <div class="search-text">
-            Usa esta pestaña después de revisar Alertas. Busca por SOLPED, pedido, posición, material o texto breve
-            para abrir el expediente operativo de esa línea.
+            Busca una SOLPED, pedido, posición, material o descripción. 
+            Esta vista está pensada para complementar la pestaña Alertas con una revisión más profunda del registro.
         </div>
     </div>
     """
@@ -1588,556 +1667,798 @@ def html_message_card(titulo: str, texto: str) -> str:
     """
 
 
-def html_alerta_operativa(registro: pd.Series, columnas_clave: dict) -> str:
-    alerta = calcular_estado_alerta_registro(registro, columnas_clave)
+def html_alerta_operativa(row: pd.Series) -> str:
+    nivel = formato_valor(row.get("nivel_alerta", np.nan))
+    clase = "alert-gray"
 
-    umbral = alerta["umbral"]
-
-    if pd.isna(umbral):
-        umbral_txt = "Sin umbral"
+    if nivel == "Crítico":
+        clase = "alert-red"
+        titulo = "Caso crítico detectado"
+    elif nivel == "Atención":
+        clase = "alert-orange"
+        titulo = "Caso por vencer"
+    elif nivel == "Seguimiento":
+        clase = "alert-yellow"
+        titulo = "Caso en seguimiento"
+    elif nivel == "Controlado":
+        clase = "alert-blue"
+        titulo = "Caso controlado"
+    elif nivel == "Cerrado":
+        clase = "alert-green"
+        titulo = "Caso cerrado"
     else:
-        umbral_txt = f"{int(round(umbral)):,} días".replace(",", ".")
+        titulo = "Caso con datos incompletos"
 
-    dias_restantes = alerta["dias_restantes"]
-
-    if pd.isna(dias_restantes):
-        dias_restantes_txt = "Sin dato"
-    elif dias_restantes < 0:
-        dias_restantes_txt = f"{abs(dias_restantes):,} días vencido".replace(",", ".")
-    elif dias_restantes == 0:
-        dias_restantes_txt = "Vence hoy"
-    else:
-        dias_restantes_txt = f"{dias_restantes:,} días restantes".replace(",", ".")
+    mensaje = formato_valor(row.get("accion_sugerida", "Revisar detalle del registro"))
 
     return f"""
-    <div class="alert-panel {escape(alerta["clase"])}">
+    <div class="alert-panel {clase}">
         <div class="alert-title">Lectura operativa desde Alertas</div>
-        <div class="alert-main">{escape(alerta["titulo"])}</div>
-        <div class="alert-text">{escape(alerta["mensaje"])}</div>
+        <div class="alert-main">{escape(titulo)}</div>
+        <div class="alert-text">{escape(mensaje)}</div>
 
         <div class="alert-grid">
             <div class="alert-item">
-                <div class="label">Estado alerta</div>
-                <div class="value">{escape(alerta["estado"])}</div>
+                <div class="exp-field-label">Nivel alerta</div>
+                <div class="exp-field-value">{html_texto(row.get("nivel_alerta", np.nan))}</div>
             </div>
-
             <div class="alert-item">
-                <div class="label">Desde solicitud hasta hoy</div>
-                <div class="value">{escape(alerta["dias_desde_solicitud_texto"])}</div>
+                <div class="exp-field-label">Estado vencimiento</div>
+                <div class="exp-field-value">{html_texto(row.get("clasificacion_vencimiento", np.nan))}</div>
             </div>
-
             <div class="alert-item">
-                <div class="label">Fecha vencimiento</div>
-                <div class="value">{escape(alerta["fecha_vencimiento_texto"])}</div>
+                <div class="exp-field-label">Desde solicitud hasta hoy</div>
+                <div class="exp-field-value">{html_texto(row.get("tiempo_transcurrido_tat", np.nan))}</div>
             </div>
-
             <div class="alert-item">
-                <div class="label">Contra umbral</div>
-                <div class="value">{escape(dias_restantes_txt)} · {escape(umbral_txt)}</div>
+                <div class="exp-field-label">Vencimiento</div>
+                <div class="exp-field-value">{html_texto(row.get("dias_hasta_vencimiento", np.nan))}</div>
             </div>
         </div>
     </div>
     """
 
 
-def html_resumen_general(registro: pd.Series, columnas_clave: dict) -> str:
-    estado_match = formatear_valor(obtener_valor(registro, columnas_clave["estado_match"]))
-    moneda = obtener_valor(registro, columnas_clave["moneda"])
+def html_resumen_expediente(row: pd.Series) -> str:
+    oc_principal = row.get(COL_OC_ME5A, row.get(COL_OC_ME80FN, np.nan))
+    moneda = row.get(COL_MONEDA, np.nan)
 
     campos = [
-        ("SOLPED", obtener_valor(registro, columnas_clave["solped"]), "blue"),
-        ("Pedido", obtener_valor(registro, columnas_clave["pedido"]), "blue"),
-        ("Posición", obtener_valor(registro, columnas_clave["posicion"]), "cyan"),
-        ("Centro", obtener_valor(registro, columnas_clave["centro"]), "cyan"),
-        ("Material", obtener_valor(registro, columnas_clave["material"]), "purple"),
-        ("Texto breve", obtener_valor(registro, columnas_clave["texto_breve"]), "purple"),
-        ("Cantidad solicitada", formatear_decimal(obtener_valor(registro, columnas_clave["cantidad_solicitada"])), "green"),
-        ("Unidad de medida", obtener_valor(registro, columnas_clave["unidad_medida"]), "green"),
-        ("Precio valoración", formatear_monto(obtener_valor(registro, columnas_clave["precio_valoracion"]), moneda), "yellow"),
-        ("Moneda", moneda, "yellow"),
-        ("Solicitante", obtener_valor(registro, columnas_clave["solicitante"]), "orange"),
-        ("Autor", obtener_valor(registro, columnas_clave["autor"]), "orange"),
-        ("Grupo de compras", obtener_valor(registro, columnas_clave["grupo_compras"]), "red"),
-        ("Tipo OC", obtener_valor(registro, columnas_clave["tipo_oc"]), "red"),
-        ("Sistema", obtener_valor(registro, columnas_clave["sistema"]), "blue"),
-        ("Origen", obtener_valor(registro, columnas_clave["origen"]), "cyan"),
-        ("Estado del match", estado_match, "red"),
+        ("Solicitud de pedido", row.get(COL_SOLPED, np.nan), "exp-field-blue"),
+        ("Pedido", oc_principal, "exp-field-blue"),
+        ("Posición SolPed", row.get(COL_POS_SOLPED, np.nan), "exp-field-cyan"),
+        ("Posición pedido", row.get(COL_POS_OC, np.nan), "exp-field-cyan"),
+        ("Centro", etiqueta_centro(row.get(COL_CENTRO, np.nan)), "exp-field-green"),
+        ("Material", row.get(COL_MATERIAL, np.nan), "exp-field-purple"),
+        ("Descripción", row.get(COL_TEXTO, np.nan), "exp-field-purple"),
+        ("Cantidad solicitada", row.get(COL_CANTIDAD, np.nan), "exp-field-green"),
+        ("Unidad de medida", row.get(COL_UNIDAD, np.nan), "exp-field-green"),
+        ("Precio valoración", formato_monto(row.get(COL_PRECIO_VALORACION, np.nan), moneda), "exp-field-yellow"),
+        ("Monto", formato_monto(row.get(COL_MONTO, np.nan), moneda), "exp-field-yellow"),
+        ("Moneda", moneda, "exp-field-yellow"),
+        ("Solicitante", row.get(COL_SOLICITANTE, np.nan), "exp-field-orange"),
+        ("Autor", row.get(COL_AUTOR, np.nan), "exp-field-orange"),
+        ("Grupo compras", row.get(COL_GRUPO_COMPRAS, np.nan), "exp-field-red"),
+        ("Tipo OC", row.get(COL_TIPO_OC, np.nan), "exp-field-red"),
+        ("Sistema", row.get(COL_SISTEMA, np.nan), "exp-field-blue"),
+        ("Origen", row.get(COL_ORIGEN, np.nan), "exp-field-cyan"),
+        ("Tipo compra", row.get(COL_NOMBRE_TIPO_COMPRA, np.nan), "exp-field-purple"),
+        ("Estado match", row.get(COL_ESTADO_MATCH, np.nan), "exp-field-red"),
     ]
 
-    cards = []
+    celdas = []
 
-    for label, value, color in campos:
-        cards.append(
+    for label, value, clase in campos:
+        celdas.append(
             f"""
-            <div class="card {color}">
-                <div class="label">{escape(label)}</div>
-                <div class="value">{valor_html(value)}</div>
+            <div class="exp-field {clase}">
+                <div class="exp-field-label">{escape(label)}</div>
+                <div class="exp-field-value">{html_texto(value)}</div>
             </div>
             """
         )
 
     return f"""
-    <div class="section">
-        {html_section_header("1", "Información general y datos de compra", "Datos principales del registro confirmado, incluyendo cantidad, valor, responsables y origen.")}
-        <div class="grid">
-            {''.join(cards)}
+    <div class="exp-header">
+        <div class="exp-header-title">Expediente · SolPed {html_id(row.get(COL_SOLPED, np.nan))}</div>
+        <div class="exp-header-sub">
+            Pedido {html_id(oc_principal)} · Posición {html_id(row.get(COL_POS_SOLPED, np.nan))} · Centro {html_texto(etiqueta_centro(row.get(COL_CENTRO, np.nan)))}
+        </div>
+        <div class="exp-fields">
+            {''.join(celdas)}
         </div>
     </div>
     """
 
 
-def html_indicadores_tat(registro: pd.Series, columnas_clave: dict) -> str:
-    performance = formatear_valor(
-        obtener_valor(registro, columnas_clave["performance_tat_total"])
+def html_kpis_expediente(row: pd.Series) -> str:
+    dias_tat = row.get(COL_DIAS_TAT, np.nan)
+    performance = row.get(COL_PERF_TAT, np.nan)
+    dias_desde_inicio = row.get("tiempo_transcurrido_tat", np.nan)
+
+    return f"""
+    <div class="exp-kpis">
+        <div class="exp-kpi exp-kpi-blue">
+            <div class="exp-kpi-label">Estado pedido</div>
+            <div class="exp-kpi-value">{html_texto(row.get("clasificacion_vencimiento", np.nan))}</div>
+            <div class="exp-kpi-note">Vence: {html_texto(row.get("fecha_vencimiento_texto", np.nan))}</div>
+        </div>
+
+        <div class="exp-kpi exp-kpi-red">
+            <div class="exp-kpi-label">Desde solicitud hasta hoy</div>
+            <div class="exp-kpi-value">{html_texto(dias_desde_inicio)}</div>
+            <div class="exp-kpi-note">Cálculo operativo contra la fecha actual</div>
+        </div>
+
+        <div class="exp-kpi exp-kpi-orange">
+            <div class="exp-kpi-label">Contra umbral</div>
+            <div class="exp-kpi-value">{html_texto(row.get("tiempo_excedido_umbral_texto", np.nan))}</div>
+            <div class="exp-kpi-note">Umbral: {html_texto(row.get("umbral_tat_calculado", np.nan))} días</div>
+        </div>
+
+        <div class="exp-kpi exp-kpi-purple">
+            <div class="exp-kpi-label">TAT total</div>
+            <div class="exp-kpi-value">{escape(texto_dias_y_meses(dias_tat))}</div>
+            <div class="exp-kpi-note">Performance: {html_texto(performance)}</div>
+        </div>
+
+        <div class="exp-kpi exp-kpi-green">
+            <div class="exp-kpi-label">Última etapa</div>
+            <div class="exp-kpi-value">{html_texto(row.get("ultima_etapa_registrada", np.nan))}</div>
+            <div class="exp-kpi-note">Pendiente: {html_texto(row.get("fecha_pendiente", np.nan))}</div>
+        </div>
+    </div>
+    """
+
+
+def obtener_avance_pedido(row: pd.Series) -> dict:
+    completadas = [
+        (nombre, col, pd.notna(row.get(col, np.nan)))
+        for nombre, col in ETAPAS_LINEA_PEDIDO
+    ]
+
+    registradas = [i for i in completadas if i[2]]
+    pendientes = [i for i in completadas if not i[2]]
+
+    ultima_nombre, ultima_columna, _ = registradas[-1] if registradas else (
+        "Sin etapa registrada",
+        "",
+        False,
     )
 
-    estado_class = clase_estado_tat(performance)
-    alerta = calcular_estado_alerta_registro(registro, columnas_clave)
+    siguiente_nombre, siguiente_columna, _ = pendientes[0] if pendientes else (
+        "Cerrado",
+        "",
+        False,
+    )
 
-    kpis = [
-        (
-            "Días desde solicitud",
-            alerta["dias_desde_solicitud_texto"],
-            "Solicitud hasta hoy",
-            "red" if alerta["estado"] == "Vencido" else "blue",
-        ),
-        (
-            "Fecha vencimiento",
-            alerta["fecha_vencimiento_texto"],
-            "Solicitud + umbral TAT",
-            "orange",
-        ),
-        (
-            "Días TAT total",
-            formatear_entero(obtener_valor(registro, columnas_clave["dias_tat_total"])),
-            "Solicitud a recepción",
-            "blue",
-        ),
-        (
-            "Umbral TAT total",
-            formatear_entero(alerta["umbral"]),
-            "Límite definido o inferido",
-            "purple",
-        ),
-        (
-            "Performance TAT",
-            performance,
-            f'<span class="pill {estado_class}">{escape(performance)}</span>',
-            "green",
-        ),
-        (
-            "Días incumplimiento",
-            formatear_entero(obtener_valor(registro, columnas_clave["dias_incumplimiento"])),
-            "Días sobre umbral",
-            "red",
-        ),
-        (
-            "Rango incumplimiento",
-            formatear_valor(obtener_valor(registro, columnas_clave["rango_incumplimiento"])),
-            "Clasificación TAT",
-            "orange",
-        ),
-    ]
+    fecha_inicio = fecha_valida(row, "fecha_solicitud_final")
+    fecha_ultima = fecha_valida(row, ultima_columna) if ultima_columna else pd.NaT
 
-    cards = []
+    esta_cerrado = len(pendientes) == 0
 
-    for label, value, note, color in kpis:
-        cards.append(
-            f"""
-            <div class="card {color}">
-                <div class="label">{escape(label)}</div>
-                <div class="value">{escape(str(value))}</div>
-                <div class="note">{note}</div>
-            </div>
-            """
-        )
+    fecha_referencia = fecha_ultima
 
-    return f"""
-    <div class="section">
-        {html_section_header("4", "Indicadores TAT y lectura temporal", "Resumen de tiempos, umbrales, vencimiento y cumplimiento del registro.")}
-        <div class="kpi-grid">
-            {''.join(cards)}
-        </div>
-    </div>
-    """
+    if not esta_cerrado and pd.notna(fecha_inicio):
+        fecha_referencia = pd.Timestamp.today().normalize()
 
+    dias_parcial = np.nan
 
-# ============================================================
-# Visualización profesional de flujo
-# ============================================================
+    if pd.notna(fecha_inicio) and pd.notna(fecha_referencia):
+        dias_parcial = (fecha_referencia - fecha_inicio).days
 
-def calcular_resumen_flujo(registro: pd.Series, columnas_clave: dict) -> dict:
-    etapas = obtener_etapas_flujo(registro, columnas_clave)
+    umbral = obtener_umbral_tat(row)
 
-    completadas = [
-        etapa
-        for etapa in etapas
-        if etapa["completada"]
-    ]
+    dias_restantes = np.nan
 
-    pendientes = [
-        etapa
-        for etapa in etapas
-        if not etapa["completada"]
-    ]
-
-    ultima_etapa = completadas[-1]["nombre"] if completadas else "Sin etapa registrada"
-    ultima_fecha = completadas[-1]["fecha_texto"] if completadas else "—"
-
-    siguiente_etapa = pendientes[0]["nombre"] if pendientes else "Flujo cerrado"
-
-    fecha_inicio = etapas[0]["fecha"] if etapas else pd.NaT
-    fecha_fin = etapas[-1]["fecha"] if etapas and etapas[-1]["completada"] else pd.Timestamp.today().normalize()
-
-    dias_transcurridos = pd.NA
-
-    if pd.notna(fecha_inicio) and pd.notna(fecha_fin):
-        dias_transcurridos = int((fecha_fin - fecha_inicio).days)
-
-    estado_recepcion = "Recepcionado" if etapas and etapas[-1]["completada"] else "Sin recepción"
+    if pd.notna(dias_parcial) and pd.notna(umbral):
+        dias_restantes = int(round(umbral - dias_parcial))
 
     return {
-        "ultima_etapa": ultima_etapa,
-        "ultima_fecha": ultima_fecha,
-        "siguiente_etapa": siguiente_etapa,
-        "dias_transcurridos": dias_transcurridos,
-        "estado_recepcion": estado_recepcion,
+        "ultima_etapa": ultima_nombre,
+        "ultima_fecha": fecha_etapa_texto(row, ultima_columna) if ultima_columna else "-",
+        "siguiente_etapa": siguiente_nombre,
+        "siguiente_columna": siguiente_columna,
+        "dias_parcial": dias_parcial,
+        "dias_restantes": dias_restantes,
+        "umbral_tat": umbral,
+        "esta_cerrado": esta_cerrado,
     }
 
 
-def html_diagrama_flujo_solped(registro: pd.Series, columnas_clave: dict) -> str:
-    etapas = obtener_etapas_flujo(registro, columnas_clave)
-    resumen = calcular_resumen_flujo(registro, columnas_clave)
+def diagnostico_avance(row: pd.Series) -> str:
+    avance = obtener_avance_pedido(row)
 
-    partes = []
+    if avance["esta_cerrado"]:
+        return "El pedido ya tiene recepción registrada. El TAT total está cerrado."
 
-    for i, etapa in enumerate(etapas):
-        if etapa["estado"] == "Completado":
-            dot_class = "flow-dot-ok"
-            icono = "✓"
-            badge_class = "badge-ok"
-        elif etapa["estado"] == "Pendiente actual":
-            dot_class = "flow-dot-active"
-            icono = ""
-            badge_class = "badge-active"
-        else:
-            dot_class = "flow-dot-pending"
-            icono = ""
-            badge_class = "badge-pending"
+    falta = nombre_fecha_faltante(avance["siguiente_columna"])
 
-        dias = etapa["dias_desde_anterior"]
+    dias_restantes = valor_numerico(avance["dias_restantes"])
+    umbral = valor_numerico(avance.get("umbral_tat", np.nan))
 
-        if pd.isna(dias):
-            detalle = "Inicio del flujo" if i == 0 else "Sin fecha registrada"
-        else:
-            detalle = f"{dias} días desde etapa anterior"
+    if pd.isna(umbral):
+        return f"Falta {falta}. No se pudo determinar el umbral TAT."
 
-        partes.append(
-            f"""
-            <div class="flow-step">
-                <div class="flow-dot {dot_class}">{escape(icono)}</div>
-                <div class="flow-label">{escape(etapa["nombre"])}</div>
-                <div class="flow-date">{escape(etapa["fecha_texto"])}</div>
-                <div class="flow-detail">{escape(detalle)}</div>
-                <span class="badge-flow {badge_class}">{escape(etapa["estado"])}</span>
-            </div>
-            """
-        )
+    if pd.notna(dias_restantes):
+        if dias_restantes < 0:
+            return f"Falta {falta}. El pedido ya supera el umbral TAT de {int(umbral)} días."
 
-        if i < len(etapas) - 1:
-            actual_completa = etapa["completada"]
-            siguiente_completa = etapas[i + 1]["completada"]
+        if dias_restantes <= 5:
+            return f"Falta {falta}. El pedido está cerca del umbral TAT de {int(umbral)} días."
 
-            if actual_completa and siguiente_completa:
-                conn_class = "flow-connector-ok"
-            elif actual_completa and not siguiente_completa:
-                conn_class = "flow-connector-active"
-            else:
-                conn_class = ""
+        return f"Falta {falta}. Quedan {int(dias_restantes)} días disponibles contra el umbral TAT de {int(umbral)} días."
 
-            partes.append(
-                f'<div class="flow-connector {conn_class}"></div>'
-            )
+    return f"Última etapa: {avance['ultima_etapa']}. Siguiente: {avance['siguiente_etapa']}."
 
-    dias_transcurridos = resumen["dias_transcurridos"]
 
-    if pd.isna(dias_transcurridos):
-        dias_texto = "Sin dato"
-    else:
-        dias_texto = texto_tiempo_extendido(dias_transcurridos)
+def html_avance_actual(row: pd.Series) -> str:
+    avance = obtener_avance_pedido(row)
 
-    nota = (
-        f"Última etapa registrada: {resumen['ultima_etapa']} "
-        f"({resumen['ultima_fecha']}). "
-        f"Siguiente etapa: {resumen['siguiente_etapa']}."
+    dias_parcial = formato_tiempo_transcurrido(avance["dias_parcial"])
+    dias_restantes = texto_dias_restantes(avance["dias_restantes"])
+    umbral = avance.get("umbral_tat", np.nan)
+
+    tat_estado = "Cerrado" if avance["esta_cerrado"] else "Pendiente hasta recepción"
+
+    contra_umbral = (
+        f"{dias_restantes} · umbral {int(valor_numerico(umbral))} días"
+        if pd.notna(valor_numerico(umbral))
+        else "Sin dato"
     )
 
-    html = f"""
-    <div class="flow-shell">
-        <div class="flow-title">Seguimiento visual de la SOLPED</div>
-
-        <div class="flow-track">
-            {''.join(partes)}
-        </div>
-
-        <div class="flow-summary">
-            <div class="flow-summary-item">
-                <div class="label">Última etapa</div>
-                <div class="value">{escape(resumen["ultima_etapa"])}</div>
+    return f"""
+    <div class="avance-card">
+        <div class="avance-title">Avance actual</div>
+        <div class="avance-grid">
+            <div class="avance-item">
+                <div class="avance-label">Última etapa</div>
+                <div class="avance-value">{escape(avance["ultima_etapa"])} · {escape(avance["ultima_fecha"])}</div>
             </div>
-
-            <div class="flow-summary-item">
-                <div class="label">Fecha última etapa</div>
-                <div class="value">{escape(resumen["ultima_fecha"])}</div>
+            <div class="avance-item">
+                <div class="avance-label">Tiempo transcurrido</div>
+                <div class="avance-value">{escape(dias_parcial)}</div>
             </div>
-
-            <div class="flow-summary-item">
-                <div class="label">Estado recepción</div>
-                <div class="value">{escape(resumen["estado_recepcion"])}</div>
+            <div class="avance-item">
+                <div class="avance-label">TAT total</div>
+                <div class="avance-value">{escape(tat_estado)}</div>
             </div>
-
-            <div class="flow-summary-item">
-                <div class="label">Tiempo transcurrido</div>
-                <div class="value">{escape(dias_texto)}</div>
+            <div class="avance-item">
+                <div class="avance-label">Contra umbral TAT</div>
+                <div class="avance-value">{escape(contra_umbral)}</div>
             </div>
         </div>
+        <div class="avance-note">{escape(diagnostico_avance(row))}</div>
+    </div>
+    """
 
-        <div class="note" style="margin-top:12px;">
-            {escape(nota)}
+
+def html_critico_seleccionado(row: pd.Series) -> str:
+    return f"""
+    <div class="critico-selected">
+        <div class="critico-title">Pedido crítico seleccionado</div>
+        <div class="critico-grid">
+            <div class="critico-field">
+                <div class="exp-field-label">Nivel / urgencia</div>
+                <div class="exp-field-value">{html_texto(row.get("nivel_alerta", np.nan))} · {html_texto(row.get("dias_hasta_vencimiento", np.nan))}</div>
+            </div>
+            <div class="critico-field">
+                <div class="exp-field-label">Tiempo transcurrido</div>
+                <div class="exp-field-value">{html_texto(row.get("tiempo_transcurrido_tat", np.nan))}</div>
+            </div>
+            <div class="critico-field">
+                <div class="exp-field-label">Fecha pendiente</div>
+                <div class="exp-field-value">{html_texto(row.get("fecha_pendiente", np.nan))}</div>
+            </div>
+            <div class="critico-field">
+                <div class="exp-field-label">Acción sugerida</div>
+                <div class="exp-field-value">{html_texto(row.get("accion_sugerida", np.nan))}</div>
+            </div>
+            <div class="critico-field">
+                <div class="exp-field-label">Causa probable</div>
+                <div class="exp-field-value">{html_texto(row.get("causa_probable", np.nan))}</div>
+            </div>
         </div>
     </div>
     """
 
-    return html
+
+def html_linea_pedido(row: pd.Series) -> str:
+    completadas = [
+        pd.notna(row.get(c, np.nan))
+        for _, c in ETAPAS_LINEA_PEDIDO
+    ]
+
+    try:
+        indice_activo = completadas.index(False)
+    except ValueError:
+        indice_activo = len(ETAPAS_LINEA_PEDIDO) - 1
+
+    partes = []
+
+    for i, (label, col_fecha) in enumerate(ETAPAS_LINEA_PEDIDO):
+        esta_completa = completadas[i]
+        es_activa = i == indice_activo and not esta_completa
+
+        dot_class = (
+            "pipe-dot-ok"
+            if esta_completa
+            else ("pipe-dot-active" if es_activa else "pipe-dot-nd")
+        )
+
+        icono = "✓" if esta_completa else ""
+
+        partes.append(
+            f"""
+            <div class="pipe-step">
+                <div class="pipe-dot {dot_class}">{icono}</div>
+                <div class="pipe-label">{escape(label)}</div>
+                <div class="pipe-date">{escape(fecha_etapa_texto(row, col_fecha))}</div>
+            </div>
+            """
+        )
+
+        if i < len(ETAPAS_LINEA_PEDIDO) - 1:
+            conn = (
+                "pipe-conn-ok"
+                if (completadas[i] and completadas[i + 1])
+                else ("pipe-conn-dashed" if (completadas[i] and not completadas[i + 1]) else "")
+            )
+
+            partes.append(f'<div class="pipe-conn {conn}"></div>')
+
+    estado_tat = formato_valor(row.get(COL_PERF_TAT, np.nan))
+    dias_tat = texto_dias_y_meses(row.get(COL_DIAS_TAT, np.nan))
+
+    return f"""
+    <div class="pipe-card">
+        <div class="pipe-title">Línea de pedido</div>
+        <div class="pipe-line">{''.join(partes)}</div>
+        <div class="pipe-note">
+            TAT total: <strong>{escape(dias_tat)}</strong> · Estado: <strong>{escape(estado_tat)}</strong>
+        </div>
+    </div>
+    """
+
+
+def etapa_color(row: pd.Series, etapa: dict) -> str:
+    perf_col = etapa.get("performance")
+    dias_col = etapa.get("dias")
+    umbral_col = etapa.get("umbral")
+
+    if perf_col and perf_col in row.index:
+        return clase_performance(row.get(perf_col))
+
+    if dias_col and dias_col in row.index:
+        return clase_dias(
+            row.get(dias_col),
+            row.get(umbral_col) if umbral_col else None,
+        )
+
+    fecha_col = etapa.get("fecha")
+
+    if fecha_col and fecha_col in row.index and pd.notna(row.get(fecha_col)):
+        return "blue"
+
+    return "gray"
+
+
+def dot_class_tat(row: pd.Series, etapa: dict, i: int, indice_activo: int) -> tuple:
+    fecha_col = etapa.get("fecha")
+    completada = bool(fecha_col and pd.notna(row.get(fecha_col, np.nan)))
+
+    perf_col = etapa.get("performance")
+    perf = str(row.get(perf_col, "")).strip().lower() if perf_col else ""
+
+    if completada and perf == "no cumple":
+        return "tat-dot-bad", "!"
+
+    if completada and perf in ["en proceso", "sin datos"]:
+        return "tat-dot-risk", "…"
+
+    if completada:
+        return "tat-dot-ok", "✓"
+
+    if i == indice_activo:
+        return "tat-dot-active", ""
+
+    return "tat-dot-nd", ""
+
+
+def html_diagrama_tat(row: pd.Series) -> str:
+    completadas = [
+        pd.notna(row.get(e.get("fecha"), np.nan))
+        for e in ETAPAS_PEDIDO
+    ]
+
+    try:
+        indice_activo = completadas.index(False)
+    except ValueError:
+        indice_activo = len(ETAPAS_PEDIDO) - 1
+
+    partes = []
+
+    for i, etapa in enumerate(ETAPAS_PEDIDO):
+        dot_class, icono = dot_class_tat(row, etapa, i, indice_activo)
+
+        fecha_txt = (
+            fecha_etapa_texto(row, etapa.get("fecha"))
+            if etapa.get("fecha")
+            else "-"
+        )
+
+        dias_col = etapa.get("dias")
+        umbral_col = etapa.get("umbral")
+        perf_col = etapa.get("performance")
+
+        if dias_col:
+            dias_txt = formato_tiempo_transcurrido(row.get(dias_col, np.nan))
+            umbral_txt = formato_valor(row.get(umbral_col, np.nan)) if umbral_col else "-"
+            perf_txt = formato_valor(row.get(perf_col, np.nan)) if perf_col else "Registrado"
+
+            detalle = f"{dias_txt} · umbral {umbral_txt}d · {perf_txt}"
+
+        else:
+            detalle = "Punto de inicio"
+
+        partes.append(
+            f"""
+            <div class="tat-step">
+                <div class="tat-dot {dot_class}">{escape(icono)}</div>
+                <div class="tat-step-label">{escape(str(etapa.get("titulo", "")))}</div>
+                <div class="tat-step-date">{escape(fecha_txt)}</div>
+                <div class="tat-step-detail">{escape(detalle)}</div>
+            </div>
+            """
+        )
+
+        if i < len(ETAPAS_PEDIDO) - 1:
+            conn = (
+                "tat-conn-ok"
+                if (completadas[i] and completadas[i + 1])
+                else ("tat-conn-active" if (completadas[i] and not completadas[i + 1]) else "")
+            )
+
+            partes.append(f'<div class="tat-conn {conn}"></div>')
+
+    estado_tat = formato_valor(row.get(COL_PERF_TAT, np.nan))
+    dias_tat = texto_dias_y_meses(row.get(COL_DIAS_TAT, np.nan))
+
+    return f"""
+    <div class="tat-card">
+        <div class="tat-card-title">Etapas TAT</div>
+        <div class="tat-flow">{''.join(partes)}</div>
+        <div class="tat-note">
+            TAT total: <strong>{escape(dias_tat)}</strong> · Estado: <strong>{escape(estado_tat)}</strong>
+        </div>
+    </div>
+    """
+
+
+def html_estado_pedido(row: pd.Series) -> str:
+    cards = []
+
+    for etapa in ETAPAS_PEDIDO:
+        color = etapa_color(row, etapa)
+
+        fecha = (
+            html_texto(row.get(etapa["fecha"], np.nan))
+            if etapa.get("fecha")
+            else "-"
+        )
+
+        dias_col = etapa.get("dias")
+        umbral_col = etapa.get("umbral")
+        perf_col = etapa.get("performance")
+
+        if dias_col:
+            dias_valor = row.get(dias_col, np.nan)
+            umbral = html_texto(row.get(umbral_col, np.nan)) if umbral_col else "-"
+            fecha_fin_col = etapa.get("fecha")
+
+            if pd.isna(row.get(fecha_fin_col, np.nan)):
+                falta = nombre_fecha_faltante(fecha_fin_col)
+                dias_txt = f"Pendiente · falta {escape(falta)}"
+
+            elif dias_col == COL_DIAS_TAT:
+                dias_txt = f"{escape(texto_dias_y_meses(dias_valor))} · umbral {umbral} días"
+
+            else:
+                dias_txt = f"{html_texto(dias_valor)} días · umbral {umbral}"
+
+        else:
+            dias_txt = "Punto de inicio"
+
+        perf_val = row.get(perf_col, "Registrado") if perf_col else "Registrado"
+        perf_color = clase_performance(perf_val) if perf_col else color
+
+        cards.append(
+            f"""
+            <div class="stage stage-{color}">
+                <div class="stage-title">{escape(etapa["titulo"])}</div>
+                <div class="stage-date">{fecha}</div>
+                <div class="stage-note">{escape(etapa["nota"])}</div>
+                <div class="stage-days">{dias_txt}</div>
+                {pill(perf_val, perf_color)}
+            </div>
+            """
+        )
+
+    return f"""
+    <div class="stage-grid">
+        {''.join(cards)}
+    </div>
+    """
 
 
 # ============================================================
-# Render de bloques modernos
+# Render componentes expediente
 # ============================================================
 
 def mostrar_hero():
-    render_html(
-        html_hero(),
+    render_html(html_hero(), height=170, scrolling=False)
+
+
+def mostrar_search_intro():
+    render_html(html_search_intro(), height=105, scrolling=False)
+
+
+def mostrar_message_card(titulo: str, texto: str):
+    render_html(html_message_card(titulo, texto), height=95, scrolling=False)
+
+
+def mostrar_html_panel(contenido: str, height: int, scrolling: bool = False):
+    render_html(contenido, height=height, scrolling=scrolling)
+
+
+def mostrar_expediente(row: pd.Series):
+    mostrar_message_card(
+        titulo="Expediente confirmado",
+        texto="Se abre la vista de seguimiento del registro seleccionado, rescatando ficha, KPIs, avance, línea de pedido, etapas TAT y detalle completo.",
+    )
+
+    mostrar_html_panel(
+        html_alerta_operativa(row),
+        height=260,
+        scrolling=False,
+    )
+
+    if row.get("nivel_alerta", "") == "Crítico":
+        mostrar_html_panel(
+            html_critico_seleccionado(row),
+            height=180,
+            scrolling=False,
+        )
+
+    mostrar_html_panel(
+        html_resumen_expediente(row),
+        height=520,
+        scrolling=True,
+    )
+
+    mostrar_html_panel(
+        html_kpis_expediente(row),
+        height=155,
+        scrolling=False,
+    )
+
+    mostrar_html_panel(
+        html_avance_actual(row),
         height=175,
         scrolling=False,
     )
 
-
-def mostrar_search_intro():
-    render_html(
-        html_search_intro(),
-        height=105,
-        scrolling=False,
-    )
-
-
-def mostrar_message_card(titulo: str, texto: str):
-    render_html(
-        html_message_card(titulo, texto),
-        height=95,
-        scrolling=False,
-    )
-
-
-def mostrar_resumen_general_moderno(registro: pd.Series, columnas_clave: dict):
-    render_html(
-        html_resumen_general(
-            registro=registro,
-            columnas_clave=columnas_clave,
-        ),
-        height=570,
+    mostrar_html_panel(
+        html_linea_pedido(row),
+        height=210,
         scrolling=True,
     )
 
-
-def mostrar_alerta_operativa_moderno(registro: pd.Series, columnas_clave: dict):
-    render_html(
-        html_alerta_operativa(
-            registro=registro,
-            columnas_clave=columnas_clave,
-        ),
-        height=265,
-        scrolling=False,
-    )
-
-
-def mostrar_indicadores_tat_moderno(registro: pd.Series, columnas_clave: dict):
-    render_html(
-        html_indicadores_tat(
-            registro=registro,
-            columnas_clave=columnas_clave,
-        ),
-        height=335,
+    mostrar_html_panel(
+        html_diagrama_tat(row),
+        height=235,
         scrolling=True,
     )
 
+    st.markdown("### Etapas de estado detalladas")
+    st.caption("Detalle visual de cada hito del flujo TAT.")
 
-def mostrar_flujo_profesional_solped(registro: pd.Series, columnas_clave: dict):
-    render_html(
-        html_diagrama_flujo_solped(
-            registro=registro,
-            columnas_clave=columnas_clave,
-        ),
-        height=405,
+    mostrar_html_panel(
+        html_estado_pedido(row),
+        height=250,
         scrolling=True,
     )
 
+    st.markdown("### Tabla de fechas principales")
 
-def mostrar_validacion_temporal_tat(
-    registro: pd.Series,
-    columnas_clave: dict,
-):
-    st.markdown("### 6. Validación temporal")
-    st.caption("Revisión automática del orden lógico de fechas entre etapas.")
-
-    validacion_df = construir_validacion_temporal_tat(
-        registro=registro,
-        columnas_clave=columnas_clave,
+    tabla_fechas = pd.DataFrame(
+        [
+            {"Fecha": "Solicitud", "Valor": fecha_texto_simple(row.get("fecha_solicitud_final", pd.NaT))},
+            {"Fecha": "Liberación", "Valor": fecha_texto_simple(row.get("fecha_liberacion_final", pd.NaT))},
+            {"Fecha": "Pedido", "Valor": fecha_texto_simple(row.get("fecha_pedido_final", pd.NaT))},
+            {"Fecha": "Facturación", "Valor": fecha_texto_simple(row.get("fecha_facturacion_final", pd.NaT))},
+            {"Fecha": "Recepción", "Valor": fecha_texto_simple(row.get("fecha_recepcion_final", pd.NaT))},
+            {"Fecha": "Vencimiento TAT", "Valor": fecha_texto_simple(row.get("fecha_vencimiento_tat", pd.NaT))},
+        ]
     )
-
-    total_revisar = int(validacion_df["Estado"].eq("Revisar").sum())
-    total_sin_datos = int(validacion_df["Estado"].eq("Sin datos").sum())
-
-    if total_revisar > 0:
-        st.error(
-            "Se detectaron fechas fuera de orden temporal. "
-            "Revisa los casos marcados como 'Revisar'."
-        )
-
-    elif total_sin_datos > 0:
-        st.warning(
-            "Las fechas disponibles están ordenadas, pero existen etapas sin fecha. "
-            "El flujo no se puede validar completamente."
-        )
-
-    else:
-        st.success(
-            "Las fechas TAT están ordenadas temporalmente."
-        )
 
     st.dataframe(
-        validacion_df,
+        tabla_fechas,
         use_container_width=True,
         hide_index=True,
     )
 
+    st.markdown("### Tabla técnica de etapas TAT")
 
-def mostrar_detalle_observacion(registro: pd.Series, columnas_clave: dict):
-    mostrar_message_card(
-        titulo="Registro confirmado",
-        texto="Se muestra el expediente operativo de la observación seleccionada. Esta vista complementa Alertas con detalle específico para investigar y gestionar.",
-    )
+    tabla_etapas = []
 
-    mostrar_alerta_operativa_moderno(
-        registro=registro,
-        columnas_clave=columnas_clave,
-    )
-
-    mostrar_resumen_general_moderno(
-        registro=registro,
-        columnas_clave=columnas_clave,
-    )
-
-    st.markdown("### 2. Seguimiento visual de la SOLPED")
-    st.caption("Vista profesional del avance por etapas: solicitud, liberación, pedido, facturación y recepción.")
-
-    mostrar_flujo_profesional_solped(
-        registro=registro,
-        columnas_clave=columnas_clave,
-    )
-
-    st.markdown("### 3. Fechas principales")
-    st.caption("Fechas registradas para cada etapa del flujo TAT.")
+    for etapa in ETAPAS_PEDIDO:
+        tabla_etapas.append(
+            {
+                "Etapa": etapa["titulo"],
+                "Fecha": fecha_texto_simple(row.get(etapa["fecha"], pd.NaT)) if etapa.get("fecha") else "-",
+                "Días": formato_valor(row.get(etapa["dias"], np.nan)) if etapa.get("dias") else "-",
+                "Umbral": formato_valor(row.get(etapa["umbral"], np.nan)) if etapa.get("umbral") else "-",
+                "Performance": formato_valor(row.get(etapa["performance"], np.nan)) if etapa.get("performance") else "Registrado",
+                "Nota": etapa["nota"],
+            }
+        )
 
     st.dataframe(
-        construir_tabla_fechas(registro, columnas_clave),
+        pd.DataFrame(tabla_etapas),
         use_container_width=True,
         hide_index=True,
     )
 
-    mostrar_indicadores_tat_moderno(
-        registro=registro,
-        columnas_clave=columnas_clave,
-    )
-
-    st.markdown("### 5. Estado de etapas")
-    st.caption("Detalle tabular del estado de cada hito y los días entre etapas.")
-
-    st.dataframe(
-        construir_tabla_etapas_tat(registro, columnas_clave),
-        use_container_width=True,
-        hide_index=True,
-    )
-
-    mostrar_validacion_temporal_tat(
-        registro=registro,
-        columnas_clave=columnas_clave,
-    )
-
-    with st.expander("Ver registro completo", expanded=False):
-        registro_df = (
-            registro
-            .drop(labels=["_id_observacion"], errors="ignore")
-            .to_frame(name="Valor")
+    with st.expander("Registro completo del pedido", expanded=False):
+        registro_completo = (
+            row.to_frame(name="Valor")
             .reset_index()
             .rename(columns={"index": "Campo"})
         )
 
+        registro_completo["Valor"] = registro_completo["Valor"].apply(formato_valor)
+
         st.dataframe(
-            registro_df,
+            registro_completo,
             use_container_width=True,
             hide_index=True,
         )
 
 
 # ============================================================
-# Encabezado
+# Filtros
+# ============================================================
+
+def aplicar_filtros_con_progreso(
+    df_base: pd.DataFrame,
+    filtro_solped: str,
+    filtro_pedido: str,
+    filtro_posicion: str,
+    filtro_material: str,
+    filtro_texto: str,
+    modo_busqueda: str,
+) -> pd.DataFrame:
+
+    barra = st.progress(0, text="Preparando búsqueda...")
+
+    df = df_base.copy()
+
+    barra.progress(15, text="Filtrando SOLPED...")
+
+    df = aplicar_filtro_texto(df, COL_SOLPED, filtro_solped, modo_busqueda)
+
+    barra.progress(32, text="Filtrando pedido...")
+
+    if COL_OC_ME5A in df.columns:
+        df = aplicar_filtro_texto(df, COL_OC_ME5A, filtro_pedido, modo_busqueda)
+
+    elif COL_OC_ME80FN in df.columns:
+        df = aplicar_filtro_texto(df, COL_OC_ME80FN, filtro_pedido, modo_busqueda)
+
+    barra.progress(50, text="Filtrando posición...")
+
+    if COL_POS_SOLPED in df.columns:
+        df = aplicar_filtro_texto(df, COL_POS_SOLPED, filtro_posicion, modo_busqueda)
+
+    elif COL_POS_OC in df.columns:
+        df = aplicar_filtro_texto(df, COL_POS_OC, filtro_posicion, modo_busqueda)
+
+    barra.progress(68, text="Filtrando material...")
+
+    df = aplicar_filtro_texto(df, COL_MATERIAL, filtro_material, modo_busqueda)
+
+    barra.progress(85, text="Filtrando texto breve...")
+
+    df = aplicar_filtro_texto(df, COL_TEXTO, filtro_texto, "Contiene")
+
+    barra.progress(100, text="Búsqueda finalizada.")
+
+    return df
+
+
+def hay_criterio_busqueda(
+    filtro_solped: str,
+    filtro_pedido: str,
+    filtro_posicion: str,
+    filtro_material: str,
+    filtro_texto: str,
+) -> bool:
+    return any(
+        str(x).strip()
+        for x in [
+            filtro_solped,
+            filtro_pedido,
+            filtro_posicion,
+            filtro_material,
+            filtro_texto,
+        ]
+    )
+
+
+def etiqueta_selector(row: pd.Series) -> str:
+    solped = formato_id(row.get(COL_SOLPED, np.nan))
+    pedido = formato_id(row.get(COL_OC_ME5A, row.get(COL_OC_ME80FN, np.nan)))
+    pos = formato_id(row.get(COL_POS_SOLPED, row.get(COL_POS_OC, np.nan)))
+    nivel = formato_valor(row.get("nivel_alerta", np.nan))
+    estado = formato_valor(row.get("clasificacion_vencimiento", np.nan))
+    venc = formato_valor(row.get("dias_hasta_vencimiento", np.nan))
+    centro = formato_valor(row.get(COL_CENTRO, np.nan))
+    material = formato_id(row.get(COL_MATERIAL, np.nan))
+
+    return f"{nivel} · {estado} · SolPed {solped} · Pedido {pedido} · Pos {pos} · Centro {centro} · Material {material} · {venc}"
+
+
+# ============================================================
+# App
 # ============================================================
 
 mostrar_logo()
 mostrar_hero()
 
-
-# ============================================================
-# Obtener dataframe activo
-# ============================================================
-
-df_tat = st.session_state.get("df_tat")
-nombre_archivo_tat = st.session_state.get("nombre_archivo_tat")
-
-if df_tat is None:
+if "df_tat" not in st.session_state or st.session_state.get("df_tat") is None:
     st.info("No hay archivo activo en sesión. Primero carga un archivo en 06_CARGAR_ARCHIVO.")
     st.stop()
 
-df_tat = limpiar_nombres_columnas(df_tat)
-df_tat = normalizar_columnas_me80fn(df_tat)
+df_original = st.session_state["df_tat"].copy()
+nombre_archivo = st.session_state.get("nombre_archivo_tat", "Archivo cargado")
 
-df_base = df_tat.copy()
-df_base["_id_observacion"] = range(len(df_base))
+hoy = pd.Timestamp.today().normalize()
 
-columnas_clave = detectar_columnas_clave(df_base)
+try:
+    with st.spinner("Preparando expediente TAT..."):
+        df_panel = preparar_panel_filtro(df_original, hoy)
 
-if columnas_clave["solped"] is None:
-    st.error(
-        "No se encontró columna SOLPED. Se esperaba una columna como "
-        "'Solicitud de pedido - ME5A' o 'Solicitud de pedido'."
-    )
+except Exception as e:
+    st.error("No se pudo preparar el panel de filtro.")
+    st.exception(e)
+    st.stop()
+
+
+faltantes_requeridas = [
+    col
+    for col in [COL_SOLPED]
+    if col not in df_panel.columns
+]
+
+if faltantes_requeridas:
+    st.error(f"Faltan columnas requeridas: {faltantes_requeridas}")
     st.stop()
 
 
 # ============================================================
-# Filtros iniciales
+# Filtros
 # ============================================================
 
 mostrar_search_intro()
 
-with st.form("form_busqueda_solped"):
+with st.form("form_filtros_solped"):
     col_f1, col_f2, col_f3 = st.columns(3)
 
     with col_f1:
         filtro_solped = st.text_input(
             "SOLPED",
-            placeholder="Ej: 6000123456",
+            placeholder="Ej: 1002614561",
             key="filtro_solped",
         )
 
@@ -2160,213 +2481,192 @@ with st.form("form_busqueda_solped"):
     with col_f4:
         filtro_material = st.text_input(
             "Material",
-            placeholder="Ej: 123456",
+            placeholder="Ej: 20050351",
             key="filtro_material",
         )
 
     with col_f5:
-        filtro_texto_breve = st.text_input(
+        filtro_texto = st.text_input(
             "Texto breve",
             placeholder="Buscar por descripción",
-            key="filtro_texto_breve",
+            key="filtro_texto",
         )
 
     with col_f6:
         modo_busqueda = st.selectbox(
             "Modo",
-            options=[
-                "Exacta",
-                "Contiene",
-            ],
+            options=["Exacta", "Contiene"],
             index=0,
             key="filtro_modo",
         )
 
-    col_b1, col_b2 = st.columns(2)
+    b1, b2 = st.columns(2)
 
-    with col_b1:
-        buscar = st.form_submit_button(
-            "Buscar",
+    with b1:
+        aplicar_filtros = st.form_submit_button(
+            "Buscar expediente",
             use_container_width=True,
             type="primary",
         )
 
-    with col_b2:
-        limpiar = st.form_submit_button(
+    with b2:
+        limpiar_filtros = st.form_submit_button(
             "Limpiar",
             use_container_width=True,
         )
 
 
-if limpiar:
-    claves_filtros = [
+if limpiar_filtros:
+    claves = [
         "filtro_solped",
         "filtro_pedido",
         "filtro_posicion",
         "filtro_material",
-        "filtro_texto_breve",
+        "filtro_texto",
         "filtro_modo",
-        "selector_observacion",
-        "df_filtrado_solped",
-        "firma_filtros_solped",
-        "filtro_id_confirmado",
-        "filtro_detalle_confirmado",
+        "df_filtrado_expediente",
+        "firma_filtros_expediente",
+        "selector_expediente",
+        "expediente_id_confirmado",
     ]
 
-    for clave in claves_filtros:
+    for clave in claves:
         if clave in st.session_state:
             del st.session_state[clave]
 
     st.rerun()
 
 
-firma_filtros_actual = (
+firma_filtros = (
     f"{filtro_solped}_"
     f"{filtro_pedido}_"
     f"{filtro_posicion}_"
     f"{filtro_material}_"
-    f"{filtro_texto_breve}_"
+    f"{filtro_texto}_"
     f"{modo_busqueda}_"
-    f"{len(df_base)}"
+    f"{len(df_panel)}"
 )
 
 
-if buscar:
+if aplicar_filtros:
     if not hay_criterio_busqueda(
         filtro_solped=filtro_solped,
         filtro_pedido=filtro_pedido,
         filtro_posicion=filtro_posicion,
         filtro_material=filtro_material,
-        filtro_texto_breve=filtro_texto_breve,
+        filtro_texto=filtro_texto,
     ):
-        st.warning("Ingresa al menos un criterio de búsqueda antes de continuar.")
+        st.warning("Ingresa al menos un criterio de búsqueda para abrir un expediente.")
         st.stop()
 
-    with st.spinner("Buscando coincidencias..."):
+    with st.spinner("Buscando expediente..."):
         df_filtrado = aplicar_filtros_con_progreso(
-            df_base=df_base,
-            columnas_clave=columnas_clave,
+            df_base=df_panel,
             filtro_solped=filtro_solped,
             filtro_pedido=filtro_pedido,
             filtro_posicion=filtro_posicion,
             filtro_material=filtro_material,
-            filtro_texto_breve=filtro_texto_breve,
+            filtro_texto=filtro_texto,
             modo_busqueda=modo_busqueda,
         )
 
-        st.session_state["df_filtrado_solped"] = df_filtrado
-        st.session_state["firma_filtros_solped"] = firma_filtros_actual
+        if "score_riesgo" in df_filtrado.columns:
+            df_filtrado = df_filtrado.sort_values(
+                "score_riesgo",
+                ascending=False,
+            ).copy()
 
-        if "filtro_id_confirmado" in st.session_state:
-            del st.session_state["filtro_id_confirmado"]
+        df_filtrado = df_filtrado.reset_index(drop=True)
+        df_filtrado["_id_expediente"] = range(len(df_filtrado))
 
-        if "filtro_detalle_confirmado" in st.session_state:
-            del st.session_state["filtro_detalle_confirmado"]
+        st.session_state["df_filtrado_expediente"] = df_filtrado
+        st.session_state["firma_filtros_expediente"] = firma_filtros
+
+        if "expediente_id_confirmado" in st.session_state:
+            del st.session_state["expediente_id_confirmado"]
 
     st.success("Búsqueda finalizada.")
 
 else:
     if (
-        st.session_state.get("df_filtrado_solped") is not None
-        and st.session_state.get("firma_filtros_solped") == firma_filtros_actual
+        st.session_state.get("df_filtrado_expediente") is not None
+        and st.session_state.get("firma_filtros_expediente") == firma_filtros
     ):
-        df_filtrado = st.session_state["df_filtrado_solped"].copy()
+        df_filtrado = st.session_state["df_filtrado_expediente"].copy()
     else:
         st.stop()
 
 
 # ============================================================
-# Validación de resultados
+# Resultado búsqueda
 # ============================================================
 
 if df_filtrado.empty:
-    st.warning("No se encontraron coincidencias con los criterios ingresados.")
+    st.warning("No se encontraron expedientes con los criterios ingresados.")
     st.stop()
 
 
-# ============================================================
-# Selección y confirmación de coincidencia
-# ============================================================
-
-total_resultados = len(df_filtrado)
-
-if total_resultados == 1:
-    registro_seleccionado = df_filtrado.iloc[0]
+if len(df_filtrado) == 1:
+    registro = df_filtrado.iloc[0]
 
     mostrar_message_card(
-        titulo="Coincidencia única encontrada",
-        texto="Se encontró un único registro con los criterios ingresados. Se muestra el detalle automáticamente.",
+        "Coincidencia única encontrada",
+        "Se encontró un único registro. El expediente se muestra automáticamente.",
     )
 
 else:
     mostrar_message_card(
-        titulo="Coincidencias encontradas",
-        texto="Se encontró más de una coincidencia. Selecciona cuál registro quieres revisar y confirma para desplegar el detalle.",
+        "Coincidencias encontradas",
+        "Se encontró más de un registro. Selecciona el expediente que quieres revisar y confirma.",
     )
 
-    st.info(
-        f"Se encontraron **{total_resultados:,} coincidencias**. "
-        "Selecciona una observación para continuar."
-    )
-
-    limite_selector = 500
+    limite_selector = 5000
     df_selector = df_filtrado.head(limite_selector).copy()
 
     if len(df_filtrado) > limite_selector:
         st.warning(
-            f"Se muestran las primeras {limite_selector:,} coincidencias en el selector. "
-            "Refina la búsqueda para reducir resultados."
+            f"Se muestran los primeros {limite_selector:,} registros. Refina la búsqueda para reducir resultados."
+            .replace(",", ".")
         )
 
-    df_selector["_etiqueta_observacion"] = df_selector.apply(
-        lambda row: construir_etiqueta_observacion(row, columnas_clave),
-        axis=1,
-    )
-
-    opciones_selector = dict(
+    opciones = dict(
         zip(
-            df_selector["_etiqueta_observacion"],
-            df_selector["_id_observacion"],
+            df_selector.apply(etiqueta_selector, axis=1),
+            df_selector["_id_expediente"],
         )
     )
 
-    etiqueta_seleccionada = st.selectbox(
-        "Coincidencia",
-        options=list(opciones_selector.keys()),
+    etiqueta = st.selectbox(
+        "Expediente a revisar",
+        options=list(opciones.keys()),
         index=0,
-        key="selector_observacion",
+        key="selector_expediente",
     )
 
-    id_observacion_seleccionada = opciones_selector[etiqueta_seleccionada]
+    id_seleccionado = opciones[etiqueta]
 
     confirmar = st.button(
-        "Confirmar y ver detalle",
+        "Confirmar expediente",
         type="primary",
         use_container_width=True,
     )
 
     if confirmar:
-        st.session_state["filtro_id_confirmado"] = id_observacion_seleccionada
-        st.session_state["filtro_detalle_confirmado"] = True
+        st.session_state["expediente_id_confirmado"] = id_seleccionado
 
-    id_confirmado = st.session_state.get("filtro_id_confirmado")
-
-    if id_confirmado != id_observacion_seleccionada:
+    if st.session_state.get("expediente_id_confirmado") != id_seleccionado:
         st.stop()
 
-    registro_seleccionado = (
-        df_filtrado[df_filtrado["_id_observacion"].eq(id_observacion_seleccionada)]
+    registro = (
+        df_filtrado[df_filtrado["_id_expediente"].eq(id_seleccionado)]
         .iloc[0]
     )
 
-    st.success("Registro confirmado. Se muestra el detalle seleccionado.")
+    st.success("Expediente confirmado.")
 
 
 # ============================================================
-# Resultado confirmado
+# Mostrar expediente
 # ============================================================
 
-mostrar_detalle_observacion(
-    registro=registro_seleccionado,
-    columnas_clave=columnas_clave,
-)
+mostrar_expediente(registro)
