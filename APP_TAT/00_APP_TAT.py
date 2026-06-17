@@ -37,8 +37,8 @@ LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
 
 APP_SECTIONS = [
     {
-        "grupo": "01 Preparación de datos",
-        "descripcion": "Limpieza, cruce y cálculo base para construir la información TAT.",
+        "grupo": "01 Limpieza, Match y Cálculos",
+        "descripcion": "Preparación de datos base: limpieza de fuentes, cruce de información y cálculo final TAT.",
         "apps": [
             {
                 "nombre": "01_LIMPIEZA_ME5A",
@@ -78,28 +78,47 @@ APP_SECTIONS = [
         ],
     },
     {
-        "grupo": "02 Operación y consulta",
-        "descripcion": "Carga del archivo final, búsqueda de registros y revisión operativa.",
+        "grupo": "02 Cargar Archivo",
+        "descripcion": "Carga del archivo final que será utilizado por las apps de consulta, alertas y performance.",
         "apps": [
             {
                 "nombre": "06_CARGAR_ARCHIVO",
                 "archivo": "06_CARGAR_ARCHIVO.py",
                 "titulo": "06 Cargar Archivo",
                 "icono": "📤",
-                "descripcion": "Carga de archivos para el flujo operativo.",
+                "descripcion": "Carga de archivos para activar la base TAT en sesión.",
             },
+        ],
+    },
+    {
+        "grupo": "03 Alertas",
+        "descripcion": "Gestión de vencimientos, pedidos críticos y alertas operativas TAT.",
+        "apps": [
+            {
+                "nombre": "10_ALERTAS",
+                "archivo": "10_ALERTAS.py",
+                "titulo": "10 Alertas",
+                "icono": "🚨",
+                "descripcion": "Seguimiento de vencimientos, alertas y pedidos sin recepción.",
+            },
+        ],
+    },
+    {
+        "grupo": "04 Filtro",
+        "descripcion": "Consulta detallada de registros, búsqueda operativa y trazabilidad por pedido o solicitud.",
+        "apps": [
             {
                 "nombre": "07_FILTRO",
                 "archivo": "07_FILTRO.py",
                 "titulo": "07 Filtro",
                 "icono": "🔎",
-                "descripcion": "Aplicación de filtros y segmentación de información.",
+                "descripcion": "Aplicación de filtros, búsqueda y revisión de registros TAT.",
             },
         ],
     },
     {
-        "grupo": "03 Performance",
-        "descripcion": "Análisis mensual, comparativo y seguimiento de cumplimiento TAT.",
+        "grupo": "05 Performance Planta Mensual",
+        "descripcion": "Análisis mensual de cumplimiento TAT por planta.",
         "apps": [
             {
                 "nombre": "08_PERFORMANCE_PLANTA_MENSUAL",
@@ -108,25 +127,18 @@ APP_SECTIONS = [
                 "icono": "📊",
                 "descripcion": "Análisis mensual de performance por planta.",
             },
+        ],
+    },
+    {
+        "grupo": "06 Performance Plantas",
+        "descripcion": "Comparación de cumplimiento TAT entre plantas y centros.",
+        "apps": [
             {
                 "nombre": "09_PERFORMANCE_PLANTAS",
                 "archivo": "09_PERFORMANCE_PLANTAS.py",
                 "titulo": "09 Performance Plantas",
                 "icono": "📈",
                 "descripcion": "Análisis comparativo de performance por plantas.",
-            },
-        ],
-    },
-    {
-        "grupo": "04 Gestión de alertas",
-        "descripcion": "Seguimiento de vencimientos, pedidos críticos y alertas TAT.",
-        "apps": [
-            {
-                "nombre": "10_ALERTAS",
-                "archivo": "10_ALERTAS.py",
-                "titulo": "10 Alertas",
-                "icono": "🚨",
-                "descripcion": "Gestión, revisión y generación de alertas TAT.",
             },
         ],
     },
@@ -313,62 +325,4 @@ def pagina_inicio() -> None:
 # VALIDACIÓN DE APPS
 # ============================================================
 
-apps_faltantes = validar_apps_disponibles()
-
-if apps_faltantes:
-    mostrar_logo()
-    mostrar_validacion_apps(apps_faltantes)
-    st.stop()
-
-
-# ============================================================
-# CONSTRUCCIÓN DE PÁGINAS
-# ============================================================
-
-def crear_pagina_app(app: dict):
-    ruta_app = obtener_ruta_app(app["archivo"])
-
-    return st.Page(
-        ruta_app,
-        title=app["titulo"],
-        icon=app["icono"],
-        url_path=app["nombre"].lower(),
-    )
-
-
-def construir_paginas_por_seccion() -> dict:
-    paginas = {
-        "Inicio": [
-            st.Page(
-                pagina_inicio,
-                title="Inicio",
-                icon="🏠",
-                url_path="inicio",
-            )
-        ]
-    }
-
-    for seccion in APP_SECTIONS:
-        paginas[seccion["grupo"]] = [
-            crear_pagina_app(app)
-            for app in seccion["apps"]
-        ]
-
-    return paginas
-
-
-paginas_navegacion = construir_paginas_por_seccion()
-
-
-# ============================================================
-# NAVEGACIÓN ENTRE PÁGINAS
-# ============================================================
-
-pagina = st.navigation(paginas_navegacion)
-
-
-# ============================================================
-# EJECUTAR PÁGINA SELECCIONADA
-# ============================================================
-
-pagina.run()
+apps
