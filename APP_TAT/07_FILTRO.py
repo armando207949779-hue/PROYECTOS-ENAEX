@@ -5,6 +5,7 @@
 # ============================================================
 
 import base64
+from html import escape
 from pathlib import Path
 
 import pandas as pd
@@ -56,6 +57,190 @@ st.markdown(
             font-size: 0.88rem;
             color: #6b7280;
             margin-bottom: 12px;
+        }
+
+        .flow-shell {
+            background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+            border: 1px solid #dbeafe;
+            border-radius: 18px;
+            padding: 18px 20px 16px;
+            margin: 12px 0 18px 0;
+            box-shadow: 0 1px 4px rgba(15, 23, 42, 0.05);
+        }
+
+        .flow-title {
+            font-size: 0.78rem;
+            font-weight: 800;
+            color: #1e3a8a;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: 14px;
+        }
+
+        .flow-track {
+            display: flex;
+            align-items: flex-start;
+            width: 100%;
+            overflow-x: auto;
+            padding-bottom: 6px;
+        }
+
+        .flow-step {
+            flex: 0 0 145px;
+            text-align: center;
+            min-width: 0;
+        }
+
+        .flow-dot {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            margin: 0 auto 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 900;
+            font-size: 1rem;
+            box-sizing: border-box;
+        }
+
+        .flow-dot-ok {
+            background: #22c55e;
+            color: #ffffff;
+            border: 3px solid #22c55e;
+        }
+
+        .flow-dot-active {
+            background: #ffffff;
+            color: #2563eb;
+            border: 5px solid #3b82f6;
+        }
+
+        .flow-dot-pending {
+            background: #ffffff;
+            color: #94a3b8;
+            border: 4px solid #cbd5e1;
+        }
+
+        .flow-label {
+            font-size: 0.74rem;
+            font-weight: 800;
+            color: #1f2937;
+            text-transform: uppercase;
+            line-height: 1.2;
+        }
+
+        .flow-date {
+            color: #475569;
+            font-size: 0.72rem;
+            line-height: 1.25;
+            margin-top: 4px;
+            overflow-wrap: anywhere;
+        }
+
+        .flow-detail {
+            color: #64748b;
+            font-size: 0.70rem;
+            line-height: 1.25;
+            margin-top: 4px;
+        }
+
+        .flow-connector {
+            flex: 1;
+            height: 5px;
+            min-width: 28px;
+            margin-top: 23px;
+            border-radius: 999px;
+            background: #cbd5e1;
+        }
+
+        .flow-connector-ok {
+            background: #22c55e;
+        }
+
+        .flow-connector-active {
+            background: repeating-linear-gradient(
+                90deg,
+                #3b82f6 0 14px,
+                transparent 14px 22px
+            );
+        }
+
+        .flow-summary {
+            margin-top: 16px;
+            display: grid;
+            grid-template-columns: repeat(4, minmax(120px, 1fr));
+            gap: 10px;
+        }
+
+        .flow-summary-item {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 10px 12px;
+        }
+
+        .flow-summary-label {
+            color: #94a3b8;
+            font-size: 0.67rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 4px;
+        }
+
+        .flow-summary-value {
+            color: #0f172a;
+            font-size: 0.92rem;
+            font-weight: 800;
+            line-height: 1.25;
+            overflow-wrap: anywhere;
+        }
+
+        .flow-note {
+            margin-top: 12px;
+            color: #475569;
+            font-size: 0.84rem;
+            line-height: 1.45;
+        }
+
+        .badge-flow {
+            display: inline-block;
+            padding: 3px 9px;
+            border-radius: 999px;
+            font-size: 0.70rem;
+            font-weight: 800;
+            margin-top: 5px;
+        }
+
+        .badge-ok {
+            background: #dcfce7;
+            color: #166534;
+            border: 1px solid #bbf7d0;
+        }
+
+        .badge-active {
+            background: #dbeafe;
+            color: #1e40af;
+            border: 1px solid #bfdbfe;
+        }
+
+        .badge-pending {
+            background: #f1f5f9;
+            color: #475569;
+            border: 1px solid #e2e8f0;
+        }
+
+        @media (max-width: 1000px) {
+            .flow-summary {
+                grid-template-columns: repeat(2, minmax(120px, 1fr));
+            }
+        }
+
+        @media (max-width: 640px) {
+            .flow-summary {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
     """,
@@ -138,6 +323,18 @@ def formatear_fecha(valor) -> str:
         return "Sin fecha"
 
     return fecha.strftime("%Y-%m-%d")
+
+
+def formatear_fecha_corta(valor) -> str:
+    if pd.isna(valor):
+        return "Pendiente"
+
+    fecha = pd.to_datetime(valor, errors="coerce")
+
+    if pd.isna(fecha):
+        return "Pendiente"
+
+    return fecha.strftime("%d-%m-%Y")
 
 
 def limpiar_nombres_columnas(df: pd.DataFrame) -> pd.DataFrame:
@@ -591,42 +788,87 @@ def construir_tabla_fechas(registro: pd.Series, columnas_clave: dict) -> pd.Data
     return pd.DataFrame(datos)
 
 
-def construir_tabla_etapas_tat(registro: pd.Series, columnas_clave: dict) -> pd.DataFrame:
-    etapas = [
+def obtener_etapas_flujo(registro: pd.Series, columnas_clave: dict) -> list[dict]:
+    definicion = [
         {
-            "Etapa": "Solicitud",
-            "Fecha": obtener_valor(registro, columnas_clave["fecha_solicitud"]),
+            "nombre": "Solicitud",
+            "columna": columnas_clave["fecha_solicitud"],
         },
         {
-            "Etapa": "Liberación",
-            "Fecha": obtener_valor(registro, columnas_clave["fecha_liberacion"]),
+            "nombre": "Liberación",
+            "columna": columnas_clave["fecha_liberacion"],
         },
         {
-            "Etapa": "Pedido",
-            "Fecha": obtener_valor(registro, columnas_clave["fecha_pedido"]),
+            "nombre": "Pedido",
+            "columna": columnas_clave["fecha_pedido"],
         },
         {
-            "Etapa": "Facturación",
-            "Fecha": obtener_valor(registro, columnas_clave["fecha_facturacion"]),
+            "nombre": "Facturación",
+            "columna": columnas_clave["fecha_facturacion"],
         },
         {
-            "Etapa": "Recepción",
-            "Fecha": obtener_valor(registro, columnas_clave["fecha_recepcion"]),
+            "nombre": "Recepción",
+            "columna": columnas_clave["fecha_recepcion"],
         },
     ]
 
+    etapas = []
+
+    for item in definicion:
+        fecha = pd.to_datetime(
+            obtener_valor(registro, item["columna"]),
+            errors="coerce",
+        )
+
+        etapas.append(
+            {
+                "nombre": item["nombre"],
+                "fecha": fecha,
+                "fecha_texto": formatear_fecha_corta(fecha),
+                "completada": pd.notna(fecha),
+                "dias_desde_anterior": pd.NA,
+                "estado": "Completado" if pd.notna(fecha) else "Pendiente",
+            }
+        )
+
+    indice_pendiente_actual = None
+
+    for i, etapa in enumerate(etapas):
+        if not etapa["completada"]:
+            indice_pendiente_actual = i
+            break
+
+    if indice_pendiente_actual is not None:
+        etapas[indice_pendiente_actual]["estado"] = "Pendiente actual"
+
+    fecha_anterior = pd.NaT
+
+    for etapa in etapas:
+        fecha_actual = etapa["fecha"]
+
+        if pd.notna(fecha_actual) and pd.notna(fecha_anterior):
+            etapa["dias_desde_anterior"] = int((fecha_actual - fecha_anterior).days)
+
+        if pd.notna(fecha_actual):
+            fecha_anterior = fecha_actual
+
+    return etapas
+
+
+def construir_tabla_etapas_tat(registro: pd.Series, columnas_clave: dict) -> pd.DataFrame:
+    etapas = obtener_etapas_flujo(registro, columnas_clave)
+
     registros = []
 
-    for item in etapas:
-        fecha = pd.to_datetime(item["Fecha"], errors="coerce")
-        realizado = pd.notna(fecha)
+    for etapa in etapas:
+        dias = etapa["dias_desde_anterior"]
 
         registros.append(
             {
-                "Etapa": item["Etapa"],
-                "Fecha TAT": formatear_fecha(item["Fecha"]),
-                "Estado": "Realizado" if realizado else "Pendiente",
-                "Marca": "✅" if realizado else "❌",
+                "Etapa": etapa["nombre"],
+                "Fecha TAT": etapa["fecha_texto"],
+                "Estado": etapa["estado"],
+                "Días desde etapa anterior": "—" if pd.isna(dias) else dias,
             }
         )
 
@@ -706,51 +948,162 @@ def construir_validacion_temporal_tat(
 
 
 # ============================================================
-# Visualización de resultado confirmado
+# Visualización profesional de flujo
 # ============================================================
 
-def mostrar_figura_estado_solped(registro: pd.Series, columnas_clave: dict):
-    etapas = [
-        {
-            "etapa": "Solicitud",
-            "fecha": obtener_valor(registro, columnas_clave["fecha_solicitud"]),
-        },
-        {
-            "etapa": "Liberación",
-            "fecha": obtener_valor(registro, columnas_clave["fecha_liberacion"]),
-        },
-        {
-            "etapa": "Pedido",
-            "fecha": obtener_valor(registro, columnas_clave["fecha_pedido"]),
-        },
-        {
-            "etapa": "Facturación",
-            "fecha": obtener_valor(registro, columnas_clave["fecha_facturacion"]),
-        },
-        {
-            "etapa": "Recepción",
-            "fecha": obtener_valor(registro, columnas_clave["fecha_recepcion"]),
-        },
+def calcular_resumen_flujo(registro: pd.Series, columnas_clave: dict) -> dict:
+    etapas = obtener_etapas_flujo(registro, columnas_clave)
+
+    completadas = [
+        etapa
+        for etapa in etapas
+        if etapa["completada"]
     ]
 
-    st.markdown("#### Flujo de la SOLPED")
+    pendientes = [
+        etapa
+        for etapa in etapas
+        if not etapa["completada"]
+    ]
 
-    cols = st.columns(len(etapas))
+    ultima_etapa = completadas[-1]["nombre"] if completadas else "Sin etapa registrada"
+    ultima_fecha = completadas[-1]["fecha_texto"] if completadas else "—"
 
-    for col, item in zip(cols, etapas):
-        fecha = pd.to_datetime(item["fecha"], errors="coerce")
-        realizado = pd.notna(fecha)
-        fecha_texto = formatear_fecha(item["fecha"])
+    siguiente_etapa = pendientes[0]["nombre"] if pendientes else "Flujo cerrado"
 
-        with col:
-            if realizado:
-                st.success(
-                    f"✅ **{item['etapa']}**\n\n{fecha_texto}"
-                )
+    fecha_inicio = etapas[0]["fecha"] if etapas else pd.NaT
+    fecha_fin = etapas[-1]["fecha"] if etapas and etapas[-1]["completada"] else pd.Timestamp.today().normalize()
+
+    dias_transcurridos = pd.NA
+
+    if pd.notna(fecha_inicio) and pd.notna(fecha_fin):
+        dias_transcurridos = int((fecha_fin - fecha_inicio).days)
+
+    estado_recepcion = "Recepcionado" if etapas and etapas[-1]["completada"] else "Sin recepción"
+
+    return {
+        "ultima_etapa": ultima_etapa,
+        "ultima_fecha": ultima_fecha,
+        "siguiente_etapa": siguiente_etapa,
+        "dias_transcurridos": dias_transcurridos,
+        "estado_recepcion": estado_recepcion,
+    }
+
+
+def html_diagrama_flujo_solped(registro: pd.Series, columnas_clave: dict) -> str:
+    etapas = obtener_etapas_flujo(registro, columnas_clave)
+    resumen = calcular_resumen_flujo(registro, columnas_clave)
+
+    partes = []
+
+    for i, etapa in enumerate(etapas):
+        if etapa["estado"] == "Completado":
+            dot_class = "flow-dot-ok"
+            icono = "✓"
+            badge_class = "badge-ok"
+        elif etapa["estado"] == "Pendiente actual":
+            dot_class = "flow-dot-active"
+            icono = ""
+            badge_class = "badge-active"
+        else:
+            dot_class = "flow-dot-pending"
+            icono = ""
+            badge_class = "badge-pending"
+
+        dias = etapa["dias_desde_anterior"]
+
+        if pd.isna(dias):
+            detalle = "Inicio del flujo" if i == 0 else "Sin fecha registrada"
+        else:
+            detalle = f"{dias} días desde etapa anterior"
+
+        partes.append(
+            f"""
+            <div class="flow-step">
+                <div class="flow-dot {dot_class}">{escape(icono)}</div>
+                <div class="flow-label">{escape(etapa["nombre"])}</div>
+                <div class="flow-date">{escape(etapa["fecha_texto"])}</div>
+                <div class="flow-detail">{escape(detalle)}</div>
+                <span class="badge-flow {badge_class}">{escape(etapa["estado"])}</span>
+            </div>
+            """
+        )
+
+        if i < len(etapas) - 1:
+            actual_completa = etapa["completada"]
+            siguiente_completa = etapas[i + 1]["completada"]
+
+            if actual_completa and siguiente_completa:
+                conn_class = "flow-connector-ok"
+            elif actual_completa and not siguiente_completa:
+                conn_class = "flow-connector-active"
             else:
-                st.error(
-                    f"❌ **{item['etapa']}**\n\nSin fecha"
-                )
+                conn_class = ""
+
+            partes.append(
+                f'<div class="flow-connector {conn_class}"></div>'
+            )
+
+    dias_transcurridos = resumen["dias_transcurridos"]
+
+    if pd.isna(dias_transcurridos):
+        dias_texto = "Sin dato"
+    else:
+        dias_texto = f"{dias_transcurridos:,} días".replace(",", ".")
+
+    nota = (
+        f"Última etapa registrada: {resumen['ultima_etapa']} "
+        f"({resumen['ultima_fecha']}). "
+        f"Siguiente etapa: {resumen['siguiente_etapa']}."
+    )
+
+    html = f"""
+    <div class="flow-shell">
+        <div class="flow-title">Seguimiento visual de la SOLPED</div>
+
+        <div class="flow-track">
+            {''.join(partes)}
+        </div>
+
+        <div class="flow-summary">
+            <div class="flow-summary-item">
+                <div class="flow-summary-label">Última etapa</div>
+                <div class="flow-summary-value">{escape(resumen["ultima_etapa"])}</div>
+            </div>
+
+            <div class="flow-summary-item">
+                <div class="flow-summary-label">Fecha última etapa</div>
+                <div class="flow-summary-value">{escape(resumen["ultima_fecha"])}</div>
+            </div>
+
+            <div class="flow-summary-item">
+                <div class="flow-summary-label">Estado recepción</div>
+                <div class="flow-summary-value">{escape(resumen["estado_recepcion"])}</div>
+            </div>
+
+            <div class="flow-summary-item">
+                <div class="flow-summary-label">Tiempo transcurrido</div>
+                <div class="flow-summary-value">{escape(dias_texto)}</div>
+            </div>
+        </div>
+
+        <div class="flow-note">
+            {escape(nota)}
+        </div>
+    </div>
+    """
+
+    return html
+
+
+def mostrar_flujo_profesional_solped(registro: pd.Series, columnas_clave: dict):
+    st.markdown(
+        html_diagrama_flujo_solped(
+            registro=registro,
+            columnas_clave=columnas_clave,
+        ),
+        unsafe_allow_html=True,
+    )
 
 
 def mostrar_validacion_temporal_tat(
@@ -825,9 +1178,12 @@ def mostrar_detalle_observacion(registro: pd.Series, columnas_clave: dict):
         hide_index=True,
     )
 
-    st.markdown("#### 2. Seguimiento del flujo TAT")
+    st.markdown("#### 2. Seguimiento visual de la SOLPED")
 
-    mostrar_figura_estado_solped(registro, columnas_clave)
+    mostrar_flujo_profesional_solped(
+        registro=registro,
+        columnas_clave=columnas_clave,
+    )
 
     st.markdown("#### 3. Fechas principales")
 
