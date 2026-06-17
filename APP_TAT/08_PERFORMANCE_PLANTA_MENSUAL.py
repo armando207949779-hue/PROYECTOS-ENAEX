@@ -326,19 +326,6 @@ def normalizar_estado_performance(valor) -> str:
 
 
 def normalizar_rango_incumplimiento(serie: pd.Series) -> pd.Series:
-    """
-    Normaliza valores faltantes o inválidos del rango de incumplimiento.
-
-    Convierte a 'Sin datos':
-    - NaN real
-    - texto 'nan'
-    - texto 'None'
-    - texto '<NA>'
-    - string vacío ''
-    - espacios en blanco
-    - valores fuera de los rangos esperados
-    """
-
     orden_valido = [
         "Sin incumplimiento",
         "1-5 días",
@@ -967,6 +954,48 @@ def crear_resumen_mensual(df: pd.DataFrame) -> pd.DataFrame:
     return tabla.sort_values("periodo_fecha").reset_index(drop=True)
 
 
+def crear_desglose_performance(df: pd.DataFrame) -> pd.DataFrame:
+    if "performance_tat_total" not in df.columns:
+        return pd.DataFrame()
+
+    orden = [
+        "Cumple",
+        "No cumple",
+        "En proceso",
+        "No aplica",
+        "Sin datos",
+    ]
+
+    serie = df["performance_tat_total"].apply(normalizar_estado_performance)
+
+    tabla = (
+        serie
+        .value_counts()
+        .reindex(orden, fill_value=0)
+        .reset_index()
+    )
+
+    tabla.columns = ["Categoría", "Cantidad"]
+
+    total = int(tabla["Cantidad"].sum())
+
+    tabla["% del total filtrado"] = np.where(
+        total > 0,
+        tabla["Cantidad"] / total * 100,
+        0,
+    )
+
+    tabla["% del total filtrado"] = tabla["% del total filtrado"].round(2)
+
+    tabla.loc[len(tabla)] = {
+        "Categoría": "Total",
+        "Cantidad": total,
+        "% del total filtrado": 100.00 if total else 0,
+    }
+
+    return tabla
+
+
 def datos_etapa(df: pd.DataFrame, etapa: dict) -> dict:
     col_perf = etapa["col_perf"]
     col_dias = etapa["col_dias"]
@@ -1171,52 +1200,83 @@ def generar_resumen_nan_sin_datos(
     return pd.DataFrame(registros)
 
 
-def obtener_registros_nan_sin_datos(
+def construir_detalle_observaciones_nan_sin_datos(
     df: pd.DataFrame,
-    columna_revision: str,
+    columnas_revision: list[str],
     columnas_contexto: list[str],
-    tipo: str,
-    limite: int = 300,
+    limite: int = 500,
 ) -> pd.DataFrame:
 
-    if columna_revision not in df.columns:
+    if df.empty:
         return pd.DataFrame()
 
-    serie_original = df[columna_revision]
+    columnas_revision = [
+        col for col in columnas_revision
+        if col in df.columns
+    ]
 
-    serie_texto = (
-        serie_original
-        .astype("string")
-        .str.strip()
-    )
+    if not columnas_revision:
+        return pd.DataFrame()
 
-    serie_texto_lower = serie_texto.str.lower()
+    mask_global = pd.Series(False, index=df.index)
 
-    if tipo == "nan_real":
-        mask = serie_original.isna()
+    for col in columnas_revision:
+        serie_original = df[col]
 
-    elif tipo == "texto_nan":
-        mask = serie_texto_lower.isin(["nan", "none", "<na>", "null"])
+        serie_texto = (
+            serie_original
+            .astype("string")
+            .str.strip()
+        )
 
-    elif tipo == "sin_datos":
-        mask = serie_texto_lower.eq("sin datos")
+        serie_texto_lower = serie_texto.str.lower()
 
-    else:
-        mask = pd.Series(False, index=df.index)
+        mask_col = (
+            serie_original.isna()
+            | serie_texto.eq("")
+            | serie_texto_lower.isin(["nan", "none", "<na>", "null", "sin datos"])
+        )
 
-    columnas_disponibles = [
+        mask_global = mask_global | mask_col
+
+    columnas_contexto_disponibles = [
         col for col in columnas_contexto
         if col is not None and col in df.columns
     ]
 
-    if columna_revision not in columnas_disponibles:
-        columnas_disponibles.append(columna_revision)
+    df_detalle = df.loc[mask_global, columnas_contexto_disponibles].copy()
 
-    return (
-        df.loc[mask, columnas_disponibles]
-        .head(limite)
-        .copy()
+    if df_detalle.empty:
+        return df_detalle
+
+    def describir_problemas(row):
+        problemas = []
+
+        for col in columnas_revision:
+            valor = df.loc[row.name, col]
+
+            if pd.isna(valor):
+                problemas.append(f"{col}: NaN real")
+                continue
+
+            texto = str(valor).strip()
+            texto_lower = texto.lower()
+
+            if texto == "":
+                problemas.append(f"{col}: texto vacío")
+            elif texto_lower in ["nan", "none", "<na>", "null"]:
+                problemas.append(f"{col}: texto '{texto}'")
+            elif texto_lower == "sin datos":
+                problemas.append(f"{col}: Sin datos")
+
+        return " | ".join(problemas)
+
+    df_detalle["Detalle calidad datos"] = df_detalle.apply(
+        describir_problemas,
+        axis=1,
     )
+
+    return df_detalle.head(limite)
 
 
 def mostrar_detalle_nan_sin_datos(df: pd.DataFrame, col_centro: str | None):
@@ -1258,14 +1318,7 @@ def mostrar_detalle_nan_sin_datos(df: pd.DataFrame, col_centro: str | None):
         hide_index=True,
     )
 
-    st.markdown("#### Detalle de registros")
-
-    columna_detalle = st.selectbox(
-        "Columna a revisar",
-        options=columnas_revision,
-        index=0,
-        key="columna_revision_nan_sin_datos",
-    )
+    st.markdown("#### Observaciones con NaN, texto 'nan', vacío o 'Sin datos'")
 
     columnas_contexto = [
         "Solicitud de pedido - ME5A",
@@ -1278,61 +1331,28 @@ def mostrar_detalle_nan_sin_datos(df: pd.DataFrame, col_centro: str | None):
         "performance_tat_total",
         "rango_incumplimiento_tat",
         "dias_tat_total",
+        "umbral_tat_total",
         "dias_incumplimiento_tat",
         COL_FECHA_SOLICITUD_FINAL,
         COL_FECHA_RECEPCION_FINAL,
     ]
 
-    with st.expander("Registros con NaN real", expanded=False):
-        df_nan_real = obtener_registros_nan_sin_datos(
-            df=df,
-            columna_revision=columna_detalle,
-            columnas_contexto=columnas_contexto,
-            tipo="nan_real",
+    df_observaciones = construir_detalle_observaciones_nan_sin_datos(
+        df=df,
+        columnas_revision=columnas_revision,
+        columnas_contexto=columnas_contexto,
+        limite=500,
+    )
+
+    if df_observaciones.empty:
+        st.success("No se encontraron observaciones con NaN, texto 'nan', vacío o 'Sin datos'.")
+    else:
+        st.caption("Se muestran hasta 500 observaciones con problemas o ausencia de información.")
+        st.dataframe(
+            df_observaciones,
+            use_container_width=True,
+            hide_index=True,
         )
-
-        if df_nan_real.empty:
-            st.success("No hay registros con NaN real en esta columna.")
-        else:
-            st.dataframe(
-                df_nan_real,
-                use_container_width=True,
-                hide_index=True,
-            )
-
-    with st.expander("Registros con texto 'nan'", expanded=False):
-        df_texto_nan = obtener_registros_nan_sin_datos(
-            df=df,
-            columna_revision=columna_detalle,
-            columnas_contexto=columnas_contexto,
-            tipo="texto_nan",
-        )
-
-        if df_texto_nan.empty:
-            st.success("No hay registros con texto 'nan' en esta columna.")
-        else:
-            st.dataframe(
-                df_texto_nan,
-                use_container_width=True,
-                hide_index=True,
-            )
-
-    with st.expander("Registros con texto 'Sin datos'", expanded=False):
-        df_sin_datos = obtener_registros_nan_sin_datos(
-            df=df,
-            columna_revision=columna_detalle,
-            columnas_contexto=columnas_contexto,
-            tipo="sin_datos",
-        )
-
-        if df_sin_datos.empty:
-            st.success("No hay registros con texto 'Sin datos' en esta columna.")
-        else:
-            st.dataframe(
-                df_sin_datos,
-                use_container_width=True,
-                hide_index=True,
-            )
 
 
 # ============================================================
@@ -1433,7 +1453,7 @@ def grafico_mensual_principal(tabla: pd.DataFrame):
 
     ax.legend(
         loc="upper center",
-        bbox_to_anchor=(0.5, -0.20),
+        bbox_to_anchor=(0.5, -0.24),
         ncol=2,
         frameon=False,
         fontsize=10,
@@ -1448,6 +1468,7 @@ def grafico_mensual_principal(tabla: pd.DataFrame):
     ax.set_facecolor("none")
     fig.patch.set_alpha(0)
     fig.tight_layout()
+    fig.subplots_adjust(bottom=0.34)
 
     st.pyplot(fig, clear_figure=True, use_container_width=True)
 
@@ -1466,7 +1487,7 @@ def grafico_linea_mensual(tabla: pd.DataFrame):
         .to_numpy()
     )
 
-    fig, ax = plt.subplots(figsize=(14, 4.8))
+    fig, ax = plt.subplots(figsize=(14, 5.2))
 
     ax.plot(
         x,
@@ -1526,7 +1547,7 @@ def grafico_linea_mensual(tabla: pd.DataFrame):
 
     ax.legend(
         loc="upper center",
-        bbox_to_anchor=(0.5, -0.25),
+        bbox_to_anchor=(0.5, -0.38),
         ncol=2,
         frameon=False,
         fontsize=10,
@@ -1541,6 +1562,7 @@ def grafico_linea_mensual(tabla: pd.DataFrame):
     ax.set_facecolor("none")
     fig.patch.set_alpha(0)
     fig.tight_layout()
+    fig.subplots_adjust(bottom=0.42)
 
     st.pyplot(fig, clear_figure=True, use_container_width=True)
 
@@ -2038,6 +2060,27 @@ col_k3.metric("% Cumple evaluable", f"{pct_cumple_tat:.1f}%", f"{cumple_tat:,} c
 col_k4.metric("% No cumple evaluable", f"{pct_no_cumple_tat:.1f}%", f"{no_cumple_tat:,} no cumple")
 col_k5.metric("En proceso", f"{en_proceso_tat:,}")
 col_k6.metric("Otros / sin datos", f"{otros_tat:,}")
+
+
+# ============================================================
+# Desglose performance filtrado
+# ============================================================
+
+st.markdown("#### Desglose de datos filtrados por Performance TAT")
+st.caption(
+    "Cantidad y porcentaje que representa cada categoría sobre la base filtrada."
+)
+
+desglose_performance_df = crear_desglose_performance(df_dashboard)
+
+if desglose_performance_df.empty:
+    st.info("No hay desglose disponible.")
+else:
+    st.dataframe(
+        desglose_performance_df,
+        use_container_width=True,
+        hide_index=True,
+    )
 
 
 # ============================================================
