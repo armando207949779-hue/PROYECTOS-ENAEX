@@ -73,6 +73,33 @@ COL_FECHA_PEDIDO_FINAL = "fecha_pedido_final"
 COL_FECHA_FACTURACION_FINAL = "fecha_facturacion_final"
 COL_FECHA_RECEPCION_FINAL = "fecha_recepcion_final"
 
+COL_NIVEL_ALERTA_DESC = "nivel_alerta_descriptivo"
+
+NIVELES_ALERTA_ORDEN = [
+    "Crítico",
+    "Atención",
+    "Seguimiento",
+    "Controlado",
+    "Datos incompletos",
+    "Cerrado",
+    "Sin datos",
+]
+
+NIVEL_ALERTA_DESCRIPCION = {
+    "Crítico": "Vencidos sin recepción",
+    "Atención": "Vencen en 0 a 7 días sin recepción",
+    "Seguimiento": "Vencen en 8 a 30 días sin recepción",
+    "Controlado": "Más de 30 días para vencer",
+    "Datos incompletos": "Datos incompletos para calcular vencimiento",
+    "Cerrado": "Recepcionados",
+    "Sin datos": "Sin datos",
+}
+
+NIVEL_ALERTA_INVERSO = {
+    descripcion: codigo
+    for codigo, descripcion in NIVEL_ALERTA_DESCRIPCION.items()
+}
+
 FECHAS_CANDIDATAS = [
     COL_FECHA_SOLICITUD_FINAL,
     COL_FECHA_LIBERACION_FINAL,
@@ -469,6 +496,14 @@ def formato_valor(valor: Any) -> str:
     return str(valor)
 
 
+def formato_cantidad(valor: Any) -> str:
+    try:
+        numero = int(valor)
+        return f"{numero:,}".replace(",", ".")
+    except Exception:
+        return "0"
+
+
 def valor_numerico(valor: Any) -> float:
     try:
         return float(pd.to_numeric(pd.Series([valor]), errors="coerce").iloc[0])
@@ -583,6 +618,41 @@ def obtener_fecha_segura(row: pd.Series, columna: str):
     return pd.to_datetime(row.get(columna, pd.NaT), errors="coerce")
 
 
+def describir_nivel_alerta(nivel: Any) -> str:
+    if pd.isna(nivel):
+        return "Sin datos"
+
+    texto = str(nivel).strip()
+
+    return NIVEL_ALERTA_DESCRIPCION.get(texto, texto)
+
+
+def mensaje_vista_previa(
+    titulo: str,
+    total_registros: int,
+    registros_mostrados: int,
+    limite: int,
+):
+    total_txt = formato_cantidad(total_registros)
+    mostrados_txt = formato_cantidad(registros_mostrados)
+
+    if total_registros == 0:
+        st.info(f"{titulo}: no hay registros disponibles con los filtros actuales.")
+        return
+
+    if registros_mostrados < total_registros:
+        st.info(
+            f"{titulo}: hay **{total_txt} registros disponibles**. "
+            f"Se están mostrando **{mostrados_txt} registros** "
+            f"por límite de vista previa ({limite})."
+        )
+    else:
+        st.success(
+            f"{titulo}: hay **{total_txt} registros disponibles**. "
+            f"Se están mostrando **todos los registros**."
+        )
+
+
 # ============================================================
 # PREPARACIÓN PANEL ALERTAS
 # ============================================================
@@ -686,6 +756,7 @@ def preparar_panel_alertas(df_original: pd.DataFrame, hoy: pd.Timestamp) -> pd.D
 
     df["clasificacion_vencimiento"] = clasificar_vencimiento_alerta(df)
     df["nivel_alerta"] = clasificar_nivel_alerta(df)
+    df[COL_NIVEL_ALERTA_DESC] = df["nivel_alerta"].apply(describir_nivel_alerta)
 
     df["ultima_etapa_registrada"] = df.apply(obtener_ultima_etapa, axis=1)
     df["fecha_pendiente"] = df.apply(obtener_fecha_pendiente, axis=1)
@@ -845,15 +916,15 @@ def construir_resumen_ejecutivo(df_total: pd.DataFrame, df_filtrado: pd.DataFram
 
     if vencidos > 0:
         semaforo = "Crítico"
-        mensaje = f"Hay {vencidos:,} registros vencidos sin recepción.".replace(",", ".")
+        mensaje = f"Hay {formato_cantidad(vencidos)} registros vencidos sin recepción."
         accion = "Priorizar pedidos vencidos sin recepción y revisar la etapa pendiente."
     elif proximos > 0:
         semaforo = "Atención"
-        mensaje = f"Hay {proximos:,} registros próximos a vencer en los próximos 30 días.".replace(",", ".")
+        mensaje = f"Hay {formato_cantidad(proximos)} registros próximos a vencer en los próximos 30 días."
         accion = "Gestionar próximos vencimientos y confirmar avance de compras/proveedor/logística."
     elif sin_fecha > 0:
         semaforo = "Datos incompletos"
-        mensaje = f"Hay {sin_fecha:,} registros sin fecha de vencimiento calculable.".replace(",", ".")
+        mensaje = f"Hay {formato_cantidad(sin_fecha)} registros sin fecha de vencimiento calculable."
         accion = "Corregir datos base: fecha de solicitud, tipo OC, umbral TAT o fechas finales."
     else:
         semaforo = "Controlado"
@@ -869,6 +940,7 @@ def construir_resumen_ejecutivo(df_total: pd.DataFrame, df_filtrado: pd.DataFram
         "sin_fecha": sin_fecha,
         "recepcionados": recepcionados_total,
         "semaforo": semaforo,
+        "semaforo_descriptivo": describir_nivel_alerta(semaforo),
         "mensaje": mensaje,
         "accion": accion,
     }
@@ -878,26 +950,18 @@ def crear_desglose_alertas(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame()
 
-    orden = [
-        "Crítico",
-        "Atención",
-        "Seguimiento",
-        "Controlado",
-        "Datos incompletos",
-        "Cerrado",
-        "Sin datos",
-    ]
-
     tabla = (
         df["nivel_alerta"]
         .value_counts()
-        .reindex(orden, fill_value=0)
+        .reindex(NIVELES_ALERTA_ORDEN, fill_value=0)
         .reset_index()
     )
 
-    tabla.columns = ["Nivel alerta", "Cantidad"]
+    tabla.columns = ["codigo_alerta", "Cantidad"]
 
     total = int(tabla["Cantidad"].sum())
+
+    tabla["Nivel alerta"] = tabla["codigo_alerta"].apply(describir_nivel_alerta)
 
     tabla["% del total filtrado"] = np.where(
         total > 0,
@@ -908,6 +972,14 @@ def crear_desglose_alertas(df: pd.DataFrame) -> pd.DataFrame:
     tabla["% del total filtrado"] = tabla["% del total filtrado"].round(2)
 
     tabla = tabla[tabla["Cantidad"].gt(0)].copy()
+
+    tabla = tabla[
+        [
+            "Nivel alerta",
+            "Cantidad",
+            "% del total filtrado",
+        ]
+    ]
 
     tabla.loc[len(tabla)] = {
         "Nivel alerta": "Total",
@@ -920,6 +992,7 @@ def crear_desglose_alertas(df: pd.DataFrame) -> pd.DataFrame:
 
 def crear_tabla_prioridad(df: pd.DataFrame) -> pd.DataFrame:
     columnas = [
+        COL_NIVEL_ALERTA_DESC,
         "nivel_alerta",
         "clasificacion_vencimiento",
         "dias_hasta_vencimiento",
@@ -949,11 +1022,25 @@ def crear_tabla_prioridad(df: pd.DataFrame) -> pd.DataFrame:
     if not columnas:
         return pd.DataFrame()
 
-    return (
+    tabla = (
         df[columnas]
         .sort_values("score_riesgo", ascending=False)
         .reset_index(drop=True)
     )
+
+    if COL_NIVEL_ALERTA_DESC in tabla.columns:
+        tabla.insert(
+            0,
+            "Nivel alerta",
+            tabla[COL_NIVEL_ALERTA_DESC],
+        )
+
+        tabla = tabla.drop(columns=[COL_NIVEL_ALERTA_DESC])
+
+    if "nivel_alerta" in tabla.columns:
+        tabla = tabla.drop(columns=["nivel_alerta"])
+
+    return tabla
 
 
 def resumen_materiales(df: pd.DataFrame) -> pd.DataFrame:
@@ -972,8 +1059,8 @@ def resumen_materiales(df: pd.DataFrame) -> pd.DataFrame:
         .groupby(columnas_group, dropna=False)
         .agg(
             Registros=(COL_MATERIAL, "size"),
-            Criticos=("nivel_alerta", lambda s: int(s.eq("Crítico").sum())),
-            Atencion=("nivel_alerta", lambda s: int(s.eq("Atención").sum())),
+            Vencidos_sin_recepcion=("nivel_alerta", lambda s: int(s.eq("Crítico").sum())),
+            Proximos_0_30_dias=("nivel_alerta", lambda s: int(s.isin(["Atención", "Seguimiento"]).sum())),
             Sin_recepcion=(COL_ESTADO_RECEPCION_ALERTA, lambda s: int(s.eq("Sin recepción").sum())),
             Recepcionados=(COL_ESTADO_RECEPCION_ALERTA, lambda s: int(s.eq("Recepcionado").sum())),
             Score_promedio=("score_riesgo", "mean"),
@@ -984,7 +1071,7 @@ def resumen_materiales(df: pd.DataFrame) -> pd.DataFrame:
     resumen["Score_promedio"] = resumen["Score_promedio"].round(2)
 
     resumen = resumen.sort_values(
-        ["Criticos", "Atencion", "Score_promedio", "Registros"],
+        ["Vencidos_sin_recepcion", "Proximos_0_30_dias", "Score_promedio", "Registros"],
         ascending=[False, False, False, False],
     )
 
@@ -1144,7 +1231,7 @@ def aplicar_filtros_alertas(
     barra.progress(55, text="Aplicando filtros categóricos...")
 
     filtros_multiselect = [
-        ("Nivel alerta", "nivel_alerta", filtros.get("niveles", [])),
+        ("Nivel alerta", COL_NIVEL_ALERTA_DESC, filtros.get("niveles", [])),
         ("Clasificación vencimiento", "clasificacion_vencimiento", filtros.get("clasificaciones", [])),
         ("Estado recepción", COL_ESTADO_RECEPCION_ALERTA, filtros.get("estados_recepcion", [])),
         ("Centro", COL_CENTRO, filtros.get("centros", [])),
@@ -1203,16 +1290,6 @@ def grafico_distribucion_alertas(df: pd.DataFrame):
         st.info("No hay datos para graficar.")
         return
 
-    orden = [
-        "Crítico",
-        "Atención",
-        "Seguimiento",
-        "Controlado",
-        "Datos incompletos",
-        "Cerrado",
-        "Sin datos",
-    ]
-
     colores = {
         "Crítico": COLOR_CRITICO,
         "Atención": COLOR_ATENCION,
@@ -1226,7 +1303,7 @@ def grafico_distribucion_alertas(df: pd.DataFrame):
     tabla = (
         df["nivel_alerta"]
         .value_counts()
-        .reindex(orden, fill_value=0)
+        .reindex(NIVELES_ALERTA_ORDEN, fill_value=0)
         .reset_index()
     )
 
@@ -1237,11 +1314,12 @@ def grafico_distribucion_alertas(df: pd.DataFrame):
         st.info("No hay categorías disponibles.")
         return
 
+    tabla["Nivel descriptivo"] = tabla["Nivel"].apply(describir_nivel_alerta)
     tabla = tabla.sort_values("Cantidad", ascending=True)
 
     y = np.arange(len(tabla))
 
-    fig, ax = plt.subplots(figsize=(10, 4.5))
+    fig, ax = plt.subplots(figsize=(11, 4.8))
 
     ax.barh(
         y,
@@ -1254,7 +1332,7 @@ def grafico_distribucion_alertas(df: pd.DataFrame):
         ax.text(
             cantidad + max(tabla["Cantidad"]) * 0.01,
             i,
-            f"{int(cantidad):,}".replace(",", "."),
+            formato_cantidad(cantidad),
             va="center",
             ha="left",
             fontsize=10,
@@ -1263,11 +1341,11 @@ def grafico_distribucion_alertas(df: pd.DataFrame):
         )
 
     ax.set_yticks(y)
-    ax.set_yticklabels(tabla["Nivel"], color=COLOR_MUTED)
+    ax.set_yticklabels(tabla["Nivel descriptivo"], color=COLOR_MUTED)
     ax.set_xlabel("Cantidad de registros", color=COLOR_TEXTO)
 
     ax.set_title(
-        "Distribución por nivel de alerta",
+        "Distribución por tipo de alerta",
         fontsize=14,
         fontweight="bold",
         color=COLOR_TEXTO,
@@ -1340,7 +1418,7 @@ def grafico_vencimientos(df: pd.DataFrame):
         ax.text(
             i,
             cantidad + max(tabla["Cantidad"]) * 0.015,
-            f"{int(cantidad):,}".replace(",", "."),
+            formato_cantidad(cantidad),
             ha="center",
             va="bottom",
             fontsize=10,
@@ -1380,6 +1458,7 @@ def grafico_vencimientos(df: pd.DataFrame):
 
 def mostrar_card_estado(resumen: dict):
     semaforo = resumen.get("semaforo", "Sin datos")
+    semaforo_desc = resumen.get("semaforo_descriptivo", describir_nivel_alerta(semaforo))
 
     if semaforo == "Crítico":
         clase = "alert-card alert-card-critical"
@@ -1398,7 +1477,7 @@ def mostrar_card_estado(resumen: dict):
         f"""
         <div class="{clase}">
             <div class="alert-title" style="color:{color};">Estado general del análisis</div>
-            <div class="alert-main">{semaforo}</div>
+            <div class="alert-main">{semaforo_desc}</div>
             <div class="alert-text">{resumen.get("mensaje", "")}</div>
             <div class="alert-text" style="margin-top:8px;"><b>Acción sugerida:</b> {resumen.get("accion", "")}</div>
         </div>
@@ -1542,13 +1621,14 @@ def mostrar_expediente(row: pd.Series):
     st.markdown("### Expediente del registro seleccionado")
 
     oc_principal = row.get(COL_OC_ME5A, row.get(COL_OC_ME80FN, np.nan))
+    nivel_desc = row.get(COL_NIVEL_ALERTA_DESC, describir_nivel_alerta(row.get("nivel_alerta", np.nan)))
 
     col_e1, col_e2, col_e3, col_e4, col_e5 = st.columns(5)
 
     col_e1.metric("SolPed", formato_id(row.get(COL_SOLPED, np.nan)))
     col_e2.metric("Pedido", formato_id(oc_principal))
     col_e3.metric("Centro", formato_valor(row.get(COL_CENTRO, np.nan)))
-    col_e4.metric("Nivel alerta", formato_valor(row.get("nivel_alerta", np.nan)))
+    col_e4.metric("Tipo alerta", formato_valor(nivel_desc))
     col_e5.metric("Estado", formato_valor(row.get("clasificacion_vencimiento", np.nan)))
 
     col_i1, col_i2, col_i3, col_i4, col_i5 = st.columns(5)
@@ -1603,6 +1683,7 @@ def mostrar_expediente(row: pd.Series):
         "dias_transcurridos_alerta",
         "exceso_umbral_alerta",
         "nivel_alerta",
+        COL_NIVEL_ALERTA_DESC,
         "clasificacion_vencimiento",
         "ultima_etapa_registrada",
         "fecha_pendiente",
@@ -1620,7 +1701,12 @@ def mostrar_expediente(row: pd.Series):
         )
 
 
-def mostrar_tabla_alertas(df: pd.DataFrame, titulo: str, descripcion: str):
+def mostrar_tabla_alertas(
+    df: pd.DataFrame,
+    titulo: str,
+    descripcion: str,
+    limite: int = 300,
+):
     st.markdown(f"### {titulo}")
     st.caption(descripcion)
 
@@ -1630,13 +1716,21 @@ def mostrar_tabla_alertas(df: pd.DataFrame, titulo: str, descripcion: str):
         st.success("No hay registros para esta categoría con los filtros actuales.")
         return
 
+    total_registros = len(tabla)
+    registros_mostrados = min(limite, total_registros)
+
+    mensaje_vista_previa(
+        titulo=titulo,
+        total_registros=total_registros,
+        registros_mostrados=registros_mostrados,
+        limite=limite,
+    )
+
     st.dataframe(
-        tabla.head(300),
+        tabla.head(registros_mostrados),
         use_container_width=True,
         hide_index=True,
     )
-
-    st.caption(f"Mostrando hasta 300 registros de {len(tabla):,} disponibles.".replace(",", "."))
 
 
 # ============================================================
@@ -1713,7 +1807,8 @@ fecha_venc_min = fechas_vencimiento.min().date() if not fechas_vencimiento.empty
 fecha_venc_max = fechas_vencimiento.max().date() if not fechas_vencimiento.empty else None
 
 opciones_nivel = [
-    x for x in ["Crítico", "Atención", "Seguimiento", "Controlado", "Datos incompletos", "Cerrado", "Sin datos"]
+    describir_nivel_alerta(x)
+    for x in NIVELES_ALERTA_ORDEN
     if x in df_panel["nivel_alerta"].astype(str).unique()
 ]
 
@@ -1776,7 +1871,7 @@ with st.form("form_filtros_alertas"):
 
     with f6:
         niveles = st.multiselect(
-            "Nivel alerta",
+            "Tipo de alerta",
             options=opciones_nivel,
             default=opciones_nivel,
             key="alertas_niveles",
@@ -1964,14 +2059,14 @@ c1, c2, c3, c4, c5 = st.columns(5)
 
 c1.metric(
     "Registros filtrados",
-    f"{filtrados:,}".replace(",", "."),
+    formato_cantidad(filtrados),
     f"{resumen_ejecutivo['pct_filtrado']:.1f}% del total" if total_archivo else "",
 )
 
-c2.metric("Vencidos sin recepción", f"{vencidos_total:,}".replace(",", "."))
-c3.metric("Próximos 0-30 días", f"{proximos_total:,}".replace(",", "."))
-c4.metric("Sin fecha calculable", f"{sin_fecha_total:,}".replace(",", "."))
-c5.metric("Recepcionados", f"{recepcionados_total:,}".replace(",", "."))
+c2.metric("Vencidos sin recepción", formato_cantidad(vencidos_total))
+c3.metric("Próximos 0-30 días", formato_cantidad(proximos_total))
+c4.metric("Sin fecha calculable", formato_cantidad(sin_fecha_total))
+c5.metric("Recepcionados", formato_cantidad(recepcionados_total))
 
 
 # ============================================================
@@ -1983,7 +2078,7 @@ mostrar_card_estado(resumen_ejecutivo)
 desglose_alertas = crear_desglose_alertas(df_filtrado)
 
 st.markdown("### Desglose de alertas")
-st.caption("Cantidad y porcentaje de registros según nivel de alerta.")
+st.caption("Cantidad y porcentaje de registros según tipo de alerta.")
 
 if desglose_alertas.empty:
     st.info("No hay desglose disponible.")
@@ -2021,20 +2116,20 @@ df_sin_fecha = df_filtrado[
 
 mostrar_tabla_alertas(
     df_vencidos,
-    "Alertas críticas",
-    "Pedidos vencidos sin recepción. Son los casos de mayor prioridad.",
+    "Vencidos sin recepción",
+    "Registros que ya superaron la fecha de vencimiento TAT y no tienen recepción registrada.",
 )
 
 mostrar_tabla_alertas(
     df_proximos,
-    "Próximos vencimientos",
-    "Pedidos sin recepción que están por vencer o requieren seguimiento preventivo.",
+    "Vencen en 0 a 30 días sin recepción",
+    "Registros sin recepción que vencen dentro de los próximos 30 días o requieren seguimiento preventivo.",
 )
 
-with st.expander("Registros con datos incompletos", expanded=True):
+with st.expander("Datos incompletos para calcular vencimiento", expanded=True):
     mostrar_tabla_alertas(
         df_sin_fecha,
-        "Datos incompletos",
+        "Datos incompletos para calcular vencimiento",
         "Registros sin fecha de vencimiento calculable. Requieren corrección de datos base.",
     )
 
@@ -2078,7 +2173,7 @@ else:
 
             solped = formato_id(row.get(COL_SOLPED, np.nan))
             pedido = formato_id(row.get(COL_OC_ME5A, row.get(COL_OC_ME80FN, np.nan)))
-            nivel = formato_valor(row.get("nivel_alerta", np.nan))
+            nivel = formato_valor(row.get(COL_NIVEL_ALERTA_DESC, describir_nivel_alerta(row.get("nivel_alerta", np.nan))))
             estado = formato_valor(row.get("clasificacion_vencimiento", np.nan))
             venc = formato_valor(row.get("dias_hasta_vencimiento", np.nan))
             centro = formato_valor(row.get(COL_CENTRO, np.nan))
@@ -2110,6 +2205,16 @@ resumen_mat = resumen_materiales(df_filtrado)
 if resumen_mat.empty:
     st.info("No hay información de material disponible.")
 else:
+    total_mat = len(resumen_mat)
+    mostrados_mat = min(100, total_mat)
+
+    mensaje_vista_previa(
+        titulo="Estadística por material",
+        total_registros=total_mat,
+        registros_mostrados=mostrados_mat,
+        limite=100,
+    )
+
     st.dataframe(
         resumen_mat.head(100),
         use_container_width=True,
@@ -2143,7 +2248,18 @@ with st.expander("Datos filtrados", expanded=False):
         key="alertas_limite_vista",
     )
 
+    total_datos_filtrados = len(df_filtrado)
+    registros_mostrados = min(int(limite_vista), total_datos_filtrados)
+
+    mensaje_vista_previa(
+        titulo="Datos filtrados",
+        total_registros=total_datos_filtrados,
+        registros_mostrados=registros_mostrados,
+        limite=int(limite_vista),
+    )
+
     columnas_preferidas = [
+        COL_NIVEL_ALERTA_DESC,
         "nivel_alerta",
         "clasificacion_vencimiento",
         "dias_hasta_vencimiento",
@@ -2181,14 +2297,19 @@ with st.expander("Datos filtrados", expanded=False):
     columnas_preferidas = columnas_existentes(df_filtrado, columnas_preferidas)
 
     if columnas_preferidas:
+        vista = df_filtrado[columnas_preferidas].head(registros_mostrados).copy()
+
+        if COL_NIVEL_ALERTA_DESC in vista.columns:
+            vista = vista.rename(columns={COL_NIVEL_ALERTA_DESC: "Tipo alerta"})
+
         st.dataframe(
-            df_filtrado[columnas_preferidas].head(int(limite_vista)),
+            vista,
             use_container_width=True,
             hide_index=True,
         )
     else:
         st.dataframe(
-            df_filtrado.head(int(limite_vista)),
+            df_filtrado.head(registros_mostrados),
             use_container_width=True,
             hide_index=True,
         )
