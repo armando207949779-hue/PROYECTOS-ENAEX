@@ -1788,30 +1788,41 @@ def grafico_torta_rangos_incumplimiento(tabla: pd.DataFrame):
         st.info("No hay datos con cantidad mayor a cero.")
         return
 
+    orden = [
+        "Sin incumplimiento",
+        "1-5 días",
+        "6-15 días",
+        "16-30 días",
+        "Mayor a un mes",
+        "Sin datos",
+    ]
+
+    data["Rango"] = pd.Categorical(
+        data["Rango"].astype(str),
+        categories=orden,
+        ordered=True,
+    )
+
+    data = data.sort_values("Rango").reset_index(drop=True)
+
     total = int(data["Cantidad"].sum())
 
-    # Paleta más coherente visualmente
-    colores_mapa = {
-        "Sin incumplimiento": "#2E7D32",   # verde
-        "1-5 días": "#F4B400",             # amarillo
-        "6-15 días": "#FB8C00",            # naranja
-        "16-30 días": "#EF3E52",           # rojo original
-        "Mayor a un mes": "#B71C1C",       # rojo oscuro
-        "Sin datos": "#B0B4BB",            # gris
-    }
+    data["% del total"] = np.where(
+        total > 0,
+        data["Cantidad"] / total * 100,
+        0,
+    )
 
-    # Etiquetas compactas para mostrar en el gráfico
-    etiquetas_cortas = {
-        "Sin incumplimiento": "Sin\nincumplimiento",
-        "1-5 días": "1-5 días",
-        "6-15 días": "6-15 días",
-        "16-30 días": "16-30 días",
-        "Mayor a un mes": "Mayor a\nun mes",
-        "Sin datos": "Sin datos",
+    colores_mapa = {
+        "Sin incumplimiento": "#2E7D32",
+        "1-5 días": "#F4B400",
+        "6-15 días": "#FB8C00",
+        "16-30 días": "#EF3E52",
+        "Mayor a un mes": "#B71C1C",
+        "Sin datos": "#B0B4BB",
     }
 
     data["Color"] = data["Rango"].astype(str).map(colores_mapa).fillna("#9CA3AF")
-    data["Etiqueta_corta"] = data["Rango"].astype(str).map(etiquetas_cortas).fillna(data["Rango"].astype(str))
 
     cantidades = (
         pd.to_numeric(data["Cantidad"], errors="coerce")
@@ -1828,138 +1839,134 @@ def grafico_torta_rangos_incumplimiento(tabla: pd.DataFrame):
 
     colores = data["Color"].tolist()
     etiquetas = data["Rango"].astype(str).tolist()
-    etiquetas_cortas_list = data["Etiqueta_corta"].tolist()
 
-    fig, ax = plt.subplots(figsize=(12, 6.8))
+    col_grafico, col_resumen = st.columns([1.15, 1])
 
-    wedges, _ = ax.pie(
-        cantidades,
-        labels=None,
-        startangle=90,
-        counterclock=False,
-        colors=colores,
-        wedgeprops={
-            "width": 0.40,
-            "linewidth": 2,
-            "edgecolor": "white",
-        },
-    )
+    with col_grafico:
+        fig, ax = plt.subplots(figsize=(7.2, 6.4))
 
-    # Texto central
-    ax.text(
-        0,
-        0.06,
-        f"{total:,}",
-        ha="center",
-        va="center",
-        fontsize=20,
-        fontweight="bold",
-        color=COLOR_TEXTO,
-    )
+        def autopct_func(pct):
+            if pct < 4:
+                return ""
 
-    ax.text(
-        0,
-        -0.12,
-        "registros",
-        ha="center",
-        va="center",
-        fontsize=10,
-        fontweight="bold",
-        color=COLOR_MUTED,
-    )
+            return f"{pct:.1f}%"
 
-    # Etiquetas dentro / fuera según tamaño del segmento
-    for i, wedge in enumerate(wedges):
-        angulo = (wedge.theta2 + wedge.theta1) / 2
-        rad = np.deg2rad(angulo)
+        wedges, texts, autotexts = ax.pie(
+            cantidades,
+            labels=None,
+            startangle=90,
+            counterclock=False,
+            colors=colores,
+            autopct=autopct_func,
+            pctdistance=0.78,
+            wedgeprops={
+                "width": 0.38,
+                "linewidth": 2.5,
+                "edgecolor": "white",
+            },
+        )
 
-        x = np.cos(rad)
-        y = np.sin(rad)
+        for i, autotext in enumerate(autotexts):
+            rango = etiquetas[i]
 
-        pct = porcentajes[i]
-        etiqueta = etiquetas_cortas_list[i]
+            if rango in ["1-5 días", "Sin datos"]:
+                autotext.set_color(COLOR_TEXTO)
+            else:
+                autotext.set_color("white")
 
-        # Segmentos grandes: etiqueta dentro
-        if pct >= 8:
-            r_text = 0.78
-            ax.text(
-                r_text * x,
-                r_text * y,
-                f"{etiqueta}\n{pct:.1f}%",
-                ha="center",
-                va="center",
-                fontsize=10,
-                fontweight="bold",
-                color="white",
-            )
+            autotext.set_fontweight("bold")
+            autotext.set_fontsize(10)
 
-        # Segmentos medianos o pequeños: etiqueta afuera con línea guía
-        else:
-            r_line = 1.00
-            r_text = 1.16
+        ax.text(
+            0,
+            0.08,
+            f"{total:,}",
+            ha="center",
+            va="center",
+            fontsize=24,
+            fontweight="bold",
+            color=COLOR_TEXTO,
+        )
 
-            x_line = r_line * x
-            y_line = r_line * y
+        ax.text(
+            0,
+            -0.12,
+            "registros",
+            ha="center",
+            va="center",
+            fontsize=10,
+            fontweight="bold",
+            color=COLOR_MUTED,
+        )
 
-            x_text = r_text * x
-            y_text = r_text * y
+        ax.set_title(
+            "Distribución de incumplimiento TAT",
+            fontsize=15,
+            fontweight="bold",
+            color=COLOR_TEXTO,
+            pad=16,
+        )
 
-            ha = "left" if x_text >= 0 else "right"
+        ax.axis("equal")
+        fig.patch.set_alpha(0)
+        fig.tight_layout()
 
-            ax.annotate(
-                f"{etiqueta.replace(chr(10), ' ')}\n{pct:.1f}%",
-                xy=(x_line, y_line),
-                xytext=(x_text, y_text),
-                ha=ha,
-                va="center",
-                fontsize=9.5,
-                fontweight="bold",
-                color=COLOR_TEXTO,
-                arrowprops={
-                    "arrowstyle": "-",
-                    "lw": 1.2,
-                    "color": COLOR_MUTED,
-                    "shrinkA": 0,
-                    "shrinkB": 0,
-                    "connectionstyle": "arc3,rad=0.15",
-                },
-            )
+        st.pyplot(fig, clear_figure=True, use_container_width=True)
 
-    # Leyenda
-    etiquetas_leyenda = [
-        f"{rango} · {cantidad:,} · {pct:.1f}%"
-        for rango, cantidad, pct in zip(etiquetas, cantidades, porcentajes)
-    ]
+    with col_resumen:
+        st.markdown("#### Resumen por rango")
+        st.caption("Cantidad y participación sobre el total filtrado.")
 
-    legend = ax.legend(
-        wedges,
-        etiquetas_leyenda,
-        title="Rango",
-        loc="center left",
-        bbox_to_anchor=(1.02, 0.5),
-        frameon=False,
-        fontsize=10,
-        title_fontsize=11,
-    )
+        tabla_resumen = data.copy()
 
-    for txt in legend.get_texts():
-        txt.set_color(COLOR_TEXTO)
+        tabla_resumen["Cantidad"] = (
+            pd.to_numeric(tabla_resumen["Cantidad"], errors="coerce")
+            .fillna(0)
+            .astype(int)
+        )
 
-    legend.get_title().set_color(COLOR_TEXTO)
-    legend.get_title().set_fontweight("bold")
+        tabla_resumen["% del total"] = (
+            pd.to_numeric(tabla_resumen["% del total"], errors="coerce")
+            .fillna(0)
+            .round(1)
+        )
 
-    ax.set_title(
-        "Distribución porcentual de incumplimiento TAT",
-        fontsize=15,
-        fontweight="bold",
-        color=COLOR_TEXTO,
-        pad=18,
-    )
+        tabla_resumen = tabla_resumen[
+            [
+                "Rango",
+                "Cantidad",
+                "% del total",
+            ]
+        ]
 
-    ax.axis("equal")
-    fig.patch.set_alpha(0)
-    fig.subplots_adjust(right=0.78)
-    st.pyplot(fig, clear_figure=True, use_container_width=True)
+        st.dataframe(
+            tabla_resumen,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Cantidad": st.column_config.NumberColumn(
+                    "Cantidad",
+                    format="%d",
+                ),
+                "% del total": st.column_config.ProgressColumn(
+                    "% del total",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+            },
+        )
+
+        rango_mayor = data.sort_values(
+            "Cantidad",
+            ascending=False,
+        ).iloc[0]
+
+        st.info(
+            f"Mayor concentración: **{rango_mayor['Rango']}** "
+            f"con **{int(rango_mayor['Cantidad']):,} registros** "
+            f"(**{float(rango_mayor['% del total']):.1f}%**)."
+        )
 
 # ============================================================
 # Exportación
