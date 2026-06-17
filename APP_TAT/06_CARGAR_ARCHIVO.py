@@ -1,3 +1,5 @@
+PUEDES REDUCIR EL RUIDO VISUAL ?
+
 # ============================================================
 # 06_CARGAR_ARCHIVO
 # Carga múltiple de archivos base TAT
