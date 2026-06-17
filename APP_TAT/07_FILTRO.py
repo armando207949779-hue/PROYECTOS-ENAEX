@@ -23,7 +23,7 @@ LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
 
 
 # ============================================================
-# Estilos modernos
+# Estilos Streamlit nativos
 # No se modifica .block-container para no afectar el logo.
 # ============================================================
 
@@ -75,246 +75,6 @@ st.markdown(
             box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
         }
 
-        .modern-hero {
-            background: linear-gradient(135deg, #eff6ff 0%, #ffffff 48%, #f8fafc 100%);
-            border: 1px solid #dbeafe;
-            border-radius: 22px;
-            padding: 20px 24px;
-            margin: 10px 0 18px 0;
-            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
-        }
-
-        .modern-eyebrow {
-            color: #1e40af;
-            font-size: 0.72rem;
-            font-weight: 900;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-            margin-bottom: 6px;
-        }
-
-        .modern-title {
-            color: #0f172a;
-            font-size: 1.65rem;
-            font-weight: 900;
-            letter-spacing: -0.03em;
-            margin-bottom: 4px;
-        }
-
-        .modern-subtitle {
-            color: #475569;
-            font-size: 0.95rem;
-            line-height: 1.45;
-            max-width: 900px;
-        }
-
-        .modern-section {
-            background: #ffffff;
-            border: 1px solid #e2e8f0;
-            border-radius: 18px;
-            padding: 18px 20px;
-            margin: 16px 0;
-            box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04);
-        }
-
-        .modern-section-header {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 12px;
-        }
-
-        .modern-section-icon {
-            width: 34px;
-            height: 34px;
-            border-radius: 12px;
-            background: #dbeafe;
-            color: #1e40af;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 900;
-            font-size: 0.95rem;
-        }
-
-        .modern-section-title {
-            font-size: 1.05rem;
-            font-weight: 900;
-            color: #0f172a;
-            margin-bottom: 1px;
-        }
-
-        .modern-section-subtitle {
-            font-size: 0.82rem;
-            color: #64748b;
-            line-height: 1.35;
-        }
-
-        .summary-grid {
-            display: grid;
-            grid-template-columns: repeat(4, minmax(140px, 1fr));
-            gap: 10px;
-            margin-top: 8px;
-        }
-
-        .summary-card {
-            background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
-            border: 1px solid #e2e8f0;
-            border-radius: 14px;
-            padding: 12px 14px;
-            min-height: 82px;
-        }
-
-        .summary-card-primary {
-            background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
-            border-color: #bfdbfe;
-        }
-
-        .summary-label {
-            color: #94a3b8;
-            font-size: 0.66rem;
-            font-weight: 900;
-            text-transform: uppercase;
-            letter-spacing: 0.06em;
-            margin-bottom: 5px;
-        }
-
-        .summary-value {
-            color: #0f172a;
-            font-size: 0.95rem;
-            font-weight: 850;
-            line-height: 1.25;
-            overflow-wrap: anywhere;
-        }
-
-        .summary-note {
-            color: #64748b;
-            font-size: 0.74rem;
-            line-height: 1.30;
-            margin-top: 4px;
-        }
-
-        .kpi-grid {
-            display: grid;
-            grid-template-columns: repeat(5, minmax(130px, 1fr));
-            gap: 10px;
-            margin-top: 8px;
-        }
-
-        .kpi-card {
-            background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
-            border: 1px solid #e2e8f0;
-            border-radius: 14px;
-            padding: 13px 14px;
-        }
-
-        .kpi-card-primary {
-            background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
-            border-color: #bfdbfe;
-        }
-
-        .kpi-label {
-            color: #94a3b8;
-            font-size: 0.66rem;
-            font-weight: 900;
-            text-transform: uppercase;
-            letter-spacing: 0.06em;
-            margin-bottom: 5px;
-        }
-
-        .kpi-value {
-            color: #0f172a;
-            font-size: 1.10rem;
-            font-weight: 900;
-            line-height: 1.25;
-            overflow-wrap: anywhere;
-        }
-
-        .status-pill {
-            display: inline-block;
-            padding: 4px 10px;
-            border-radius: 999px;
-            font-size: 0.72rem;
-            font-weight: 900;
-            margin-top: 6px;
-        }
-
-        .status-green {
-            background: #dcfce7;
-            color: #166534;
-            border: 1px solid #bbf7d0;
-        }
-
-        .status-red {
-            background: #fee2e2;
-            color: #991b1b;
-            border: 1px solid #fecaca;
-        }
-
-        .status-yellow {
-            background: #fef9c3;
-            color: #854d0e;
-            border: 1px solid #fde68a;
-        }
-
-        .status-blue {
-            background: #dbeafe;
-            color: #1e40af;
-            border: 1px solid #bfdbfe;
-        }
-
-        .status-gray {
-            background: #f1f5f9;
-            color: #475569;
-            border: 1px solid #e2e8f0;
-        }
-
-        .search-intro {
-            background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
-            border: 1px solid #e2e8f0;
-            border-left: 5px solid #2563eb;
-            border-radius: 16px;
-            padding: 14px 16px;
-            margin-bottom: 12px;
-        }
-
-        .search-intro-title {
-            color: #1e3a8a;
-            font-size: 0.82rem;
-            font-weight: 900;
-            text-transform: uppercase;
-            letter-spacing: 0.06em;
-            margin-bottom: 4px;
-        }
-
-        .search-intro-text {
-            color: #475569;
-            font-size: 0.88rem;
-            line-height: 1.45;
-        }
-
-        .match-card {
-            background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
-            border: 1px solid #bfdbfe;
-            border-left: 5px solid #2563eb;
-            border-radius: 16px;
-            padding: 14px 16px;
-            margin: 12px 0;
-        }
-
-        .match-title {
-            font-size: 0.86rem;
-            font-weight: 900;
-            color: #1e3a8a;
-            margin-bottom: 3px;
-        }
-
-        .match-text {
-            font-size: 0.86rem;
-            color: #475569;
-            line-height: 1.4;
-        }
-
         div[data-testid="stInfo"],
         div[data-testid="stWarning"],
         div[data-testid="stSuccess"],
@@ -322,34 +82,500 @@ st.markdown(
             border-radius: 14px !important;
             font-weight: 600 !important;
         }
-
-        @media (max-width: 1100px) {
-            .summary-grid {
-                grid-template-columns: repeat(2, minmax(140px, 1fr));
-            }
-
-            .kpi-grid {
-                grid-template-columns: repeat(2, minmax(130px, 1fr));
-            }
-        }
-
-        @media (max-width: 680px) {
-            .summary-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .kpi-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .modern-title {
-                font-size: 1.35rem;
-            }
-        }
     </style>
     """,
     unsafe_allow_html=True,
 )
+
+
+# ============================================================
+# CSS para componentes HTML
+# ============================================================
+
+CSS_COMPONENTES = """
+<style>
+    html, body {
+        margin: 0;
+        padding: 0;
+        background: transparent;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: #0f172a;
+    }
+
+    * {
+        box-sizing: border-box;
+    }
+
+    .modern-hero {
+        background: linear-gradient(135deg, #eff6ff 0%, #ffffff 48%, #f8fafc 100%);
+        border: 1px solid #dbeafe;
+        border-radius: 22px;
+        padding: 20px 24px;
+        margin: 0;
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+    }
+
+    .modern-eyebrow {
+        color: #1e40af;
+        font-size: 0.72rem;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 6px;
+    }
+
+    .modern-title {
+        color: #0f172a;
+        font-size: 1.65rem;
+        font-weight: 900;
+        letter-spacing: -0.03em;
+        margin-bottom: 4px;
+    }
+
+    .modern-subtitle {
+        color: #475569;
+        font-size: 0.95rem;
+        line-height: 1.45;
+        max-width: 900px;
+    }
+
+    .modern-section {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 18px;
+        padding: 18px 20px;
+        margin: 0;
+        box-shadow: 0 1px 4px rgba(15, 23, 42, 0.05);
+    }
+
+    .modern-section-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 12px;
+    }
+
+    .modern-section-icon {
+        width: 34px;
+        height: 34px;
+        border-radius: 12px;
+        background: #dbeafe;
+        color: #1e40af;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 900;
+        font-size: 0.95rem;
+        flex: 0 0 auto;
+    }
+
+    .modern-section-title {
+        font-size: 1.05rem;
+        font-weight: 900;
+        color: #0f172a;
+        margin-bottom: 1px;
+    }
+
+    .modern-section-subtitle {
+        font-size: 0.82rem;
+        color: #64748b;
+        line-height: 1.35;
+    }
+
+    .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(140px, 1fr));
+        gap: 10px;
+        margin-top: 8px;
+    }
+
+    .summary-card {
+        background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        padding: 12px 14px;
+        min-height: 82px;
+    }
+
+    .summary-card-primary {
+        background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+        border-color: #bfdbfe;
+    }
+
+    .summary-label {
+        color: #94a3b8;
+        font-size: 0.66rem;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        margin-bottom: 5px;
+    }
+
+    .summary-value {
+        color: #0f172a;
+        font-size: 0.95rem;
+        font-weight: 850;
+        line-height: 1.25;
+        overflow-wrap: anywhere;
+    }
+
+    .summary-note {
+        color: #64748b;
+        font-size: 0.74rem;
+        line-height: 1.30;
+        margin-top: 4px;
+    }
+
+    .kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(130px, 1fr));
+        gap: 10px;
+        margin-top: 8px;
+    }
+
+    .kpi-card {
+        background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        padding: 13px 14px;
+    }
+
+    .kpi-card-primary {
+        background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+        border-color: #bfdbfe;
+    }
+
+    .kpi-label {
+        color: #94a3b8;
+        font-size: 0.66rem;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        margin-bottom: 5px;
+    }
+
+    .kpi-value {
+        color: #0f172a;
+        font-size: 1.10rem;
+        font-weight: 900;
+        line-height: 1.25;
+        overflow-wrap: anywhere;
+    }
+
+    .status-pill {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 0.72rem;
+        font-weight: 900;
+        margin-top: 6px;
+    }
+
+    .status-green {
+        background: #dcfce7;
+        color: #166534;
+        border: 1px solid #bbf7d0;
+    }
+
+    .status-red {
+        background: #fee2e2;
+        color: #991b1b;
+        border: 1px solid #fecaca;
+    }
+
+    .status-yellow {
+        background: #fef9c3;
+        color: #854d0e;
+        border: 1px solid #fde68a;
+    }
+
+    .status-blue {
+        background: #dbeafe;
+        color: #1e40af;
+        border: 1px solid #bfdbfe;
+    }
+
+    .status-gray {
+        background: #f1f5f9;
+        color: #475569;
+        border: 1px solid #e2e8f0;
+    }
+
+    .message-card {
+        background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+        border: 1px solid #bfdbfe;
+        border-left: 5px solid #2563eb;
+        border-radius: 16px;
+        padding: 14px 16px;
+        margin: 0;
+    }
+
+    .message-title {
+        font-size: 0.86rem;
+        font-weight: 900;
+        color: #1e3a8a;
+        margin-bottom: 3px;
+    }
+
+    .message-text {
+        font-size: 0.86rem;
+        color: #475569;
+        line-height: 1.4;
+    }
+
+    .search-card {
+        background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+        border: 1px solid #e2e8f0;
+        border-left: 5px solid #2563eb;
+        border-radius: 16px;
+        padding: 14px 16px;
+        margin: 0;
+    }
+
+    .search-title {
+        color: #1e3a8a;
+        font-size: 0.82rem;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        margin-bottom: 4px;
+    }
+
+    .search-text {
+        color: #475569;
+        font-size: 0.88rem;
+        line-height: 1.45;
+    }
+
+    .flow-shell {
+        background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+        border: 1px solid #dbeafe;
+        border-radius: 18px;
+        padding: 18px 20px 16px;
+        margin: 0;
+        box-shadow: 0 1px 4px rgba(15, 23, 42, 0.06);
+    }
+
+    .flow-title {
+        font-size: 0.78rem;
+        font-weight: 800;
+        color: #1e3a8a;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        margin-bottom: 14px;
+    }
+
+    .flow-track {
+        display: flex;
+        align-items: flex-start;
+        width: 100%;
+        overflow-x: auto;
+        padding-bottom: 8px;
+    }
+
+    .flow-step {
+        flex: 0 0 145px;
+        text-align: center;
+        min-width: 0;
+    }
+
+    .flow-dot {
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        margin: 0 auto 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 900;
+        font-size: 1rem;
+    }
+
+    .flow-dot-ok {
+        background: #22c55e;
+        color: #ffffff;
+        border: 3px solid #22c55e;
+    }
+
+    .flow-dot-active {
+        background: #ffffff;
+        color: #2563eb;
+        border: 5px solid #3b82f6;
+    }
+
+    .flow-dot-pending {
+        background: #ffffff;
+        color: #94a3b8;
+        border: 4px solid #cbd5e1;
+    }
+
+    .flow-label {
+        font-size: 0.74rem;
+        font-weight: 800;
+        color: #1f2937;
+        text-transform: uppercase;
+        line-height: 1.2;
+    }
+
+    .flow-date {
+        color: #475569;
+        font-size: 0.72rem;
+        line-height: 1.25;
+        margin-top: 4px;
+        overflow-wrap: anywhere;
+    }
+
+    .flow-detail {
+        color: #64748b;
+        font-size: 0.70rem;
+        line-height: 1.25;
+        margin-top: 4px;
+    }
+
+    .flow-connector {
+        flex: 1;
+        height: 5px;
+        min-width: 28px;
+        margin-top: 23px;
+        border-radius: 999px;
+        background: #cbd5e1;
+    }
+
+    .flow-connector-ok {
+        background: #22c55e;
+    }
+
+    .flow-connector-active {
+        background: repeating-linear-gradient(
+            90deg,
+            #3b82f6 0 14px,
+            transparent 14px 22px
+        );
+    }
+
+    .flow-summary {
+        margin-top: 16px;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(120px, 1fr));
+        gap: 10px;
+    }
+
+    .flow-summary-item {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 10px 12px;
+    }
+
+    .flow-summary-label {
+        color: #94a3b8;
+        font-size: 0.67rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 4px;
+    }
+
+    .flow-summary-value {
+        color: #0f172a;
+        font-size: 0.92rem;
+        font-weight: 800;
+        line-height: 1.25;
+        overflow-wrap: anywhere;
+    }
+
+    .flow-note {
+        margin-top: 12px;
+        color: #475569;
+        font-size: 0.84rem;
+        line-height: 1.45;
+    }
+
+    .badge-flow {
+        display: inline-block;
+        padding: 3px 9px;
+        border-radius: 999px;
+        font-size: 0.70rem;
+        font-weight: 800;
+        margin-top: 5px;
+    }
+
+    .badge-ok {
+        background: #dcfce7;
+        color: #166534;
+        border: 1px solid #bbf7d0;
+    }
+
+    .badge-active {
+        background: #dbeafe;
+        color: #1e40af;
+        border: 1px solid #bfdbfe;
+    }
+
+    .badge-pending {
+        background: #f1f5f9;
+        color: #475569;
+        border: 1px solid #e2e8f0;
+    }
+
+    @media (max-width: 1100px) {
+        .summary-grid {
+            grid-template-columns: repeat(2, minmax(140px, 1fr));
+        }
+
+        .kpi-grid {
+            grid-template-columns: repeat(2, minmax(130px, 1fr));
+        }
+
+        .flow-summary {
+            grid-template-columns: repeat(2, minmax(120px, 1fr));
+        }
+    }
+
+    @media (max-width: 680px) {
+        .summary-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .kpi-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .flow-summary {
+            grid-template-columns: 1fr;
+        }
+
+        .modern-title {
+            font-size: 1.35rem;
+        }
+    }
+</style>
+"""
+
+
+# ============================================================
+# Render HTML seguro con components
+# ============================================================
+
+def render_html(contenido: str, height: int, scrolling: bool = False):
+    html = f"""
+    <!doctype html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        {CSS_COMPONENTES}
+    </head>
+    <body>
+        {contenido}
+    </body>
+    </html>
+    """
+
+    components.html(
+        html,
+        height=height,
+        scrolling=scrolling,
+    )
 
 
 # ============================================================
@@ -818,57 +1044,6 @@ def construir_etiqueta_observacion(row: pd.Series, columnas_clave: dict) -> str:
     return etiqueta
 
 
-def construir_tabla_general(registro: pd.Series, columnas_clave: dict) -> pd.DataFrame:
-    datos = [
-        {
-            "Campo": "SOLPED",
-            "Valor": formatear_valor(obtener_valor(registro, columnas_clave["solped"])),
-        },
-        {
-            "Campo": "Pedido",
-            "Valor": formatear_valor(obtener_valor(registro, columnas_clave["pedido"])),
-        },
-        {
-            "Campo": "Posición",
-            "Valor": formatear_valor(obtener_valor(registro, columnas_clave["posicion"])),
-        },
-        {
-            "Campo": "Material",
-            "Valor": formatear_valor(obtener_valor(registro, columnas_clave["material"])),
-        },
-        {
-            "Campo": "Texto breve",
-            "Valor": formatear_valor(obtener_valor(registro, columnas_clave["texto_breve"])),
-        },
-        {
-            "Campo": "Centro",
-            "Valor": formatear_valor(obtener_valor(registro, columnas_clave["centro"])),
-        },
-        {
-            "Campo": "Grupo de compras",
-            "Valor": formatear_valor(obtener_valor(registro, columnas_clave["grupo_compras"])),
-        },
-        {
-            "Campo": "Tipo OC",
-            "Valor": formatear_valor(obtener_valor(registro, columnas_clave["tipo_oc"])),
-        },
-        {
-            "Campo": "Sistema",
-            "Valor": formatear_valor(obtener_valor(registro, columnas_clave["sistema"])),
-        },
-        {
-            "Campo": "Origen",
-            "Valor": formatear_valor(obtener_valor(registro, columnas_clave["origen"])),
-        },
-        {
-            "Campo": "Estado del match",
-            "Valor": formatear_valor(obtener_valor(registro, columnas_clave["estado_match"])),
-        },
-    ]
-
-    return pd.DataFrame(datos)
-
-
 def construir_tabla_fechas(registro: pd.Series, columnas_clave: dict) -> pd.DataFrame:
     datos = [
         {
@@ -1056,7 +1231,7 @@ def construir_validacion_temporal_tat(
 
 
 # ============================================================
-# HTML moderno para secciones
+# HTML moderno
 # ============================================================
 
 def html_section_header(icono: str, titulo: str, subtitulo: str) -> str:
@@ -1084,6 +1259,39 @@ def clase_estado_tat(valor: str) -> str:
         return "status-yellow"
 
     return "status-gray"
+
+
+def html_hero() -> str:
+    return """
+    <div class="modern-hero">
+        <div class="modern-eyebrow">Consulta operativa TAT</div>
+        <div class="modern-title">07_FILTRO</div>
+        <div class="modern-subtitle">
+            Ingresa un criterio de búsqueda, ejecuta la consulta y confirma qué registro quieres revisar.
+            La información se presenta de forma progresiva: primero el resultado general, luego el seguimiento visual y finalmente las validaciones.
+        </div>
+    </div>
+    """
+
+
+def html_search_intro() -> str:
+    return """
+    <div class="search-card">
+        <div class="search-title">Búsqueda</div>
+        <div class="search-text">
+            Completa al menos un campo y presiona <b>Buscar</b>. La página no mostrará resultados hasta que ejecutes una búsqueda.
+        </div>
+    </div>
+    """
+
+
+def html_message_card(titulo: str, texto: str) -> str:
+    return f"""
+    <div class="message-card">
+        <div class="message-title">{escape(titulo)}</div>
+        <div class="message-text">{escape(texto)}</div>
+    </div>
+    """
 
 
 def html_resumen_general(registro: pd.Series, columnas_clave: dict) -> str:
@@ -1337,229 +1545,62 @@ def html_diagrama_flujo_solped(registro: pd.Series, columnas_clave: dict) -> str
     return html
 
 
-def html_documento_flujo_solped(registro: pd.Series, columnas_clave: dict) -> str:
-    contenido = html_diagrama_flujo_solped(
-        registro=registro,
-        columnas_clave=columnas_clave,
+# ============================================================
+# Render de bloques modernos
+# ============================================================
+
+def mostrar_hero():
+    render_html(
+        html_hero(),
+        height=150,
+        scrolling=False,
     )
 
-    return f"""
-    <!doctype html>
-    <html>
-    <head>
-        <meta charset="utf-8">
 
-        <style>
-            html, body {{
-                margin: 0;
-                padding: 0;
-                background: transparent;
-                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-                color: #0f172a;
-            }}
+def mostrar_search_intro():
+    render_html(
+        html_search_intro(),
+        height=105,
+        scrolling=False,
+    )
 
-            .flow-shell {{
-                background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
-                border: 1px solid #dbeafe;
-                border-radius: 18px;
-                padding: 18px 20px 16px;
-                margin: 0;
-                box-shadow: 0 1px 4px rgba(15, 23, 42, 0.06);
-                box-sizing: border-box;
-            }}
 
-            .flow-title {{
-                font-size: 0.78rem;
-                font-weight: 800;
-                color: #1e3a8a;
-                text-transform: uppercase;
-                letter-spacing: 0.06em;
-                margin-bottom: 14px;
-            }}
+def mostrar_message_card(titulo: str, texto: str):
+    render_html(
+        html_message_card(titulo, texto),
+        height=95,
+        scrolling=False,
+    )
 
-            .flow-track {{
-                display: flex;
-                align-items: flex-start;
-                width: 100%;
-                overflow-x: auto;
-                padding-bottom: 8px;
-            }}
 
-            .flow-step {{
-                flex: 0 0 145px;
-                text-align: center;
-                min-width: 0;
-            }}
+def mostrar_resumen_general_moderno(registro: pd.Series, columnas_clave: dict):
+    render_html(
+        html_resumen_general(
+            registro=registro,
+            columnas_clave=columnas_clave,
+        ),
+        height=405,
+        scrolling=True,
+    )
 
-            .flow-dot {{
-                width: 50px;
-                height: 50px;
-                border-radius: 50%;
-                margin: 0 auto 8px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-weight: 900;
-                font-size: 1rem;
-                box-sizing: border-box;
-            }}
 
-            .flow-dot-ok {{
-                background: #22c55e;
-                color: #ffffff;
-                border: 3px solid #22c55e;
-            }}
-
-            .flow-dot-active {{
-                background: #ffffff;
-                color: #2563eb;
-                border: 5px solid #3b82f6;
-            }}
-
-            .flow-dot-pending {{
-                background: #ffffff;
-                color: #94a3b8;
-                border: 4px solid #cbd5e1;
-            }}
-
-            .flow-label {{
-                font-size: 0.74rem;
-                font-weight: 800;
-                color: #1f2937;
-                text-transform: uppercase;
-                line-height: 1.2;
-            }}
-
-            .flow-date {{
-                color: #475569;
-                font-size: 0.72rem;
-                line-height: 1.25;
-                margin-top: 4px;
-                overflow-wrap: anywhere;
-            }}
-
-            .flow-detail {{
-                color: #64748b;
-                font-size: 0.70rem;
-                line-height: 1.25;
-                margin-top: 4px;
-            }}
-
-            .flow-connector {{
-                flex: 1;
-                height: 5px;
-                min-width: 28px;
-                margin-top: 23px;
-                border-radius: 999px;
-                background: #cbd5e1;
-            }}
-
-            .flow-connector-ok {{
-                background: #22c55e;
-            }}
-
-            .flow-connector-active {{
-                background: repeating-linear-gradient(
-                    90deg,
-                    #3b82f6 0 14px,
-                    transparent 14px 22px
-                );
-            }}
-
-            .flow-summary {{
-                margin-top: 16px;
-                display: grid;
-                grid-template-columns: repeat(4, minmax(120px, 1fr));
-                gap: 10px;
-            }}
-
-            .flow-summary-item {{
-                background: #ffffff;
-                border: 1px solid #e2e8f0;
-                border-radius: 12px;
-                padding: 10px 12px;
-            }}
-
-            .flow-summary-label {{
-                color: #94a3b8;
-                font-size: 0.67rem;
-                font-weight: 800;
-                text-transform: uppercase;
-                letter-spacing: 0.05em;
-                margin-bottom: 4px;
-            }}
-
-            .flow-summary-value {{
-                color: #0f172a;
-                font-size: 0.92rem;
-                font-weight: 800;
-                line-height: 1.25;
-                overflow-wrap: anywhere;
-            }}
-
-            .flow-note {{
-                margin-top: 12px;
-                color: #475569;
-                font-size: 0.84rem;
-                line-height: 1.45;
-            }}
-
-            .badge-flow {{
-                display: inline-block;
-                padding: 3px 9px;
-                border-radius: 999px;
-                font-size: 0.70rem;
-                font-weight: 800;
-                margin-top: 5px;
-            }}
-
-            .badge-ok {{
-                background: #dcfce7;
-                color: #166534;
-                border: 1px solid #bbf7d0;
-            }}
-
-            .badge-active {{
-                background: #dbeafe;
-                color: #1e40af;
-                border: 1px solid #bfdbfe;
-            }}
-
-            .badge-pending {{
-                background: #f1f5f9;
-                color: #475569;
-                border: 1px solid #e2e8f0;
-            }}
-
-            @media (max-width: 1000px) {{
-                .flow-summary {{
-                    grid-template-columns: repeat(2, minmax(120px, 1fr));
-                }}
-            }}
-
-            @media (max-width: 640px) {{
-                .flow-summary {{
-                    grid-template-columns: 1fr;
-                }}
-            }}
-        </style>
-    </head>
-
-    <body>
-        {contenido}
-    </body>
-    </html>
-    """
+def mostrar_indicadores_tat_moderno(registro: pd.Series, columnas_clave: dict):
+    render_html(
+        html_indicadores_tat(
+            registro=registro,
+            columnas_clave=columnas_clave,
+        ),
+        height=235,
+        scrolling=True,
+    )
 
 
 def mostrar_flujo_profesional_solped(registro: pd.Series, columnas_clave: dict):
-    html_flujo = html_documento_flujo_solped(
-        registro=registro,
-        columnas_clave=columnas_clave,
-    )
-
-    components.html(
-        html_flujo,
+    render_html(
+        html_diagrama_flujo_solped(
+            registro=registro,
+            columnas_clave=columnas_clave,
+        ),
         height=390,
         scrolling=True,
     )
@@ -1569,21 +1610,8 @@ def mostrar_validacion_temporal_tat(
     registro: pd.Series,
     columnas_clave: dict,
 ):
-    st.markdown(
-        """
-        <div class="modern-section">
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.markdown(
-        html_section_header(
-            icono="6",
-            titulo="Validación temporal",
-            subtitulo="Revisión automática del orden lógico de fechas entre etapas.",
-        ),
-        unsafe_allow_html=True,
-    )
+    st.markdown("### 6. Validación temporal")
+    st.caption("Revisión automática del orden lógico de fechas entre etapas.")
 
     validacion_df = construir_validacion_temporal_tat(
         registro=registro,
@@ -1616,78 +1644,28 @@ def mostrar_validacion_temporal_tat(
         hide_index=True,
     )
 
-    st.markdown(
-        """
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
 
 def mostrar_detalle_observacion(registro: pd.Series, columnas_clave: dict):
-    st.markdown(
-        """
-        <div class="match-card">
-            <div class="match-title">Registro confirmado</div>
-            <div class="match-text">
-                Se muestra el detalle de la observación seleccionada, ordenado desde información general hasta validaciones específicas.
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    mostrar_message_card(
+        titulo="Registro confirmado",
+        texto="Se muestra el detalle de la observación seleccionada, ordenado desde información general hasta validaciones específicas.",
     )
 
-    st.markdown(
-        html_resumen_general(
-            registro=registro,
-            columnas_clave=columnas_clave,
-        ),
-        unsafe_allow_html=True,
+    mostrar_resumen_general_moderno(
+        registro=registro,
+        columnas_clave=columnas_clave,
     )
 
-    st.markdown(
-        """
-        <div class="modern-section">
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.markdown(
-        html_section_header(
-            icono="2",
-            titulo="Seguimiento visual de la SOLPED",
-            subtitulo="Vista profesional del avance por etapas: solicitud, liberación, pedido, facturación y recepción.",
-        ),
-        unsafe_allow_html=True,
-    )
+    st.markdown("### 2. Seguimiento visual de la SOLPED")
+    st.caption("Vista profesional del avance por etapas: solicitud, liberación, pedido, facturación y recepción.")
 
     mostrar_flujo_profesional_solped(
         registro=registro,
         columnas_clave=columnas_clave,
     )
 
-    st.markdown(
-        """
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.markdown(
-        """
-        <div class="modern-section">
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.markdown(
-        html_section_header(
-            icono="3",
-            titulo="Fechas principales",
-            subtitulo="Fechas registradas para cada etapa del flujo TAT.",
-        ),
-        unsafe_allow_html=True,
-    )
+    st.markdown("### 3. Fechas principales")
+    st.caption("Fechas registradas para cada etapa del flujo TAT.")
 
     st.dataframe(
         construir_tabla_fechas(registro, columnas_clave),
@@ -1695,48 +1673,18 @@ def mostrar_detalle_observacion(registro: pd.Series, columnas_clave: dict):
         hide_index=True,
     )
 
-    st.markdown(
-        """
-        </div>
-        """,
-        unsafe_allow_html=True,
+    mostrar_indicadores_tat_moderno(
+        registro=registro,
+        columnas_clave=columnas_clave,
     )
 
-    st.markdown(
-        html_indicadores_tat(
-            registro=registro,
-            columnas_clave=columnas_clave,
-        ),
-        unsafe_allow_html=True,
-    )
-
-    st.markdown(
-        """
-        <div class="modern-section">
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.markdown(
-        html_section_header(
-            icono="5",
-            titulo="Estado de etapas",
-            subtitulo="Detalle tabular del estado de cada hito y los días entre etapas.",
-        ),
-        unsafe_allow_html=True,
-    )
+    st.markdown("### 5. Estado de etapas")
+    st.caption("Detalle tabular del estado de cada hito y los días entre etapas.")
 
     st.dataframe(
         construir_tabla_etapas_tat(registro, columnas_clave),
         use_container_width=True,
         hide_index=True,
-    )
-
-    st.markdown(
-        """
-        </div>
-        """,
-        unsafe_allow_html=True,
     )
 
     mostrar_validacion_temporal_tat(
@@ -1765,20 +1713,7 @@ def mostrar_detalle_observacion(registro: pd.Series, columnas_clave: dict):
 # ============================================================
 
 mostrar_logo()
-
-st.markdown(
-    """
-    <div class="modern-hero">
-        <div class="modern-eyebrow">Consulta operativa TAT</div>
-        <div class="modern-title">07_FILTRO</div>
-        <div class="modern-subtitle">
-            Ingresa un criterio de búsqueda, ejecuta la consulta y confirma qué registro quieres revisar.
-            La información se presenta de forma progresiva: primero el resultado general, luego el seguimiento visual y finalmente las validaciones.
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+mostrar_hero()
 
 
 # ============================================================
@@ -1812,17 +1747,7 @@ if columnas_clave["solped"] is None:
 # Filtros iniciales
 # ============================================================
 
-st.markdown(
-    """
-    <div class="search-intro">
-        <div class="search-intro-title">Búsqueda</div>
-        <div class="search-intro-text">
-            Completa al menos un campo y presiona <b>Buscar</b>. La página no mostrará resultados hasta que ejecutes una búsqueda.
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+mostrar_search_intro()
 
 with st.form("form_busqueda_solped"):
     col_f1, col_f2, col_f3 = st.columns(3)
@@ -1986,29 +1911,15 @@ total_resultados = len(df_filtrado)
 if total_resultados == 1:
     registro_seleccionado = df_filtrado.iloc[0]
 
-    st.markdown(
-        """
-        <div class="match-card">
-            <div class="match-title">Coincidencia única encontrada</div>
-            <div class="match-text">
-                Se encontró un único registro con los criterios ingresados. Se muestra el detalle automáticamente.
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    mostrar_message_card(
+        titulo="Coincidencia única encontrada",
+        texto="Se encontró un único registro con los criterios ingresados. Se muestra el detalle automáticamente.",
     )
 
 else:
-    st.markdown(
-        """
-        <div class="match-card">
-            <div class="match-title">Coincidencias encontradas</div>
-            <div class="match-text">
-                Se encontró más de una coincidencia. Selecciona cuál registro quieres revisar y confirma para desplegar el detalle.
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    mostrar_message_card(
+        titulo="Coincidencias encontradas",
+        texto="Se encontró más de una coincidencia. Selecciona cuál registro quieres revisar y confirma para desplegar el detalle.",
     )
 
     st.info(
