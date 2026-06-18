@@ -365,130 +365,6 @@ st.markdown(
             color: #4b5563;
             line-height: 1.45;
         }
-
-        .tat-tracker-wrap {
-            width: 100%;
-            padding: 22px 10px 10px 10px;
-            margin-top: 12px;
-            margin-bottom: 10px;
-        }
-
-        .tat-tracker {
-            position: relative;
-            display: grid;
-            grid-template-columns: repeat(5, 1fr);
-            column-gap: 12px;
-            align-items: start;
-        }
-
-        .tat-line {
-            position: absolute;
-            top: 27px;
-            left: 8%;
-            right: 8%;
-            height: 5px;
-            background: #E5E7EB;
-            border-radius: 999px;
-            z-index: 0;
-        }
-
-        .tat-step {
-            position: relative;
-            z-index: 1;
-            text-align: center;
-        }
-
-        .tat-dot {
-            width: 58px;
-            height: 58px;
-            border-radius: 999px;
-            margin: 0 auto 10px auto;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 22px;
-            font-weight: 900;
-            border: 4px solid #FFFFFF;
-            box-shadow: 0 2px 10px rgba(15, 23, 42, 0.14);
-        }
-
-        .tat-dot-done {
-            background: #16A34A;
-            color: #FFFFFF;
-        }
-
-        .tat-dot-pending {
-            background: #DC2626;
-            color: #FFFFFF;
-            animation: pulseDot 1.4s infinite;
-        }
-
-        .tat-dot-upcoming {
-            background: #CBD5E1;
-            color: #475569;
-        }
-
-        .tat-step-card {
-            background: #FFFFFF;
-            border: 1px solid #E5E7EB;
-            border-radius: 14px;
-            padding: 12px 10px;
-            min-height: 112px;
-        }
-
-        .tat-step-card-done {
-            border-top: 5px solid #16A34A;
-        }
-
-        .tat-step-card-pending {
-            border-top: 5px solid #DC2626;
-            background: #FEF2F2;
-        }
-
-        .tat-step-card-upcoming {
-            border-top: 5px solid #CBD5E1;
-        }
-
-        .tat-step-title {
-            font-size: 0.78rem;
-            font-weight: 900;
-            color: #111827;
-            text-transform: uppercase;
-            margin-bottom: 6px;
-        }
-
-        .tat-step-date {
-            font-size: 0.92rem;
-            font-weight: 800;
-            color: #0F172A;
-            margin-bottom: 6px;
-        }
-
-        .tat-step-status {
-            font-size: 0.76rem;
-            font-weight: 700;
-            color: #64748B;
-        }
-
-        .tat-step-pending-text {
-            color: #B91C1C;
-        }
-
-        .tat-step-done-text {
-            color: #166534;
-        }
-
-        @keyframes pulseDot {
-            0% {
-                box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.35);
-            }
-            70% {
-                box-shadow: 0 0 0 12px rgba(220, 38, 38, 0);
-            }
-            100% {
-                box-shadow: 0 0 0 0 rgba(220, 38, 38, 0);
-            }
-        }
     </style>
     """,
     unsafe_allow_html=True,
@@ -655,30 +531,6 @@ def formato_id(valor: Any) -> str:
         texto = texto[:-2]
 
     return texto
-
-
-def formato_valor(valor: Any) -> str:
-    if pd.isna(valor):
-        return "-"
-
-    if isinstance(valor, pd.Timestamp):
-        return valor.strftime("%d-%m-%Y")
-
-    if isinstance(valor, float):
-        if np.isfinite(valor) and valor.is_integer():
-            return f"{int(valor):,}".replace(",", ".")
-
-        return (
-            f"{valor:,.1f}"
-            .replace(",", "X")
-            .replace(".", ",")
-            .replace("X", ".")
-        )
-
-    if isinstance(valor, int):
-        return f"{valor:,}".replace(",", ".")
-
-    return str(valor)
 
 
 def formato_cantidad(valor: Any) -> str:
@@ -2310,6 +2162,46 @@ def mostrar_card_estado(resumen: dict):
     )
 
 
+def mostrar_detalle_filtros_reducido(resumen_filtros_df: pd.DataFrame):
+    if resumen_filtros_df.empty:
+        st.info("No hay detalle de filtros disponible.")
+        return
+
+    columnas = [
+        "Filtro aplicado",
+        "Valor",
+        "% retenido",
+        "% excluido",
+    ]
+
+    columnas = [
+        col for col in columnas
+        if col in resumen_filtros_df.columns
+    ]
+
+    tabla = resumen_filtros_df[columnas].copy()
+
+    st.dataframe(
+        tabla,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "% retenido": st.column_config.ProgressColumn(
+                "% retenido",
+                format="%.1f%%",
+                min_value=0,
+                max_value=100,
+            ),
+            "% excluido": st.column_config.ProgressColumn(
+                "% excluido",
+                format="%.1f%%",
+                min_value=0,
+                max_value=100,
+            ),
+        },
+    )
+
+
 def mostrar_tabla_alertas(
     df: pd.DataFrame,
     titulo: str,
@@ -2543,64 +2435,74 @@ def mostrar_tracker_tat(row: pd.Series):
     estado_recepcion = str(row.get(COL_ESTADO_RECEPCION_ALERTA, ""))
     pendiente = str(row.get("fecha_pendiente", ""))
 
-    etapas_html = []
+    estados_etapas = []
 
     for nombre, col in ETAPAS_LINEA_PEDIDO:
         fecha = pd.to_datetime(row.get(col, pd.NaT), errors="coerce")
 
         if pd.notna(fecha):
-            dot_class = "tat-dot-done"
-            card_class = "tat-step-card-done"
-            icono = "✓"
-            fecha_txt = fecha.strftime("%d-%m-%Y")
-            estado_txt = "Completado"
-            estado_class = "tat-step-done-text"
+            estados_etapas.append(
+                {
+                    "nombre": nombre,
+                    "fecha": fecha.strftime("%d-%m-%Y"),
+                    "estado": "Completado",
+                    "tipo": "done",
+                }
+            )
         else:
             if estado_recepcion == "Recepcionado":
-                dot_class = "tat-dot-upcoming"
-                card_class = "tat-step-card-upcoming"
-                icono = "•"
-                fecha_txt = "-"
-                estado_txt = "Sin dato"
-                estado_class = ""
+                estados_etapas.append(
+                    {
+                        "nombre": nombre,
+                        "fecha": "-",
+                        "estado": "Sin dato",
+                        "tipo": "neutral",
+                    }
+                )
             elif nombre == pendiente:
-                dot_class = "tat-dot-pending"
-                card_class = "tat-step-card-pending"
-                icono = "!"
-                fecha_txt = "-"
-                estado_txt = "Pendiente actual"
-                estado_class = "tat-step-pending-text"
+                estados_etapas.append(
+                    {
+                        "nombre": nombre,
+                        "fecha": "-",
+                        "estado": "Pendiente actual",
+                        "tipo": "current",
+                    }
+                )
             else:
-                dot_class = "tat-dot-upcoming"
-                card_class = "tat-step-card-upcoming"
-                icono = "•"
-                fecha_txt = "-"
-                estado_txt = "Pendiente"
-                estado_class = ""
+                estados_etapas.append(
+                    {
+                        "nombre": nombre,
+                        "fecha": "-",
+                        "estado": "Pendiente",
+                        "tipo": "pending",
+                    }
+                )
 
-        etapas_html.append(
-            f"""
-            <div class="tat-step">
-                <div class="tat-dot {dot_class}">{icono}</div>
-                <div class="tat-step-card {card_class}">
-                    <div class="tat-step-title">{nombre}</div>
-                    <div class="tat-step-date">{fecha_txt}</div>
-                    <div class="tat-step-status {estado_class}">{estado_txt}</div>
-                </div>
-            </div>
-            """
-        )
+    etapas_completadas = sum(1 for etapa in estados_etapas if etapa["tipo"] == "done")
+    total_etapas = len(estados_etapas)
+    avance_pct = int(round(etapas_completadas / total_etapas * 100)) if total_etapas else 0
 
-    html = f"""
-    <div class="tat-tracker-wrap">
-        <div class="tat-tracker">
-            <div class="tat-line"></div>
-            {''.join(etapas_html)}
-        </div>
-    </div>
-    """
+    st.progress(
+        avance_pct,
+        text=f"Avance del recorrido TAT: {etapas_completadas} de {total_etapas} hitos completados ({avance_pct}%).",
+    )
 
-    st.markdown(html, unsafe_allow_html=True)
+    cols = st.columns(total_etapas)
+
+    for idx, etapa in enumerate(estados_etapas):
+        with cols[idx]:
+            st.markdown(f"**{etapa['nombre']}**")
+
+            if etapa["tipo"] == "done":
+                st.success("Completado")
+            elif etapa["tipo"] == "current":
+                st.error("Pendiente actual")
+            elif etapa["tipo"] == "pending":
+                st.info("Pendiente")
+            else:
+                st.warning("Sin dato")
+
+            st.caption(f"Fecha: {etapa['fecha']}")
 
 
 def mostrar_expediente_registro(row: pd.Series):
@@ -3104,42 +3006,9 @@ with col_ret1:
     )
 
 with col_ret2:
-    st.markdown("#### Detalle de filtros aplicados")
-
-    if resumen_filtros_df.empty:
-        st.info("No hay detalle de filtros disponible.")
-    else:
-        st.dataframe(
-            resumen_filtros_df,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Registros antes": st.column_config.NumberColumn(
-                    "Registros antes",
-                    format="%d",
-                ),
-                "Registros después": st.column_config.NumberColumn(
-                    "Registros después",
-                    format="%d",
-                ),
-                "Registros excluidos": st.column_config.NumberColumn(
-                    "Registros excluidos",
-                    format="%d",
-                ),
-                "% retenido": st.column_config.ProgressColumn(
-                    "% retenido",
-                    format="%.1f%%",
-                    min_value=0,
-                    max_value=100,
-                ),
-                "% excluido": st.column_config.ProgressColumn(
-                    "% excluido",
-                    format="%.1f%%",
-                    min_value=0,
-                    max_value=100,
-                ),
-            },
-        )
+    st.markdown("#### Detalle de filtros aplicado")
+    st.caption("Vista reducida a lo más importante: porcentaje retenido y porcentaje excluido.")
+    mostrar_detalle_filtros_reducido(resumen_filtros_df)
 
 
 # ============================================================
