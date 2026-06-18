@@ -6,10 +6,15 @@
 # Mejoras:
 # - Se elimina el gráfico final de Incumplimiento TAT
 # - En TAT sobre registros evaluables se agregan:
-#   1. Distribución de días TAT para registros Cumple
-#   2. Distribución de días TAT para registros No cumple
-# - Para Cumple: distribución del uso del umbral definido
-# - Para No cumple: distribución de días sobre el umbral definido
+#   1. Distribución de eficiencia para registros Cumple
+#   2. Distribución de severidad para registros No cumple
+# - Para Cumple:
+#   Se interpreta como eficiencia de cumplimiento.
+#   Valores bajos de uso del umbral = mayor eficiencia.
+#   Valores altos de uso del umbral = menor eficiencia.
+# - Para No cumple:
+#   Se interpreta como severidad del retraso.
+#   Más días sobre umbral = peor rendimiento.
 # ============================================================
 
 import io
@@ -40,6 +45,10 @@ COLOR_META = "#0057B8"
 COLOR_TEXTO = "#1F2937"
 COLOR_MUTED = "#6B7280"
 COLOR_LINEA = "#111827"
+
+COLOR_EFICIENCIA_ALTA = "#2E7D32"
+COLOR_EFICIENCIA_MEDIA = "#F4B400"
+COLOR_EFICIENCIA_BAJA = "#EF3E52"
 
 META_CUMPLIMIENTO = 65
 
@@ -182,6 +191,27 @@ st.markdown(
         .kpi-bad {
             color: #991B1B;
             font-weight: 700;
+        }
+
+        .info-box {
+            background-color: #F9FAFB;
+            border: 1px solid #E5E7EB;
+            border-radius: 14px;
+            padding: 16px;
+            margin-bottom: 14px;
+        }
+
+        .info-title {
+            font-weight: 800;
+            color: #111827;
+            font-size: 16px;
+            margin-bottom: 6px;
+        }
+
+        .info-text {
+            color: #4B5563;
+            font-size: 14px;
+            line-height: 1.45;
         }
     </style>
     """,
@@ -1279,7 +1309,7 @@ def crear_resumen_etapas(df: pd.DataFrame) -> pd.DataFrame:
 # Distribuciones TAT vs umbral
 # ============================================================
 
-def crear_distribucion_tat_cumple(df: pd.DataFrame) -> pd.DataFrame:
+def preparar_base_distribucion_tat(df: pd.DataFrame, estado: str) -> pd.DataFrame:
     columnas_necesarias = [
         "performance_tat_total",
         "dias_tat_total",
@@ -1290,7 +1320,7 @@ def crear_distribucion_tat_cumple(df: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame()
 
     base = df[
-        df["performance_tat_total"].astype("string").eq("Cumple")
+        df["performance_tat_total"].astype("string").eq(estado)
     ].copy()
 
     if base.empty:
@@ -1313,8 +1343,25 @@ def crear_distribucion_tat_cumple(df: pd.DataFrame) -> pd.DataFrame:
         & base["dias_tat_total_num"].ge(0)
     ].copy()
 
+    return base
+
+
+def crear_distribucion_eficiencia_cumple(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    base = preparar_base_distribucion_tat(df, "Cumple")
+
     if base.empty:
-        return pd.DataFrame()
+        return pd.DataFrame(), {
+            "total": 0,
+            "total_evaluables": 0,
+            "pct_cumple": 0,
+            "promedio_uso_umbral": 0,
+            "promedio_dias_tat": 0,
+            "promedio_umbral": 0,
+        }
+
+    estado = df["performance_tat_total"].apply(normalizar_estado_performance)
+    total_evaluables = int(estado.isin(["Cumple", "No cumple"]).sum())
+    total_cumple = int(len(base))
 
     base["uso_umbral_pct"] = (
         base["dias_tat_total_num"] / base["umbral_tat_total_num"] * 100
@@ -1322,11 +1369,11 @@ def crear_distribucion_tat_cumple(df: pd.DataFrame) -> pd.DataFrame:
 
     bins = [-np.inf, 25, 50, 75, 100, np.inf]
     labels = [
-        "0% - 25% del umbral",
-        "26% - 50% del umbral",
-        "51% - 75% del umbral",
-        "76% - 100% del umbral",
-        "Mayor al umbral",
+        "Muy eficiente: 0% - 25% del umbral",
+        "Eficiente: 26% - 50% del umbral",
+        "Aceptable: 51% - 75% del umbral",
+        "Poco eficiente: 76% - 100% del umbral",
+        "Revisar: mayor al umbral",
     ]
 
     base["Rango"] = pd.cut(
@@ -1356,6 +1403,14 @@ def crear_distribucion_tat_cumple(df: pd.DataFrame) -> pd.DataFrame:
         0,
     )
 
+    tabla["Interpretación"] = [
+        "Mayor eficiencia",
+        "Buena eficiencia",
+        "Eficiencia media",
+        "Bajo margen de cumplimiento",
+        "Revisar datos / regla",
+    ]
+
     tabla["Promedio_dias_TAT"] = tabla["Promedio_dias_TAT"].round(2)
     tabla["Promedio_umbral"] = tabla["Promedio_umbral"].round(2)
     tabla["Promedio_uso_umbral_pct"] = tabla["Promedio_uso_umbral_pct"].round(2)
@@ -1369,44 +1424,34 @@ def crear_distribucion_tat_cumple(df: pd.DataFrame) -> pd.DataFrame:
         }
     )
 
-    return tabla
+    kpis = {
+        "total": total_cumple,
+        "total_evaluables": total_evaluables,
+        "pct_cumple": total_cumple / total_evaluables * 100 if total_evaluables else 0,
+        "promedio_uso_umbral": base["uso_umbral_pct"].mean(),
+        "promedio_dias_tat": base["dias_tat_total_num"].mean(),
+        "promedio_umbral": base["umbral_tat_total_num"].mean(),
+    }
+
+    return tabla, kpis
 
 
-def crear_distribucion_tat_no_cumple(df: pd.DataFrame) -> pd.DataFrame:
-    columnas_necesarias = [
-        "performance_tat_total",
-        "dias_tat_total",
-        "umbral_tat_total",
-    ]
-
-    if any(col not in df.columns for col in columnas_necesarias):
-        return pd.DataFrame()
-
-    base = df[
-        df["performance_tat_total"].astype("string").eq("No cumple")
-    ].copy()
+def crear_distribucion_severidad_no_cumple(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    base = preparar_base_distribucion_tat(df, "No cumple")
 
     if base.empty:
-        return pd.DataFrame()
+        return pd.DataFrame(), {
+            "total": 0,
+            "total_evaluables": 0,
+            "pct_no_cumple": 0,
+            "promedio_dias_sobre_umbral": 0,
+            "promedio_dias_tat": 0,
+            "promedio_umbral": 0,
+        }
 
-    base["dias_tat_total_num"] = pd.to_numeric(
-        base["dias_tat_total"],
-        errors="coerce",
-    )
-
-    base["umbral_tat_total_num"] = pd.to_numeric(
-        base["umbral_tat_total"],
-        errors="coerce",
-    )
-
-    base = base[
-        base["dias_tat_total_num"].notna()
-        & base["umbral_tat_total_num"].notna()
-        & base["umbral_tat_total_num"].gt(0)
-    ].copy()
-
-    if base.empty:
-        return pd.DataFrame()
+    estado = df["performance_tat_total"].apply(normalizar_estado_performance)
+    total_evaluables = int(estado.isin(["Cumple", "No cumple"]).sum())
+    total_no_cumple = int(len(base))
 
     base["dias_sobre_umbral"] = (
         base["dias_tat_total_num"] - base["umbral_tat_total_num"]
@@ -1417,14 +1462,21 @@ def crear_distribucion_tat_no_cumple(df: pd.DataFrame) -> pd.DataFrame:
     ].copy()
 
     if base.empty:
-        return pd.DataFrame()
+        return pd.DataFrame(), {
+            "total": 0,
+            "total_evaluables": total_evaluables,
+            "pct_no_cumple": 0,
+            "promedio_dias_sobre_umbral": 0,
+            "promedio_dias_tat": 0,
+            "promedio_umbral": 0,
+        }
 
     bins = [0, 5, 15, 30, np.inf]
     labels = [
-        "1 - 5 días sobre umbral",
-        "6 - 15 días sobre umbral",
-        "16 - 30 días sobre umbral",
-        "Mayor a 30 días sobre umbral",
+        "Leve: 1 - 5 días sobre umbral",
+        "Moderado: 6 - 15 días sobre umbral",
+        "Alto: 16 - 30 días sobre umbral",
+        "Crítico: más de 30 días sobre umbral",
     ]
 
     base["Rango"] = pd.cut(
@@ -1455,6 +1507,13 @@ def crear_distribucion_tat_no_cumple(df: pd.DataFrame) -> pd.DataFrame:
         0,
     )
 
+    tabla["Interpretación"] = [
+        "Retraso leve",
+        "Retraso moderado",
+        "Retraso alto",
+        "Retraso crítico",
+    ]
+
     tabla["Promedio_dias_TAT"] = tabla["Promedio_dias_TAT"].round(2)
     tabla["Promedio_umbral"] = tabla["Promedio_umbral"].round(2)
     tabla["Promedio_dias_sobre_umbral"] = tabla["Promedio_dias_sobre_umbral"].round(2)
@@ -1468,11 +1527,20 @@ def crear_distribucion_tat_no_cumple(df: pd.DataFrame) -> pd.DataFrame:
         }
     )
 
-    return tabla
+    kpis = {
+        "total": total_no_cumple,
+        "total_evaluables": total_evaluables,
+        "pct_no_cumple": total_no_cumple / total_evaluables * 100 if total_evaluables else 0,
+        "promedio_dias_sobre_umbral": base["dias_sobre_umbral"].mean(),
+        "promedio_dias_tat": base["dias_tat_total_num"].mean(),
+        "promedio_umbral": base["umbral_tat_total_num"].mean(),
+    }
+
+    return tabla, kpis
 
 
 # ============================================================
-# KPI
+# KPI visuales
 # ============================================================
 
 def mostrar_kpi_html(titulo: str, valor: str, subtitulo: str, clase: str = ""):
@@ -2244,11 +2312,12 @@ def grafico_donut_evaluables_tat(tabla: pd.DataFrame):
         )
 
 
-def grafico_barras_distribucion_tat(
+def grafico_barras_distribucion_intuitiva(
     tabla: pd.DataFrame,
     titulo: str,
     columna_porcentaje: str,
     color_barra: str,
+    etiqueta_x: str,
 ):
     if tabla.empty:
         st.info("No hay datos para graficar esta distribución.")
@@ -2274,9 +2343,9 @@ def grafico_barras_distribucion_tat(
     labels = data["Rango"].tolist()
     y = np.arange(len(labels))
 
-    alto_figura = max(4.8, len(labels) * 0.65)
+    alto_figura = max(5.2, len(labels) * 0.75)
 
-    fig, ax = plt.subplots(figsize=(11.5, alto_figura))
+    fig, ax = plt.subplots(figsize=(12.5, alto_figura))
 
     barras = ax.barh(
         y,
@@ -2287,7 +2356,7 @@ def grafico_barras_distribucion_tat(
 
     max_cantidad = max(cantidades) if len(cantidades) else 0
 
-    ax.set_xlim(0, max(max_cantidad * 1.28, 10))
+    ax.set_xlim(0, max(max_cantidad * 1.32, 10))
 
     for barra, cantidad, porcentaje in zip(barras, cantidades, porcentajes):
         ax.text(
@@ -2309,7 +2378,7 @@ def grafico_barras_distribucion_tat(
         color=COLOR_MUTED,
     )
 
-    ax.set_xlabel("Cantidad de registros", color=COLOR_TEXTO)
+    ax.set_xlabel(etiqueta_x, color=COLOR_TEXTO)
 
     ax.set_title(
         titulo,
@@ -2331,6 +2400,204 @@ def grafico_barras_distribucion_tat(
     fig.tight_layout()
 
     st.pyplot(fig, clear_figure=True, use_container_width=True)
+
+
+def mostrar_bloque_distribucion_cumple(df_dashboard: pd.DataFrame):
+    tabla, kpis = crear_distribucion_eficiencia_cumple(df_dashboard)
+
+    st.markdown("#### Eficiencia de cumplimiento TAT")
+    st.markdown(
+        """
+        <div class="info-box">
+            <div class="info-title">Distribución para registros que tienen cumplimiento</div>
+            <div class="info-text">
+                Esta visualización muestra los registros que <b>cumplen TAT</b> y qué porcentaje del umbral definido fue necesario para cumplir.
+                Se puede interpretar como <b>eficiencia de cumplimiento</b>: valores bajos indican que el registro cumplió con bastante margen,
+                mientras que valores altos indican que el registro cumplió, pero estuvo cerca del límite del umbral.
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        mostrar_kpi_html(
+            "Registros que cumplen",
+            formatear_entero(kpis["total"]),
+            f"De {formatear_entero(kpis['total_evaluables'])} registros evaluables.",
+            "kpi-good",
+        )
+
+    with col2:
+        mostrar_kpi_html(
+            "% Cumplimiento",
+            formatear_porcentaje(kpis["pct_cumple"]),
+            "Porcentaje de registros Cumple sobre evaluables.",
+            "kpi-good",
+        )
+
+    with col3:
+        mostrar_kpi_html(
+            "Uso promedio del umbral",
+            formatear_porcentaje(kpis["promedio_uso_umbral"]),
+            "Menor uso del umbral indica mayor eficiencia.",
+        )
+
+    with col4:
+        mostrar_kpi_html(
+            "Promedio días TAT",
+            f"{kpis['promedio_dias_tat']:.1f}",
+            f"Umbral promedio: {kpis['promedio_umbral']:.1f} días.",
+        )
+
+    if tabla.empty:
+        st.info("No hay registros Cumple con días TAT y umbral válidos para graficar.")
+        return
+
+    col_grafico, col_tabla = st.columns([1.15, 1])
+
+    with col_grafico:
+        grafico_barras_distribucion_intuitiva(
+            tabla=tabla,
+            titulo="Eficiencia de cumplimiento: uso del umbral TAT",
+            columna_porcentaje="% sobre Cumple",
+            color_barra=COLOR_CUMPLE,
+            etiqueta_x="Cantidad de registros que cumplen",
+        )
+
+    with col_tabla:
+        st.markdown("##### Tabla de eficiencia de cumplimiento")
+        st.dataframe(
+            tabla,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Cantidad": st.column_config.NumberColumn(
+                    "Cantidad",
+                    format="%d",
+                ),
+                "% sobre Cumple": st.column_config.ProgressColumn(
+                    "% sobre Cumple",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+                "Promedio días TAT": st.column_config.NumberColumn(
+                    "Promedio días TAT",
+                    format="%.2f",
+                ),
+                "Promedio umbral": st.column_config.NumberColumn(
+                    "Promedio umbral",
+                    format="%.2f",
+                ),
+                "Promedio uso umbral %": st.column_config.ProgressColumn(
+                    "Promedio uso umbral %",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=120,
+                ),
+            },
+        )
+
+
+def mostrar_bloque_distribucion_no_cumple(df_dashboard: pd.DataFrame):
+    tabla, kpis = crear_distribucion_severidad_no_cumple(df_dashboard)
+
+    st.markdown("#### Severidad de incumplimiento TAT")
+    st.markdown(
+        """
+        <div class="info-box">
+            <div class="info-title">Distribución para registros que no cumplen</div>
+            <div class="info-text">
+                Esta visualización muestra los registros que <b>no cumplen TAT</b> y en qué rangos de días caen después de exceder el umbral definido.
+                Se puede interpretar como <b>severidad del incumplimiento</b>: tardarse más días sobre el umbral significa peor rendimiento.
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        mostrar_kpi_html(
+            "Registros que no cumplen",
+            formatear_entero(kpis["total"]),
+            f"De {formatear_entero(kpis['total_evaluables'])} registros evaluables.",
+            "kpi-bad",
+        )
+
+    with col2:
+        mostrar_kpi_html(
+            "% No cumplimiento",
+            formatear_porcentaje(kpis["pct_no_cumple"]),
+            "Porcentaje de registros No cumple sobre evaluables.",
+            "kpi-bad",
+        )
+
+    with col3:
+        mostrar_kpi_html(
+            "Promedio días sobre umbral",
+            f"{kpis['promedio_dias_sobre_umbral']:.1f}",
+            "Más días sobre umbral indica peor rendimiento.",
+            "kpi-warning",
+        )
+
+    with col4:
+        mostrar_kpi_html(
+            "Promedio días TAT",
+            f"{kpis['promedio_dias_tat']:.1f}",
+            f"Umbral promedio: {kpis['promedio_umbral']:.1f} días.",
+        )
+
+    if tabla.empty:
+        st.info("No hay registros No cumple con días TAT y umbral válidos para graficar.")
+        return
+
+    col_grafico, col_tabla = st.columns([1.15, 1])
+
+    with col_grafico:
+        grafico_barras_distribucion_intuitiva(
+            tabla=tabla,
+            titulo="Severidad de incumplimiento: días sobre umbral TAT",
+            columna_porcentaje="% sobre No cumple",
+            color_barra=COLOR_NO_CUMPLE,
+            etiqueta_x="Cantidad de registros que no cumplen",
+        )
+
+    with col_tabla:
+        st.markdown("##### Tabla de severidad de incumplimiento")
+        st.dataframe(
+            tabla,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Cantidad": st.column_config.NumberColumn(
+                    "Cantidad",
+                    format="%d",
+                ),
+                "% sobre No cumple": st.column_config.ProgressColumn(
+                    "% sobre No cumple",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+                "Promedio días TAT": st.column_config.NumberColumn(
+                    "Promedio días TAT",
+                    format="%.2f",
+                ),
+                "Promedio umbral": st.column_config.NumberColumn(
+                    "Promedio umbral",
+                    format="%.2f",
+                ),
+                "Promedio días sobre umbral": st.column_config.NumberColumn(
+                    "Promedio días sobre umbral",
+                    format="%.2f",
+                ),
+            },
+        )
 
 
 # ============================================================
@@ -3248,115 +3515,12 @@ grafico_donut_evaluables_tat(desglose_evaluables_df)
 
 
 # ============================================================
-# Distribuciones adicionales debajo de TAT evaluable
+# Distribuciones intuitivas debajo de TAT evaluable
 # ============================================================
 
-st.markdown("#### Distribución de días TAT total para registros que Cumplen")
-st.caption(
-    "Para los registros que Cumplen, se muestra qué proporción del umbral definido fue utilizada por el TAT total."
-)
+mostrar_bloque_distribucion_cumple(df_dashboard)
 
-distribucion_cumple_df = crear_distribucion_tat_cumple(df_dashboard)
-
-if distribucion_cumple_df.empty:
-    st.info("No hay registros Cumple con días TAT y umbral válidos para graficar.")
-else:
-    col_dc1, col_dc2 = st.columns([1.15, 1])
-
-    with col_dc1:
-        grafico_barras_distribucion_tat(
-            tabla=distribucion_cumple_df,
-            titulo="Distribución Cumple: uso del umbral TAT",
-            columna_porcentaje="% sobre Cumple",
-            color_barra=COLOR_CUMPLE,
-        )
-
-    with col_dc2:
-        st.markdown("##### Tabla distribución Cumple")
-        st.dataframe(
-            distribucion_cumple_df,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Cantidad": st.column_config.NumberColumn(
-                    "Cantidad",
-                    format="%d",
-                ),
-                "% sobre Cumple": st.column_config.ProgressColumn(
-                    "% sobre Cumple",
-                    format="%.1f%%",
-                    min_value=0,
-                    max_value=100,
-                ),
-                "Promedio días TAT": st.column_config.NumberColumn(
-                    "Promedio días TAT",
-                    format="%.2f",
-                ),
-                "Promedio umbral": st.column_config.NumberColumn(
-                    "Promedio umbral",
-                    format="%.2f",
-                ),
-                "Promedio uso umbral %": st.column_config.ProgressColumn(
-                    "Promedio uso umbral %",
-                    format="%.1f%%",
-                    min_value=0,
-                    max_value=100,
-                ),
-            },
-        )
-
-
-st.markdown("#### Distribución de días TAT total para registros que No cumplen")
-st.caption(
-    "Para los registros que No cumplen, se muestra cuántos días el TAT total excedió el umbral definido."
-)
-
-distribucion_no_cumple_df = crear_distribucion_tat_no_cumple(df_dashboard)
-
-if distribucion_no_cumple_df.empty:
-    st.info("No hay registros No cumple con días TAT y umbral válidos para graficar.")
-else:
-    col_dnc1, col_dnc2 = st.columns([1.15, 1])
-
-    with col_dnc1:
-        grafico_barras_distribucion_tat(
-            tabla=distribucion_no_cumple_df,
-            titulo="Distribución No cumple: días sobre umbral TAT",
-            columna_porcentaje="% sobre No cumple",
-            color_barra=COLOR_NO_CUMPLE,
-        )
-
-    with col_dnc2:
-        st.markdown("##### Tabla distribución No cumple")
-        st.dataframe(
-            distribucion_no_cumple_df,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Cantidad": st.column_config.NumberColumn(
-                    "Cantidad",
-                    format="%d",
-                ),
-                "% sobre No cumple": st.column_config.ProgressColumn(
-                    "% sobre No cumple",
-                    format="%.1f%%",
-                    min_value=0,
-                    max_value=100,
-                ),
-                "Promedio días TAT": st.column_config.NumberColumn(
-                    "Promedio días TAT",
-                    format="%.2f",
-                ),
-                "Promedio umbral": st.column_config.NumberColumn(
-                    "Promedio umbral",
-                    format="%.2f",
-                ),
-                "Promedio días sobre umbral": st.column_config.NumberColumn(
-                    "Promedio días sobre umbral",
-                    format="%.2f",
-                ),
-            },
-        )
+mostrar_bloque_distribucion_no_cumple(df_dashboard)
 
 
 # ============================================================
