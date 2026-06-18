@@ -4,12 +4,15 @@
 # Flujo: cargar archivo -> procesar -> confirmar -> descargar parquet
 # CSV opcional
 # Excel eliminado
+# Nombre de salida único con fecha y hora actual
+# Ejemplo: 01_ME5A_20260618_143522.parquet
 # ============================================================
 
 import io
 import re
 import base64
 from pathlib import Path
+from datetime import datetime
 
 import pandas as pd
 import streamlit as st
@@ -118,7 +121,7 @@ def mostrar_logo():
                 >
             </div>
             """,
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
 
 
@@ -137,23 +140,20 @@ def obtener_separador(separador_csv: str):
     return separadores.get(separador_csv, None)
 
 
-def generar_nombre_salida(nombre_archivo: str, extension: str) -> str:
-    nombre_base = Path(nombre_archivo).stem
+def generar_nombre_salida(extension: str) -> str:
+    """
+    Genera un nombre único para el archivo de salida.
 
-    nombre_base = nombre_base.strip().lower()
-    nombre_base = re.sub(r"\s+", "_", nombre_base)
-    nombre_base = nombre_base.replace("-", "_")
-    nombre_base = re.sub(r"[^a-zA-Z0-9_]", "", nombre_base)
-    nombre_base = re.sub(r"_+", "_", nombre_base)
-    nombre_base = nombre_base.strip("_")
+    Formato:
+    01_ME5A_YYYYMMDD_HHMMSS.extension
 
-    if not nombre_base:
-        nombre_base = "archivo"
+    Ejemplo:
+    01_ME5A_20260618_143522.parquet
+    """
 
-    if nombre_base.startswith("me5a"):
-        return f"{nombre_base}_limpio.{extension}"
+    fecha_hora_actual = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    return f"me5a_{nombre_base}_limpio.{extension}"
+    return f"01_ME5A_{fecha_hora_actual}.{extension}"
 
 
 # ============================================================
@@ -589,12 +589,10 @@ try:
         parquet_bytes = convertir_a_parquet_cache(df_limpio)
 
         nombre_parquet = generar_nombre_salida(
-            nombre_archivo=nombre_archivo,
             extension="parquet",
         )
 
         nombre_csv = generar_nombre_salida(
-            nombre_archivo=nombre_archivo,
             extension="csv",
         )
 
@@ -642,6 +640,7 @@ st.markdown(
         <h4 style="margin-top:0;">3. Descargar archivo limpio</h4>
         <p class="small-muted">
             El formato principal de salida es Parquet.
+            El nombre del archivo incluye fecha y hora para evitar duplicados.
         </p>
     </div>
     """,
