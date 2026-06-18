@@ -12,6 +12,7 @@
 # - Cantidad y % Cumple TAT sobre evaluables
 # - Cantidad y % No cumple TAT sobre evaluables
 # - Desglose de lo filtrado con gráfico donut
+# - Donut adicional solo con base evaluable
 # ============================================================
 
 import io
@@ -1060,6 +1061,39 @@ def crear_desglose_filtrado_tat(df: pd.DataFrame) -> pd.DataFrame:
     return tabla
 
 
+def crear_desglose_evaluables_tat(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Crea un desglose SOLO con Cumple y No cumple.
+    Denominador: registros evaluables = Cumple + No cumple.
+    """
+
+    if "performance_tat_total" not in df.columns:
+        return pd.DataFrame()
+
+    estado = df["performance_tat_total"].apply(normalizar_estado_performance)
+
+    tabla = (
+        estado[estado.isin(["Cumple", "No cumple"])]
+        .value_counts()
+        .reindex(["Cumple", "No cumple"], fill_value=0)
+        .reset_index()
+    )
+
+    tabla.columns = ["Categoría", "Cantidad"]
+
+    total_evaluable = int(tabla["Cantidad"].sum())
+
+    tabla["% sobre evaluables"] = np.where(
+        total_evaluable > 0,
+        tabla["Cantidad"] / total_evaluable * 100,
+        0,
+    )
+
+    tabla["% sobre evaluables"] = tabla["% sobre evaluables"].round(2)
+
+    return tabla
+
+
 def calcular_kpis_tat(
     df_base: pd.DataFrame,
     df_filtrado: pd.DataFrame,
@@ -1950,6 +1984,185 @@ def grafico_donut_desglose_filtrado(tabla: pd.DataFrame):
         )
 
 
+def grafico_donut_evaluables_tat(tabla: pd.DataFrame):
+    """
+    Gráfico donut solo para Cumple y No cumple.
+    Denominador: Cumple + No cumple.
+    """
+
+    if tabla.empty:
+        st.info("No hay registros evaluables para graficar.")
+        return
+
+    data = tabla[tabla["Cantidad"].gt(0)].copy()
+
+    if data.empty:
+        st.info("No hay registros evaluables con cantidad mayor a cero.")
+        return
+
+    colores_mapa = {
+        "Cumple": COLOR_CUMPLE,
+        "No cumple": COLOR_NO_CUMPLE,
+    }
+
+    data["Color"] = data["Categoría"].map(colores_mapa).fillna(COLOR_NO_CUMPLE)
+
+    cantidades = (
+        pd.to_numeric(data["Cantidad"], errors="coerce")
+        .fillna(0)
+        .astype(int)
+        .to_numpy()
+    )
+
+    porcentajes = (
+        pd.to_numeric(data["% sobre evaluables"], errors="coerce")
+        .fillna(0)
+        .to_numpy()
+    )
+
+    colores = data["Color"].tolist()
+    etiquetas = data["Categoría"].astype(str).tolist()
+
+    total = int(cantidades.sum())
+
+    col_grafico, col_resumen = st.columns([1.15, 1])
+
+    with col_grafico:
+        fig, ax = plt.subplots(figsize=(8.2, 6.4))
+
+        wedges, texts, autotexts = ax.pie(
+            cantidades,
+            labels=None,
+            startangle=90,
+            counterclock=False,
+            colors=colores,
+            autopct=lambda pct: f"{pct:.1f}%" if pct >= 4 else "",
+            pctdistance=0.78,
+            wedgeprops={
+                "width": 0.38,
+                "linewidth": 2.5,
+                "edgecolor": "white",
+            },
+        )
+
+        for i, autotext in enumerate(autotexts):
+            categoria = etiquetas[i]
+
+            if categoria == "No cumple":
+                autotext.set_color(COLOR_TEXTO)
+            else:
+                autotext.set_color("white")
+
+            autotext.set_fontweight("bold")
+            autotext.set_fontsize(10)
+
+        ax.text(
+            0,
+            0.08,
+            f"{total:,}".replace(",", "."),
+            ha="center",
+            va="center",
+            fontsize=24,
+            fontweight="bold",
+            color=COLOR_TEXTO,
+        )
+
+        ax.text(
+            0,
+            -0.12,
+            "evaluables",
+            ha="center",
+            va="center",
+            fontsize=10,
+            fontweight="bold",
+            color=COLOR_MUTED,
+        )
+
+        etiquetas_leyenda = []
+
+        for categoria, cantidad, porcentaje in zip(etiquetas, cantidades, porcentajes):
+            cantidad_txt = f"{int(cantidad):,}".replace(",", ".")
+            etiquetas_leyenda.append(
+                f"{categoria} · {cantidad_txt} · {porcentaje:.1f}%"
+            )
+
+        legend = ax.legend(
+            wedges,
+            etiquetas_leyenda,
+            title="Base evaluable",
+            loc="center left",
+            bbox_to_anchor=(1.02, 0.5),
+            frameon=False,
+            fontsize=9.5,
+            title_fontsize=10,
+        )
+
+        for texto in legend.get_texts():
+            texto.set_color(COLOR_TEXTO)
+
+        legend.get_title().set_color(COLOR_TEXTO)
+        legend.get_title().set_fontweight("bold")
+
+        ax.set_title(
+            "Desglose TAT sobre registros evaluables",
+            fontsize=15,
+            fontweight="bold",
+            color=COLOR_TEXTO,
+            pad=16,
+        )
+
+        ax.axis("equal")
+        fig.patch.set_alpha(0)
+        fig.tight_layout()
+        fig.subplots_adjust(right=0.72)
+
+        st.pyplot(fig, clear_figure=True, use_container_width=True)
+
+    with col_resumen:
+        st.markdown("#### Cumplimiento sobre evaluables")
+        st.caption(
+            "Este gráfico usa como denominador solamente los registros evaluables: Cumple + No cumple."
+        )
+
+        tabla_resumen = data.copy()
+
+        tabla_resumen["Cantidad"] = (
+            pd.to_numeric(tabla_resumen["Cantidad"], errors="coerce")
+            .fillna(0)
+            .astype(int)
+        )
+
+        tabla_resumen["% sobre evaluables"] = (
+            pd.to_numeric(tabla_resumen["% sobre evaluables"], errors="coerce")
+            .fillna(0)
+            .round(1)
+        )
+
+        st.dataframe(
+            tabla_resumen[
+                [
+                    "Categoría",
+                    "Cantidad",
+                    "% sobre evaluables",
+                ]
+            ],
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Cantidad": st.column_config.NumberColumn(
+                    "Cantidad",
+                    format="%d",
+                ),
+                "% sobre evaluables": st.column_config.ProgressColumn(
+                    "% sobre evaluables",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+            },
+        )
+
+
 def grafico_donut_retencion(total_ingresado: int, total_retenido: int):
     total_excluido = total_ingresado - total_retenido
 
@@ -2594,13 +2807,23 @@ mostrar_indicadores_tat(kpis)
 
 st.markdown("### Desglose de lo filtrado")
 st.caption(
-    "Este desglose explica la composición de los registros retenidos por filtros. "
-    "Cumple y No cumple forman la base evaluable para el cumplimiento TAT."
+    "Primer gráfico: composición de todos los registros retenidos por filtros. "
+    "Segundo gráfico: composición solo de los registros evaluables."
 )
 
 desglose_filtrado_df = crear_desglose_filtrado_tat(df_dashboard)
 
 grafico_donut_desglose_filtrado(desglose_filtrado_df)
+
+st.markdown("### Desglose sobre registros evaluables")
+st.caption(
+    "Este gráfico usa como base únicamente los registros evaluables: Cumple + No cumple. "
+    "Aquí se ve el porcentaje real de cumplimiento TAT."
+)
+
+desglose_evaluables_df = crear_desglose_evaluables_tat(df_dashboard)
+
+grafico_donut_evaluables_tat(desglose_evaluables_df)
 
 
 # ============================================================
