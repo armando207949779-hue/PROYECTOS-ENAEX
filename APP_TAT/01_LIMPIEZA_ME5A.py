@@ -5,7 +5,7 @@
 # CSV opcional
 # Excel eliminado
 # Nombre de salida único con fecha y hora actual
-# Ejemplo: 01_ME5A_20260618_143522.parquet
+# Ejemplo: 01_ME5A_20260618_132722_LIMPIO.parquet
 # ============================================================
 
 import io
@@ -145,15 +145,15 @@ def generar_nombre_salida(extension: str) -> str:
     Genera un nombre único para el archivo de salida.
 
     Formato:
-    01_ME5A_YYYYMMDD_HHMMSS.extension
+    01_ME5A_YYYYMMDD_HHMMSS_LIMPIO.extension
 
     Ejemplo:
-    01_ME5A_20260618_143522.parquet
+    01_ME5A_20260618_132722_LIMPIO.parquet
     """
 
     fecha_hora_actual = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    return f"01_ME5A_{fecha_hora_actual}.{extension}"
+    return f"01_ME5A_{fecha_hora_actual}_LIMPIO.{extension}"
 
 
 # ============================================================
@@ -640,7 +640,7 @@ st.markdown(
         <h4 style="margin-top:0;">3. Descargar archivo limpio</h4>
         <p class="small-muted">
             El formato principal de salida es Parquet.
-            El nombre del archivo incluye fecha y hora para evitar duplicados.
+            El nombre del archivo incluye fecha, hora y la palabra LIMPIO.
         </p>
     </div>
     """,
