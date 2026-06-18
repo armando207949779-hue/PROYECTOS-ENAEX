@@ -1,12 +1,24 @@
 # ============================================================
 # 09_PERFORMANCE_PLANTAS
-# Dashboard Performance TAT por plantas / centros
+# Dashboard Performance TAT por Prillex, Rio Loa y Plantas de servicios
 # Usa df_tat cargado desde 06_CARGAR_ARCHIVO
+#
+# Mejoras aplicadas desde 08_PERFORMANCE_PLANTA_MENSUAL:
+# - KPI Indicators más claros
+# - Retención por filtros
+# - Donut de Performance TAT
+# - Cumplimiento por planta con tabla y gráfico
+# - Evolución mensual comparativa por planta
+# - Zoom del último año disponible
+# - KPI Indicators del último año por planta
+# - Ranking por centro con barras
+# - Vista previa y descarga por mes, grupo y estado
+# - Mantiene detalle semanal con filtro
 # ============================================================
 
 import io
 import base64
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -30,7 +42,7 @@ COLOR_CUMPLE = "#EF3E52"
 COLOR_NO_CUMPLE = "#BFC3C7"
 COLOR_EN_PROCESO = "#F4B400"
 COLOR_NO_APLICA = "#9CA3AF"
-COLOR_SIN_DATOS = "#B0B4BB"
+COLOR_SIN_DATOS = "#D1D5DB"
 COLOR_META = "#0057B8"
 COLOR_TEXTO = "#1F2937"
 COLOR_MUTED = "#6B7280"
@@ -122,6 +134,12 @@ CENTROS_EXCLUIR_PLANTAS_SERVICIOS = [
     "E021",
 ]
 
+# ============================================================
+# IMPORTANTE:
+# Conserva aquí tu CENTROS_MAESTRO completo original.
+# Puedes pegar exactamente el mismo listado que ya tienes en tu 09.
+# ============================================================
+
 CENTROS_MAESTRO = [
     {"Centro": "E002", "Sociedad": "EC01", "Nombre": "Prillex"},
     {"Centro": "E021", "Sociedad": "EC06", "Nombre": "CM-Enaex Servicios"},
@@ -200,6 +218,49 @@ st.markdown(
             padding: 14px;
             border-radius: 12px;
             border: 1px solid #e9ecef;
+        }
+
+        .kpi-box {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 14px;
+            padding: 16px;
+            height: 100%;
+        }
+
+        .kpi-title {
+            color: #6B7280;
+            font-size: 13px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .kpi-value {
+            color: #111827;
+            font-size: 28px;
+            font-weight: 800;
+            margin-bottom: 2px;
+        }
+
+        .kpi-subtitle {
+            color: #6B7280;
+            font-size: 13px;
+            line-height: 1.35;
+        }
+
+        .kpi-good {
+            color: #166534;
+            font-weight: 700;
+        }
+
+        .kpi-bad {
+            color: #991B1B;
+            font-weight: 700;
+        }
+
+        .kpi-warning {
+            color: #B45309;
+            font-weight: 700;
         }
     </style>
     """,
@@ -363,6 +424,45 @@ def normalizar_estado_tat(valor) -> str:
     return str(valor).strip()
 
 
+def formatear_entero(valor) -> str:
+    if pd.isna(valor):
+        return "—"
+
+    valor_num = pd.to_numeric(valor, errors="coerce")
+
+    if pd.isna(valor_num):
+        return "—"
+
+    return f"{int(round(valor_num)):,}".replace(",", ".")
+
+
+def formatear_porcentaje(valor) -> str:
+    if pd.isna(valor):
+        return "—"
+
+    valor_num = pd.to_numeric(valor, errors="coerce")
+
+    if pd.isna(valor_num):
+        return "—"
+
+    return f"{valor_num:.1f}%"
+
+
+def mostrar_kpi_html(titulo: str, valor: str, subtitulo: str, clase: str = ""):
+    clase_css = f" {clase}" if clase else ""
+
+    st.markdown(
+        f"""
+        <div class="kpi-box">
+            <div class="kpi-title">{titulo}</div>
+            <div class="kpi-value{clase_css}">{valor}</div>
+            <div class="kpi-subtitle">{subtitulo}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def obtener_maestro_centros_df() -> pd.DataFrame:
     maestro = pd.DataFrame(CENTROS_MAESTRO).copy()
     maestro["Centro"] = maestro["Centro"].astype(str).str.strip()
@@ -409,7 +509,6 @@ def validar_columnas_base(df: pd.DataFrame):
 def obtener_rango_fechas_semana_iso(anio_iso: int, semana_iso: int):
     inicio = pd.Timestamp(date.fromisocalendar(int(anio_iso), int(semana_iso), 1))
     fin = pd.Timestamp(date.fromisocalendar(int(anio_iso), int(semana_iso), 7))
-
     return inicio, fin
 
 
@@ -603,6 +702,7 @@ def registrar_paso_filtro(
             "Registros después": despues,
             "Registros excluidos": antes - despues,
             "% retenido": round(despues / antes * 100, 2) if antes else 0,
+            "% excluido": round((antes - despues) / antes * 100, 2) if antes else 0,
         }
     )
 
@@ -629,6 +729,7 @@ def aplicar_filtros_con_progreso(
             "Registros después": len(df_base),
             "Registros excluidos": 0,
             "% retenido": 100.0,
+            "% excluido": 0.0,
         }
     ]
 
@@ -757,6 +858,391 @@ def aplicar_filtros_con_progreso(
     barra.progress(100, text="Filtros aplicados correctamente.")
 
     return df_filtrado, pd.DataFrame(resumen)
+
+
+# ============================================================
+# RESÚMENES
+# ============================================================
+
+def crear_resumen_performance(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty or COL_PERFORMANCE_TAT not in df.columns:
+        return pd.DataFrame()
+
+    orden = [
+        "Cumple",
+        "No cumple",
+        "En proceso",
+        "No aplica",
+        "Sin datos",
+    ]
+
+    tabla = (
+        df[COL_PERFORMANCE_TAT]
+        .value_counts()
+        .reindex(orden, fill_value=0)
+        .reset_index()
+    )
+
+    tabla.columns = ["Categoría", "Cantidad"]
+
+    total = int(tabla["Cantidad"].sum())
+
+    evaluables = int(
+        tabla.loc[
+            tabla["Categoría"].isin(["Cumple", "No cumple"]),
+            "Cantidad",
+        ].sum()
+    )
+
+    tabla["Tipo"] = np.where(
+        tabla["Categoría"].isin(["Cumple", "No cumple"]),
+        "Evaluable",
+        "No evaluable",
+    )
+
+    tabla["% sobre filtrados"] = np.where(
+        total > 0,
+        tabla["Cantidad"] / total * 100,
+        0,
+    )
+
+    tabla["% sobre evaluables"] = np.where(
+        tabla["Categoría"].isin(["Cumple", "No cumple"]) & (evaluables > 0),
+        tabla["Cantidad"] / evaluables * 100,
+        np.nan,
+    )
+
+    tabla["% sobre filtrados"] = tabla["% sobre filtrados"].round(2)
+    tabla["% sobre evaluables"] = tabla["% sobre evaluables"].round(2)
+
+    return tabla
+
+
+def crear_resumen_grupos(df: pd.DataFrame) -> pd.DataFrame:
+    columnas_salida = [
+        "Grupo planta",
+        "Cumple",
+        "No cumple",
+        "Total evaluable",
+        "% Cumple",
+        "% No cumple",
+    ]
+
+    if df.empty:
+        return pd.DataFrame(columns=columnas_salida)
+
+    base = df[
+        df[COL_PERFORMANCE_TAT].isin(["Cumple", "No cumple"])
+    ].copy()
+
+    if base.empty:
+        return pd.DataFrame(columns=columnas_salida)
+
+    resumen = (
+        base
+        .groupby(["grupo_planta", COL_PERFORMANCE_TAT])
+        .size()
+        .reset_index(name="cantidad")
+    )
+
+    tabla = resumen.pivot_table(
+        index="grupo_planta",
+        columns=COL_PERFORMANCE_TAT,
+        values="cantidad",
+        aggfunc="sum",
+        fill_value=0,
+    ).reset_index()
+
+    for col in ["Cumple", "No cumple"]:
+        if col not in tabla.columns:
+            tabla[col] = 0
+
+    tabla["Total evaluable"] = tabla["Cumple"] + tabla["No cumple"]
+
+    tabla["% Cumple"] = np.where(
+        tabla["Total evaluable"] > 0,
+        tabla["Cumple"] / tabla["Total evaluable"] * 100,
+        0,
+    )
+
+    tabla["% No cumple"] = np.where(
+        tabla["Total evaluable"] > 0,
+        tabla["No cumple"] / tabla["Total evaluable"] * 100,
+        0,
+    )
+
+    tabla = tabla.rename(columns={"grupo_planta": "Grupo planta"})
+
+    orden = {
+        "Prillex": 1,
+        "Rio Loa": 2,
+        "Plantas de servicios": 3,
+    }
+
+    tabla["orden"] = tabla["Grupo planta"].map(orden).fillna(99)
+    tabla = tabla.sort_values("orden").drop(columns="orden")
+
+    total_cumple = int(tabla["Cumple"].sum())
+    total_no_cumple = int(tabla["No cumple"].sum())
+    total_evaluable = total_cumple + total_no_cumple
+
+    pct_total = (
+        total_cumple / total_evaluable * 100
+        if total_evaluable
+        else 0
+    )
+
+    fila_total = pd.DataFrame(
+        [
+            {
+                "Grupo planta": "Total",
+                "Cumple": total_cumple,
+                "No cumple": total_no_cumple,
+                "Total evaluable": total_evaluable,
+                "% Cumple": pct_total,
+                "% No cumple": 100 - pct_total if total_evaluable else 0,
+            }
+        ]
+    )
+
+    tabla = pd.concat([tabla, fila_total], ignore_index=True)
+
+    tabla["Cumple"] = tabla["Cumple"].astype(int)
+    tabla["No cumple"] = tabla["No cumple"].astype(int)
+    tabla["Total evaluable"] = tabla["Total evaluable"].astype(int)
+    tabla["% Cumple"] = tabla["% Cumple"].round(2)
+    tabla["% No cumple"] = tabla["% No cumple"].round(2)
+
+    return tabla[columnas_salida]
+
+
+def crear_resumen_mensual_grupos(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return pd.DataFrame()
+
+    base = df[
+        df["grupo_planta"].isin(["Prillex", "Rio Loa", "Plantas de servicios"])
+        & df[COL_PERFORMANCE_TAT].isin(["Cumple", "No cumple"])
+        & df["periodo_fecha"].notna()
+    ].copy()
+
+    if base.empty:
+        return pd.DataFrame()
+
+    resumen = (
+        base
+        .groupby(["periodo_fecha", "periodo_label", "grupo_planta", COL_PERFORMANCE_TAT])
+        .size()
+        .reset_index(name="cantidad")
+    )
+
+    tabla = resumen.pivot_table(
+        index=["periodo_fecha", "periodo_label", "grupo_planta"],
+        columns=COL_PERFORMANCE_TAT,
+        values="cantidad",
+        aggfunc="sum",
+        fill_value=0,
+    ).reset_index()
+
+    for col in ["Cumple", "No cumple"]:
+        if col not in tabla.columns:
+            tabla[col] = 0
+
+    tabla["Total evaluable"] = tabla["Cumple"] + tabla["No cumple"]
+
+    tabla["% Cumple"] = np.where(
+        tabla["Total evaluable"] > 0,
+        tabla["Cumple"] / tabla["Total evaluable"] * 100,
+        0,
+    )
+
+    tabla["% No cumple"] = np.where(
+        tabla["Total evaluable"] > 0,
+        tabla["No cumple"] / tabla["Total evaluable"] * 100,
+        0,
+    )
+
+    return tabla.sort_values(["periodo_fecha", "grupo_planta"]).reset_index(drop=True)
+
+
+def obtener_tabla_ultimo_anio(tabla_mensual: pd.DataFrame) -> tuple[pd.DataFrame, int | None]:
+    if tabla_mensual.empty or "periodo_fecha" not in tabla_mensual.columns:
+        return pd.DataFrame(), None
+
+    temp = tabla_mensual.copy()
+    temp["anio_zoom"] = pd.to_datetime(temp["periodo_fecha"], errors="coerce").dt.year
+    temp = temp[temp["anio_zoom"].notna()].copy()
+
+    if temp.empty:
+        return pd.DataFrame(), None
+
+    ultimo_anio = int(temp["anio_zoom"].max())
+
+    tabla_ultimo_anio = (
+        temp[temp["anio_zoom"].eq(ultimo_anio)]
+        .drop(columns=["anio_zoom"])
+        .sort_values(["periodo_fecha", "grupo_planta"])
+        .reset_index(drop=True)
+    )
+
+    return tabla_ultimo_anio, ultimo_anio
+
+
+def crear_kpis_ultimo_anio_por_grupo(tabla_ultimo_anio: pd.DataFrame) -> pd.DataFrame:
+    if tabla_ultimo_anio.empty:
+        return pd.DataFrame()
+
+    base = tabla_ultimo_anio.copy()
+
+    resumen = (
+        base
+        .groupby("grupo_planta")
+        .agg(
+            Cumple=("Cumple", "sum"),
+            **{"No cumple": ("No cumple", "sum")},
+            **{"Total evaluable": ("Total evaluable", "sum")},
+            **{"Promedio mensual % Cumple": ("% Cumple", "mean")},
+        )
+        .reset_index()
+        .rename(columns={"grupo_planta": "Grupo planta"})
+    )
+
+    resumen["% Cumple acumulado"] = np.where(
+        resumen["Total evaluable"] > 0,
+        resumen["Cumple"] / resumen["Total evaluable"] * 100,
+        0,
+    )
+
+    resumen["% No cumple acumulado"] = np.where(
+        resumen["Total evaluable"] > 0,
+        resumen["No cumple"] / resumen["Total evaluable"] * 100,
+        0,
+    )
+
+    resumen["Promedio mensual % Cumple"] = resumen["Promedio mensual % Cumple"].round(2)
+    resumen["% Cumple acumulado"] = resumen["% Cumple acumulado"].round(2)
+    resumen["% No cumple acumulado"] = resumen["% No cumple acumulado"].round(2)
+
+    orden = {
+        "Prillex": 1,
+        "Rio Loa": 2,
+        "Plantas de servicios": 3,
+    }
+
+    resumen["orden"] = resumen["Grupo planta"].map(orden).fillna(99)
+    resumen = resumen.sort_values("orden").drop(columns="orden")
+
+    return resumen
+
+
+def crear_resumen_centros(df: pd.DataFrame, mapa_etiquetas: dict) -> pd.DataFrame:
+    if df.empty:
+        return pd.DataFrame()
+
+    base = df[
+        df[COL_PERFORMANCE_TAT].isin(["Cumple", "No cumple"])
+    ].copy()
+
+    if base.empty:
+        return pd.DataFrame()
+
+    resumen = (
+        base
+        .groupby(["centro_grafico", "grupo_planta", COL_PERFORMANCE_TAT])
+        .size()
+        .reset_index(name="cantidad")
+    )
+
+    tabla = resumen.pivot_table(
+        index=["centro_grafico", "grupo_planta"],
+        columns=COL_PERFORMANCE_TAT,
+        values="cantidad",
+        aggfunc="sum",
+        fill_value=0,
+    ).reset_index()
+
+    for col in ["Cumple", "No cumple"]:
+        if col not in tabla.columns:
+            tabla[col] = 0
+
+    tabla["Total evaluable"] = tabla["Cumple"] + tabla["No cumple"]
+
+    tabla["% Cumple"] = np.where(
+        tabla["Total evaluable"] > 0,
+        tabla["Cumple"] / tabla["Total evaluable"] * 100,
+        0,
+    )
+
+    tabla["Centro"] = tabla["centro_grafico"].apply(
+        lambda x: etiqueta_centro(x, mapa_etiquetas)
+    )
+
+    tabla = tabla.sort_values(
+        ["% Cumple", "Total evaluable"],
+        ascending=[False, False],
+    )
+
+    tabla["% Cumple"] = tabla["% Cumple"].round(2)
+
+    return tabla[
+        [
+            "centro_grafico",
+            "Centro",
+            "grupo_planta",
+            "Cumple",
+            "No cumple",
+            "Total evaluable",
+            "% Cumple",
+        ]
+    ].rename(
+        columns={
+            "centro_grafico": "Código centro",
+            "grupo_planta": "Grupo planta",
+        }
+    ).reset_index(drop=True)
+
+
+def calcular_kpis_generales(df_base: pd.DataFrame, df_filtrado: pd.DataFrame) -> dict:
+    total_base = len(df_base)
+    total_filtrado = len(df_filtrado)
+    total_excluido = total_base - total_filtrado
+
+    pct_retenido = total_filtrado / total_base * 100 if total_base else 0
+    pct_excluido = total_excluido / total_base * 100 if total_base else 0
+
+    cumple = int(df_filtrado[COL_PERFORMANCE_TAT].eq("Cumple").sum())
+    no_cumple = int(df_filtrado[COL_PERFORMANCE_TAT].eq("No cumple").sum())
+    en_proceso = int(df_filtrado[COL_PERFORMANCE_TAT].eq("En proceso").sum())
+    no_aplica = int(df_filtrado[COL_PERFORMANCE_TAT].eq("No aplica").sum())
+    sin_datos = int(df_filtrado[COL_PERFORMANCE_TAT].eq("Sin datos").sum())
+
+    evaluables = cumple + no_cumple
+    no_evaluables = en_proceso + no_aplica + sin_datos
+
+    pct_evaluables = evaluables / total_filtrado * 100 if total_filtrado else 0
+    pct_no_evaluables = no_evaluables / total_filtrado * 100 if total_filtrado else 0
+
+    pct_cumple = cumple / evaluables * 100 if evaluables else 0
+    pct_no_cumple = no_cumple / evaluables * 100 if evaluables else 0
+
+    return {
+        "total_base": total_base,
+        "total_filtrado": total_filtrado,
+        "total_excluido": total_excluido,
+        "pct_retenido": pct_retenido,
+        "pct_excluido": pct_excluido,
+        "cumple": cumple,
+        "no_cumple": no_cumple,
+        "en_proceso": en_proceso,
+        "no_aplica": no_aplica,
+        "sin_datos": sin_datos,
+        "evaluables": evaluables,
+        "no_evaluables": no_evaluables,
+        "pct_evaluables": pct_evaluables,
+        "pct_no_evaluables": pct_no_evaluables,
+        "pct_cumple": pct_cumple,
+        "pct_no_cumple": pct_no_cumple,
+    }
 
 
 # ============================================================
@@ -1189,238 +1675,6 @@ def selector_filtro_semanal_tabla(df: pd.DataFrame):
     return df.copy(), metadata
 
 
-# ============================================================
-# RESÚMENES
-# ============================================================
-
-def crear_resumen_performance(df: pd.DataFrame) -> pd.DataFrame:
-    if df.empty or COL_PERFORMANCE_TAT not in df.columns:
-        return pd.DataFrame()
-
-    orden = [
-        "Cumple",
-        "No cumple",
-        "En proceso",
-        "No aplica",
-        "Sin datos",
-    ]
-
-    tabla = (
-        df[COL_PERFORMANCE_TAT]
-        .value_counts()
-        .reindex(orden, fill_value=0)
-        .reset_index()
-    )
-
-    tabla.columns = ["Categoría", "Cantidad"]
-
-    total = int(tabla["Cantidad"].sum())
-
-    tabla["% del total filtrado"] = np.where(
-        total > 0,
-        tabla["Cantidad"] / total * 100,
-        0,
-    )
-
-    tabla["% del total filtrado"] = tabla["% del total filtrado"].round(2)
-
-    tabla.loc[len(tabla)] = {
-        "Categoría": "Total",
-        "Cantidad": total,
-        "% del total filtrado": 100.00 if total else 0,
-    }
-
-    return tabla
-
-
-def crear_resumen_grupos(df: pd.DataFrame) -> pd.DataFrame:
-    columnas_salida = [
-        "Grupo planta",
-        "Cumple",
-        "No cumple",
-        "Total evaluable",
-        "% Cumple",
-    ]
-
-    if df.empty:
-        return pd.DataFrame(columns=columnas_salida)
-
-    base = df[
-        df[COL_PERFORMANCE_TAT].isin(["Cumple", "No cumple"])
-    ].copy()
-
-    if base.empty:
-        return pd.DataFrame(columns=columnas_salida)
-
-    resumen = (
-        base
-        .groupby(["grupo_planta", COL_PERFORMANCE_TAT])
-        .size()
-        .reset_index(name="cantidad")
-    )
-
-    tabla = resumen.pivot_table(
-        index="grupo_planta",
-        columns=COL_PERFORMANCE_TAT,
-        values="cantidad",
-        aggfunc="sum",
-        fill_value=0,
-    ).reset_index()
-
-    for col in ["Cumple", "No cumple"]:
-        if col not in tabla.columns:
-            tabla[col] = 0
-
-    tabla["Total evaluable"] = tabla["Cumple"] + tabla["No cumple"]
-
-    tabla["% Cumple"] = np.where(
-        tabla["Total evaluable"] > 0,
-        tabla["Cumple"] / tabla["Total evaluable"] * 100,
-        0,
-    )
-
-    tabla = tabla.rename(columns={"grupo_planta": "Grupo planta"})
-
-    orden = {
-        "Prillex": 1,
-        "Rio Loa": 2,
-        "Plantas de servicios": 3,
-    }
-
-    tabla["orden"] = tabla["Grupo planta"].map(orden).fillna(99)
-    tabla = tabla.sort_values("orden").drop(columns="orden")
-
-    total_cumple = int(tabla["Cumple"].sum())
-    total_no_cumple = int(tabla["No cumple"].sum())
-    total_evaluable = total_cumple + total_no_cumple
-
-    pct_total = (
-        total_cumple / total_evaluable * 100
-        if total_evaluable
-        else 0
-    )
-
-    fila_total = pd.DataFrame(
-        [
-            {
-                "Grupo planta": "Total",
-                "Cumple": total_cumple,
-                "No cumple": total_no_cumple,
-                "Total evaluable": total_evaluable,
-                "% Cumple": pct_total,
-            }
-        ]
-    )
-
-    tabla = pd.concat([tabla, fila_total], ignore_index=True)
-
-    tabla["Cumple"] = tabla["Cumple"].astype(int)
-    tabla["No cumple"] = tabla["No cumple"].astype(int)
-    tabla["Total evaluable"] = tabla["Total evaluable"].astype(int)
-    tabla["% Cumple"] = tabla["% Cumple"].round(2)
-
-    return tabla[columnas_salida]
-
-
-def crear_resumen_mensual_grupo(df: pd.DataFrame, grupo: str) -> pd.DataFrame:
-    base = df[
-        df["grupo_planta"].eq(grupo)
-        & df[COL_PERFORMANCE_TAT].isin(["Cumple", "No cumple"])
-        & df["periodo_fecha"].notna()
-    ].copy()
-
-    if base.empty:
-        return pd.DataFrame()
-
-    resumen = (
-        base
-        .groupby(["periodo_fecha", "periodo_label", COL_PERFORMANCE_TAT])
-        .size()
-        .reset_index(name="cantidad")
-    )
-
-    tabla = resumen.pivot_table(
-        index=["periodo_fecha", "periodo_label"],
-        columns=COL_PERFORMANCE_TAT,
-        values="cantidad",
-        aggfunc="sum",
-        fill_value=0,
-    ).reset_index()
-
-    for col in ["Cumple", "No cumple"]:
-        if col not in tabla.columns:
-            tabla[col] = 0
-
-    tabla["Total evaluable"] = tabla["Cumple"] + tabla["No cumple"]
-
-    tabla["% Cumple"] = np.where(
-        tabla["Total evaluable"] > 0,
-        tabla["Cumple"] / tabla["Total evaluable"] * 100,
-        0,
-    )
-
-    return tabla.sort_values("periodo_fecha").reset_index(drop=True)
-
-
-def crear_resumen_centros(df: pd.DataFrame, mapa_etiquetas: dict) -> pd.DataFrame:
-    if df.empty:
-        return pd.DataFrame()
-
-    base = df[
-        df[COL_PERFORMANCE_TAT].isin(["Cumple", "No cumple"])
-    ].copy()
-
-    if base.empty:
-        return pd.DataFrame()
-
-    resumen = (
-        base
-        .groupby(["centro_grafico", COL_PERFORMANCE_TAT])
-        .size()
-        .reset_index(name="cantidad")
-    )
-
-    tabla = resumen.pivot_table(
-        index="centro_grafico",
-        columns=COL_PERFORMANCE_TAT,
-        values="cantidad",
-        aggfunc="sum",
-        fill_value=0,
-    ).reset_index()
-
-    for col in ["Cumple", "No cumple"]:
-        if col not in tabla.columns:
-            tabla[col] = 0
-
-    tabla["Total evaluable"] = tabla["Cumple"] + tabla["No cumple"]
-
-    tabla["% Cumple"] = np.where(
-        tabla["Total evaluable"] > 0,
-        tabla["Cumple"] / tabla["Total evaluable"] * 100,
-        0,
-    )
-
-    tabla["Centro"] = tabla["centro_grafico"].apply(
-        lambda x: etiqueta_centro(x, mapa_etiquetas)
-    )
-
-    tabla = tabla.sort_values(
-        ["% Cumple", "Total evaluable"],
-        ascending=[False, False],
-    )
-
-    return tabla[
-        [
-            "centro_grafico",
-            "Centro",
-            "Cumple",
-            "No cumple",
-            "Total evaluable",
-            "% Cumple",
-        ]
-    ].reset_index(drop=True)
-
-
 def crear_detalle_semanal(df: pd.DataFrame) -> pd.DataFrame:
     columnas_salida = [
         "Año",
@@ -1578,44 +1832,8 @@ def crear_detalle_semanal(df: pd.DataFrame) -> pd.DataFrame:
     return tabla_final[columnas_salida]
 
 
-def mostrar_detalle_filtros_aplicados(resumen_filtros_df: pd.DataFrame):
-    st.markdown("### Detalle de filtros aplicados")
-    st.caption(
-        "Esta sección muestra cómo cambia la cantidad de registros después de cada filtro."
-    )
-
-    if resumen_filtros_df is None or resumen_filtros_df.empty:
-        st.info("No hay detalle de filtros disponible.")
-        return
-
-    resumen = resumen_filtros_df.copy()
-
-    registros_iniciales = int(resumen.iloc[0]["Registros antes"])
-    registros_finales = int(resumen.iloc[-1]["Registros después"])
-    registros_excluidos = registros_iniciales - registros_finales
-
-    pct_retenido = (
-        registros_finales / registros_iniciales * 100
-        if registros_iniciales
-        else 0
-    )
-
-    col_f1, col_f2, col_f3, col_f4 = st.columns(4)
-
-    col_f1.metric("Registros iniciales", f"{registros_iniciales:,}")
-    col_f2.metric("Registros finales", f"{registros_finales:,}")
-    col_f3.metric("Registros excluidos", f"{registros_excluidos:,}")
-    col_f4.metric("% retenido", f"{pct_retenido:.1f}%")
-
-    st.dataframe(
-        resumen,
-        use_container_width=True,
-        hide_index=True,
-    )
-
-
 # ============================================================
-# GRÁFICOS MATPLOTLIB
+# GRÁFICOS
 # ============================================================
 
 def formatear_ejes(ax):
@@ -1626,6 +1844,275 @@ def formatear_ejes(ax):
 
     ax.tick_params(axis="both", length=0, colors=COLOR_MUTED)
     ax.set_facecolor("none")
+
+
+def grafico_donut_retencion(total_base: int, total_filtrado: int):
+    total_excluido = total_base - total_filtrado
+
+    tabla = pd.DataFrame(
+        [
+            {"Categoría": "Retenidos", "Cantidad": total_filtrado},
+            {"Categoría": "Excluidos", "Cantidad": total_excluido},
+        ]
+    )
+
+    tabla = tabla[tabla["Cantidad"].gt(0)].copy()
+
+    if tabla.empty:
+        st.info("No hay datos para graficar retención.")
+        return
+
+    total = int(tabla["Cantidad"].sum())
+
+    tabla["%"] = np.where(
+        total > 0,
+        tabla["Cantidad"] / total * 100,
+        0,
+    )
+
+    colores_mapa = {
+        "Retenidos": "#2E7D32",
+        "Excluidos": COLOR_NO_CUMPLE,
+    }
+
+    colores = tabla["Categoría"].map(colores_mapa).tolist()
+    cantidades = tabla["Cantidad"].astype(int).to_numpy()
+    porcentajes = tabla["%"].astype(float).to_numpy()
+    etiquetas = tabla["Categoría"].astype(str).tolist()
+
+    fig, ax = plt.subplots(figsize=(6.5, 4.8), dpi=180)
+
+    wedges, texts, autotexts = ax.pie(
+        cantidades,
+        labels=None,
+        startangle=90,
+        counterclock=False,
+        colors=colores,
+        autopct=lambda pct: f"{pct:.1f}%" if pct >= 4 else "",
+        pctdistance=0.78,
+        wedgeprops={
+            "width": 0.38,
+            "linewidth": 2.5,
+            "edgecolor": "white",
+        },
+    )
+
+    for autotext in autotexts:
+        autotext.set_fontweight("bold")
+        autotext.set_fontsize(10)
+        autotext.set_color(COLOR_TEXTO)
+
+    ax.text(
+        0,
+        0.08,
+        f"{total:,}".replace(",", "."),
+        ha="center",
+        va="center",
+        fontsize=20,
+        fontweight="bold",
+        color=COLOR_TEXTO,
+    )
+
+    ax.text(
+        0,
+        -0.12,
+        "registros",
+        ha="center",
+        va="center",
+        fontsize=10,
+        color=COLOR_MUTED,
+    )
+
+    etiquetas_leyenda = [
+        f"{cat} · {cant:,} · {pct:.1f}%".replace(",", ".")
+        for cat, cant, pct in zip(etiquetas, cantidades, porcentajes)
+    ]
+
+    ax.legend(
+        wedges,
+        etiquetas_leyenda,
+        loc="center left",
+        bbox_to_anchor=(1.02, 0.5),
+        frameon=False,
+        fontsize=9,
+    )
+
+    ax.set_title(
+        "Retención por filtros",
+        fontsize=14,
+        fontweight="bold",
+        color=COLOR_TEXTO,
+    )
+
+    ax.axis("equal")
+    fig.patch.set_alpha(0)
+    fig.tight_layout()
+    fig.subplots_adjust(right=0.70)
+
+    st.pyplot(fig, clear_figure=True, use_container_width=True)
+
+
+def grafico_donut_performance(tabla: pd.DataFrame):
+    if tabla.empty:
+        st.info("No hay datos para graficar Performance TAT.")
+        return
+
+    data = tabla[tabla["Cantidad"].gt(0)].copy()
+
+    if data.empty:
+        st.info("No hay categorías con cantidad mayor a cero.")
+        return
+
+    colores_mapa = {
+        "Cumple": COLOR_CUMPLE,
+        "No cumple": COLOR_NO_CUMPLE,
+        "En proceso": COLOR_EN_PROCESO,
+        "No aplica": COLOR_NO_APLICA,
+        "Sin datos": COLOR_SIN_DATOS,
+    }
+
+    data["Color"] = data["Categoría"].map(colores_mapa).fillna(COLOR_NO_APLICA)
+
+    cantidades = (
+        pd.to_numeric(data["Cantidad"], errors="coerce")
+        .fillna(0)
+        .astype(int)
+        .to_numpy()
+    )
+
+    porcentajes = (
+        pd.to_numeric(data["% sobre filtrados"], errors="coerce")
+        .fillna(0)
+        .to_numpy()
+    )
+
+    colores = data["Color"].tolist()
+    etiquetas = data["Categoría"].astype(str).tolist()
+
+    total = int(cantidades.sum())
+
+    col_grafico, col_resumen = st.columns([1.15, 1])
+
+    with col_grafico:
+        fig, ax = plt.subplots(figsize=(8.2, 6.4), dpi=180)
+
+        wedges, texts, autotexts = ax.pie(
+            cantidades,
+            labels=None,
+            startangle=90,
+            counterclock=False,
+            colors=colores,
+            autopct=lambda pct: f"{pct:.1f}%" if pct >= 4 else "",
+            pctdistance=0.78,
+            wedgeprops={
+                "width": 0.38,
+                "linewidth": 2.5,
+                "edgecolor": "white",
+            },
+        )
+
+        for i, autotext in enumerate(autotexts):
+            categoria = etiquetas[i]
+
+            if categoria == "Cumple":
+                autotext.set_color("white")
+            else:
+                autotext.set_color(COLOR_TEXTO)
+
+            autotext.set_fontweight("bold")
+            autotext.set_fontsize(10)
+
+        ax.text(
+            0,
+            0.08,
+            f"{total:,}".replace(",", "."),
+            ha="center",
+            va="center",
+            fontsize=24,
+            fontweight="bold",
+            color=COLOR_TEXTO,
+        )
+
+        ax.text(
+            0,
+            -0.12,
+            "filtrados",
+            ha="center",
+            va="center",
+            fontsize=10,
+            fontweight="bold",
+            color=COLOR_MUTED,
+        )
+
+        etiquetas_leyenda = []
+
+        for categoria, cantidad, porcentaje in zip(etiquetas, cantidades, porcentajes):
+            cantidad_txt = f"{int(cantidad):,}".replace(",", ".")
+            etiquetas_leyenda.append(
+                f"{categoria} · {cantidad_txt} · {porcentaje:.1f}%"
+            )
+
+        ax.legend(
+            wedges,
+            etiquetas_leyenda,
+            title="Performance TAT",
+            loc="center left",
+            bbox_to_anchor=(1.02, 0.5),
+            frameon=False,
+            fontsize=9.5,
+            title_fontsize=10,
+        )
+
+        ax.set_title(
+            "Desglose de datos filtrados por Performance TAT",
+            fontsize=15,
+            fontweight="bold",
+            color=COLOR_TEXTO,
+            pad=16,
+        )
+
+        ax.axis("equal")
+        fig.patch.set_alpha(0)
+        fig.tight_layout()
+        fig.subplots_adjust(right=0.72)
+
+        st.pyplot(fig, clear_figure=True, use_container_width=True)
+
+    with col_resumen:
+        st.markdown("#### Tabla de desglose")
+        st.caption("Base: todos los registros filtrados.")
+
+        tabla_resumen = data.copy()
+
+        st.dataframe(
+            tabla_resumen[
+                [
+                    "Categoría",
+                    "Tipo",
+                    "Cantidad",
+                    "% sobre filtrados",
+                    "% sobre evaluables",
+                ]
+            ],
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Cantidad": st.column_config.NumberColumn(
+                    "Cantidad",
+                    format="%d",
+                ),
+                "% sobre filtrados": st.column_config.ProgressColumn(
+                    "% sobre filtrados",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+                "% sobre evaluables": st.column_config.NumberColumn(
+                    "% sobre evaluables",
+                    format="%.1f%%",
+                ),
+            },
+        )
 
 
 def grafico_cumplimiento_grupos(tabla: pd.DataFrame):
@@ -1651,19 +2138,27 @@ def grafico_cumplimiento_grupos(tabla: pd.DataFrame):
     valores = data["% Cumple"].to_numpy()
     etiquetas = data["Grupo planta"].astype(str).tolist()
 
-    fig, ax = plt.subplots(figsize=(11, 4.6))
+    colores_mapa = {
+        "Prillex": COLOR_PRILLEX,
+        "Rio Loa": COLOR_RIO_LOA,
+        "Plantas de servicios": COLOR_SERVICIOS,
+    }
+
+    colores = [colores_mapa.get(etiqueta, COLOR_CUMPLE) for etiqueta in etiquetas]
+
+    fig, ax = plt.subplots(figsize=(11, 4.8), dpi=180)
 
     ax.barh(
         y,
         valores,
-        color=COLOR_CUMPLE,
+        color=colores,
         height=0.55,
         label="Cumplimiento TAT",
     )
 
     for i, valor in enumerate(valores):
         ax.text(
-            valor + 1,
+            min(valor + 1.5, 103),
             i,
             f"{valor:.1f}%",
             va="center",
@@ -1681,7 +2176,7 @@ def grafico_cumplimiento_grupos(tabla: pd.DataFrame):
         label=f"Meta {META_CUMPLIMIENTO}%",
     )
 
-    ax.set_xlim(0, 105)
+    ax.set_xlim(0, 108)
     ax.set_yticks(y)
     ax.set_yticklabels(etiquetas, color=COLOR_MUTED)
     ax.set_xlabel("% Cumple sobre evaluables", color=COLOR_TEXTO)
@@ -1714,9 +2209,12 @@ def grafico_cumplimiento_grupos(tabla: pd.DataFrame):
     st.pyplot(fig, clear_figure=True, use_container_width=True)
 
 
-def grafico_evolucion_mensual_grupo(tabla: pd.DataFrame, grupo: str):
+def grafico_evolucion_mensual_comparativa(
+    tabla: pd.DataFrame,
+    titulo: str,
+):
     if tabla.empty:
-        st.info(f"No hay datos mensuales evaluables para {grupo}.")
+        st.info("No hay datos mensuales evaluables para graficar.")
         return
 
     colores = {
@@ -1725,34 +2223,69 @@ def grafico_evolucion_mensual_grupo(tabla: pd.DataFrame, grupo: str):
         "Plantas de servicios": COLOR_SERVICIOS,
     }
 
-    tabla = tabla.sort_values("periodo_fecha").copy()
+    grupos_orden = ["Prillex", "Rio Loa", "Plantas de servicios"]
 
-    labels = tabla["periodo_label"].astype(str).tolist()
-    x = np.arange(len(labels))
-    y = tabla["% Cumple"].to_numpy()
-
-    fig, ax = plt.subplots(figsize=(13, 4.8))
-
-    ax.plot(
-        x,
-        y,
-        marker="o",
-        linewidth=3,
-        color=colores.get(grupo, COLOR_CUMPLE),
-        label="Cumplimiento TAT",
+    periodos = (
+        tabla[["periodo_fecha", "periodo_label"]]
+        .drop_duplicates()
+        .sort_values("periodo_fecha")
     )
 
-    for xi, yi in zip(x, y):
-        ax.text(
-            xi,
-            yi + 2,
-            f"{yi:.0f}%",
-            ha="center",
-            va="bottom",
-            fontsize=9,
-            fontweight="bold",
-            color=COLOR_TEXTO,
+    labels = periodos["periodo_label"].astype(str).tolist()
+    x = np.arange(len(labels))
+
+    ancho = max(12, min(22, len(labels) * 0.85))
+
+    fig, ax = plt.subplots(figsize=(ancho, 6.4), dpi=180)
+
+    for grupo in grupos_orden:
+        data_grupo = tabla[tabla["grupo_planta"].eq(grupo)].copy()
+
+        if data_grupo.empty:
+            continue
+
+        data_grupo = (
+            periodos
+            .merge(
+                data_grupo[["periodo_fecha", "% Cumple"]],
+                on="periodo_fecha",
+                how="left",
+            )
+            .sort_values("periodo_fecha")
         )
+
+        y = data_grupo["% Cumple"].to_numpy(dtype=float)
+
+        ax.plot(
+            x,
+            y,
+            marker="o",
+            linewidth=3,
+            color=colores.get(grupo, COLOR_CUMPLE),
+            label=grupo,
+        )
+
+        total_puntos = len(x)
+
+        if total_puntos <= 12:
+            paso = 1
+        elif total_puntos <= 24:
+            paso = 2
+        else:
+            paso = 3
+
+        for i, valor in enumerate(y):
+            if pd.notna(valor) and (i % paso == 0 or i == total_puntos - 1):
+                ax.text(
+                    i,
+                    min(valor + 2.5, 104),
+                    f"{valor:.0f}%",
+                    ha="center",
+                    va="bottom",
+                    fontsize=8,
+                    fontweight="bold",
+                    color=colores.get(grupo, COLOR_TEXTO),
+                )
 
     ax.axhline(
         META_CUMPLIMIENTO,
@@ -1768,8 +2301,8 @@ def grafico_evolucion_mensual_grupo(tabla: pd.DataFrame, grupo: str):
     ax.set_xticks(x)
     ax.set_xticklabels(
         labels,
-        rotation=90,
-        ha="center",
+        rotation=45,
+        ha="right",
         fontsize=9,
         color=COLOR_MUTED,
     )
@@ -1781,8 +2314,8 @@ def grafico_evolucion_mensual_grupo(tabla: pd.DataFrame, grupo: str):
     )
 
     ax.set_title(
-        f"Evolución mensual de cumplimiento · {grupo}",
-        fontsize=15,
+        titulo,
+        fontsize=16,
         fontweight="bold",
         color=COLOR_TEXTO,
         pad=14,
@@ -1790,8 +2323,8 @@ def grafico_evolucion_mensual_grupo(tabla: pd.DataFrame, grupo: str):
 
     ax.legend(
         loc="upper center",
-        bbox_to_anchor=(0.5, -0.36),
-        ncol=2,
+        bbox_to_anchor=(0.5, -0.20),
+        ncol=4,
         frameon=False,
         fontsize=10,
     )
@@ -1800,7 +2333,126 @@ def grafico_evolucion_mensual_grupo(tabla: pd.DataFrame, grupo: str):
 
     fig.patch.set_alpha(0)
     fig.tight_layout()
-    fig.subplots_adjust(bottom=0.40)
+    fig.subplots_adjust(bottom=0.28)
+
+    st.pyplot(fig, clear_figure=True, use_container_width=True)
+
+
+def grafico_volumen_mensual_comparativo(
+    tabla: pd.DataFrame,
+    titulo: str,
+):
+    if tabla.empty:
+        st.info("No hay datos mensuales evaluables para graficar volumen.")
+        return
+
+    periodos = (
+        tabla[["periodo_fecha", "periodo_label"]]
+        .drop_duplicates()
+        .sort_values("periodo_fecha")
+    )
+
+    grupos_orden = ["Prillex", "Rio Loa", "Plantas de servicios"]
+
+    pivot = tabla.pivot_table(
+        index=["periodo_fecha", "periodo_label"],
+        columns="grupo_planta",
+        values="Total evaluable",
+        aggfunc="sum",
+        fill_value=0,
+    ).reset_index()
+
+    pivot = (
+        periodos
+        .merge(pivot, on=["periodo_fecha", "periodo_label"], how="left")
+        .fillna(0)
+    )
+
+    for grupo in grupos_orden:
+        if grupo not in pivot.columns:
+            pivot[grupo] = 0
+
+    labels = pivot["periodo_label"].astype(str).tolist()
+    x = np.arange(len(labels))
+    width = 0.25
+
+    ancho = max(12, min(22, len(labels) * 0.85))
+
+    fig, ax = plt.subplots(figsize=(ancho, 6.4), dpi=180)
+
+    offsets = {
+        "Prillex": -width,
+        "Rio Loa": 0,
+        "Plantas de servicios": width,
+    }
+
+    colores = {
+        "Prillex": COLOR_PRILLEX,
+        "Rio Loa": COLOR_RIO_LOA,
+        "Plantas de servicios": COLOR_SERVICIOS,
+    }
+
+    max_valor = 0
+
+    for grupo in grupos_orden:
+        valores = pivot[grupo].astype(int).to_numpy()
+        max_valor = max(max_valor, valores.max() if len(valores) else 0)
+
+        barras = ax.bar(
+            x + offsets[grupo],
+            valores,
+            width=width,
+            color=colores[grupo],
+            label=grupo,
+        )
+
+        for barra, valor in zip(barras, valores):
+            if valor > 0:
+                ax.text(
+                    barra.get_x() + barra.get_width() / 2,
+                    barra.get_height() + max(max_valor * 0.02, 1),
+                    f"{valor:,}".replace(",", "."),
+                    ha="center",
+                    va="bottom",
+                    fontsize=8,
+                    fontweight="bold",
+                    color=COLOR_TEXTO,
+                )
+
+    ax.set_ylim(0, max(max_valor * 1.25, 10))
+
+    ax.set_title(
+        titulo,
+        fontsize=16,
+        fontweight="bold",
+        color=COLOR_TEXTO,
+        pad=14,
+    )
+
+    ax.set_ylabel("Registros evaluables", color=COLOR_TEXTO)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(
+        labels,
+        rotation=45,
+        ha="right",
+        fontsize=9,
+        color=COLOR_MUTED,
+    )
+
+    ax.legend(
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.20),
+        ncol=3,
+        frameon=False,
+        fontsize=10,
+    )
+
+    formatear_ejes(ax)
+
+    fig.patch.set_alpha(0)
+    fig.tight_layout()
+    fig.subplots_adjust(bottom=0.28)
 
     st.pyplot(fig, clear_figure=True, use_container_width=True)
 
@@ -1828,6 +2480,41 @@ def convertir_a_csv(df: pd.DataFrame) -> bytes:
     ).encode("utf-8-sig")
 
 
+def convertir_a_excel(df: pd.DataFrame) -> bytes:
+    output = io.BytesIO()
+
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(
+            writer,
+            index=False,
+            sheet_name="Registros",
+        )
+
+    return output.getvalue()
+
+
+def generar_nombre_excel_mes(periodo_archivo: str, grupo: str, estado: str) -> str:
+    fecha_descarga = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    grupo_limpio = (
+        str(grupo)
+        .upper()
+        .replace(" ", "_")
+        .replace("/", "_")
+        .replace("-", "_")
+    )
+
+    estado_limpio = (
+        str(estado)
+        .upper()
+        .replace(" ", "_")
+        .replace("/", "_")
+        .replace("-", "_")
+    )
+
+    return f"09_PERFORMANCE_PLANTAS_{periodo_archivo}_{grupo_limpio}_{estado_limpio}_{fecha_descarga}.xlsx"
+
+
 @st.cache_data(show_spinner=False)
 def convertir_a_parquet_cache(df: pd.DataFrame) -> bytes:
     return convertir_a_parquet(df)
@@ -1838,6 +2525,11 @@ def convertir_a_csv_cache(df: pd.DataFrame) -> bytes:
     return convertir_a_csv(df)
 
 
+@st.cache_data(show_spinner=False)
+def convertir_a_excel_cache(df: pd.DataFrame) -> bytes:
+    return convertir_a_excel(df)
+
+
 # ============================================================
 # APP
 # ============================================================
@@ -1846,7 +2538,7 @@ mostrar_logo()
 
 st.title("09_PERFORMANCE_PLANTAS")
 st.caption(
-    "Dashboard de cumplimiento TAT por Prillex, Rio Loa y Plantas de servicios."
+    "Dashboard comparativo de cumplimiento TAT por Prillex, Rio Loa y Plantas de servicios."
 )
 
 if "df_tat" not in st.session_state or st.session_state.get("df_tat") is None:
@@ -1997,6 +2689,9 @@ if limpiar_filtros:
         "plantas_parquet_firma",
         "plantas_csv_bytes",
         "plantas_csv_firma",
+        "plantas_excel_mes_bytes",
+        "plantas_excel_mes_firma",
+        "plantas_excel_mes_nombre",
     ]
 
     for clave in claves:
@@ -2057,57 +2752,155 @@ else:
 
 
 # ============================================================
-# INDICADORES
+# KPI INDICATORS
 # ============================================================
 
-total_base = len(df_final)
-total_filtrado = len(df_dashboard)
+kpis = calcular_kpis_generales(
+    df_base=df_final,
+    df_filtrado=df_dashboard,
+)
 
-cumple = int(df_dashboard[COL_PERFORMANCE_TAT].eq("Cumple").sum())
-no_cumple = int(df_dashboard[COL_PERFORMANCE_TAT].eq("No cumple").sum())
-en_proceso = int(df_dashboard[COL_PERFORMANCE_TAT].eq("En proceso").sum())
-otros = int(df_dashboard[COL_PERFORMANCE_TAT].isin(["No aplica", "Sin datos"]).sum())
+st.markdown("### KPI Indicators")
+st.caption(
+    "El cumplimiento TAT se calcula solo sobre registros evaluables: Cumple + No cumple."
+)
 
-total_evaluable = cumple + no_cumple
+col_k1, col_k2, col_k3, col_k4 = st.columns(4)
 
-pct_cumple = cumple / total_evaluable * 100 if total_evaluable else 0
-pct_no_cumple = no_cumple / total_evaluable * 100 if total_evaluable else 0
-pct_filtrado = total_filtrado / total_base * 100 if total_base else 0
+with col_k1:
+    mostrar_kpi_html(
+        "Registros base",
+        formatear_entero(kpis["total_base"]),
+        "Total de registros antes de filtros.",
+    )
 
-col_k1, col_k2, col_k3, col_k4, col_k5, col_k6 = st.columns(6)
+with col_k2:
+    mostrar_kpi_html(
+        "% retenido por filtros",
+        formatear_porcentaje(kpis["pct_retenido"]),
+        f"{formatear_entero(kpis['total_filtrado'])} retenidos de {formatear_entero(kpis['total_base'])}.",
+    )
 
-col_k1.metric("Registros base", f"{total_base:,}")
-col_k2.metric("Registros filtrados", f"{total_filtrado:,}", f"{pct_filtrado:.1f}%")
-col_k3.metric("% Cumple evaluable", f"{pct_cumple:.1f}%", f"{cumple:,} cumple")
-col_k4.metric("% No cumple evaluable", f"{pct_no_cumple:.1f}%", f"{no_cumple:,} no cumple")
-col_k5.metric("En proceso", f"{en_proceso:,}")
-col_k6.metric("Otros / sin datos", f"{otros:,}")
+with col_k3:
+    mostrar_kpi_html(
+        "Registros evaluables",
+        formatear_entero(kpis["evaluables"]),
+        f"{formatear_porcentaje(kpis['pct_evaluables'])} de los registros filtrados.",
+    )
+
+with col_k4:
+    mostrar_kpi_html(
+        "No evaluables",
+        formatear_entero(kpis["no_evaluables"]),
+        f"{formatear_porcentaje(kpis['pct_no_evaluables'])} de los registros filtrados.",
+        "kpi-warning",
+    )
+
+col_k5, col_k6, col_k7, col_k8 = st.columns(4)
+
+with col_k5:
+    mostrar_kpi_html(
+        "Cumple TAT",
+        formatear_porcentaje(kpis["pct_cumple"]),
+        f"{formatear_entero(kpis['cumple'])} cumplen de {formatear_entero(kpis['evaluables'])} evaluables.",
+        "kpi-good",
+    )
+
+with col_k6:
+    mostrar_kpi_html(
+        "No cumple TAT",
+        formatear_porcentaje(kpis["pct_no_cumple"]),
+        f"{formatear_entero(kpis['no_cumple'])} no cumplen de {formatear_entero(kpis['evaluables'])} evaluables.",
+        "kpi-bad",
+    )
+
+with col_k7:
+    mostrar_kpi_html(
+        "En proceso",
+        formatear_entero(kpis["en_proceso"]),
+        "Registros todavía no evaluables.",
+        "kpi-warning",
+    )
+
+with col_k8:
+    mostrar_kpi_html(
+        "No aplica / Sin datos",
+        formatear_entero(kpis["no_aplica"] + kpis["sin_datos"]),
+        f"No aplica: {formatear_entero(kpis['no_aplica'])} · Sin datos: {formatear_entero(kpis['sin_datos'])}.",
+    )
+
+
+# ============================================================
+# RETENCIÓN POR FILTROS
+# ============================================================
+
+st.markdown("### 1. Retención por filtros")
+
+col_ret1, col_ret2 = st.columns([1.1, 1])
+
+with col_ret1:
+    grafico_donut_retencion(
+        total_base=kpis["total_base"],
+        total_filtrado=kpis["total_filtrado"],
+    )
+
+with col_ret2:
+    st.markdown("#### Resumen de filtros")
+    resumen_retencion = pd.DataFrame(
+        [
+            {
+                "Métrica": "Registros base",
+                "Cantidad": kpis["total_base"],
+                "%": 100.0,
+            },
+            {
+                "Métrica": "Registros retenidos",
+                "Cantidad": kpis["total_filtrado"],
+                "%": round(kpis["pct_retenido"], 2),
+            },
+            {
+                "Métrica": "Registros excluidos",
+                "Cantidad": kpis["total_excluido"],
+                "%": round(kpis["pct_excluido"], 2),
+            },
+        ]
+    )
+
+    st.dataframe(
+        resumen_retencion,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Cantidad": st.column_config.NumberColumn(
+                "Cantidad",
+                format="%d",
+            ),
+            "%": st.column_config.ProgressColumn(
+                "%",
+                format="%.1f%%",
+                min_value=0,
+                max_value=100,
+            ),
+        },
+    )
 
 
 # ============================================================
 # DESGLOSE PERFORMANCE
 # ============================================================
 
-st.markdown("#### Desglose de datos filtrados por Performance TAT")
-st.caption(
-    "Cantidad y porcentaje que representa cada categoría sobre la base filtrada."
-)
+st.markdown("### 2. Retenidos por Performance TAT")
 
 desglose_performance = crear_resumen_performance(df_dashboard)
 
-if desglose_performance.empty:
-    st.info("No hay desglose disponible.")
-else:
-    st.dataframe(
-        desglose_performance,
-        use_container_width=True,
-        hide_index=True,
-    )
+grafico_donut_performance(desglose_performance)
 
 
 # ============================================================
 # CUMPLIMIENTO POR PLANTA
 # ============================================================
+
+st.markdown("### 3. Cumplimiento TAT por planta")
 
 resumen_grupos = crear_resumen_grupos(df_dashboard)
 
@@ -2123,8 +2916,26 @@ else:
         use_container_width=True,
         hide_index=True,
         column_config={
+            "Cumple": st.column_config.NumberColumn(
+                "Cumple",
+                format="%d",
+            ),
+            "No cumple": st.column_config.NumberColumn(
+                "No cumple",
+                format="%d",
+            ),
+            "Total evaluable": st.column_config.NumberColumn(
+                "Total evaluable",
+                format="%d",
+            ),
             "% Cumple": st.column_config.ProgressColumn(
                 "% Cumple",
+                format="%.1f%%",
+                min_value=0,
+                max_value=100,
+            ),
+            "% No cumple": st.column_config.ProgressColumn(
+                "% No cumple",
                 format="%.1f%%",
                 min_value=0,
                 max_value=100,
@@ -2134,17 +2945,90 @@ else:
 
 
 # ============================================================
-# EVOLUCIÓN MENSUAL SEPARADA POR PLANTA
+# EVOLUCIÓN MENSUAL COMPARATIVA
 # ============================================================
 
-st.markdown("### Evolución mensual por planta")
+st.markdown("### 4. Evolución mensual comparativa")
 st.caption(
-    "Se muestran gráficos separados para evitar saturación visual."
+    "Comparación del % de cumplimiento TAT mensual para Prillex, Rio Loa y Plantas de servicios."
 )
 
-for grupo in ["Prillex", "Rio Loa", "Plantas de servicios"]:
-    tabla_grupo = crear_resumen_mensual_grupo(df_dashboard, grupo)
-    grafico_evolucion_mensual_grupo(tabla_grupo, grupo)
+tabla_mensual_grupos = crear_resumen_mensual_grupos(df_dashboard)
+
+grafico_volumen_mensual_comparativo(
+    tabla=tabla_mensual_grupos,
+    titulo="Volumen mensual de registros evaluables por planta",
+)
+
+grafico_evolucion_mensual_comparativa(
+    tabla=tabla_mensual_grupos,
+    titulo="Evolución mensual de cumplimiento TAT por planta",
+)
+
+
+# ============================================================
+# ZOOM ÚLTIMO AÑO
+# ============================================================
+
+tabla_ultimo_anio, ultimo_anio = obtener_tabla_ultimo_anio(tabla_mensual_grupos)
+
+if not tabla_ultimo_anio.empty:
+    st.markdown(f"### 5. Zoom último año disponible: {ultimo_anio}")
+
+    kpis_ultimo_anio_df = crear_kpis_ultimo_anio_por_grupo(tabla_ultimo_anio)
+
+    st.markdown("#### KPI Indicators último año por planta")
+
+    st.dataframe(
+        kpis_ultimo_anio_df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Cumple": st.column_config.NumberColumn(
+                "Cumple",
+                format="%d",
+            ),
+            "No cumple": st.column_config.NumberColumn(
+                "No cumple",
+                format="%d",
+            ),
+            "Total evaluable": st.column_config.NumberColumn(
+                "Total evaluable",
+                format="%d",
+            ),
+            "Promedio mensual % Cumple": st.column_config.ProgressColumn(
+                "Promedio mensual % Cumple",
+                format="%.1f%%",
+                min_value=0,
+                max_value=100,
+            ),
+            "% Cumple acumulado": st.column_config.ProgressColumn(
+                "% Cumple acumulado",
+                format="%.1f%%",
+                min_value=0,
+                max_value=100,
+            ),
+            "% No cumple acumulado": st.column_config.ProgressColumn(
+                "% No cumple acumulado",
+                format="%.1f%%",
+                min_value=0,
+                max_value=100,
+            ),
+        },
+    )
+
+    grafico_volumen_mensual_comparativo(
+        tabla=tabla_ultimo_anio,
+        titulo=f"Volumen mensual de registros evaluables por planta - {ultimo_anio}",
+    )
+
+    grafico_evolucion_mensual_comparativa(
+        tabla=tabla_ultimo_anio,
+        titulo=f"Evolución mensual de cumplimiento TAT por planta - {ultimo_anio}",
+    )
+
+else:
+    st.info("No hay información suficiente para construir el zoom del último año.")
 
 
 # ============================================================
@@ -2166,6 +3050,18 @@ with st.expander("Análisis por centro específico", expanded=True):
             use_container_width=True,
             hide_index=True,
             column_config={
+                "Cumple": st.column_config.NumberColumn(
+                    "Cumple",
+                    format="%d",
+                ),
+                "No cumple": st.column_config.NumberColumn(
+                    "No cumple",
+                    format="%d",
+                ),
+                "Total evaluable": st.column_config.NumberColumn(
+                    "Total evaluable",
+                    format="%d",
+                ),
                 "% Cumple": st.column_config.ProgressColumn(
                     "% Cumple",
                     format="%.1f%%",
@@ -2174,6 +3070,159 @@ with st.expander("Análisis por centro específico", expanded=True):
                 ),
             },
         )
+
+
+# ============================================================
+# VISTA PREVIA Y DESCARGA POR MES, GRUPO Y ESTADO
+# ============================================================
+
+st.markdown("### Vista previa y descarga por mes")
+st.caption(
+    "Selecciona mes, grupo planta y estado TAT para revisar los registros y descargar un Excel."
+)
+
+if df_dashboard.empty or df_dashboard["periodo_fecha"].dropna().empty:
+    st.info("No hay meses disponibles con los filtros actuales.")
+else:
+    meses_df = (
+        df_dashboard[["periodo_fecha", "periodo_label"]]
+        .dropna()
+        .drop_duplicates()
+        .sort_values("periodo_fecha")
+        .reset_index(drop=True)
+    )
+
+    opciones_mes = meses_df["periodo_label"].astype(str).tolist()
+    ultimo_mes = opciones_mes[-1] if opciones_mes else None
+
+    col_vm1, col_vm2, col_vm3 = st.columns(3)
+
+    with col_vm1:
+        mes_sel = st.selectbox(
+            "Mes / año",
+            options=opciones_mes,
+            index=opciones_mes.index(ultimo_mes) if ultimo_mes in opciones_mes else 0,
+            key="plantas_selector_mes_preview",
+        )
+
+    with col_vm2:
+        grupo_preview = st.selectbox(
+            "Grupo planta",
+            options=["Todos"] + grupos_disponibles,
+            index=0,
+            key="plantas_selector_grupo_preview",
+        )
+
+    with col_vm3:
+        estado_preview = st.selectbox(
+            "Estado TAT",
+            options=["Todos", "Cumple", "No cumple", "En proceso", "No aplica", "Sin datos"],
+            index=0,
+            key="plantas_selector_estado_preview",
+        )
+
+    periodo_sel = meses_df.loc[
+        meses_df["periodo_label"].astype(str).eq(mes_sel),
+        "periodo_fecha",
+    ].iloc[0]
+
+    df_preview = df_dashboard[
+        df_dashboard["periodo_fecha"].eq(periodo_sel)
+    ].copy()
+
+    if grupo_preview != "Todos":
+        df_preview = df_preview[df_preview["grupo_planta"].eq(grupo_preview)].copy()
+
+    if estado_preview != "Todos":
+        df_preview = df_preview[df_preview[COL_PERFORMANCE_TAT].eq(estado_preview)].copy()
+
+    total_preview = len(df_preview)
+
+    st.info(
+        f"Se encontraron **{formatear_entero(total_preview)} registros** "
+        f"para **{mes_sel}**, grupo **{grupo_preview}**, estado **{estado_preview}**."
+    )
+
+    if total_preview > 0:
+        limite_preview = st.number_input(
+            "Filas a visualizar",
+            min_value=1,
+            max_value=min(1000, total_preview),
+            value=min(300, total_preview),
+            step=50 if total_preview >= 50 else 1,
+            key="plantas_preview_filas_mes",
+        )
+
+        columnas_preferidas = [
+            "Solicitud de pedido - ME5A",
+            COL_PEDIDO,
+            COL_DOCUMENTO_COMPRAS,
+            "centro_grafico",
+            "grupo_planta",
+            COL_FECHA_SOLICITUD_FINAL,
+            COL_FECHA_FACTURACION_FINAL,
+            COL_FECHA_RECEPCION_FINAL,
+            "dias_tat_total",
+            COL_PERFORMANCE_TAT,
+        ]
+
+        columnas_preferidas = [
+            col for col in columnas_preferidas
+            if col in df_preview.columns
+        ]
+
+        if columnas_preferidas:
+            st.dataframe(
+                df_preview[columnas_preferidas].head(int(limite_preview)),
+                use_container_width=True,
+                hide_index=True,
+            )
+        else:
+            st.dataframe(
+                df_preview.head(int(limite_preview)),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+        periodo_archivo = pd.Timestamp(periodo_sel).strftime("%Y%m")
+
+        firma_excel_mes = (
+            f"{periodo_archivo}_"
+            f"{grupo_preview}_"
+            f"{estado_preview}_"
+            f"{len(df_preview)}"
+        )
+
+        preparar_excel = st.button(
+            "Preparar Excel de la vista seleccionada",
+            use_container_width=True,
+            key="plantas_preparar_excel_mes",
+        )
+
+        if preparar_excel:
+            nombre_excel = generar_nombre_excel_mes(
+                periodo_archivo=periodo_archivo,
+                grupo=grupo_preview,
+                estado=estado_preview,
+            )
+
+            with st.spinner("Preparando Excel..."):
+                st.session_state["plantas_excel_mes_bytes"] = convertir_a_excel_cache(df_preview)
+                st.session_state["plantas_excel_mes_firma"] = firma_excel_mes
+                st.session_state["plantas_excel_mes_nombre"] = nombre_excel
+
+        if (
+            st.session_state.get("plantas_excel_mes_bytes") is not None
+            and st.session_state.get("plantas_excel_mes_firma") == firma_excel_mes
+        ):
+            st.download_button(
+                label="Descargar Excel",
+                data=st.session_state["plantas_excel_mes_bytes"],
+                file_name=st.session_state["plantas_excel_mes_nombre"],
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+                type="primary",
+            )
 
 
 # ============================================================
@@ -2206,6 +3255,18 @@ with st.expander("Detalle semanal con filtro por semanas", expanded=True):
             use_container_width=True,
             hide_index=True,
             column_config={
+                "Cumple": st.column_config.NumberColumn(
+                    "Cumple",
+                    format="%d",
+                ),
+                "No cumple": st.column_config.NumberColumn(
+                    "No cumple",
+                    format="%d",
+                ),
+                "Total evaluable": st.column_config.NumberColumn(
+                    "Total evaluable",
+                    format="%d",
+                ),
                 "% Cumple": st.column_config.ProgressColumn(
                     "% Cumple",
                     format="%.1f%%",
@@ -2233,12 +3294,47 @@ with st.expander("Detalle semanal con filtro por semanas", expanded=True):
 # DETALLE DE FILTROS
 # ============================================================
 
-with st.expander("Detalle de filtros aplicados", expanded=True):
-    mostrar_detalle_filtros_aplicados(resumen_filtros_df)
+with st.expander("Detalle de filtros aplicados", expanded=False):
+    mostrar_detalle_filtros_aplicados = True
+
+    if resumen_filtros_df is None or resumen_filtros_df.empty:
+        st.info("No hay detalle de filtros disponible.")
+    else:
+        st.dataframe(
+            resumen_filtros_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Registros antes": st.column_config.NumberColumn(
+                    "Registros antes",
+                    format="%d",
+                ),
+                "Registros después": st.column_config.NumberColumn(
+                    "Registros después",
+                    format="%d",
+                ),
+                "Registros excluidos": st.column_config.NumberColumn(
+                    "Registros excluidos",
+                    format="%d",
+                ),
+                "% retenido": st.column_config.ProgressColumn(
+                    "% retenido",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+                "% excluido": st.column_config.ProgressColumn(
+                    "% excluido",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+            },
+        )
 
 
 # ============================================================
-# VISTA PREVIA
+# VISTA PREVIA GENERAL
 # ============================================================
 
 with st.expander("Vista previa de datos filtrados", expanded=False):
@@ -2257,16 +3353,11 @@ with st.expander("Vista previa de datos filtrados", expanded=False):
         COL_DOCUMENTO_COMPRAS,
         "centro_grafico",
         "grupo_planta",
-        "tipo_oc",
+        COL_FECHA_SOLICITUD_FINAL,
         COL_FECHA_FACTURACION_FINAL,
         COL_FECHA_RECEPCION_FINAL,
-        "anio_iso_recepcion",
-        "semana_iso_recepcion",
-        "semana_iso_label",
         "dias_tat_total",
         COL_PERFORMANCE_TAT,
-        "periodo_fecha",
-        "periodo_label",
     ]
 
     columnas_preferidas = [
@@ -2287,25 +3378,14 @@ with st.expander("Vista previa de datos filtrados", expanded=False):
             hide_index=True,
         )
 
-    with st.expander("Ver columnas disponibles", expanded=False):
-        c1, c2 = st.columns(2)
-
-        with c1:
-            st.markdown("**Columnas originales**")
-            st.write(df_original.columns.tolist())
-
-        with c2:
-            st.markdown("**Columnas finales**")
-            st.write(df_final.columns.tolist())
-
 
 # ============================================================
-# DESCARGA
+# DESCARGA GENERAL
 # ============================================================
 
 with st.expander("Descargar resultado filtrado", expanded=False):
     st.caption(
-        "Parquet es el formato recomendado. CSV se prepara solo cuando lo solicitas. Excel eliminado."
+        "Parquet es el formato recomendado. CSV se prepara solo cuando lo solicitas."
     )
 
     firma_export = (
