@@ -1,7 +1,9 @@
 # ============================================================
 # 06_CARGAR_ARCHIVO
-# Carga múltiple de archivos base TAT
+# Carga del archivo TAT generado por 05_CALCULOS
 # Guarda archivo activo en sesión como df_tat
+# Archivo esperado ejemplo:
+# 05_CALCULOS_20260618_132722_TAT.parquet
 # ============================================================
 
 import base64
@@ -10,6 +12,17 @@ from io import BytesIO
 
 import pandas as pd
 import streamlit as st
+
+
+# ============================================================
+# CONFIGURACIÓN GENERAL
+# ============================================================
+
+st.set_page_config(
+    page_title="06_CARGAR_ARCHIVO",
+    page_icon="📂",
+    layout="wide",
+)
 
 
 # ============================================================
@@ -62,6 +75,19 @@ st.markdown(
             margin-top: -6px;
             margin-bottom: 10px;
         }
+
+        .step-box {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 14px;
+            padding: 18px;
+            margin-bottom: 16px;
+        }
+
+        .small-muted {
+            color: #6B7280;
+            font-size: 14px;
+        }
     </style>
     """,
     unsafe_allow_html=True,
@@ -97,6 +123,41 @@ def mostrar_logo():
         )
     else:
         st.warning(f"Logo no encontrado: {LOGO_PATH}")
+
+
+# ============================================================
+# COLUMNAS ESPERADAS DEL ARCHIVO TAT
+# Archivo generado por 05_CALCULOS
+# ============================================================
+
+COLUMNAS_REQUERIDAS_TAT = [
+    "fecha_solicitud_final",
+    "fecha_liberacion_final",
+    "fecha_pedido_final",
+    "fecha_facturacion_final",
+    "fecha_recepcion_final",
+    "tipo_oc",
+    "origen",
+    "sistema",
+    "dias_tat_total",
+    "umbral_tat_total",
+    "performance_tat_total",
+    "incumplimiento_tat",
+    "rango_incumplimiento_tat",
+]
+
+COLUMNAS_RECOMENDADAS_TAT = [
+    "Solicitud de pedido - ME5A",
+    "Pedido - ME5A",
+    "Documento de compras - ME80FN",
+    "Estado del match",
+    "monto",
+    "dias_liberacion_solped",
+    "dias_comprador",
+    "dias_proveedor",
+    "dias_logistica",
+    "dias_incumplimiento_tat",
+]
 
 
 # ============================================================
@@ -180,8 +241,88 @@ def limpiar_nombres_columnas(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def guardar_archivo_en_sesion(df: pd.DataFrame, nombre_archivo: str):
+def detectar_nombre_archivo_tat(nombre_archivo: str) -> bool:
+    """
+    Detecta si el nombre del archivo corresponde al patrón esperado
+    del archivo generado por 05_CALCULOS.
+
+    Ejemplo esperado:
+    05_CALCULOS_20260618_132722_TAT.parquet
+    """
+
+    nombre = Path(nombre_archivo).stem.upper()
+
+    return (
+        nombre.startswith("05_CALCULOS_")
+        and nombre.endswith("_TAT")
+    )
+
+
+def validar_columnas_tat(df: pd.DataFrame) -> dict:
+    columnas = list(df.columns)
+
+    faltantes_requeridas = [
+        col for col in COLUMNAS_REQUERIDAS_TAT
+        if col not in columnas
+    ]
+
+    faltantes_recomendadas = [
+        col for col in COLUMNAS_RECOMENDADAS_TAT
+        if col not in columnas
+    ]
+
+    return {
+        "es_valido": len(faltantes_requeridas) == 0,
+        "faltantes_requeridas": faltantes_requeridas,
+        "faltantes_recomendadas": faltantes_recomendadas,
+    }
+
+
+def preparar_archivo_tat(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Limpia nombres de columnas y normaliza columnas principales
+    del archivo TAT.
+    """
+
     df = limpiar_nombres_columnas(df)
+
+    columnas_fecha = [
+        "fecha_solicitud_final",
+        "fecha_liberacion_final",
+        "fecha_pedido_final",
+        "fecha_facturacion_final",
+        "fecha_recepcion_final",
+    ]
+
+    for col in columnas_fecha:
+        if col in df.columns:
+            df[col] = pd.to_datetime(
+                df[col],
+                errors="coerce",
+            )
+
+    columnas_booleanas = [
+        "tiene_fechas_inconsistentes",
+        "incumplimiento_tat",
+    ]
+
+    for col in columnas_booleanas:
+        if col in df.columns:
+            df[col] = df[col].fillna(False).astype(bool)
+
+    return df
+
+
+def guardar_archivo_en_sesion(df: pd.DataFrame, nombre_archivo: str):
+    df = preparar_archivo_tat(df)
+
+    validacion = validar_columnas_tat(df)
+
+    if not validacion["es_valido"]:
+        raise ValueError(
+            "El archivo no parece ser un resultado TAT válido generado por 05_CALCULOS. "
+            f"Faltan columnas requeridas: {validacion['faltantes_requeridas']}"
+        )
 
     st.session_state["archivos_tat"][nombre_archivo] = df
     st.session_state["archivo_tat_activo"] = nombre_archivo
@@ -223,9 +364,13 @@ def obtener_resumen_archivos() -> pd.DataFrame:
     resumen = []
 
     for nombre, df in st.session_state["archivos_tat"].items():
+        validacion = validar_columnas_tat(df)
+
         resumen.append(
             {
                 "Archivo": nombre,
+                "Archivo 05_CALCULOS_TAT": detectar_nombre_archivo_tat(nombre),
+                "TAT válido": validacion["es_valido"],
                 "Filas": df.shape[0],
                 "Columnas": df.shape[1],
                 "Memoria aproximada MB": round(
@@ -251,6 +396,64 @@ def construir_tabla_columnas(df: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def construir_resumen_tat(df: pd.DataFrame) -> pd.DataFrame:
+    data = []
+
+    if "performance_tat_total" in df.columns:
+        conteo = (
+            df["performance_tat_total"]
+            .value_counts(dropna=False)
+            .reset_index()
+        )
+
+        conteo.columns = [
+            "performance_tat_total",
+            "Cantidad",
+        ]
+
+        conteo["%"] = (
+            conteo["Cantidad"] / len(df) * 100
+        ).round(2) if len(df) else 0
+
+        return conteo
+
+    return pd.DataFrame(
+        columns=[
+            "performance_tat_total",
+            "Cantidad",
+            "%",
+        ]
+    )
+
+
+def construir_resumen_rango_incumplimiento(df: pd.DataFrame) -> pd.DataFrame:
+    if "rango_incumplimiento_tat" not in df.columns:
+        return pd.DataFrame(
+            columns=[
+                "rango_incumplimiento_tat",
+                "Cantidad",
+                "%",
+            ]
+        )
+
+    conteo = (
+        df["rango_incumplimiento_tat"]
+        .value_counts(dropna=False)
+        .reset_index()
+    )
+
+    conteo.columns = [
+        "rango_incumplimiento_tat",
+        "Cantidad",
+    ]
+
+    conteo["%"] = (
+        conteo["Cantidad"] / len(df) * 100
+    ).round(2) if len(df) else 0
+
+    return conteo
+
+
 # ============================================================
 # APP
 # ============================================================
@@ -262,7 +465,7 @@ st.markdown(
     """
     <div class="page-title">06_CARGAR_ARCHIVO</div>
     <div class="page-subtitle">
-        Carga archivos base TAT y define el archivo activo para las demás apps.
+        Carga el archivo TAT generado por 05_CALCULOS y déjalo disponible como df_tat.
     </div>
     """,
     unsafe_allow_html=True,
@@ -289,14 +492,25 @@ with st.expander("Configuración CSV", expanded=False):
 
 
 # ============================================================
-# CARGA DE ARCHIVOS
+# CARGA DE ARCHIVO TAT
 # ============================================================
 
-st.markdown("### Cargar archivos")
-st.caption("Formatos permitidos: CSV, XLSX, XLS y PARQUET. Puedes cargar uno o varios archivos.")
+st.markdown(
+    """
+    <div class="step-box">
+        <h4 style="margin-top:0;">1. Cargar archivo TAT</h4>
+        <p class="small-muted">
+            Carga el archivo generado por 05_CALCULOS.
+            Ejemplo esperado: 05_CALCULOS_20260618_132722_TAT.parquet.
+            También se aceptan CSV, XLSX y XLS.
+        </p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 archivos = st.file_uploader(
-    "Selecciona uno o varios archivos base TAT",
+    "Selecciona uno o varios archivos TAT",
     type=["xlsx", "xls", "csv", "parquet"],
     accept_multiple_files=True,
     key="archivos_base_tat_uploader",
@@ -306,8 +520,9 @@ archivos = st.file_uploader(
 if archivos:
     archivos_cargados = []
     archivos_con_error = []
+    archivos_con_advertencia = []
 
-    with st.spinner("Leyendo archivos..."):
+    with st.spinner("Leyendo y validando archivos TAT..."):
         for archivo in archivos:
             try:
                 archivo_bytes = archivo.getvalue()
@@ -317,6 +532,20 @@ if archivos:
                     nombre_archivo=archivo.name,
                     separador_csv=separador_csv,
                 )
+
+                es_nombre_tat = detectar_nombre_archivo_tat(archivo.name)
+
+                if not es_nombre_tat:
+                    archivos_con_advertencia.append(
+                        {
+                            "archivo": archivo.name,
+                            "advertencia": (
+                                "El nombre no sigue el patrón esperado "
+                                "05_CALCULOS_YYYYMMDD_HHMMSS_TAT, "
+                                "pero se validará por columnas."
+                            ),
+                        }
+                    )
 
                 guardar_archivo_en_sesion(
                     df=df,
@@ -335,9 +564,20 @@ if archivos:
 
     if archivos_cargados:
         st.success(
-            f"{len(archivos_cargados)} archivo(s) cargado(s). "
+            f"{len(archivos_cargados)} archivo(s) TAT cargado(s). "
             f"Activo: {st.session_state['nombre_archivo_tat']}"
         )
+
+    if archivos_con_advertencia:
+        st.warning(
+            f"{len(archivos_con_advertencia)} archivo(s) fueron cargados, "
+            "pero su nombre no sigue el patrón esperado."
+        )
+
+        with st.expander("Ver advertencias de nombre", expanded=False):
+            for item in archivos_con_advertencia:
+                st.write(f"**{item['archivo']}**")
+                st.code(item["advertencia"])
 
     if archivos_con_error:
         st.error(
@@ -355,7 +595,7 @@ if archivos:
 # ============================================================
 
 if not st.session_state["archivos_tat"]:
-    st.info("Todavía no hay archivos cargados.")
+    st.info("Todavía no hay archivos TAT cargados.")
     st.stop()
 
 
@@ -387,16 +627,22 @@ activar_archivo(archivo_seleccionado)
 
 df_tat = st.session_state["df_tat"]
 nombre_archivo = st.session_state["nombre_archivo_tat"]
+validacion_activa = validar_columnas_tat(df_tat)
 
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 
 col1.metric("Archivo activo", nombre_archivo)
 col2.metric("Filas", f"{df_tat.shape[0]:,}")
 col3.metric("Columnas", f"{df_tat.shape[1]:,}")
+col4.metric("TAT válido", "Sí" if validacion_activa["es_valido"] else "No")
 
 st.success(
-    f"Archivo activo guardado correctamente: **{nombre_archivo}**"
+    f"Archivo activo guardado correctamente como **df_tat**: **{nombre_archivo}**"
 )
+
+if validacion_activa["faltantes_recomendadas"]:
+    with st.expander("Columnas recomendadas no encontradas", expanded=False):
+        st.write(validacion_activa["faltantes_recomendadas"])
 
 
 # ============================================================
@@ -414,6 +660,34 @@ with st.expander("Archivos cargados en sesión", expanded=False):
 
 
 # ============================================================
+# RESUMEN TAT
+# ============================================================
+
+with st.expander("Resumen TAT del archivo activo", expanded=True):
+    col_res1, col_res2 = st.columns(2)
+
+    with col_res1:
+        st.markdown("#### Performance TAT")
+        resumen_tat = construir_resumen_tat(df_tat)
+
+        st.dataframe(
+            resumen_tat,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    with col_res2:
+        st.markdown("#### Rango incumplimiento TAT")
+        resumen_rango = construir_resumen_rango_incumplimiento(df_tat)
+
+        st.dataframe(
+            resumen_rango,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+
+# ============================================================
 # VISTA PREVIA
 # ============================================================
 
@@ -428,10 +702,39 @@ with st.expander("Vista previa del archivo activo", expanded=False):
         step=5,
     )
 
-    st.dataframe(
-        df_tat.head(filas_preview),
-        use_container_width=True,
-    )
+    columnas_preferidas = [
+        "Solicitud de pedido - ME5A",
+        "Pedido - ME5A",
+        "Documento de compras - ME80FN",
+        "tipo_oc",
+        "origen",
+        "sistema",
+        "monto",
+        "fecha_solicitud_final",
+        "fecha_recepcion_final",
+        "dias_tat_total",
+        "umbral_tat_total",
+        "performance_tat_total",
+        "dias_incumplimiento_tat",
+        "incumplimiento_tat",
+        "rango_incumplimiento_tat",
+    ]
+
+    columnas_preferidas = [
+        col for col in columnas_preferidas
+        if col in df_tat.columns
+    ]
+
+    if columnas_preferidas:
+        st.dataframe(
+            df_tat[columnas_preferidas].head(filas_preview),
+            use_container_width=True,
+        )
+    else:
+        st.dataframe(
+            df_tat.head(filas_preview),
+            use_container_width=True,
+        )
 
 
 # ============================================================
