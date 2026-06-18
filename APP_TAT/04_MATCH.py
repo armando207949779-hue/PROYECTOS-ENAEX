@@ -4,11 +4,14 @@
 # Flujo: cargar 3 archivos -> procesar -> confirmar -> descargar parquet
 # CSV opcional
 # Excel eliminado
+# Nombre de salida único con fecha y hora actual
+# Ejemplo: 04_MATCH_20260618_132722_MATCH.parquet
 # ============================================================
 
 import io
 import base64
 from pathlib import Path
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
@@ -133,6 +136,22 @@ def obtener_separador(separador_csv: str):
     }
 
     return separadores.get(separador_csv, None)
+
+
+def generar_nombre_salida(extension: str) -> str:
+    """
+    Genera un nombre único para el archivo de salida del match.
+
+    Formato:
+    04_MATCH_YYYYMMDD_HHMMSS_MATCH.extension
+
+    Ejemplo:
+    04_MATCH_20260618_132722_MATCH.parquet
+    """
+
+    fecha_hora_actual = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    return f"04_MATCH_{fecha_hora_actual}_MATCH.{extension}"
 
 
 @st.cache_data(show_spinner=False)
@@ -1389,6 +1408,9 @@ try:
             resultado_exportacion
         )
 
+        nombre_parquet = generar_nombre_salida("parquet")
+        nombre_csv = generar_nombre_salida("csv")
+
         resumen_cambios = generar_resumen_cambios_match(
             df_me5a=df_me5a,
             df_ariba=df_ariba,
@@ -1445,6 +1467,7 @@ st.markdown(
         <h4 style="margin-top:0;">3. Descargar resultado integrado</h4>
         <p class="small-muted">
             El formato principal de salida es Parquet.
+            El nombre del archivo incluye fecha, hora y la palabra MATCH.
         </p>
     </div>
     """,
@@ -1454,7 +1477,7 @@ st.markdown(
 st.download_button(
     label="Descargar resultado en Parquet",
     data=parquet_bytes,
-    file_name="match_integrado_me5a_ariba_me80fn.parquet",
+    file_name=nombre_parquet,
     mime="application/octet-stream",
     type="primary",
     use_container_width=True,
@@ -1574,7 +1597,7 @@ with st.expander("Descarga opcional CSV", expanded=False):
                 resultado_exportacion
             )
             st.session_state["match_csv_firma"] = firma_archivos
-            st.session_state["match_csv_nombre"] = "match_integrado_me5a_ariba_me80fn.csv"
+            st.session_state["match_csv_nombre"] = nombre_csv
 
     if (
         st.session_state.get("match_csv_bytes") is not None
