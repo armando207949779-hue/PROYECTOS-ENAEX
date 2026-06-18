@@ -121,8 +121,8 @@ APP_SECTIONS = [
     {
         "grupo": "04 Filtro",
         "descripcion": (
-            "Módulo para consultar, filtrar y segmentar la información TAT "
-            "cargada en sesión."
+            "Módulo para consultar, filtrar, buscar SolPed y segmentar "
+            "la información TAT cargada en sesión."
         ),
         "apps": [
             {
@@ -131,6 +131,16 @@ APP_SECTIONS = [
                 "titulo": "07 Filtro",
                 "icono": "🔎",
                 "descripcion": "Aplicación de filtros y segmentación de información.",
+            },
+            {
+                "nombre": "11_FILTRO_MULTIPLE",
+                "archivo": "11_FILTRO_MULTIPLE.py",
+                "titulo": "11 Filtro Múltiple",
+                "icono": "🔍",
+                "descripcion": (
+                    "Filtro múltiple de SolPed para generar una tabla ordenada "
+                    "de gestión con fechas, estados y porcentaje de avance."
+                ),
             },
         ],
     },
