@@ -1,9 +1,13 @@
-
-
 # ============================================================
 # 00_APP_TAT
 # Portal principal TAT
 # Dashboard modular de apps
+# Orden de módulos:
+# 01 Preparación de datos
+# 02 Cargar archivo
+# 03 Alertas
+# 04 Filtro
+# 05 Performances
 # ============================================================
 
 import base64
@@ -40,7 +44,10 @@ LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
 APP_SECTIONS = [
     {
         "grupo": "01 Preparación de datos",
-        "descripcion": "Limpieza, cruce y cálculo base para construir la información TAT.",
+        "descripcion": (
+            "Módulo para limpiar, cruzar y calcular la información base TAT. "
+            "Incluye ME5A, ARIBA, ME80FN, MATCH y cálculo TAT."
+        ),
         "apps": [
             {
                 "nombre": "01_LIMPIEZA_ME5A",
@@ -51,14 +58,14 @@ APP_SECTIONS = [
             },
             {
                 "nombre": "02_LIMPIEZA_ARIBA",
-                "archivo": "02_LIMPIEZA_ARIBA",
+                "archivo": "02_LIMPIEZA_ARIBA.py",
                 "titulo": "02 Limpieza Ariba",
                 "icono": "🧹",
                 "descripcion": "Limpieza y preparación de información desde Ariba.",
             },
             {
                 "nombre": "03_LIMPIEZA_ME80FN",
-                "archivo": "03_LIMPIEZA_ME80FN",
+                "archivo": "03_LIMPIEZA_ME80FN.py",
                 "titulo": "03 Limpieza ME80FN",
                 "icono": "🧹",
                 "descripcion": "Limpieza y procesamiento de datos ME80FN.",
@@ -68,28 +75,56 @@ APP_SECTIONS = [
                 "archivo": "04_MATCH.py",
                 "titulo": "04 Match",
                 "icono": "🔗",
-                "descripcion": "Cruce y emparejamiento de información entre fuentes.",
+                "descripcion": "Cruce y emparejamiento de información entre ME5A, ARIBA y ME80FN.",
             },
             {
                 "nombre": "05_CALCULOS",
                 "archivo": "05_CALCULOS.py",
-                "titulo": "05 Cálculos",
+                "titulo": "05 Cálculos TAT",
                 "icono": "🧮",
-                "descripcion": "Cálculos operativos y generación de resultados TAT.",
+                "descripcion": "Generación de fechas finales y cálculo de performance TAT.",
             },
         ],
     },
     {
-        "grupo": "02 Operación y consulta",
-        "descripcion": "Carga del archivo final, búsqueda de registros y revisión operativa.",
+        "grupo": "02 Cargar archivo",
+        "descripcion": (
+            "Módulo para cargar el archivo TAT final generado por 05_CALCULOS "
+            "y dejarlo disponible en sesión como df_tat."
+        ),
         "apps": [
             {
                 "nombre": "06_CARGAR_ARCHIVO",
                 "archivo": "06_CARGAR_ARCHIVO.py",
-                "titulo": "06 Cargar Archivo",
+                "titulo": "06 Cargar Archivo TAT",
                 "icono": "📤",
-                "descripcion": "Carga de archivos para el flujo operativo.",
+                "descripcion": "Carga del archivo TAT final y definición del archivo activo.",
             },
+        ],
+    },
+    {
+        "grupo": "03 Alertas",
+        "descripcion": (
+            "Módulo para revisar alertas, vencimientos, pedidos críticos "
+            "y seguimiento operativo TAT."
+        ),
+        "apps": [
+            {
+                "nombre": "10_ALERTAS",
+                "archivo": "10_ALERTAS.py",
+                "titulo": "10 Alertas",
+                "icono": "🚨",
+                "descripcion": "Gestión, revisión y generación de alertas TAT.",
+            },
+        ],
+    },
+    {
+        "grupo": "04 Filtro",
+        "descripcion": (
+            "Módulo para consultar, filtrar y segmentar la información TAT "
+            "cargada en sesión."
+        ),
+        "apps": [
             {
                 "nombre": "07_FILTRO",
                 "archivo": "07_FILTRO.py",
@@ -100,8 +135,11 @@ APP_SECTIONS = [
         ],
     },
     {
-        "grupo": "03 Performance",
-        "descripcion": "Análisis mensual, comparativo y seguimiento de cumplimiento TAT.",
+        "grupo": "05 Performances",
+        "descripcion": (
+            "Módulo para analizar performance mensual, comparativos por planta "
+            "y cumplimiento TAT."
+        ),
         "apps": [
             {
                 "nombre": "08_PERFORMANCE_PLANTA_MENSUAL",
@@ -116,19 +154,6 @@ APP_SECTIONS = [
                 "titulo": "09 Performance Plantas",
                 "icono": "📈",
                 "descripcion": "Análisis comparativo de performance por plantas.",
-            },
-        ],
-    },
-    {
-        "grupo": "04 Gestión de alertas",
-        "descripcion": "Seguimiento de vencimientos, pedidos críticos y alertas TAT.",
-        "apps": [
-            {
-                "nombre": "10_ALERTAS",
-                "archivo": "10_ALERTAS.py",
-                "titulo": "10 Alertas",
-                "icono": "🚨",
-                "descripcion": "Gestión, revisión y generación de alertas TAT.",
             },
         ],
     },
@@ -233,12 +258,12 @@ def mostrar_estado_archivo_activo() -> None:
         )
     else:
         st.info(
-            "No hay archivo activo en sesión. Para analizar datos, primero usa **06 Cargar Archivo**."
+            "No hay archivo activo en sesión. Para analizar datos, primero usa **06 Cargar Archivo TAT**."
         )
 
 
 def mostrar_apps_disponibles() -> None:
-    st.subheader("Apps disponibles")
+    st.subheader("Módulos disponibles")
 
     for seccion in APP_SECTIONS:
         st.markdown(f"#### {seccion['grupo']}")
@@ -289,8 +314,8 @@ def pagina_inicio() -> None:
     st.markdown(
         """
         <p style='text-align: center; font-size: 18px; color: #555;'>
-            Portal modular para consultar, analizar y gestionar información
-            relacionada con TAT mediante distintas apps operativas.
+            Portal modular para preparar, cargar, consultar, alertar y analizar
+            información relacionada con TAT.
         </p>
         """,
         unsafe_allow_html=True,
@@ -307,7 +332,7 @@ def pagina_inicio() -> None:
     st.markdown("---")
 
     st.success(
-        "Para comenzar, selecciona una app desde el menú de navegación del portal."
+        "Para comenzar, selecciona un módulo desde el menú de navegación del portal."
     )
 
 
