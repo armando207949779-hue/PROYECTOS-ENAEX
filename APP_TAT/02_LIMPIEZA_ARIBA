@@ -4,11 +4,14 @@
 # Flujo: cargar archivo -> procesar -> confirmar -> descargar parquet
 # CSV opcional
 # Excel eliminado
+# Nombre de salida único con fecha y hora actual
+# Ejemplo: 02_ARIBA_20260618_132722_LIMPIO.parquet
 # ============================================================
 
 import io
 import base64
 from pathlib import Path
+from datetime import datetime
 
 import pandas as pd
 import streamlit as st
@@ -117,7 +120,7 @@ def mostrar_logo():
                 >
             </div>
             """,
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
 
 
@@ -137,7 +140,19 @@ def obtener_separador(separador_csv: str):
 
 
 def generar_nombre_salida(extension: str) -> str:
-    return f"ariba_limpio.{extension}"
+    """
+    Genera un nombre único para el archivo de salida.
+
+    Formato:
+    02_ARIBA_YYYYMMDD_HHMMSS_LIMPIO.extension
+
+    Ejemplo:
+    02_ARIBA_20260618_132722_LIMPIO.parquet
+    """
+
+    fecha_hora_actual = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    return f"02_ARIBA_{fecha_hora_actual}_LIMPIO.{extension}"
 
 
 # ============================================================
@@ -656,6 +671,7 @@ st.markdown(
         <h4 style="margin-top:0;">3. Descargar archivo limpio</h4>
         <p class="small-muted">
             El formato principal de salida es Parquet.
+            El nombre del archivo incluye fecha, hora y la palabra LIMPIO.
         </p>
     </div>
     """,
