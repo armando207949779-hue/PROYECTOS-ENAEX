@@ -11,16 +11,18 @@
 # - Tipo de posición != F, si existe la columna
 # - Licitación contiene PU
 #
-# Input usuario:
-# - Código proveedor SAP
-# - Código material SAP
+# Flujo usuario:
+# 1. Cargar archivo ME2N
+# 2. Buscar por código proveedor SAP
+# 3. Seleccionar material disponible para ese proveedor
+# 4. Filtrar combinación proveedor-material
 #
 # Output:
+# - Fecha documento
 # - Código proveedor
 # - Nombre proveedor
-# - Fecha documento
 # - Material
-# - Documento compras / OC
+# - OC
 # - Precio neto
 # ============================================================
 
@@ -69,16 +71,39 @@ GRUPOS_COMPRA_VALIDOS = [
     "EAK",
 ]
 
-COLUMNAS_OUTPUT = [
+COLUMNAS_VISTA_PREVIA = [
+    "Fecha documento",
     "Codigo proveedor",
     "Nombre proveedor limpio",
-    "Fecha documento",
     "Material",
+    "Texto breve",
     "Documento compras",
     "Precio neto",
     "Licitación",
     "Grupo de compras",
+    "Cantidad de pedido",
+    "Unidad medida pedido",
+    "Valor neto de orden",
+    "Moneda",
+    "Solicitante",
+    "Centro",
+    "Organización compras",
+]
+
+COLUMNAS_OUTPUT = [
+    "Fecha documento",
+    "Codigo proveedor",
+    "Nombre proveedor limpio",
+    "Material",
     "Texto breve",
+    "Documento compras",
+    "Precio neto",
+    "Licitación",
+    "Grupo de compras",
+    "Cantidad de pedido",
+    "Unidad medida pedido",
+    "Valor neto de orden",
+    "Moneda",
 ]
 
 
@@ -186,6 +211,60 @@ def limpiar_texto_serie(serie: pd.Series) -> pd.Series:
     )
 
 
+def convertir_numero_sap(valor) -> float:
+    """
+    Convierte números SAP exportados como texto a número.
+
+    Soporta ejemplos:
+    - 25000
+    - 25.000
+    - 25.000,50
+    - 25000,50
+    """
+    if pd.isna(valor):
+        return None
+
+    texto = str(valor).strip()
+
+    if texto == "":
+        return None
+
+    texto = texto.replace(" ", "")
+
+    if "," in texto:
+        texto = texto.replace(".", "")
+        texto = texto.replace(",", ".")
+    else:
+        texto = texto.replace(".", "")
+
+    return pd.to_numeric(texto, errors="coerce")
+
+
+def formato_miles_cl(valor) -> str:
+    """
+    Formatea número con separador de miles estilo Chile.
+
+    Ejemplos:
+    25000 -> 25.000
+    25000.5 -> 25.000,50
+    """
+    if pd.isna(valor):
+        return ""
+
+    try:
+        numero = float(valor)
+    except Exception:
+        return str(valor)
+
+    if numero.is_integer():
+        return f"{int(numero):,}".replace(",", ".")
+
+    texto = f"{numero:,.2f}"
+    texto = texto.replace(",", "X").replace(".", ",").replace("X", ".")
+
+    return texto
+
+
 def extraer_codigo_proveedor(valor: str) -> str:
     """
     Desde una celda como:
@@ -227,6 +306,71 @@ def extraer_nombre_proveedor(valor: str) -> str:
 
     return " ".join(partes[1:]).strip()
 
+
+def ordenar_columnas(df: pd.DataFrame, columnas_preferidas: list[str]) -> pd.DataFrame:
+    """
+    Ordena columnas poniendo primero las columnas preferidas.
+    El resto queda al final en el orden original.
+    """
+    df = df.copy()
+
+    primeras = [
+        col for col in columnas_preferidas
+        if col in df.columns
+    ]
+
+    restantes = [
+        col for col in df.columns
+        if col not in primeras
+    ]
+
+    return df[primeras + restantes]
+
+
+def preparar_df_visual(df: pd.DataFrame, columnas_preferidas: list[str]) -> pd.DataFrame:
+    """
+    Prepara un dataframe para mostrar en Streamlit:
+    - Ordena columnas
+    - Formatea fecha
+    - Formatea precio neto
+    - Formatea valor neto de orden
+    """
+    df_visual = df.copy()
+
+    if "Fecha documento" in df_visual.columns:
+        df_visual["Fecha documento"] = pd.to_datetime(
+            df_visual["Fecha documento"],
+            errors="coerce",
+        ).dt.strftime("%Y-%m-%d")
+
+    if "Precio neto num" in df_visual.columns:
+        df_visual["Precio neto"] = df_visual["Precio neto num"].apply(formato_miles_cl)
+
+    if "Valor neto de orden num" in df_visual.columns:
+        df_visual["Valor neto de orden"] = df_visual["Valor neto de orden num"].apply(formato_miles_cl)
+
+    df_visual = ordenar_columnas(df_visual, columnas_preferidas)
+
+    columnas_ocultas = [
+        "Licitación_norm",
+        "Grupo de compras_norm",
+        "Material_norm",
+        "Codigo proveedor_norm",
+        "Precio neto num",
+        "Valor neto de orden num",
+    ]
+
+    columnas_visibles = [
+        col for col in df_visual.columns
+        if col not in columnas_ocultas
+    ]
+
+    return df_visual[columnas_visibles]
+
+
+# ============================================================
+# PREPARACIÓN BASE
+# ============================================================
 
 def preparar_base(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -310,17 +454,11 @@ def preparar_base(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     # Precio numérico auxiliar
-    df["Precio neto num"] = (
-        df["Precio neto"]
-        .astype(str)
-        .str.replace(".", "", regex=False)
-        .str.replace(",", ".", regex=False)
-    )
+    df["Precio neto num"] = df["Precio neto"].apply(convertir_numero_sap)
 
-    df["Precio neto num"] = pd.to_numeric(
-        df["Precio neto num"],
-        errors="coerce",
-    )
+    # Valor neto de orden numérico auxiliar, si existe
+    if "Valor neto de orden" in df.columns:
+        df["Valor neto de orden num"] = df["Valor neto de orden"].apply(convertir_numero_sap)
 
     # ========================================================
     # FILTROS DE NEGOCIO
@@ -366,7 +504,7 @@ def preparar_base(df: pd.DataFrame) -> pd.DataFrame:
 
     # Licitación PU y derivados
     #
-    # Incluye ejemplos como:
+    # Incluye ejemplos:
     # - PU
     # - AD PU
     # - AD-PU
@@ -376,7 +514,120 @@ def preparar_base(df: pd.DataFrame) -> pd.DataFrame:
     # - ad-pu
     df = df[df["Licitación_norm"].str.contains("PU", na=False)]
 
+    df = df.sort_values(
+        by=["Fecha documento", "Codigo proveedor", "Material"],
+        ascending=[False, True, True],
+        na_position="last",
+    )
+
     return df
+
+
+def filtrar_por_proveedor(
+    df: pd.DataFrame,
+    codigo_proveedor: str,
+) -> pd.DataFrame:
+    """
+    Filtra la base preparada por código proveedor SAP.
+    """
+    codigo_proveedor = str(codigo_proveedor).strip()
+
+    resultado = df[
+        df["Codigo proveedor_norm"] == codigo_proveedor
+    ].copy()
+
+    resultado = resultado.sort_values(
+        by=["Material", "Fecha documento"],
+        ascending=[True, False],
+        na_position="last",
+    )
+
+    return resultado
+
+
+def resumen_materiales_por_proveedor(df_proveedor: pd.DataFrame) -> pd.DataFrame:
+    """
+    Genera resumen de materiales disponibles para un proveedor.
+    """
+    agrupaciones = {
+        "Documento compras": "nunique",
+        "Fecha documento": ["min", "max"],
+        "Precio neto num": ["min", "max", "count"],
+    }
+
+    if "Texto breve" in df_proveedor.columns:
+        resumen = (
+            df_proveedor
+            .groupby(["Material", "Texto breve"], dropna=False)
+            .agg(agrupaciones)
+            .reset_index()
+        )
+
+        resumen.columns = [
+            "Material",
+            "Texto breve",
+            "Cantidad OCs",
+            "Primera fecha",
+            "Última fecha",
+            "Precio mínimo num",
+            "Precio máximo num",
+            "Cantidad líneas",
+        ]
+    else:
+        resumen = (
+            df_proveedor
+            .groupby(["Material"], dropna=False)
+            .agg(agrupaciones)
+            .reset_index()
+        )
+
+        resumen.columns = [
+            "Material",
+            "Cantidad OCs",
+            "Primera fecha",
+            "Última fecha",
+            "Precio mínimo num",
+            "Precio máximo num",
+            "Cantidad líneas",
+        ]
+
+    resumen["Primera fecha"] = pd.to_datetime(
+        resumen["Primera fecha"],
+        errors="coerce",
+    ).dt.strftime("%Y-%m-%d")
+
+    resumen["Última fecha"] = pd.to_datetime(
+        resumen["Última fecha"],
+        errors="coerce",
+    ).dt.strftime("%Y-%m-%d")
+
+    resumen["Precio mínimo"] = resumen["Precio mínimo num"].apply(formato_miles_cl)
+    resumen["Precio máximo"] = resumen["Precio máximo num"].apply(formato_miles_cl)
+
+    columnas = [
+        "Material",
+        "Texto breve",
+        "Cantidad líneas",
+        "Cantidad OCs",
+        "Primera fecha",
+        "Última fecha",
+        "Precio mínimo",
+        "Precio máximo",
+    ]
+
+    columnas = [
+        col for col in columnas
+        if col in resumen.columns
+    ]
+
+    resumen = resumen[columnas]
+
+    resumen = resumen.sort_values(
+        by=["Material"],
+        ascending=True,
+    )
+
+    return resumen
 
 
 def filtrar_por_proveedor_material(
@@ -406,7 +657,10 @@ def filtrar_por_proveedor_material(
         if col in resultado.columns
     ]
 
-    return resultado[columnas_disponibles]
+    return resultado[columnas_disponibles + [
+        col for col in resultado.columns
+        if col not in columnas_disponibles
+    ]]
 
 
 def descargar_excel(df: pd.DataFrame) -> bytes:
@@ -462,9 +716,11 @@ def mostrar_instrucciones() -> None:
             - Fecha documento desde `2024-01-01` hasta hoy.
             - Si existe columna de tipo de posición, se excluye `F`.
             - Se consideran registros donde la columna `Licitación` contiene `PU`.
-            - La búsqueda final se realiza por:
-              - Código proveedor SAP
-              - Código material SAP
+            - Flujo de consulta:
+              1. Buscar por código proveedor SAP.
+              2. Revisar materiales disponibles.
+              3. Seleccionar material.
+              4. Filtrar combinación proveedor-material.
             """
         )
 
@@ -544,42 +800,22 @@ def mostrar_valores_unicos_licitacion(df: pd.DataFrame) -> None:
 
 def mostrar_ayuda_sin_resultados(df_pu: pd.DataFrame) -> None:
     """
-    Muestra ayuda cuando no hay resultados para la combinación buscada.
+    Muestra ayuda cuando no hay resultados para el proveedor.
     """
-    with st.expander("Ayuda para revisar posibles valores", expanded=False):
+    with st.expander("Ayuda para revisar posibles proveedores", expanded=False):
         proveedores_disponibles = (
-            df_pu["Codigo proveedor"]
-            .dropna()
+            df_pu[["Codigo proveedor", "Nombre proveedor limpio"]]
             .drop_duplicates()
-            .sort_values()
-            .head(100)
+            .sort_values("Codigo proveedor")
+            .head(150)
         )
 
-        materiales_disponibles = (
-            df_pu["Material"]
-            .dropna()
-            .drop_duplicates()
-            .sort_values()
-            .head(100)
+        st.caption("Primeros proveedores disponibles")
+        st.dataframe(
+            proveedores_disponibles,
+            use_container_width=True,
+            hide_index=True,
         )
-
-        col_a, col_b = st.columns(2)
-
-        with col_a:
-            st.caption("Primeros proveedores disponibles")
-            st.dataframe(
-                pd.DataFrame({"Codigo proveedor": proveedores_disponibles}),
-                use_container_width=True,
-                hide_index=True,
-            )
-
-        with col_b:
-            st.caption("Primeros materiales disponibles")
-            st.dataframe(
-                pd.DataFrame({"Material": materiales_disponibles}),
-                use_container_width=True,
-                hide_index=True,
-            )
 
 
 # ============================================================
@@ -646,84 +882,187 @@ def pagina_app() -> None:
 
     mostrar_kpis(df_original, df_pu)
 
-    with st.expander("Vista previa de base PU filtrada", expanded=False):
+    with st.expander("Vista previa de base PU filtrada", expanded=True):
+        df_preview = preparar_df_visual(
+            df_pu.head(100),
+            COLUMNAS_VISTA_PREVIA,
+        )
+
         st.dataframe(
-            df_pu.head(50),
+            df_preview,
             use_container_width=True,
+            hide_index=True,
         )
 
     # ========================================================
-    # 3. INPUT USUARIO
+    # 3. BUSCAR PROVEEDOR
     # ========================================================
 
     st.markdown("---")
-    st.subheader("3. Buscar proveedor-material")
+    st.subheader("3. Buscar proveedor")
 
-    col1, col2 = st.columns(2)
-
-    with col1:
-        codigo_proveedor = st.text_input(
-            "Código proveedor SAP",
-            placeholder="Ejemplo: 449065",
-        )
-
-    with col2:
-        codigo_material = st.text_input(
-            "Código material SAP",
-            placeholder="Ejemplo: 100016",
-        )
-
-    buscar = st.button("Buscar combinación", type="primary")
-
-    if not buscar:
-        st.info(
-            "Ingresa un código de proveedor SAP y un código de material para consultar."
-        )
-        st.stop()
-
-    if not codigo_proveedor or not codigo_material:
-        st.warning("Debes ingresar ambos campos: proveedor SAP y material SAP.")
-        st.stop()
-
-    # ========================================================
-    # 4. RESULTADO
-    # ========================================================
-
-    resultado = filtrar_por_proveedor_material(
-        df=df_pu,
-        codigo_proveedor=codigo_proveedor,
-        codigo_material=codigo_material,
+    codigo_proveedor = st.text_input(
+        "Código proveedor SAP",
+        placeholder="Ejemplo: 449065",
     )
 
-    st.markdown("---")
-    st.subheader("4. Resultado")
+    buscar_proveedor = st.button(
+        "Buscar proveedor",
+        type="primary",
+    )
 
-    if resultado.empty:
+    if buscar_proveedor:
+        if not codigo_proveedor:
+            st.warning("Debes ingresar un código de proveedor SAP.")
+            st.stop()
+
+        df_proveedor = filtrar_por_proveedor(
+            df=df_pu,
+            codigo_proveedor=codigo_proveedor,
+        )
+
+        st.session_state["codigo_proveedor_buscado"] = codigo_proveedor
+        st.session_state["df_proveedor_pu"] = df_proveedor
+
+    if "df_proveedor_pu" not in st.session_state:
+        st.info("Ingresa un proveedor y presiona **Buscar proveedor**.")
+        st.stop()
+
+    df_proveedor = st.session_state["df_proveedor_pu"]
+    codigo_proveedor_buscado = st.session_state["codigo_proveedor_buscado"]
+
+    if df_proveedor.empty:
         st.warning(
-            "No se encontraron órdenes de compra PU para la combinación proveedor-material ingresada."
+            f"No se encontraron registros PU para el proveedor **{codigo_proveedor_buscado}**."
         )
 
         mostrar_ayuda_sin_resultados(df_pu)
-
         st.stop()
 
-    st.success(
-        f"Se encontraron **{len(resultado):,} líneas** para la combinación ingresada."
-        .replace(",", ".")
+    nombre_proveedor = (
+        df_proveedor["Nombre proveedor limpio"]
+        .dropna()
+        .astype(str)
+        .replace("", pd.NA)
+        .dropna()
+        .unique()
     )
 
+    nombre_proveedor_texto = nombre_proveedor[0] if len(nombre_proveedor) > 0 else ""
+
+    st.success(
+        f"Proveedor encontrado: **{codigo_proveedor_buscado}**"
+        + (f" · **{nombre_proveedor_texto}**" if nombre_proveedor_texto else "")
+    )
+
+    materiales_unicos = df_proveedor["Material"].nunique()
+    lineas_proveedor = len(df_proveedor)
+    ocs_proveedor = df_proveedor["Documento compras"].nunique()
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.metric(
+            "Materiales encontrados",
+            f"{materiales_unicos:,}".replace(",", "."),
+        )
+
+    with col2:
+        st.metric(
+            "Líneas proveedor",
+            f"{lineas_proveedor:,}".replace(",", "."),
+        )
+
+    with col3:
+        st.metric(
+            "OCs proveedor",
+            f"{ocs_proveedor:,}".replace(",", "."),
+        )
+
+    st.markdown("---")
+    st.subheader("4. Seleccionar material")
+
+    resumen_materiales = resumen_materiales_por_proveedor(df_proveedor)
+
+    st.caption("Materiales disponibles para el proveedor seleccionado")
+
     st.dataframe(
-        resultado,
+        resumen_materiales,
         use_container_width=True,
         hide_index=True,
     )
 
-    excel_bytes = descargar_excel(resultado)
+    lista_materiales = (
+        df_proveedor["Material"]
+        .dropna()
+        .astype(str)
+        .str.strip()
+        .drop_duplicates()
+        .sort_values()
+        .tolist()
+    )
+
+    if not lista_materiales:
+        st.warning("El proveedor existe, pero no tiene materiales válidos asociados.")
+        st.stop()
+
+    material_seleccionado = st.selectbox(
+        "Selecciona un material",
+        options=lista_materiales,
+        index=0,
+    )
+
+    filtrar_material = st.button(
+        "Filtrar material",
+        type="primary",
+    )
+
+    if not filtrar_material:
+        st.info("Selecciona un material y presiona **Filtrar material**.")
+        st.stop()
+
+    # ========================================================
+    # 5. RESULTADO FINAL
+    # ========================================================
+
+    resultado = filtrar_por_proveedor_material(
+        df=df_pu,
+        codigo_proveedor=codigo_proveedor_buscado,
+        codigo_material=material_seleccionado,
+    )
+
+    st.markdown("---")
+    st.subheader("5. Resultado proveedor-material")
+
+    if resultado.empty:
+        st.warning(
+            "No se encontraron órdenes de compra PU para la combinación proveedor-material seleccionada."
+        )
+        st.stop()
+
+    st.success(
+        f"Se encontraron **{len(resultado):,} líneas** para el proveedor "
+        f"**{codigo_proveedor_buscado}** y material **{material_seleccionado}**."
+        .replace(",", ".")
+    )
+
+    resultado_visual = preparar_df_visual(
+        resultado,
+        COLUMNAS_OUTPUT,
+    )
+
+    st.dataframe(
+        resultado_visual,
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    excel_bytes = descargar_excel(resultado_visual)
 
     st.download_button(
         label="Descargar resultado Excel",
         data=excel_bytes,
-        file_name=f"resultado_oc_pu_{codigo_proveedor}_{codigo_material}.xlsx",
+        file_name=f"resultado_oc_pu_{codigo_proveedor_buscado}_{material_seleccionado}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
