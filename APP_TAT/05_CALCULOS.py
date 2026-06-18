@@ -5,11 +5,14 @@
 # -> calcular performance TAT -> descargar Parquet
 # CSV opcional
 # Excel eliminado
+# Nombre de salida único con fecha y hora actual
+# Ejemplo: 05_CALCULOS_20260618_132722_CALCULOS.parquet
 # ============================================================
 
 import io
 import base64
 from pathlib import Path
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
@@ -242,6 +245,22 @@ def obtener_separador(separador_csv: str):
     }
 
     return separadores.get(separador_csv, None)
+
+
+def generar_nombre_salida(extension: str) -> str:
+    """
+    Genera un nombre único para el archivo de salida de cálculos.
+
+    Formato:
+    05_CALCULOS_YYYYMMDD_HHMMSS_CALCULOS.extension
+
+    Ejemplo:
+    05_CALCULOS_20260618_132722_CALCULOS.parquet
+    """
+
+    fecha_hora_actual = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    return f"05_CALCULOS_{fecha_hora_actual}_CALCULOS.{extension}"
 
 
 @st.cache_data(show_spinner=False)
@@ -1322,6 +1341,9 @@ try:
 
         parquet_bytes = convertir_a_parquet_cache(df_final)
 
+        nombre_parquet = generar_nombre_salida("parquet")
+        nombre_csv = generar_nombre_salida("csv")
+
         resumen_cambios_performance = generar_resumen_cambios_performance(
             df_original=df_fechas,
             df_final=df_final,
@@ -1384,6 +1406,7 @@ st.markdown(
         <h4 style="margin-top:0;">3. Descargar resultado final</h4>
         <p class="small-muted">
             El formato principal de salida es Parquet.
+            El nombre del archivo incluye fecha, hora y la palabra CALCULOS.
         </p>
     </div>
     """,
@@ -1393,7 +1416,7 @@ st.markdown(
 st.download_button(
     label="Descargar resultado final en Parquet",
     data=parquet_bytes,
-    file_name="calculos_tat_resultado_final.parquet",
+    file_name=nombre_parquet,
     mime="application/octet-stream",
     type="primary",
     use_container_width=True,
@@ -1596,7 +1619,7 @@ with st.expander("Descarga opcional CSV", expanded=False):
         with st.spinner("Preparando CSV..."):
             st.session_state["calculos_csv_bytes"] = convertir_a_csv_cache(df_final)
             st.session_state["calculos_csv_firma"] = firma_archivo
-            st.session_state["calculos_csv_nombre"] = "calculos_tat_resultado_final.csv"
+            st.session_state["calculos_csv_nombre"] = nombre_csv
 
     if (
         st.session_state.get("calculos_csv_bytes") is not None
