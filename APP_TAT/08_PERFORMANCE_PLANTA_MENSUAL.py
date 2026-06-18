@@ -4,10 +4,12 @@
 # Usa df_tat cargado desde 06_CARGAR_ARCHIVO
 #
 # Mejoras:
-# - Vista previa por mes separada en Cumple y No cumple
-# - Descargas Excel separadas: mes completo, cumple, no cumple
-# - Cumplimiento por etapa en una sola visualización
-# - Tabla de etapas con gráficos tipo ProgressColumn
+# - Se elimina el gráfico final de Incumplimiento TAT
+# - En TAT sobre registros evaluables se agregan:
+#   1. Distribución de días TAT para registros Cumple
+#   2. Distribución de días TAT para registros No cumple
+# - Para Cumple: distribución del uso del umbral definido
+# - Para No cumple: distribución de días sobre el umbral definido
 # ============================================================
 
 import io
@@ -1274,6 +1276,202 @@ def crear_resumen_etapas(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ============================================================
+# Distribuciones TAT vs umbral
+# ============================================================
+
+def crear_distribucion_tat_cumple(df: pd.DataFrame) -> pd.DataFrame:
+    columnas_necesarias = [
+        "performance_tat_total",
+        "dias_tat_total",
+        "umbral_tat_total",
+    ]
+
+    if any(col not in df.columns for col in columnas_necesarias):
+        return pd.DataFrame()
+
+    base = df[
+        df["performance_tat_total"].astype("string").eq("Cumple")
+    ].copy()
+
+    if base.empty:
+        return pd.DataFrame()
+
+    base["dias_tat_total_num"] = pd.to_numeric(
+        base["dias_tat_total"],
+        errors="coerce",
+    )
+
+    base["umbral_tat_total_num"] = pd.to_numeric(
+        base["umbral_tat_total"],
+        errors="coerce",
+    )
+
+    base = base[
+        base["dias_tat_total_num"].notna()
+        & base["umbral_tat_total_num"].notna()
+        & base["umbral_tat_total_num"].gt(0)
+        & base["dias_tat_total_num"].ge(0)
+    ].copy()
+
+    if base.empty:
+        return pd.DataFrame()
+
+    base["uso_umbral_pct"] = (
+        base["dias_tat_total_num"] / base["umbral_tat_total_num"] * 100
+    )
+
+    bins = [-np.inf, 25, 50, 75, 100, np.inf]
+    labels = [
+        "0% - 25% del umbral",
+        "26% - 50% del umbral",
+        "51% - 75% del umbral",
+        "76% - 100% del umbral",
+        "Mayor al umbral",
+    ]
+
+    base["Rango"] = pd.cut(
+        base["uso_umbral_pct"],
+        bins=bins,
+        labels=labels,
+        right=True,
+    )
+
+    tabla = (
+        base
+        .groupby("Rango", observed=False)
+        .agg(
+            Cantidad=("Rango", "size"),
+            Promedio_dias_TAT=("dias_tat_total_num", "mean"),
+            Promedio_umbral=("umbral_tat_total_num", "mean"),
+            Promedio_uso_umbral_pct=("uso_umbral_pct", "mean"),
+        )
+        .reset_index()
+    )
+
+    total = tabla["Cantidad"].sum()
+
+    tabla["% sobre Cumple"] = np.where(
+        total > 0,
+        tabla["Cantidad"] / total * 100,
+        0,
+    )
+
+    tabla["Promedio_dias_TAT"] = tabla["Promedio_dias_TAT"].round(2)
+    tabla["Promedio_umbral"] = tabla["Promedio_umbral"].round(2)
+    tabla["Promedio_uso_umbral_pct"] = tabla["Promedio_uso_umbral_pct"].round(2)
+    tabla["% sobre Cumple"] = tabla["% sobre Cumple"].round(2)
+
+    tabla = tabla.rename(
+        columns={
+            "Promedio_dias_TAT": "Promedio días TAT",
+            "Promedio_umbral": "Promedio umbral",
+            "Promedio_uso_umbral_pct": "Promedio uso umbral %",
+        }
+    )
+
+    return tabla
+
+
+def crear_distribucion_tat_no_cumple(df: pd.DataFrame) -> pd.DataFrame:
+    columnas_necesarias = [
+        "performance_tat_total",
+        "dias_tat_total",
+        "umbral_tat_total",
+    ]
+
+    if any(col not in df.columns for col in columnas_necesarias):
+        return pd.DataFrame()
+
+    base = df[
+        df["performance_tat_total"].astype("string").eq("No cumple")
+    ].copy()
+
+    if base.empty:
+        return pd.DataFrame()
+
+    base["dias_tat_total_num"] = pd.to_numeric(
+        base["dias_tat_total"],
+        errors="coerce",
+    )
+
+    base["umbral_tat_total_num"] = pd.to_numeric(
+        base["umbral_tat_total"],
+        errors="coerce",
+    )
+
+    base = base[
+        base["dias_tat_total_num"].notna()
+        & base["umbral_tat_total_num"].notna()
+        & base["umbral_tat_total_num"].gt(0)
+    ].copy()
+
+    if base.empty:
+        return pd.DataFrame()
+
+    base["dias_sobre_umbral"] = (
+        base["dias_tat_total_num"] - base["umbral_tat_total_num"]
+    )
+
+    base = base[
+        base["dias_sobre_umbral"].gt(0)
+    ].copy()
+
+    if base.empty:
+        return pd.DataFrame()
+
+    bins = [0, 5, 15, 30, np.inf]
+    labels = [
+        "1 - 5 días sobre umbral",
+        "6 - 15 días sobre umbral",
+        "16 - 30 días sobre umbral",
+        "Mayor a 30 días sobre umbral",
+    ]
+
+    base["Rango"] = pd.cut(
+        base["dias_sobre_umbral"],
+        bins=bins,
+        labels=labels,
+        right=True,
+        include_lowest=True,
+    )
+
+    tabla = (
+        base
+        .groupby("Rango", observed=False)
+        .agg(
+            Cantidad=("Rango", "size"),
+            Promedio_dias_TAT=("dias_tat_total_num", "mean"),
+            Promedio_umbral=("umbral_tat_total_num", "mean"),
+            Promedio_dias_sobre_umbral=("dias_sobre_umbral", "mean"),
+        )
+        .reset_index()
+    )
+
+    total = tabla["Cantidad"].sum()
+
+    tabla["% sobre No cumple"] = np.where(
+        total > 0,
+        tabla["Cantidad"] / total * 100,
+        0,
+    )
+
+    tabla["Promedio_dias_TAT"] = tabla["Promedio_dias_TAT"].round(2)
+    tabla["Promedio_umbral"] = tabla["Promedio_umbral"].round(2)
+    tabla["Promedio_dias_sobre_umbral"] = tabla["Promedio_dias_sobre_umbral"].round(2)
+    tabla["% sobre No cumple"] = tabla["% sobre No cumple"].round(2)
+
+    tabla = tabla.rename(
+        columns={
+            "Promedio_dias_TAT": "Promedio días TAT",
+            "Promedio_umbral": "Promedio umbral",
+            "Promedio_dias_sobre_umbral": "Promedio días sobre umbral",
+        }
+    )
+
+    return tabla
+
+
+# ============================================================
 # KPI
 # ============================================================
 
@@ -2046,6 +2244,95 @@ def grafico_donut_evaluables_tat(tabla: pd.DataFrame):
         )
 
 
+def grafico_barras_distribucion_tat(
+    tabla: pd.DataFrame,
+    titulo: str,
+    columna_porcentaje: str,
+    color_barra: str,
+):
+    if tabla.empty:
+        st.info("No hay datos para graficar esta distribución.")
+        return
+
+    data = tabla.copy()
+
+    data["Rango"] = data["Rango"].astype(str)
+
+    cantidades = (
+        pd.to_numeric(data["Cantidad"], errors="coerce")
+        .fillna(0)
+        .astype(int)
+        .to_numpy()
+    )
+
+    porcentajes = (
+        pd.to_numeric(data[columna_porcentaje], errors="coerce")
+        .fillna(0)
+        .to_numpy()
+    )
+
+    labels = data["Rango"].tolist()
+    y = np.arange(len(labels))
+
+    alto_figura = max(4.8, len(labels) * 0.65)
+
+    fig, ax = plt.subplots(figsize=(11.5, alto_figura))
+
+    barras = ax.barh(
+        y,
+        cantidades,
+        color=color_barra,
+        height=0.58,
+    )
+
+    max_cantidad = max(cantidades) if len(cantidades) else 0
+
+    ax.set_xlim(0, max(max_cantidad * 1.28, 10))
+
+    for barra, cantidad, porcentaje in zip(barras, cantidades, porcentajes):
+        ax.text(
+            barra.get_width() + max(max_cantidad * 0.02, 0.5),
+            barra.get_y() + barra.get_height() / 2,
+            f"{cantidad:,} · {porcentaje:.1f}%".replace(",", "."),
+            va="center",
+            ha="left",
+            fontsize=10,
+            fontweight="bold",
+            color=COLOR_TEXTO,
+        )
+
+    ax.set_yticks(y)
+
+    ax.set_yticklabels(
+        labels,
+        fontsize=10,
+        color=COLOR_MUTED,
+    )
+
+    ax.set_xlabel("Cantidad de registros", color=COLOR_TEXTO)
+
+    ax.set_title(
+        titulo,
+        fontsize=15,
+        fontweight="bold",
+        color=COLOR_TEXTO,
+        pad=16,
+    )
+
+    ax.grid(False)
+
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+    ax.tick_params(axis="both", length=0)
+    ax.set_facecolor("none")
+    fig.patch.set_alpha(0)
+
+    fig.tight_layout()
+
+    st.pyplot(fig, clear_figure=True, use_container_width=True)
+
+
 # ============================================================
 # Gráficos mensuales
 # ============================================================
@@ -2548,246 +2835,6 @@ def grafico_etapas_unificado(resumen_etapas_df: pd.DataFrame):
     st.pyplot(fig, clear_figure=True, use_container_width=True)
 
 
-def preparar_tabla_rangos_incumplimiento(df: pd.DataFrame) -> pd.DataFrame:
-    if "rango_incumplimiento_tat" not in df.columns:
-        return pd.DataFrame()
-
-    serie_rango = normalizar_rango_incumplimiento(
-        df["rango_incumplimiento_tat"]
-    )
-
-    orden = [
-        "Sin incumplimiento",
-        "1-5 días",
-        "6-15 días",
-        "16-30 días",
-        "Mayor a un mes",
-        "Sin datos",
-    ]
-
-    tabla = serie_rango.value_counts().reset_index()
-    tabla.columns = ["Rango", "Cantidad"]
-
-    tabla["Rango"] = pd.Categorical(
-        tabla["Rango"],
-        categories=orden,
-        ordered=True,
-    )
-
-    tabla = tabla.sort_values("Rango").reset_index(drop=True)
-
-    total = tabla["Cantidad"].sum()
-
-    tabla["% del total"] = np.where(
-        total > 0,
-        tabla["Cantidad"] / total * 100,
-        0,
-    )
-
-    return tabla
-
-
-def grafico_torta_rangos_incumplimiento(tabla: pd.DataFrame):
-    if tabla.empty:
-        st.info("No hay datos para graficar rangos de incumplimiento.")
-        return
-
-    data = tabla[tabla["Cantidad"].gt(0)].copy()
-
-    if data.empty:
-        st.info("No hay datos con cantidad mayor a cero.")
-        return
-
-    orden = [
-        "Sin incumplimiento",
-        "1-5 días",
-        "6-15 días",
-        "16-30 días",
-        "Mayor a un mes",
-        "Sin datos",
-    ]
-
-    data["Rango"] = pd.Categorical(
-        data["Rango"].astype(str),
-        categories=orden,
-        ordered=True,
-    )
-
-    data = data.sort_values("Rango").reset_index(drop=True)
-
-    total = int(data["Cantidad"].sum())
-
-    data["% del total"] = np.where(
-        total > 0,
-        data["Cantidad"] / total * 100,
-        0,
-    )
-
-    colores_mapa = {
-        "Sin incumplimiento": "#2E7D32",
-        "1-5 días": "#F4B400",
-        "6-15 días": "#FB8C00",
-        "16-30 días": "#EF3E52",
-        "Mayor a un mes": "#B71C1C",
-        "Sin datos": "#B0B4BB",
-    }
-
-    data["Color"] = data["Rango"].astype(str).map(colores_mapa).fillna("#9CA3AF")
-
-    cantidades = (
-        pd.to_numeric(data["Cantidad"], errors="coerce")
-        .fillna(0)
-        .astype(int)
-        .to_numpy()
-    )
-
-    porcentajes = (
-        pd.to_numeric(data["% del total"], errors="coerce")
-        .fillna(0)
-        .to_numpy()
-    )
-
-    colores = data["Color"].tolist()
-    etiquetas = data["Rango"].astype(str).tolist()
-
-    col_grafico, col_resumen = st.columns([1.15, 1])
-
-    with col_grafico:
-        fig, ax = plt.subplots(figsize=(8.2, 6.4))
-
-        wedges, texts, autotexts = ax.pie(
-            cantidades,
-            labels=None,
-            startangle=90,
-            counterclock=False,
-            colors=colores,
-            autopct=lambda pct: f"{pct:.1f}%" if pct >= 4 else "",
-            pctdistance=0.78,
-            wedgeprops={
-                "width": 0.38,
-                "linewidth": 2.5,
-                "edgecolor": "white",
-            },
-        )
-
-        for i, autotext in enumerate(autotexts):
-            rango = etiquetas[i]
-
-            if rango in ["1-5 días", "Sin datos"]:
-                autotext.set_color(COLOR_TEXTO)
-            else:
-                autotext.set_color("white")
-
-            autotext.set_fontweight("bold")
-            autotext.set_fontsize(10)
-
-        ax.text(
-            0,
-            0.08,
-            f"{total:,}".replace(",", "."),
-            ha="center",
-            va="center",
-            fontsize=24,
-            fontweight="bold",
-            color=COLOR_TEXTO,
-        )
-
-        ax.text(
-            0,
-            -0.12,
-            "registros",
-            ha="center",
-            va="center",
-            fontsize=10,
-            fontweight="bold",
-            color=COLOR_MUTED,
-        )
-
-        etiquetas_leyenda = []
-
-        for rango, cantidad, porcentaje in zip(etiquetas, cantidades, porcentajes):
-            cantidad_txt = f"{int(cantidad):,}".replace(",", ".")
-            etiquetas_leyenda.append(
-                f"{rango} · {cantidad_txt} · {porcentaje:.1f}%"
-            )
-
-        legend = ax.legend(
-            wedges,
-            etiquetas_leyenda,
-            title="Leyenda",
-            loc="center left",
-            bbox_to_anchor=(1.02, 0.5),
-            frameon=False,
-            fontsize=9.5,
-            title_fontsize=10,
-        )
-
-        for texto in legend.get_texts():
-            texto.set_color(COLOR_TEXTO)
-
-        legend.get_title().set_color(COLOR_TEXTO)
-        legend.get_title().set_fontweight("bold")
-
-        ax.set_title(
-            "Distribución de incumplimiento TAT",
-            fontsize=15,
-            fontweight="bold",
-            color=COLOR_TEXTO,
-            pad=16,
-        )
-
-        ax.axis("equal")
-        fig.patch.set_alpha(0)
-        fig.tight_layout()
-        fig.subplots_adjust(right=0.72)
-
-        st.pyplot(fig, clear_figure=True, use_container_width=True)
-
-    with col_resumen:
-        st.markdown("#### Resumen por rango")
-        st.caption("Cantidad y participación sobre el total filtrado.")
-
-        tabla_resumen = data.copy()
-
-        tabla_resumen["Cantidad"] = (
-            pd.to_numeric(tabla_resumen["Cantidad"], errors="coerce")
-            .fillna(0)
-            .astype(int)
-        )
-
-        tabla_resumen["% del total"] = (
-            pd.to_numeric(tabla_resumen["% del total"], errors="coerce")
-            .fillna(0)
-            .round(1)
-        )
-
-        tabla_resumen = tabla_resumen[
-            [
-                "Rango",
-                "Cantidad",
-                "% del total",
-            ]
-        ]
-
-        st.dataframe(
-            tabla_resumen,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Cantidad": st.column_config.NumberColumn(
-                    "Cantidad",
-                    format="%d",
-                ),
-                "% del total": st.column_config.ProgressColumn(
-                    "% del total",
-                    format="%.1f%%",
-                    min_value=0,
-                    max_value=100,
-                ),
-            },
-        )
-
-
 # ============================================================
 # Exportación
 # ============================================================
@@ -3198,6 +3245,118 @@ st.caption(
 desglose_evaluables_df = crear_desglose_evaluables_tat(df_dashboard)
 
 grafico_donut_evaluables_tat(desglose_evaluables_df)
+
+
+# ============================================================
+# Distribuciones adicionales debajo de TAT evaluable
+# ============================================================
+
+st.markdown("#### Distribución de días TAT total para registros que Cumplen")
+st.caption(
+    "Para los registros que Cumplen, se muestra qué proporción del umbral definido fue utilizada por el TAT total."
+)
+
+distribucion_cumple_df = crear_distribucion_tat_cumple(df_dashboard)
+
+if distribucion_cumple_df.empty:
+    st.info("No hay registros Cumple con días TAT y umbral válidos para graficar.")
+else:
+    col_dc1, col_dc2 = st.columns([1.15, 1])
+
+    with col_dc1:
+        grafico_barras_distribucion_tat(
+            tabla=distribucion_cumple_df,
+            titulo="Distribución Cumple: uso del umbral TAT",
+            columna_porcentaje="% sobre Cumple",
+            color_barra=COLOR_CUMPLE,
+        )
+
+    with col_dc2:
+        st.markdown("##### Tabla distribución Cumple")
+        st.dataframe(
+            distribucion_cumple_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Cantidad": st.column_config.NumberColumn(
+                    "Cantidad",
+                    format="%d",
+                ),
+                "% sobre Cumple": st.column_config.ProgressColumn(
+                    "% sobre Cumple",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+                "Promedio días TAT": st.column_config.NumberColumn(
+                    "Promedio días TAT",
+                    format="%.2f",
+                ),
+                "Promedio umbral": st.column_config.NumberColumn(
+                    "Promedio umbral",
+                    format="%.2f",
+                ),
+                "Promedio uso umbral %": st.column_config.ProgressColumn(
+                    "Promedio uso umbral %",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+            },
+        )
+
+
+st.markdown("#### Distribución de días TAT total para registros que No cumplen")
+st.caption(
+    "Para los registros que No cumplen, se muestra cuántos días el TAT total excedió el umbral definido."
+)
+
+distribucion_no_cumple_df = crear_distribucion_tat_no_cumple(df_dashboard)
+
+if distribucion_no_cumple_df.empty:
+    st.info("No hay registros No cumple con días TAT y umbral válidos para graficar.")
+else:
+    col_dnc1, col_dnc2 = st.columns([1.15, 1])
+
+    with col_dnc1:
+        grafico_barras_distribucion_tat(
+            tabla=distribucion_no_cumple_df,
+            titulo="Distribución No cumple: días sobre umbral TAT",
+            columna_porcentaje="% sobre No cumple",
+            color_barra=COLOR_NO_CUMPLE,
+        )
+
+    with col_dnc2:
+        st.markdown("##### Tabla distribución No cumple")
+        st.dataframe(
+            distribucion_no_cumple_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Cantidad": st.column_config.NumberColumn(
+                    "Cantidad",
+                    format="%d",
+                ),
+                "% sobre No cumple": st.column_config.ProgressColumn(
+                    "% sobre No cumple",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+                "Promedio días TAT": st.column_config.NumberColumn(
+                    "Promedio días TAT",
+                    format="%.2f",
+                ),
+                "Promedio umbral": st.column_config.NumberColumn(
+                    "Promedio umbral",
+                    format="%.2f",
+                ),
+                "Promedio días sobre umbral": st.column_config.NumberColumn(
+                    "Promedio días sobre umbral",
+                    format="%.2f",
+                ),
+            },
+        )
 
 
 # ============================================================
@@ -3629,30 +3788,6 @@ else:
             ),
         },
     )
-
-
-# ============================================================
-# Incumplimiento TAT
-# ============================================================
-
-st.markdown("### Incumplimiento TAT")
-st.caption(
-    "Distribución porcentual de rangos de incumplimiento sobre los registros filtrados."
-)
-
-tabla_rangos_incumplimiento = preparar_tabla_rangos_incumplimiento(df_dashboard)
-
-grafico_torta_rangos_incumplimiento(tabla_rangos_incumplimiento)
-
-with st.expander("Detalle absoluto por rango", expanded=False):
-    if tabla_rangos_incumplimiento.empty:
-        st.info("No hay detalle disponible.")
-    else:
-        st.dataframe(
-            tabla_rangos_incumplimiento,
-            use_container_width=True,
-            hide_index=True,
-        )
 
 
 # ============================================================
