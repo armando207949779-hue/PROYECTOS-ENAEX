@@ -8,8 +8,8 @@
 # - Priorización operativa clara
 # - Visualizaciones intuitivas
 # - Ranking de focos por centro y grupo de compras
-# - Tablas accionables con mensajes claros
-# - Exportación de datos filtrados
+# - Tablas accionables con menos ruido visual
+# - Expediente tipo tracking de pedido online aplicado al TAT
 # ============================================================
 
 import io
@@ -26,9 +26,6 @@ import streamlit as st
 
 # ============================================================
 # CONFIGURACIÓN GENERAL
-# ============================================================
-# Si esta app se ejecuta dentro de st.navigation(),
-# NO uses st.set_page_config aquí.
 # ============================================================
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -48,7 +45,6 @@ COLOR_CONTROLADO = "#16A34A"
 COLOR_DATOS = "#CA8A04"
 COLOR_SIN_DATOS = "#B0B4BB"
 COLOR_CERRADO = "#64748B"
-COLOR_PREVENTIVO = "#3B82F6"
 
 COL_SOLPED = "Solicitud de pedido - ME5A"
 COL_OC_ME5A = "Pedido - ME5A"
@@ -225,7 +221,6 @@ CENTROS_NOMBRES = {
 
 # ============================================================
 # ESTILOS
-# No se modifica .block-container.
 # ============================================================
 
 st.markdown(
@@ -371,45 +366,128 @@ st.markdown(
             line-height: 1.45;
         }
 
-        .stage-box {
-            background: #ffffff;
-            border: 1px solid #e5e7eb;
-            border-radius: 12px;
-            padding: 12px;
-            min-height: 135px;
+        .tat-tracker-wrap {
+            width: 100%;
+            padding: 22px 10px 10px 10px;
+            margin-top: 12px;
+            margin-bottom: 10px;
+        }
+
+        .tat-tracker {
+            position: relative;
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            column-gap: 12px;
+            align-items: start;
+        }
+
+        .tat-line {
+            position: absolute;
+            top: 27px;
+            left: 8%;
+            right: 8%;
+            height: 5px;
+            background: #E5E7EB;
+            border-radius: 999px;
+            z-index: 0;
+        }
+
+        .tat-step {
+            position: relative;
+            z-index: 1;
             text-align: center;
         }
 
-        .stage-done {
-            border-top: 5px solid #16a34a;
+        .tat-dot {
+            width: 58px;
+            height: 58px;
+            border-radius: 999px;
+            margin: 0 auto 10px auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            font-weight: 900;
+            border: 4px solid #FFFFFF;
+            box-shadow: 0 2px 10px rgba(15, 23, 42, 0.14);
         }
 
-        .stage-pending {
-            border-top: 5px solid #dc2626;
+        .tat-dot-done {
+            background: #16A34A;
+            color: #FFFFFF;
         }
 
-        .stage-neutral {
-            border-top: 5px solid #94a3b8;
+        .tat-dot-pending {
+            background: #DC2626;
+            color: #FFFFFF;
+            animation: pulseDot 1.4s infinite;
         }
 
-        .stage-title {
-            font-size: 0.74rem;
-            font-weight: 800;
-            color: #334155;
+        .tat-dot-upcoming {
+            background: #CBD5E1;
+            color: #475569;
+        }
+
+        .tat-step-card {
+            background: #FFFFFF;
+            border: 1px solid #E5E7EB;
+            border-radius: 14px;
+            padding: 12px 10px;
+            min-height: 112px;
+        }
+
+        .tat-step-card-done {
+            border-top: 5px solid #16A34A;
+        }
+
+        .tat-step-card-pending {
+            border-top: 5px solid #DC2626;
+            background: #FEF2F2;
+        }
+
+        .tat-step-card-upcoming {
+            border-top: 5px solid #CBD5E1;
+        }
+
+        .tat-step-title {
+            font-size: 0.78rem;
+            font-weight: 900;
+            color: #111827;
             text-transform: uppercase;
             margin-bottom: 6px;
         }
 
-        .stage-date {
-            font-size: 0.95rem;
-            font-weight: 700;
-            color: #0f172a;
+        .tat-step-date {
+            font-size: 0.92rem;
+            font-weight: 800;
+            color: #0F172A;
+            margin-bottom: 6px;
         }
 
-        .stage-status {
-            margin-top: 8px;
-            font-size: 0.78rem;
+        .tat-step-status {
+            font-size: 0.76rem;
             font-weight: 700;
+            color: #64748B;
+        }
+
+        .tat-step-pending-text {
+            color: #B91C1C;
+        }
+
+        .tat-step-done-text {
+            color: #166534;
+        }
+
+        @keyframes pulseDot {
+            0% {
+                box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.35);
+            }
+            70% {
+                box-shadow: 0 0 0 12px rgba(220, 38, 38, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(220, 38, 38, 0);
+            }
         }
     </style>
     """,
@@ -761,11 +839,6 @@ def describir_nivel_alerta(nivel: Any) -> str:
     return NIVEL_ALERTA_DESCRIPCION.get(texto, texto)
 
 
-def codigo_desde_descripcion_alerta(descripcion: str) -> str:
-    mapa = {v: k for k, v in NIVEL_ALERTA_DESCRIPCION.items()}
-    return mapa.get(descripcion, descripcion)
-
-
 def mensaje_vista_previa(
     titulo: str,
     total_registros: int,
@@ -1000,6 +1073,7 @@ def preparar_panel_alertas(df_original: pd.DataFrame, hoy: pd.Timestamp) -> pd.D
     )
 
     df["fecha_vencimiento_texto"] = df["fecha_vencimiento_tat"].apply(formato_fecha)
+    df["fecha_solicitud_texto"] = df["fecha_inicio_tat"].apply(formato_fecha)
     df["dias_hasta_vencimiento"] = df["dias_restantes_int"].apply(texto_dias_restantes)
 
     df["clasificacion_vencimiento"] = clasificar_vencimiento_alerta(df)
@@ -1380,18 +1454,15 @@ def crear_tabla_prioridad(df: pd.DataFrame) -> pd.DataFrame:
     tabla = pd.DataFrame(
         {
             "Nivel alerta": base.get(COL_NIVEL_ALERTA_DESC, pd.Series("-", index=base.index)),
-            "Días hasta vencimiento": base.get("dias_hasta_vencimiento", pd.Series("-", index=base.index)),
+            "Fecha solicitud": base.get("fecha_solicitud_texto", pd.Series("-", index=base.index)),
             "Fecha vencimiento": base.get("fecha_vencimiento_texto", pd.Series("-", index=base.index)),
-            "Etapa pendiente": base.get("fecha_pendiente", pd.Series("-", index=base.index)),
-            "Última etapa registrada": base.get("ultima_etapa_registrada", pd.Series("-", index=base.index)),
-            "Acción sugerida": base.get("accion_sugerida", pd.Series("-", index=base.index)),
+            "Días hasta vencimiento": base.get("dias_hasta_vencimiento", pd.Series("-", index=base.index)),
             "SolPed": solped,
             "Pedido": pedido,
             "Posición": posicion,
             "Material": serie_combinada(base, [COL_MATERIAL]).fillna("-"),
             "Texto breve": serie_combinada(base, [COL_TEXTO]).fillna("-"),
             "Centro": serie_combinada(base, [COL_CENTRO]).fillna("-"),
-            "Centro nombre": base.get("centro_label", pd.Series("-", index=base.index)),
             "Grupo de compras": serie_combinada(base, [COL_GRUPO_COMPRAS]).fillna("-"),
             "Tipo OC": serie_combinada(base, [COL_TIPO_OC]).fillna("-"),
             "Sistema": serie_combinada(base, [COL_SISTEMA]).fillna("-"),
@@ -1400,7 +1471,6 @@ def crear_tabla_prioridad(df: pd.DataFrame) -> pd.DataFrame:
             "Días TAT total": serie_combinada(base, [COL_DIAS_TAT]).fillna("-"),
             "Días incumplimiento": serie_combinada(base, [COL_DIAS_INC]).fillna("-"),
             "Umbral TAT": serie_combinada(base, [COL_UMBRAL_TAT, "umbral_tat_calculado"]).fillna("-"),
-            "Score riesgo": base.get("score_riesgo", pd.Series(np.nan, index=base.index)),
         }
     )
 
@@ -1845,7 +1915,7 @@ def grafico_donut_alertas_porcentual(tabla: pd.DataFrame):
             for etiqueta, cantidad, pct in zip(etiquetas, cantidades, porcentajes)
         ]
 
-        legend = ax.legend(
+        ax.legend(
             wedges,
             etiquetas_leyenda,
             title="Leyenda",
@@ -1855,12 +1925,6 @@ def grafico_donut_alertas_porcentual(tabla: pd.DataFrame):
             fontsize=8.5,
             title_fontsize=9.5,
         )
-
-        for texto in legend.get_texts():
-            texto.set_color(COLOR_TEXTO)
-
-        legend.get_title().set_color(COLOR_TEXTO)
-        legend.get_title().set_fontweight("bold")
 
         ax.set_title(
             "Distribución porcentual por tipo de alerta",
@@ -2275,12 +2339,6 @@ def mostrar_tabla_alertas(
         tabla.head(registros_mostrados),
         use_container_width=True,
         hide_index=True,
-        column_config={
-            "Score riesgo": st.column_config.NumberColumn(
-                "Score riesgo",
-                format="%.2f",
-            ),
-        },
     )
 
     nombre_archivo = (
@@ -2481,50 +2539,139 @@ def mostrar_proximos_por_rango(df_proximos: pd.DataFrame):
             )
 
 
-def mostrar_linea_tiempo_registro(row: pd.Series):
-    cols = st.columns(len(ETAPAS_LINEA_PEDIDO))
+def mostrar_tracker_tat(row: pd.Series):
+    estado_recepcion = str(row.get(COL_ESTADO_RECEPCION_ALERTA, ""))
+    pendiente = str(row.get("fecha_pendiente", ""))
 
-    for idx, (nombre, col) in enumerate(ETAPAS_LINEA_PEDIDO):
+    etapas_html = []
+
+    for nombre, col in ETAPAS_LINEA_PEDIDO:
         fecha = pd.to_datetime(row.get(col, pd.NaT), errors="coerce")
 
         if pd.notna(fecha):
-            clase = "stage-done"
-            estado = "Registrada"
+            dot_class = "tat-dot-done"
+            card_class = "tat-step-card-done"
+            icono = "✓"
             fecha_txt = fecha.strftime("%d-%m-%Y")
+            estado_txt = "Completado"
+            estado_class = "tat-step-done-text"
         else:
-            if nombre == row.get("fecha_pendiente", ""):
-                clase = "stage-pending"
-                estado = "Pendiente"
+            if estado_recepcion == "Recepcionado":
+                dot_class = "tat-dot-upcoming"
+                card_class = "tat-step-card-upcoming"
+                icono = "•"
+                fecha_txt = "-"
+                estado_txt = "Sin dato"
+                estado_class = ""
+            elif nombre == pendiente:
+                dot_class = "tat-dot-pending"
+                card_class = "tat-step-card-pending"
+                icono = "!"
+                fecha_txt = "-"
+                estado_txt = "Pendiente actual"
+                estado_class = "tat-step-pending-text"
             else:
-                clase = "stage-neutral"
-                estado = "Sin dato"
+                dot_class = "tat-dot-upcoming"
+                card_class = "tat-step-card-upcoming"
+                icono = "•"
+                fecha_txt = "-"
+                estado_txt = "Pendiente"
+                estado_class = ""
 
-            fecha_txt = "-"
-
-        with cols[idx]:
-            st.markdown(
-                f"""
-                <div class="stage-box {clase}">
-                    <div class="stage-title">{nombre}</div>
-                    <div class="stage-date">{fecha_txt}</div>
-                    <div class="stage-status">{estado}</div>
+        etapas_html.append(
+            f"""
+            <div class="tat-step">
+                <div class="tat-dot {dot_class}">{icono}</div>
+                <div class="tat-step-card {card_class}">
+                    <div class="tat-step-title">{nombre}</div>
+                    <div class="tat-step-date">{fecha_txt}</div>
+                    <div class="tat-step-status {estado_class}">{estado_txt}</div>
                 </div>
-                """,
-                unsafe_allow_html=True,
-            )
+            </div>
+            """
+        )
+
+    html = f"""
+    <div class="tat-tracker-wrap">
+        <div class="tat-tracker">
+            <div class="tat-line"></div>
+            {''.join(etapas_html)}
+        </div>
+    </div>
+    """
+
+    st.markdown(html, unsafe_allow_html=True)
 
 
 def mostrar_expediente_registro(row: pd.Series):
-    st.markdown("#### Resumen del registro seleccionado")
+    st.markdown("#### KPI Indicators del registro seleccionado")
 
-    c1, c2, c3, c4 = st.columns(4)
+    dias_restantes = valor_numerico(row.get("dias_restantes_int", np.nan))
+    dias_transcurridos = valor_numerico(row.get("dias_transcurridos_alerta", np.nan))
 
-    c1.metric("Nivel alerta", str(row.get(COL_NIVEL_ALERTA_DESC, "-")))
-    c2.metric("Vencimiento", str(row.get("dias_hasta_vencimiento", "-")))
-    c3.metric("Etapa pendiente", str(row.get("fecha_pendiente", "-")))
+    if pd.isna(dias_restantes):
+        dias_restantes_txt = "Sin fecha"
+        dias_restantes_sub = "No se puede calcular vencimiento."
+        clase_dias = "kpi-warning"
+    elif dias_restantes < 0:
+        dias_restantes_txt = f"{abs(int(dias_restantes))} días"
+        dias_restantes_sub = "Días vencido desde la fecha límite."
+        clase_dias = "kpi-critical"
+    elif dias_restantes == 0:
+        dias_restantes_txt = "Hoy"
+        dias_restantes_sub = "El registro vence hoy."
+        clase_dias = "kpi-critical"
+    else:
+        dias_restantes_txt = f"{int(dias_restantes)} días"
+        dias_restantes_sub = "Días restantes para vencer."
+        clase_dias = "kpi-warning" if dias_restantes <= 7 else ""
 
-    score = valor_numerico(row.get("score_riesgo", np.nan))
-    c4.metric("Score riesgo", f"{score:.2f}" if pd.notna(score) else "-")
+    fecha_solicitud_txt = formato_fecha(row.get("fecha_inicio_tat", pd.NaT))
+    fecha_vencimiento_txt = formato_fecha(row.get("fecha_vencimiento_tat", pd.NaT))
+
+    dias_desde_inicio_txt = (
+        f"{int(dias_transcurridos)} días"
+        if pd.notna(dias_transcurridos)
+        else "Sin dato"
+    )
+
+    k1, k2, k3, k4 = st.columns(4)
+
+    with k1:
+        mostrar_kpi_html(
+            "En cuántos días vence",
+            dias_restantes_txt,
+            dias_restantes_sub,
+            clase_dias,
+        )
+
+    with k2:
+        mostrar_kpi_html(
+            "Fecha de solicitud",
+            fecha_solicitud_txt,
+            "Inicio del cálculo TAT.",
+        )
+
+    with k3:
+        mostrar_kpi_html(
+            "Días desde solicitud",
+            dias_desde_inicio_txt,
+            "Tiempo transcurrido desde el inicio de la solicitud.",
+        )
+
+    with k4:
+        mostrar_kpi_html(
+            "Fecha vencimiento TAT",
+            fecha_vencimiento_txt,
+            "Fecha límite calculada según umbral TAT.",
+        )
+
+    st.markdown("#### Seguimiento TAT del registro")
+    st.caption(
+        "Vista tipo tracking de pedido online: muestra los hitos del recorrido TAT desde la solicitud hasta la recepción."
+    )
+
+    mostrar_tracker_tat(row)
 
     st.markdown(
         f"""
@@ -2535,8 +2682,6 @@ def mostrar_expediente_registro(row: pd.Series):
         """,
         unsafe_allow_html=True,
     )
-
-    mostrar_linea_tiempo_registro(row)
 
     detalle_cols = [
         COL_SOLPED,
@@ -2578,7 +2723,7 @@ def mostrar_expediente_registro(row: pd.Series):
 
     detalle_cols = columnas_existentes(pd.DataFrame([row]), detalle_cols)
 
-    with st.expander("Detalle completo del registro", expanded=True):
+    with st.expander("Detalle completo del registro", expanded=False):
         st.dataframe(
             pd.DataFrame([row])[detalle_cols],
             use_container_width=True,
@@ -3002,9 +3147,6 @@ with col_ret2:
 # ============================================================
 
 st.markdown("### 2. Distribución global de alertas")
-st.caption(
-    "Permite entender rápidamente qué parte del problema corresponde a vencidos, próximos vencimientos, datos incompletos o registros cerrados."
-)
 
 desglose_alertas = crear_desglose_alertas(df_filtrado)
 
@@ -3012,9 +3154,6 @@ grafico_donut_alertas_porcentual(desglose_alertas)
 
 
 st.markdown("### 3. Valores absolutos por vencimiento")
-st.caption(
-    "Esta vista responde cuántos registros están vencidos, vencen hoy, vencen en pocos días o están más lejos del vencimiento."
-)
 
 tabla_buckets = crear_resumen_buckets(df_filtrado)
 
@@ -3026,9 +3165,6 @@ grafico_alertas_valores_absolutos(tabla_buckets)
 # ============================================================
 
 st.markdown("### 4. Plan de ataque")
-st.caption(
-    "Vista ejecutiva para decidir dónde concentrar la gestión primero."
-)
 
 plan_ataque = crear_plan_ataque(df_filtrado)
 
@@ -3061,9 +3197,6 @@ else:
 # ============================================================
 
 st.markdown("### 5. Dónde atacar primero")
-st.caption(
-    "Ranking de centros y grupos de compra con mayor concentración de vencidos, próximos vencimientos o datos incompletos."
-)
 
 col_rank1, col_rank2 = st.columns(2)
 
@@ -3220,7 +3353,7 @@ mostrar_tabla_alertas(
 
 st.markdown("### Expediente / seguimiento del registro")
 st.caption(
-    "Selecciona un registro para revisar su línea de tiempo, etapa pendiente y acción sugerida."
+    "Selecciona un registro para revisar sus KPI y el recorrido TAT tipo seguimiento de pedido online."
 )
 
 df_expediente = df_filtrado.copy()
@@ -3285,12 +3418,6 @@ with st.expander("Vista previa general de datos filtrados", expanded=False):
             tabla_preview.head(int(limite_preview)),
             use_container_width=True,
             hide_index=True,
-            column_config={
-                "Score riesgo": st.column_config.NumberColumn(
-                    "Score riesgo",
-                    format="%.2f",
-                ),
-            },
         )
 
 
