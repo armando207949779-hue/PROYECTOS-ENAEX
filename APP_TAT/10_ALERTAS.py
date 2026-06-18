@@ -1,13 +1,22 @@
 # ============================================================
 # 10_ALERTAS
-# Dashboard de alertas TAT
+# Dashboard global de alertas TAT
 # Usa df_tat cargado desde 06_CARGAR_ARCHIVO
+#
+# Objetivo:
+# - Mirada global para atacar vencidos y por vencer
+# - Priorización operativa clara
+# - Visualizaciones intuitivas
+# - Ranking de focos por centro y grupo de compras
+# - Tablas accionables con mensajes claros
+# - Exportación de datos filtrados
 # ============================================================
 
 import io
 import base64
 from pathlib import Path
 from typing import Any
+from datetime import datetime
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -39,6 +48,7 @@ COLOR_CONTROLADO = "#16A34A"
 COLOR_DATOS = "#CA8A04"
 COLOR_SIN_DATOS = "#B0B4BB"
 COLOR_CERRADO = "#64748B"
+COLOR_PREVENTIVO = "#3B82F6"
 
 COL_SOLPED = "Solicitud de pedido - ME5A"
 COL_OC_ME5A = "Pedido - ME5A"
@@ -48,15 +58,21 @@ COL_POS_OC = "Posición de pedido - ME5A"
 COL_MATERIAL = "Material - ME5A"
 COL_TEXTO = "Texto breve - ME5A"
 COL_CENTRO = "Centro - ME5A"
+COL_SOLICITANTE = "Solicitante"
+COL_AUTOR = "Autor"
 COL_GRUPO_COMPRAS = "Grupo de compras"
+COL_TIPO_IMPUTACION = "Tipo de imputación"
 COL_TIPO_OC = "tipo_oc"
 COL_ORIGEN = "origen"
 COL_SISTEMA = "sistema"
+COL_NOMBRE_TIPO_COMPRA = "nombre_tipo_compra"
 COL_PERF_TAT = "performance_tat_total"
 COL_RANGO_INC = "rango_incumplimiento_tat"
+COL_INC_TAT = "incumplimiento_tat"
 COL_DIAS_TAT = "dias_tat_total"
 COL_DIAS_INC = "dias_incumplimiento_tat"
 COL_UMBRAL_TAT = "umbral_tat_total"
+COL_MONTO = "monto"
 COL_ESTADO_RECEPCION_ALERTA = "estado_recepcion"
 
 COL_FECHA_SOLICITUD_FINAL = "fecha_solicitud_final"
@@ -85,6 +101,26 @@ NIVEL_ALERTA_DESCRIPCION = {
     "Datos incompletos": "Datos incompletos para calcular vencimiento",
     "Cerrado": "Recepcionados",
     "Sin datos": "Sin datos",
+}
+
+NIVELES_ALERTA_DESCRIPTIVOS_ORDEN = [
+    "Vencidos sin recepción",
+    "Vencen en 0 a 7 días sin recepción",
+    "Vencen en 8 a 30 días sin recepción",
+    "Más de 30 días para vencer",
+    "Datos incompletos para calcular vencimiento",
+    "Recepcionados",
+    "Sin datos",
+]
+
+COLORES_ALERTA_DESC = {
+    "Vencidos sin recepción": COLOR_CRITICO,
+    "Vencen en 0 a 7 días sin recepción": COLOR_ATENCION,
+    "Vencen en 8 a 30 días sin recepción": COLOR_SEGUIMIENTO,
+    "Más de 30 días para vencer": COLOR_CONTROLADO,
+    "Datos incompletos para calcular vencimiento": COLOR_DATOS,
+    "Recepcionados": COLOR_CERRADO,
+    "Sin datos": COLOR_SIN_DATOS,
 }
 
 FECHAS_CANDIDATAS = [
@@ -202,6 +238,54 @@ st.markdown(
             border: 1px solid #e9ecef;
         }
 
+        .kpi-box {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 14px;
+            padding: 16px;
+            height: 100%;
+        }
+
+        .kpi-title {
+            color: #6B7280;
+            font-size: 13px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .kpi-value {
+            color: #111827;
+            font-size: 28px;
+            font-weight: 800;
+            margin-bottom: 2px;
+        }
+
+        .kpi-subtitle {
+            color: #6B7280;
+            font-size: 13px;
+            line-height: 1.35;
+        }
+
+        .kpi-good {
+            color: #166534;
+            font-weight: 700;
+        }
+
+        .kpi-bad {
+            color: #991B1B;
+            font-weight: 700;
+        }
+
+        .kpi-warning {
+            color: #B45309;
+            font-weight: 700;
+        }
+
+        .kpi-critical {
+            color: #DC2626;
+            font-weight: 700;
+        }
+
         .alert-card {
             background: #ffffff;
             border: 1px solid #e5e7eb;
@@ -269,6 +353,11 @@ st.markdown(
             border-left: 7px solid #f97316;
         }
 
+        .section-data {
+            background: #fefce8;
+            border-left: 7px solid #ca8a04;
+        }
+
         .section-title {
             font-size: 1.15rem;
             font-weight: 900;
@@ -280,6 +369,47 @@ st.markdown(
             font-size: 0.90rem;
             color: #4b5563;
             line-height: 1.45;
+        }
+
+        .stage-box {
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 12px;
+            min-height: 135px;
+            text-align: center;
+        }
+
+        .stage-done {
+            border-top: 5px solid #16a34a;
+        }
+
+        .stage-pending {
+            border-top: 5px solid #dc2626;
+        }
+
+        .stage-neutral {
+            border-top: 5px solid #94a3b8;
+        }
+
+        .stage-title {
+            font-size: 0.74rem;
+            font-weight: 800;
+            color: #334155;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+        }
+
+        .stage-date {
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: #0f172a;
+        }
+
+        .stage-status {
+            margin-top: 8px;
+            font-size: 0.78rem;
+            font-weight: 700;
         }
     </style>
     """,
@@ -481,6 +611,30 @@ def formato_cantidad(valor: Any) -> str:
         return "0"
 
 
+def formatear_entero(valor: Any) -> str:
+    try:
+        numero = pd.to_numeric(valor, errors="coerce")
+
+        if pd.isna(numero):
+            return "—"
+
+        return f"{int(round(numero)):,}".replace(",", ".")
+    except Exception:
+        return "—"
+
+
+def formatear_porcentaje(valor: Any) -> str:
+    try:
+        numero = pd.to_numeric(valor, errors="coerce")
+
+        if pd.isna(numero):
+            return "—"
+
+        return f"{numero:.1f}%"
+    except Exception:
+        return "—"
+
+
 def valor_numerico(valor: Any) -> float:
     try:
         return float(pd.to_numeric(pd.Series([valor]), errors="coerce").iloc[0])
@@ -607,6 +761,11 @@ def describir_nivel_alerta(nivel: Any) -> str:
     return NIVEL_ALERTA_DESCRIPCION.get(texto, texto)
 
 
+def codigo_desde_descripcion_alerta(descripcion: str) -> str:
+    mapa = {v: k for k, v in NIVEL_ALERTA_DESCRIPCION.items()}
+    return mapa.get(descripcion, descripcion)
+
+
 def mensaje_vista_previa(
     titulo: str,
     total_registros: int,
@@ -644,6 +803,102 @@ def convertir_tabla_a_excel(df: pd.DataFrame, nombre_hoja: str = "Datos") -> byt
         )
 
     return salida.getvalue()
+
+
+def convertir_a_parquet(df: pd.DataFrame) -> bytes:
+    output = io.BytesIO()
+
+    df.to_parquet(
+        output,
+        index=False,
+        engine="pyarrow",
+    )
+
+    return output.getvalue()
+
+
+def convertir_a_csv(df: pd.DataFrame) -> bytes:
+    return df.to_csv(
+        index=False,
+        encoding="utf-8-sig",
+    ).encode("utf-8-sig")
+
+
+def convertir_a_excel(df: pd.DataFrame) -> bytes:
+    output = io.BytesIO()
+
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(
+            writer,
+            index=False,
+            sheet_name="Alertas",
+        )
+
+    return output.getvalue()
+
+
+def generar_nombre_salida(extension: str) -> str:
+    fecha_hora = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return f"10_ALERTAS_{fecha_hora}_GESTION.{extension}"
+
+
+@st.cache_data(show_spinner=False)
+def convertir_a_parquet_cache(df: pd.DataFrame) -> bytes:
+    return convertir_a_parquet(df)
+
+
+@st.cache_data(show_spinner=False)
+def convertir_a_csv_cache(df: pd.DataFrame) -> bytes:
+    return convertir_a_csv(df)
+
+
+@st.cache_data(show_spinner=False)
+def convertir_a_excel_cache(df: pd.DataFrame) -> bytes:
+    return convertir_a_excel(df)
+
+
+def contiene_texto(df: pd.DataFrame, columna: str, texto: str) -> pd.Series:
+    if columna not in df.columns or not str(texto).strip():
+        return pd.Series(True, index=df.index)
+
+    return df[columna].astype(str).str.contains(
+        str(texto).strip(),
+        case=False,
+        na=False,
+        regex=False,
+    )
+
+
+def filtrar_por_ids(df: pd.DataFrame, columna: str, texto: str) -> pd.Series:
+    if columna not in df.columns or not str(texto).strip():
+        return pd.Series(True, index=df.index)
+
+    tokens = [
+        t.strip().replace(".0", "")
+        for t in str(texto)
+        .replace("\n", ",")
+        .replace(";", ",")
+        .replace(" ", ",")
+        .split(",")
+        if t.strip()
+    ]
+
+    if not tokens:
+        return pd.Series(True, index=df.index)
+
+    serie = df[columna].astype(str).str.replace(".0", "", regex=False)
+
+    mask = pd.Series(False, index=df.index)
+
+    for token in tokens:
+        mask = mask | serie.str.contains(
+            token,
+            case=False,
+            na=False,
+            regex=False,
+        )
+
+    return mask
 
 
 # ============================================================
@@ -748,6 +1003,7 @@ def preparar_panel_alertas(df_original: pd.DataFrame, hoy: pd.Timestamp) -> pd.D
     df["dias_hasta_vencimiento"] = df["dias_restantes_int"].apply(texto_dias_restantes)
 
     df["clasificacion_vencimiento"] = clasificar_vencimiento_alerta(df)
+    df["bucket_vencimiento"] = clasificar_bucket_vencimiento(df)
     df["nivel_alerta"] = clasificar_nivel_alerta(df)
     df[COL_NIVEL_ALERTA_DESC] = df["nivel_alerta"].apply(describir_nivel_alerta)
 
@@ -778,6 +1034,23 @@ def clasificar_vencimiento_alerta(df: pd.DataFrame) -> pd.Series:
     resultado.loc[estado.eq("Sin recepción") & dias.eq(2)] = "2 días"
     resultado.loc[estado.eq("Sin recepción") & dias.between(3, 7, inclusive="both")] = "7 días"
     resultado.loc[estado.eq("Sin recepción") & dias.gt(7)] = "+7 días"
+
+    return resultado
+
+
+def clasificar_bucket_vencimiento(df: pd.DataFrame) -> pd.Series:
+    estado = df[COL_ESTADO_RECEPCION_ALERTA].astype(str)
+    dias = pd.to_numeric(df["dias_restantes_int"], errors="coerce")
+
+    resultado = pd.Series("Sin datos", index=df.index, dtype="object")
+
+    resultado.loc[estado.eq("Recepcionado")] = "Recepcionado"
+    resultado.loc[estado.eq("Sin recepción") & dias.isna()] = "Sin datos"
+    resultado.loc[estado.eq("Sin recepción") & dias.lt(0)] = "Vencido"
+    resultado.loc[estado.eq("Sin recepción") & dias.eq(0)] = "Vence hoy"
+    resultado.loc[estado.eq("Sin recepción") & dias.between(1, 7, inclusive="both")] = "1-7 días"
+    resultado.loc[estado.eq("Sin recepción") & dias.between(8, 30, inclusive="both")] = "8-30 días"
+    resultado.loc[estado.eq("Sin recepción") & dias.gt(30)] = "+30 días"
 
     return resultado
 
@@ -823,16 +1096,19 @@ def obtener_accion_sugerida(row: pd.Series) -> str:
     nivel = str(row.get("nivel_alerta", ""))
 
     if nivel == "Crítico":
-        return "Priorizar gestión inmediata y confirmar recepción o fecha pendiente."
+        return "Priorizar gestión inmediata: confirmar recepción, corregir fecha pendiente o escalar."
 
     if nivel == "Atención":
-        return "Gestionar antes del vencimiento y validar avance de la etapa pendiente."
+        return "Gestionar hoy o esta semana para evitar que pase a vencido."
 
     if nivel == "Seguimiento":
-        return "Mantener seguimiento preventivo y revisar próximos hitos."
+        return "Planificar seguimiento preventivo antes de que entre en tramo crítico."
+
+    if nivel == "Controlado":
+        return "Mantener monitoreo preventivo. Revisar solo si hay monto alto o centro crítico."
 
     if nivel == "Datos incompletos":
-        return "Corregir fecha de solicitud, umbral TAT, tipo OC o fechas finales."
+        return "Corregir fecha de solicitud, tipo OC, umbral TAT o fechas finales."
 
     if nivel == "Cerrado":
         return "Sin acción requerida. Pedido recepcionado."
@@ -845,6 +1121,7 @@ def calcular_score_riesgo(row: pd.Series) -> float:
     dias = valor_numerico(row.get("dias_restantes_int", np.nan))
     dias_tat = valor_numerico(row.get(COL_DIAS_TAT, np.nan))
     dias_inc = valor_numerico(row.get(COL_DIAS_INC, np.nan))
+    monto = valor_numerico(row.get(COL_MONTO, np.nan))
 
     score = 0
 
@@ -864,7 +1141,7 @@ def calcular_score_riesgo(row: pd.Series) -> float:
         score += 400
 
     elif nivel == "Datos incompletos":
-        score += 250
+        score += 300
 
     elif nivel == "Controlado":
         score += 100
@@ -874,6 +1151,9 @@ def calcular_score_riesgo(row: pd.Series) -> float:
 
     if pd.notna(dias_tat):
         score += max(dias_tat, 0) * 0.1
+
+    if pd.notna(monto) and monto > 0:
+        score += min(np.log10(monto + 1) * 10, 100)
 
     return round(score, 2)
 
@@ -903,18 +1183,23 @@ def construir_resumen_ejecutivo(df_total: pd.DataFrame, df_filtrado: pd.DataFram
     recepcionados = estado.eq("Recepcionado")
 
     vencidos = int((sin_recepcion & dias.lt(0)).sum())
-    proximos = int((sin_recepcion & dias.between(0, 30, inclusive="both")).sum())
+    vence_hoy = int((sin_recepcion & dias.eq(0)).sum())
+    proximos_1_7 = int((sin_recepcion & dias.between(1, 7, inclusive="both")).sum())
+    proximos_8_30 = int((sin_recepcion & dias.between(8, 30, inclusive="both")).sum())
+    proximos = vence_hoy + proximos_1_7 + proximos_8_30
+    preventivo = int((sin_recepcion & dias.gt(30)).sum())
     sin_fecha = int((sin_recepcion & dias.isna()).sum())
     recepcionados_total = int(recepcionados.sum())
+    foco_accion = vencidos + proximos + sin_fecha
 
     if vencidos > 0:
         semaforo = "Crítico"
         mensaje = f"Hay {formato_cantidad(vencidos)} registros vencidos sin recepción."
-        accion = "Priorizar pedidos vencidos sin recepción y revisar la etapa pendiente."
+        accion = "Priorizar vencidos sin recepción, ordenados por score de riesgo."
     elif proximos > 0:
         semaforo = "Atención"
         mensaje = f"Hay {formato_cantidad(proximos)} registros próximos a vencer en los próximos 30 días."
-        accion = "Gestionar próximos vencimientos y confirmar avance de compras/proveedor/logística."
+        accion = "Gestionar próximos vencimientos antes de que pasen a vencidos."
     elif sin_fecha > 0:
         semaforo = "Datos incompletos"
         mensaje = f"Hay {formato_cantidad(sin_fecha)} registros sin fecha de vencimiento calculable."
@@ -929,9 +1214,14 @@ def construir_resumen_ejecutivo(df_total: pd.DataFrame, df_filtrado: pd.DataFram
         "total_filtrado": total_filtrado,
         "pct_filtrado": pct_filtrado,
         "vencidos": vencidos,
+        "vence_hoy": vence_hoy,
+        "proximos_1_7": proximos_1_7,
+        "proximos_8_30": proximos_8_30,
         "proximos": proximos,
+        "preventivo": preventivo,
         "sin_fecha": sin_fecha,
         "recepcionados": recepcionados_total,
+        "foco_accion": foco_accion,
         "semaforo": semaforo,
         "semaforo_descriptivo": describir_nivel_alerta(semaforo),
         "mensaje": mensaje,
@@ -944,17 +1234,15 @@ def crear_desglose_alertas(df: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame()
 
     tabla = (
-        df["nivel_alerta"]
+        df[COL_NIVEL_ALERTA_DESC]
         .value_counts()
-        .reindex(NIVELES_ALERTA_ORDEN, fill_value=0)
+        .reindex(NIVELES_ALERTA_DESCRIPTIVOS_ORDEN, fill_value=0)
         .reset_index()
     )
 
-    tabla.columns = ["codigo_alerta", "Cantidad"]
+    tabla.columns = ["Nivel alerta", "Cantidad"]
 
     total = int(tabla["Cantidad"].sum())
-
-    tabla["Nivel alerta"] = tabla["codigo_alerta"].apply(describir_nivel_alerta)
 
     tabla["% del total filtrado"] = np.where(
         total > 0,
@@ -963,22 +1251,112 @@ def crear_desglose_alertas(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     tabla["% del total filtrado"] = tabla["% del total filtrado"].round(2)
-
     tabla = tabla[tabla["Cantidad"].gt(0)].copy()
 
-    tabla = tabla[
-        [
-            "Nivel alerta",
-            "Cantidad",
-            "% del total filtrado",
-        ]
+    return tabla
+
+
+def crear_plan_ataque(df: pd.DataFrame) -> pd.DataFrame:
+    tabla = crear_desglose_alertas(df)
+
+    if tabla.empty:
+        return pd.DataFrame()
+
+    acciones = {
+        "Vencidos sin recepción": "Atacar primero. Confirmar recepción, desbloquear etapa pendiente o escalar.",
+        "Vencen en 0 a 7 días sin recepción": "Gestionar hoy o esta semana. Evitar que pasen a vencidos.",
+        "Vencen en 8 a 30 días sin recepción": "Planificar seguimiento preventivo y revisar centros/compradores críticos.",
+        "Más de 30 días para vencer": "Monitorear preventivamente.",
+        "Datos incompletos para calcular vencimiento": "Corregir datos base para calcular vencimiento.",
+        "Recepcionados": "Sin acción requerida.",
+        "Sin datos": "Revisar consistencia de datos.",
+    }
+
+    prioridad = {
+        "Vencidos sin recepción": 1,
+        "Vencen en 0 a 7 días sin recepción": 2,
+        "Vencen en 8 a 30 días sin recepción": 3,
+        "Datos incompletos para calcular vencimiento": 4,
+        "Más de 30 días para vencer": 5,
+        "Recepcionados": 6,
+        "Sin datos": 7,
+    }
+
+    tabla["Acción sugerida"] = tabla["Nivel alerta"].map(acciones).fillna("Revisar registros.")
+    tabla["Prioridad"] = tabla["Nivel alerta"].map(prioridad).fillna(99)
+
+    tabla = tabla.sort_values("Prioridad").drop(columns="Prioridad").reset_index(drop=True)
+
+    return tabla
+
+
+def crear_clasificacion_vencimiento_detallada(df: pd.DataFrame) -> pd.Series:
+    estado = df[COL_ESTADO_RECEPCION_ALERTA].astype(str)
+
+    dias = pd.to_numeric(
+        df.get("dias_restantes_int", pd.Series(np.nan, index=df.index)),
+        errors="coerce",
+    )
+
+    resultado = pd.Series("Sin datos", index=df.index, dtype="object")
+
+    resultado.loc[estado.eq("Recepcionado")] = "Recepcionado"
+    resultado.loc[estado.eq("Sin recepción") & dias.isna()] = "Sin datos"
+    resultado.loc[estado.eq("Sin recepción") & dias.lt(0)] = "Vencido"
+    resultado.loc[estado.eq("Sin recepción") & dias.eq(0)] = "Vence hoy"
+    resultado.loc[estado.eq("Sin recepción") & dias.eq(1)] = "1 día"
+    resultado.loc[estado.eq("Sin recepción") & dias.eq(2)] = "2 días"
+    resultado.loc[estado.eq("Sin recepción") & dias.between(3, 7, inclusive="both")] = "3-7 días"
+    resultado.loc[estado.eq("Sin recepción") & dias.between(8, 15, inclusive="both")] = "8-15 días"
+    resultado.loc[estado.eq("Sin recepción") & dias.between(16, 30, inclusive="both")] = "16-30 días"
+    resultado.loc[estado.eq("Sin recepción") & dias.between(31, 60, inclusive="both")] = "31-60 días"
+    resultado.loc[estado.eq("Sin recepción") & dias.between(61, 90, inclusive="both")] = "61-90 días"
+    resultado.loc[estado.eq("Sin recepción") & dias.gt(90)] = "+90 días"
+
+    return resultado
+
+
+def crear_resumen_buckets(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return pd.DataFrame()
+
+    df_temp = df.copy()
+    df_temp["vencimiento_detallado"] = crear_clasificacion_vencimiento_detallada(df_temp)
+
+    orden = [
+        "Vencido",
+        "Vence hoy",
+        "1 día",
+        "2 días",
+        "3-7 días",
+        "8-15 días",
+        "16-30 días",
+        "31-60 días",
+        "61-90 días",
+        "+90 días",
+        "Sin datos",
+        "Recepcionado",
     ]
 
-    tabla.loc[len(tabla)] = {
-        "Nivel alerta": "Total",
-        "Cantidad": total,
-        "% del total filtrado": 100.00 if total else 0,
-    }
+    tabla = (
+        df_temp["vencimiento_detallado"]
+        .value_counts()
+        .reindex(orden, fill_value=0)
+        .reset_index()
+    )
+
+    tabla.columns = ["Clasificación", "Cantidad"]
+
+    total = int(tabla["Cantidad"].sum())
+
+    tabla["%"] = np.where(
+        total > 0,
+        tabla["Cantidad"] / total * 100,
+        0,
+    )
+
+    tabla["%"] = tabla["%"].round(2)
+    tabla = tabla[tabla["Cantidad"].gt(0)].copy()
 
     return tabla
 
@@ -1001,20 +1379,19 @@ def crear_tabla_prioridad(df: pd.DataFrame) -> pd.DataFrame:
 
     tabla = pd.DataFrame(
         {
-            "Días hasta vencimiento": base.get(
-                "dias_hasta_vencimiento",
-                pd.Series("-", index=base.index),
-            ),
-            "Fecha vencimiento": base.get(
-                "fecha_vencimiento_texto",
-                pd.Series("-", index=base.index),
-            ),
+            "Nivel alerta": base.get(COL_NIVEL_ALERTA_DESC, pd.Series("-", index=base.index)),
+            "Días hasta vencimiento": base.get("dias_hasta_vencimiento", pd.Series("-", index=base.index)),
+            "Fecha vencimiento": base.get("fecha_vencimiento_texto", pd.Series("-", index=base.index)),
+            "Etapa pendiente": base.get("fecha_pendiente", pd.Series("-", index=base.index)),
+            "Última etapa registrada": base.get("ultima_etapa_registrada", pd.Series("-", index=base.index)),
+            "Acción sugerida": base.get("accion_sugerida", pd.Series("-", index=base.index)),
             "SolPed": solped,
             "Pedido": pedido,
             "Posición": posicion,
             "Material": serie_combinada(base, [COL_MATERIAL]).fillna("-"),
             "Texto breve": serie_combinada(base, [COL_TEXTO]).fillna("-"),
             "Centro": serie_combinada(base, [COL_CENTRO]).fillna("-"),
+            "Centro nombre": base.get("centro_label", pd.Series("-", index=base.index)),
             "Grupo de compras": serie_combinada(base, [COL_GRUPO_COMPRAS]).fillna("-"),
             "Tipo OC": serie_combinada(base, [COL_TIPO_OC]).fillna("-"),
             "Sistema": serie_combinada(base, [COL_SISTEMA]).fillna("-"),
@@ -1022,7 +1399,93 @@ def crear_tabla_prioridad(df: pd.DataFrame) -> pd.DataFrame:
             "Performance TAT total": serie_combinada(base, [COL_PERF_TAT]).fillna("-"),
             "Días TAT total": serie_combinada(base, [COL_DIAS_TAT]).fillna("-"),
             "Días incumplimiento": serie_combinada(base, [COL_DIAS_INC]).fillna("-"),
+            "Umbral TAT": serie_combinada(base, [COL_UMBRAL_TAT, "umbral_tat_calculado"]).fillna("-"),
+            "Score riesgo": base.get("score_riesgo", pd.Series(np.nan, index=base.index)),
         }
+    )
+
+    return tabla.reset_index(drop=True)
+
+
+def crear_ranking_centros(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty or "centro_label" not in df.columns:
+        return pd.DataFrame()
+
+    tabla = (
+        df
+        .groupby("centro_label")
+        .agg(
+            Registros=("nivel_alerta", "size"),
+            Vencidos=("nivel_alerta", lambda s: int(s.eq("Crítico").sum())),
+            Proximos=("nivel_alerta", lambda s: int(s.isin(["Atención", "Seguimiento"]).sum())),
+            Datos_incompletos=("nivel_alerta", lambda s: int(s.eq("Datos incompletos").sum())),
+            Recepcionados=("nivel_alerta", lambda s: int(s.eq("Cerrado").sum())),
+            Score_promedio=("score_riesgo", "mean"),
+        )
+        .reset_index()
+        .rename(columns={"centro_label": "Centro"})
+    )
+
+    tabla["Foco acción"] = (
+        tabla["Vencidos"]
+        + tabla["Proximos"]
+        + tabla["Datos_incompletos"]
+    )
+
+    tabla["% foco acción"] = np.where(
+        tabla["Registros"] > 0,
+        tabla["Foco acción"] / tabla["Registros"] * 100,
+        0,
+    )
+
+    tabla["Score_promedio"] = tabla["Score_promedio"].round(2)
+    tabla["% foco acción"] = tabla["% foco acción"].round(2)
+
+    tabla = tabla.sort_values(
+        ["Foco acción", "Vencidos", "Score_promedio", "Registros"],
+        ascending=[False, False, False, False],
+    )
+
+    return tabla.reset_index(drop=True)
+
+
+def crear_ranking_grupo_compras(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty or COL_GRUPO_COMPRAS not in df.columns:
+        return pd.DataFrame()
+
+    tabla = (
+        df
+        .groupby(COL_GRUPO_COMPRAS, dropna=False)
+        .agg(
+            Registros=(COL_GRUPO_COMPRAS, "size"),
+            Vencidos=("nivel_alerta", lambda s: int(s.eq("Crítico").sum())),
+            Proximos=("nivel_alerta", lambda s: int(s.isin(["Atención", "Seguimiento"]).sum())),
+            Datos_incompletos=("nivel_alerta", lambda s: int(s.eq("Datos incompletos").sum())),
+            Recepcionados=("nivel_alerta", lambda s: int(s.eq("Cerrado").sum())),
+            Score_promedio=("score_riesgo", "mean"),
+        )
+        .reset_index()
+        .rename(columns={COL_GRUPO_COMPRAS: "Grupo de compras"})
+    )
+
+    tabla["Foco acción"] = (
+        tabla["Vencidos"]
+        + tabla["Proximos"]
+        + tabla["Datos_incompletos"]
+    )
+
+    tabla["% foco acción"] = np.where(
+        tabla["Registros"] > 0,
+        tabla["Foco acción"] / tabla["Registros"] * 100,
+        0,
+    )
+
+    tabla["Score_promedio"] = tabla["Score_promedio"].round(2)
+    tabla["% foco acción"] = tabla["% foco acción"].round(2)
+
+    tabla = tabla.sort_values(
+        ["Foco acción", "Vencidos", "Score_promedio", "Registros"],
+        ascending=[False, False, False, False],
     )
 
     return tabla.reset_index(drop=True)
@@ -1052,6 +1515,7 @@ def registrar_paso_filtro(
             "Registros después": despues,
             "Registros excluidos": antes - despues,
             "% retenido": round(despues / antes * 100, 2) if antes else 0,
+            "% excluido": round((antes - despues) / antes * 100, 2) if antes else 0,
         }
     )
 
@@ -1073,10 +1537,48 @@ def aplicar_filtros_alertas(
             "Registros después": len(df_base),
             "Registros excluidos": 0,
             "% retenido": 100.0,
+            "% excluido": 0.0,
         }
     ]
 
-    barra.progress(25, text="Aplicando rango de vencimiento...")
+    barra.progress(15, text="Aplicando búsquedas...")
+
+    busquedas_id = [
+        ("SolPed", COL_SOLPED, filtros.get("buscar_solped", "")),
+        ("Pedido", COL_OC_ME5A, filtros.get("buscar_pedido", "")),
+        ("Material", COL_MATERIAL, filtros.get("buscar_material", "")),
+    ]
+
+    for nombre, columna, texto in busquedas_id:
+        if str(texto).strip() and columna in df.columns:
+            antes = df.copy()
+            df = df[filtrar_por_ids(df, columna, texto)].copy()
+
+            registrar_paso_filtro(
+                resumen,
+                f"Filtro búsqueda {nombre}",
+                nombre,
+                texto,
+                antes,
+                df,
+            )
+
+    texto_breve = filtros.get("buscar_texto", "")
+
+    if str(texto_breve).strip() and COL_TEXTO in df.columns:
+        antes = df.copy()
+        df = df[contiene_texto(df, COL_TEXTO, texto_breve)].copy()
+
+        registrar_paso_filtro(
+            resumen,
+            "Filtro búsqueda texto",
+            "Texto breve",
+            texto_breve,
+            antes,
+            df,
+        )
+
+    barra.progress(35, text="Aplicando rango de vencimiento...")
 
     rango_vencimiento = filtros.get("rango_vencimiento")
 
@@ -1160,78 +1662,41 @@ def formatear_ejes(ax):
     ax.set_facecolor("none")
 
 
-def crear_clasificacion_vencimiento_detallada(df: pd.DataFrame) -> pd.Series:
-    estado = df[COL_ESTADO_RECEPCION_ALERTA].astype(str)
+def grafico_donut_retencion(total_base: int, total_filtrado: int):
+    total_excluido = total_base - total_filtrado
 
-    dias = pd.to_numeric(
-        df.get("dias_restantes_int", pd.Series(np.nan, index=df.index)),
-        errors="coerce",
+    tabla = pd.DataFrame(
+        [
+            {"Categoría": "Retenidos", "Cantidad": total_filtrado},
+            {"Categoría": "Excluidos", "Cantidad": total_excluido},
+        ]
     )
 
-    resultado = pd.Series("Sin datos", index=df.index, dtype="object")
-
-    resultado.loc[estado.eq("Recepcionado")] = "Recepcionado"
-    resultado.loc[estado.eq("Sin recepción") & dias.isna()] = "Sin datos"
-    resultado.loc[estado.eq("Sin recepción") & dias.lt(0)] = "Vencido"
-    resultado.loc[estado.eq("Sin recepción") & dias.eq(0)] = "Vence hoy"
-    resultado.loc[estado.eq("Sin recepción") & dias.eq(1)] = "1 día"
-    resultado.loc[estado.eq("Sin recepción") & dias.eq(2)] = "2 días"
-    resultado.loc[estado.eq("Sin recepción") & dias.between(3, 7, inclusive="both")] = "3-7 días"
-    resultado.loc[estado.eq("Sin recepción") & dias.between(8, 15, inclusive="both")] = "8-15 días"
-    resultado.loc[estado.eq("Sin recepción") & dias.between(16, 30, inclusive="both")] = "16-30 días"
-    resultado.loc[estado.eq("Sin recepción") & dias.between(31, 60, inclusive="both")] = "31-60 días"
-    resultado.loc[estado.eq("Sin recepción") & dias.between(61, 90, inclusive="both")] = "61-90 días"
-    resultado.loc[estado.eq("Sin recepción") & dias.gt(90)] = "+90 días"
-
-    return resultado
-
-
-def grafico_donut_alertas_porcentual(df: pd.DataFrame):
-    st.markdown("### Porcentaje por tipo de alerta")
-
-    if df.empty or "nivel_alerta" not in df.columns:
-        st.info("No hay datos para graficar.")
-        return
-
-    colores_mapa = {
-        "Crítico": COLOR_CRITICO,
-        "Atención": COLOR_ATENCION,
-        "Seguimiento": COLOR_SEGUIMIENTO,
-        "Controlado": COLOR_CONTROLADO,
-        "Datos incompletos": COLOR_DATOS,
-        "Cerrado": COLOR_CERRADO,
-        "Sin datos": COLOR_SIN_DATOS,
-    }
-
-    tabla = (
-        df["nivel_alerta"]
-        .value_counts()
-        .reindex(NIVELES_ALERTA_ORDEN, fill_value=0)
-        .reset_index()
-    )
-
-    tabla.columns = ["Nivel", "Cantidad"]
     tabla = tabla[tabla["Cantidad"].gt(0)].copy()
 
     if tabla.empty:
-        st.info("No hay categorías disponibles.")
+        st.info("No hay datos para graficar retención.")
         return
 
-    tabla["Tipo de alerta"] = tabla["Nivel"].apply(describir_nivel_alerta)
-    tabla["Color"] = tabla["Nivel"].map(colores_mapa).fillna(COLOR_MUTED)
-
     total = int(tabla["Cantidad"].sum())
+
+    tabla["%"] = np.where(
+        total > 0,
+        tabla["Cantidad"] / total * 100,
+        0,
+    )
+
+    colores_mapa = {
+        "Retenidos": "#2E7D32",
+        "Excluidos": COLOR_NO_CUMPLE,
+    }
+
     cantidades = tabla["Cantidad"].astype(int).to_numpy()
-    etiquetas = tabla["Tipo de alerta"].astype(str).tolist()
-    colores = tabla["Color"].tolist()
+    porcentajes = tabla["%"].astype(float).to_numpy()
+    etiquetas = tabla["Categoría"].astype(str).tolist()
+    colores = tabla["Categoría"].map(colores_mapa).tolist()
 
-    fig, ax = plt.subplots(figsize=(8.2, 5.8))
-
-    def autopct_func(pct):
-        if pct < 4:
-            return ""
-
-        return f"{pct:.1f}%"
+    fig, ax = plt.subplots(figsize=(6.5, 4.8), dpi=180)
 
     wedges, texts, autotexts = ax.pie(
         cantidades,
@@ -1239,7 +1704,7 @@ def grafico_donut_alertas_porcentual(df: pd.DataFrame):
         startangle=90,
         counterclock=False,
         colors=colores,
-        autopct=autopct_func,
+        autopct=lambda pct: f"{pct:.1f}%" if pct >= 4 else "",
         pctdistance=0.78,
         wedgeprops={
             "width": 0.38,
@@ -1250,16 +1715,16 @@ def grafico_donut_alertas_porcentual(df: pd.DataFrame):
 
     for autotext in autotexts:
         autotext.set_fontweight("bold")
-        autotext.set_fontsize(9.5)
-        autotext.set_color("white")
+        autotext.set_fontsize(10)
+        autotext.set_color(COLOR_TEXTO)
 
     ax.text(
         0,
         0.08,
-        formato_cantidad(total),
+        f"{total:,}".replace(",", "."),
         ha="center",
         va="center",
-        fontsize=23,
+        fontsize=20,
         fontweight="bold",
         color=COLOR_TEXTO,
     )
@@ -1271,78 +1736,189 @@ def grafico_donut_alertas_porcentual(df: pd.DataFrame):
         ha="center",
         va="center",
         fontsize=10,
-        fontweight="bold",
         color=COLOR_MUTED,
     )
 
-    porcentajes = np.where(
-        total > 0,
-        cantidades / total * 100,
-        0,
-    )
-
     etiquetas_leyenda = [
-        f"{etiqueta} · {pct:.1f}%"
-        for etiqueta, pct in zip(etiquetas, porcentajes)
+        f"{cat} · {cant:,} · {pct:.1f}%".replace(",", ".")
+        for cat, cant, pct in zip(etiquetas, cantidades, porcentajes)
     ]
 
-    legend = ax.legend(
+    ax.legend(
         wedges,
         etiquetas_leyenda,
-        title="Leyenda porcentual",
         loc="center left",
         bbox_to_anchor=(1.02, 0.5),
         frameon=False,
-        fontsize=8.5,
-        title_fontsize=9.5,
+        fontsize=9,
     )
 
-    for texto in legend.get_texts():
-        texto.set_color(COLOR_TEXTO)
-
-    legend.get_title().set_color(COLOR_TEXTO)
-    legend.get_title().set_fontweight("bold")
-
     ax.set_title(
-        "Distribución porcentual por tipo de alerta",
+        "Retención por filtros",
         fontsize=14,
         fontweight="bold",
         color=COLOR_TEXTO,
-        pad=16,
     )
 
     ax.axis("equal")
     fig.patch.set_alpha(0)
     fig.tight_layout()
-    fig.subplots_adjust(right=0.67)
+    fig.subplots_adjust(right=0.70)
 
     st.pyplot(fig, clear_figure=True, use_container_width=True)
 
 
-def grafico_alertas_valores_absolutos(df: pd.DataFrame):
-    st.markdown("### Valores absolutos por vencimiento")
-
-    if df.empty:
+def grafico_donut_alertas_porcentual(tabla: pd.DataFrame):
+    if tabla.empty:
         st.info("No hay datos para graficar.")
         return
 
-    df_grafico = df.copy()
-    df_grafico["vencimiento_detallado"] = crear_clasificacion_vencimiento_detallada(df_grafico)
+    data = tabla.copy()
+    data = data[data["Cantidad"].gt(0)].copy()
 
-    orden = [
-        "Vencido",
-        "Vence hoy",
-        "1 día",
-        "2 días",
-        "3-7 días",
-        "8-15 días",
-        "16-30 días",
-        "31-60 días",
-        "61-90 días",
-        "+90 días",
-        "Sin datos",
-        "Recepcionado",
-    ]
+    if data.empty:
+        st.info("No hay categorías disponibles.")
+        return
+
+    data["Color"] = data["Nivel alerta"].map(COLORES_ALERTA_DESC).fillna(COLOR_MUTED)
+
+    total = int(data["Cantidad"].sum())
+    cantidades = data["Cantidad"].astype(int).to_numpy()
+    etiquetas = data["Nivel alerta"].astype(str).tolist()
+    colores = data["Color"].tolist()
+
+    col_grafico, col_tabla = st.columns([1.15, 1])
+
+    with col_grafico:
+        fig, ax = plt.subplots(figsize=(8.2, 6.2), dpi=180)
+
+        wedges, texts, autotexts = ax.pie(
+            cantidades,
+            labels=None,
+            startangle=90,
+            counterclock=False,
+            colors=colores,
+            autopct=lambda pct: f"{pct:.1f}%" if pct >= 4 else "",
+            pctdistance=0.78,
+            wedgeprops={
+                "width": 0.38,
+                "linewidth": 2.5,
+                "edgecolor": "white",
+            },
+        )
+
+        for autotext in autotexts:
+            autotext.set_fontweight("bold")
+            autotext.set_fontsize(9.5)
+            autotext.set_color("white")
+
+        ax.text(
+            0,
+            0.08,
+            formato_cantidad(total),
+            ha="center",
+            va="center",
+            fontsize=23,
+            fontweight="bold",
+            color=COLOR_TEXTO,
+        )
+
+        ax.text(
+            0,
+            -0.12,
+            "registros",
+            ha="center",
+            va="center",
+            fontsize=10,
+            fontweight="bold",
+            color=COLOR_MUTED,
+        )
+
+        porcentajes = np.where(
+            total > 0,
+            cantidades / total * 100,
+            0,
+        )
+
+        etiquetas_leyenda = [
+            f"{etiqueta} · {cantidad:,} · {pct:.1f}%".replace(",", ".")
+            for etiqueta, cantidad, pct in zip(etiquetas, cantidades, porcentajes)
+        ]
+
+        legend = ax.legend(
+            wedges,
+            etiquetas_leyenda,
+            title="Leyenda",
+            loc="center left",
+            bbox_to_anchor=(1.02, 0.5),
+            frameon=False,
+            fontsize=8.5,
+            title_fontsize=9.5,
+        )
+
+        for texto in legend.get_texts():
+            texto.set_color(COLOR_TEXTO)
+
+        legend.get_title().set_color(COLOR_TEXTO)
+        legend.get_title().set_fontweight("bold")
+
+        ax.set_title(
+            "Distribución porcentual por tipo de alerta",
+            fontsize=14,
+            fontweight="bold",
+            color=COLOR_TEXTO,
+            pad=16,
+        )
+
+        ax.axis("equal")
+        fig.patch.set_alpha(0)
+        fig.tight_layout()
+        fig.subplots_adjust(right=0.67)
+
+        st.pyplot(fig, clear_figure=True, use_container_width=True)
+
+    with col_tabla:
+        st.markdown("#### Tabla de alertas")
+        st.caption("Base: registros filtrados.")
+
+        st.dataframe(
+            data[
+                [
+                    "Nivel alerta",
+                    "Cantidad",
+                    "% del total filtrado",
+                ]
+            ],
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Cantidad": st.column_config.NumberColumn(
+                    "Cantidad",
+                    format="%d",
+                ),
+                "% del total filtrado": st.column_config.ProgressColumn(
+                    "% del total filtrado",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+            },
+        )
+
+
+def grafico_alertas_valores_absolutos(tabla: pd.DataFrame):
+    if tabla.empty:
+        st.info("No hay datos para graficar.")
+        return
+
+    data = tabla.copy()
+    data = data[data["Cantidad"].gt(0)].copy()
+
+    if data.empty:
+        st.info("No hay clasificación de vencimientos.")
+        return
+
+    data = data.sort_values("Cantidad", ascending=True)
 
     colores_mapa = {
         "Vencido": COLOR_CRITICO,
@@ -1359,38 +1935,22 @@ def grafico_alertas_valores_absolutos(df: pd.DataFrame):
         "Recepcionado": COLOR_CERRADO,
     }
 
-    tabla = (
-        df_grafico["vencimiento_detallado"]
-        .value_counts()
-        .reindex(orden, fill_value=0)
-        .reset_index()
-    )
+    y = np.arange(len(data))
 
-    tabla.columns = ["Clasificación", "Cantidad"]
-    tabla = tabla[tabla["Cantidad"].gt(0)].copy()
-
-    if tabla.empty:
-        st.info("No hay clasificación de vencimientos.")
-        return
-
-    tabla = tabla.sort_values("Cantidad", ascending=True)
-
-    y = np.arange(len(tabla))
-
-    fig, ax = plt.subplots(figsize=(8.6, 5.8))
+    fig, ax = plt.subplots(figsize=(9.5, max(5.8, len(data) * 0.45)), dpi=180)
 
     ax.barh(
         y,
-        tabla["Cantidad"],
-        color=[colores_mapa.get(x, COLOR_MUTED) for x in tabla["Clasificación"]],
+        data["Cantidad"],
+        color=[colores_mapa.get(x, COLOR_MUTED) for x in data["Clasificación"]],
         height=0.55,
     )
 
-    max_cantidad = max(tabla["Cantidad"]) if len(tabla) else 0
+    max_cantidad = max(data["Cantidad"]) if len(data) else 0
 
-    for i, cantidad in enumerate(tabla["Cantidad"]):
+    for i, cantidad in enumerate(data["Cantidad"]):
         ax.text(
-            cantidad + max_cantidad * 0.01,
+            cantidad + max(max_cantidad * 0.015, 0.5),
             i,
             formato_cantidad(cantidad),
             va="center",
@@ -1401,7 +1961,7 @@ def grafico_alertas_valores_absolutos(df: pd.DataFrame):
         )
 
     ax.set_yticks(y)
-    ax.set_yticklabels(tabla["Clasificación"], color=COLOR_MUTED)
+    ax.set_yticklabels(data["Clasificación"], color=COLOR_MUTED)
     ax.set_xlabel("Cantidad de registros", color=COLOR_TEXTO)
 
     ax.set_title(
@@ -1420,9 +1980,143 @@ def grafico_alertas_valores_absolutos(df: pd.DataFrame):
     st.pyplot(fig, clear_figure=True, use_container_width=True)
 
 
-def grafico_vencidos_por_anio(df_vencidos: pd.DataFrame):
-    st.markdown("### Vencidos sin recepción por año")
+def grafico_plan_ataque(tabla: pd.DataFrame):
+    if tabla.empty:
+        st.info("No hay datos para graficar plan de ataque.")
+        return
 
+    data = tabla.copy()
+    data = data[data["Cantidad"].gt(0)].copy()
+
+    if data.empty:
+        st.info("No hay categorías con cantidad mayor a cero.")
+        return
+
+    data = data.sort_values("Cantidad", ascending=True)
+
+    labels = data["Nivel alerta"].astype(str).tolist()
+    valores = data["Cantidad"].astype(int).to_numpy()
+    porcentajes = data["% del total filtrado"].astype(float).to_numpy()
+    colores = [COLORES_ALERTA_DESC.get(x, COLOR_MUTED) for x in labels]
+
+    y = np.arange(len(labels))
+
+    fig, ax = plt.subplots(figsize=(12, max(5, len(labels) * 0.62)), dpi=180)
+
+    barras = ax.barh(
+        y,
+        valores,
+        color=colores,
+        height=0.58,
+    )
+
+    max_valor = max(valores) if len(valores) else 0
+
+    ax.set_xlim(0, max(max_valor * 1.25, 10))
+
+    for barra, valor, pct in zip(barras, valores, porcentajes):
+        ax.text(
+            barra.get_width() + max(max_valor * 0.02, 0.5),
+            barra.get_y() + barra.get_height() / 2,
+            f"{valor:,} · {pct:.1f}%".replace(",", "."),
+            va="center",
+            ha="left",
+            fontsize=10,
+            fontweight="bold",
+            color=COLOR_TEXTO,
+        )
+
+    ax.set_yticks(y)
+    ax.set_yticklabels(labels, fontsize=10, color=COLOR_MUTED)
+
+    ax.set_title(
+        "Plan de ataque: dónde concentrar la gestión",
+        fontsize=16,
+        fontweight="bold",
+        color=COLOR_TEXTO,
+        pad=16,
+    )
+
+    ax.set_xlabel("Cantidad de registros", color=COLOR_TEXTO)
+
+    formatear_ejes(ax)
+
+    fig.patch.set_alpha(0)
+    fig.tight_layout()
+
+    st.pyplot(fig, clear_figure=True, use_container_width=True)
+
+
+def grafico_top_ranking(
+    tabla: pd.DataFrame,
+    columna_nombre: str,
+    titulo: str,
+    top_n: int = 12,
+):
+    if tabla.empty or columna_nombre not in tabla.columns:
+        st.info("No hay datos para graficar ranking.")
+        return
+
+    data = tabla.head(top_n).copy()
+
+    if data.empty:
+        st.info("No hay datos para graficar ranking.")
+        return
+
+    data = data.sort_values("Foco acción", ascending=True)
+
+    labels = data[columna_nombre].astype(str).tolist()
+    valores = data["Foco acción"].astype(int).to_numpy()
+
+    y = np.arange(len(labels))
+
+    fig, ax = plt.subplots(figsize=(12, max(5.5, len(labels) * 0.42)), dpi=180)
+
+    barras = ax.barh(
+        y,
+        valores,
+        color=COLOR_CRITICO,
+        height=0.58,
+    )
+
+    max_valor = max(valores) if len(valores) else 0
+
+    ax.set_xlim(0, max(max_valor * 1.25, 10))
+
+    for barra, valor in zip(barras, valores):
+        ax.text(
+            barra.get_width() + max(max_valor * 0.02, 0.5),
+            barra.get_y() + barra.get_height() / 2,
+            f"{valor:,}".replace(",", "."),
+            va="center",
+            ha="left",
+            fontsize=10,
+            fontweight="bold",
+            color=COLOR_TEXTO,
+        )
+
+    ax.set_yticks(y)
+    ax.set_yticklabels(labels, fontsize=9, color=COLOR_MUTED)
+
+    ax.set_title(
+        titulo,
+        fontsize=16,
+        fontweight="bold",
+        color=COLOR_TEXTO,
+        pad=16,
+    )
+
+    ax.set_xlabel("Registros foco acción", color=COLOR_TEXTO)
+
+    formatear_ejes(ax)
+
+    fig.patch.set_alpha(0)
+    fig.tight_layout()
+
+    st.pyplot(fig, clear_figure=True, use_container_width=True)
+
+
+def grafico_vencidos_por_anio(df_vencidos: pd.DataFrame):
     if df_vencidos.empty:
         st.info("No hay vencidos sin recepción para graficar.")
         return
@@ -1452,7 +2146,7 @@ def grafico_vencidos_por_anio(df_vencidos: pd.DataFrame):
 
     x = np.arange(len(tabla))
 
-    fig, ax = plt.subplots(figsize=(8.4, 4.8))
+    fig, ax = plt.subplots(figsize=(8.4, 4.8), dpi=180)
 
     ax.bar(
         x,
@@ -1466,7 +2160,7 @@ def grafico_vencidos_por_anio(df_vencidos: pd.DataFrame):
     for i, cantidad in enumerate(tabla["Cantidad"]):
         ax.text(
             i,
-            cantidad + max_cantidad * 0.02,
+            cantidad + max(max_cantidad * 0.02, 1),
             formato_cantidad(cantidad),
             ha="center",
             va="bottom",
@@ -1503,6 +2197,21 @@ def grafico_vencidos_por_anio(df_vencidos: pd.DataFrame):
 # VISUALES NATIVOS
 # ============================================================
 
+def mostrar_kpi_html(titulo: str, valor: str, subtitulo: str, clase: str = ""):
+    clase_css = f" {clase}" if clase else ""
+
+    st.markdown(
+        f"""
+        <div class="kpi-box">
+            <div class="kpi-title">{titulo}</div>
+            <div class="kpi-value{clase_css}">{valor}</div>
+            <div class="kpi-subtitle">{subtitulo}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def mostrar_card_estado(resumen: dict):
     semaforo = resumen.get("semaforo", "Sin datos")
     semaforo_desc = resumen.get("semaforo_descriptivo", describir_nivel_alerta(semaforo))
@@ -1510,20 +2219,24 @@ def mostrar_card_estado(resumen: dict):
     if semaforo == "Crítico":
         clase = "alert-card alert-card-critical"
         color = "#991b1b"
+        titulo = "Estado global crítico"
     elif semaforo == "Atención":
         clase = "alert-card alert-card-warning"
         color = "#9a3412"
+        titulo = "Estado global en atención"
     elif semaforo == "Datos incompletos":
         clase = "alert-card alert-card-data"
         color = "#854d0e"
+        titulo = "Estado global con datos incompletos"
     else:
         clase = "alert-card alert-card-ok"
         color = "#166534"
+        titulo = "Estado global controlado"
 
     st.markdown(
         f"""
         <div class="{clase}">
-            <div class="alert-title" style="color:{color};">Estado general del análisis</div>
+            <div class="alert-title" style="color:{color};">{titulo}</div>
             <div class="alert-main">{semaforo_desc}</div>
             <div class="alert-text">{resumen.get("mensaje", "")}</div>
             <div class="alert-text" style="margin-top:8px;"><b>Acción sugerida:</b> {resumen.get("accion", "")}</div>
@@ -1562,6 +2275,12 @@ def mostrar_tabla_alertas(
         tabla.head(registros_mostrados),
         use_container_width=True,
         hide_index=True,
+        column_config={
+            "Score riesgo": st.column_config.NumberColumn(
+                "Score riesgo",
+                format="%.2f",
+            ),
+        },
     )
 
     nombre_archivo = (
@@ -1762,6 +2481,111 @@ def mostrar_proximos_por_rango(df_proximos: pd.DataFrame):
             )
 
 
+def mostrar_linea_tiempo_registro(row: pd.Series):
+    cols = st.columns(len(ETAPAS_LINEA_PEDIDO))
+
+    for idx, (nombre, col) in enumerate(ETAPAS_LINEA_PEDIDO):
+        fecha = pd.to_datetime(row.get(col, pd.NaT), errors="coerce")
+
+        if pd.notna(fecha):
+            clase = "stage-done"
+            estado = "Registrada"
+            fecha_txt = fecha.strftime("%d-%m-%Y")
+        else:
+            if nombre == row.get("fecha_pendiente", ""):
+                clase = "stage-pending"
+                estado = "Pendiente"
+            else:
+                clase = "stage-neutral"
+                estado = "Sin dato"
+
+            fecha_txt = "-"
+
+        with cols[idx]:
+            st.markdown(
+                f"""
+                <div class="stage-box {clase}">
+                    <div class="stage-title">{nombre}</div>
+                    <div class="stage-date">{fecha_txt}</div>
+                    <div class="stage-status">{estado}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+
+def mostrar_expediente_registro(row: pd.Series):
+    st.markdown("#### Resumen del registro seleccionado")
+
+    c1, c2, c3, c4 = st.columns(4)
+
+    c1.metric("Nivel alerta", str(row.get(COL_NIVEL_ALERTA_DESC, "-")))
+    c2.metric("Vencimiento", str(row.get("dias_hasta_vencimiento", "-")))
+    c3.metric("Etapa pendiente", str(row.get("fecha_pendiente", "-")))
+
+    score = valor_numerico(row.get("score_riesgo", np.nan))
+    c4.metric("Score riesgo", f"{score:.2f}" if pd.notna(score) else "-")
+
+    st.markdown(
+        f"""
+        <div class="alert-card">
+            <div class="alert-title">Acción sugerida</div>
+            <div class="alert-text">{row.get("accion_sugerida", "-")}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    mostrar_linea_tiempo_registro(row)
+
+    detalle_cols = [
+        COL_SOLPED,
+        COL_OC_ME5A,
+        COL_OC_ME80FN,
+        COL_POS_SOLPED,
+        COL_POS_OC,
+        COL_MATERIAL,
+        COL_TEXTO,
+        COL_CENTRO,
+        "centro_label",
+        COL_SOLICITANTE,
+        COL_AUTOR,
+        COL_GRUPO_COMPRAS,
+        COL_TIPO_OC,
+        COL_ORIGEN,
+        COL_SISTEMA,
+        COL_NOMBRE_TIPO_COMPRA,
+        COL_PERF_TAT,
+        COL_RANGO_INC,
+        COL_DIAS_TAT,
+        COL_DIAS_INC,
+        COL_UMBRAL_TAT,
+        "fecha_inicio_tat",
+        "fecha_vencimiento_tat",
+        "fecha_recepcion_alerta",
+        "dias_restantes_int",
+        "dias_transcurridos_alerta",
+        "exceso_umbral_alerta",
+        "nivel_alerta",
+        COL_NIVEL_ALERTA_DESC,
+        "bucket_vencimiento",
+        "clasificacion_vencimiento",
+        "ultima_etapa_registrada",
+        "fecha_pendiente",
+        "accion_sugerida",
+        "score_riesgo",
+    ]
+
+    detalle_cols = columnas_existentes(pd.DataFrame([row]), detalle_cols)
+
+    with st.expander("Detalle completo del registro", expanded=True):
+        st.dataframe(
+            pd.DataFrame([row])[detalle_cols],
+            use_container_width=True,
+            hide_index=True,
+        )
+
+
 # ============================================================
 # APP
 # ============================================================
@@ -1769,7 +2593,9 @@ def mostrar_proximos_por_rango(df_proximos: pd.DataFrame):
 mostrar_logo()
 
 st.title("10_ALERTAS")
-st.caption("Gestión de alertas TAT, vencimientos y seguimiento de pedidos críticos.")
+st.caption(
+    "Panel global para priorizar vencidos sin recepción, próximos vencimientos y datos incompletos."
+)
 
 if "df_tat" not in st.session_state or st.session_state.get("df_tat") is None:
     st.info("No hay archivo activo en sesión. Primero carga un archivo en 06_CARGAR_ARCHIVO.")
@@ -1795,7 +2621,7 @@ except Exception as e:
 # ============================================================
 
 st.markdown("### Filtros")
-st.caption("Filtros enfocados solo en gestión de alertas.")
+st.caption("Filtros enfocados en gestión de alertas. Puedes buscar SolPed, pedido, material o texto breve.")
 
 fechas_vencimiento = df_panel["fecha_vencimiento_tat"].dropna()
 
@@ -1840,6 +2666,36 @@ centros_default = [
 ]
 
 with st.form("form_filtros_alertas"):
+    bq1, bq2, bq3, bq4 = st.columns(4)
+
+    with bq1:
+        buscar_solped = st.text_input(
+            "Buscar SolPed",
+            placeholder="Ej: 1001973319",
+            key="alertas_buscar_solped",
+        )
+
+    with bq2:
+        buscar_pedido = st.text_input(
+            "Buscar pedido",
+            placeholder="Ej: 4500...",
+            key="alertas_buscar_pedido",
+        )
+
+    with bq3:
+        buscar_material = st.text_input(
+            "Buscar material",
+            placeholder="Código material",
+            key="alertas_buscar_material",
+        )
+
+    with bq4:
+        buscar_texto = st.text_input(
+            "Buscar texto breve",
+            placeholder="Descripción",
+            key="alertas_buscar_texto",
+        )
+
     f1, f2, f3, f4 = st.columns(4)
 
     with f1:
@@ -1936,6 +2792,10 @@ with st.form("form_filtros_alertas"):
 
 if limpiar_filtros:
     claves = [
+        "alertas_buscar_solped",
+        "alertas_buscar_pedido",
+        "alertas_buscar_material",
+        "alertas_buscar_texto",
         "alertas_rango_vencimiento",
         "alertas_niveles",
         "alertas_clasificaciones",
@@ -1947,6 +2807,12 @@ if limpiar_filtros:
         "alertas_df_filtrado",
         "alertas_resumen_filtros",
         "alertas_firma_filtros",
+        "alertas_parquet_bytes",
+        "alertas_parquet_firma",
+        "alertas_csv_bytes",
+        "alertas_csv_firma",
+        "alertas_excel_bytes",
+        "alertas_excel_firma",
     ]
 
     for clave in claves:
@@ -1957,6 +2823,10 @@ if limpiar_filtros:
 
 
 filtros = {
+    "buscar_solped": buscar_solped,
+    "buscar_pedido": buscar_pedido,
+    "buscar_material": buscar_material,
+    "buscar_texto": buscar_texto,
     "rango_vencimiento": rango_vencimiento,
     "niveles": niveles,
     "clasificaciones": clasificaciones,
@@ -1997,78 +2867,281 @@ else:
 
 
 # ============================================================
-# INDICADORES
+# INDICADORES Y RESUMEN EJECUTIVO
 # ============================================================
 
 resumen_ejecutivo = construir_resumen_ejecutivo(df_panel, df_filtrado)
 
-total_archivo = resumen_ejecutivo["total_archivo"]
-filtrados = resumen_ejecutivo["total_filtrado"]
-
-estado_recepcion = df_filtrado[COL_ESTADO_RECEPCION_ALERTA].astype(str)
-dias_restantes = pd.to_numeric(
-    df_filtrado.get("dias_restantes_int", pd.Series(np.nan, index=df_filtrado.index)),
-    errors="coerce",
-)
-
-sin_recepcion = estado_recepcion.eq("Sin recepción")
-recepcionados = estado_recepcion.eq("Recepcionado")
-
-vencidos_total = int((sin_recepcion & dias_restantes.lt(0)).sum())
-proximos_total = int((sin_recepcion & dias_restantes.between(0, 30, inclusive="both")).sum())
-sin_fecha_total = int((sin_recepcion & dias_restantes.isna()).sum())
-recepcionados_total = int(recepcionados.sum())
-
-c1, c2, c3, c4, c5 = st.columns(5)
-
-c1.metric(
-    "Registros filtrados",
-    formato_cantidad(filtrados),
-    f"{resumen_ejecutivo['pct_filtrado']:.1f}% del total" if total_archivo else "",
-)
-
-c2.metric("Vencidos sin recepción", formato_cantidad(vencidos_total))
-c3.metric("Próximos 0-30 días", formato_cantidad(proximos_total))
-c4.metric("Sin fecha calculable", formato_cantidad(sin_fecha_total))
-c5.metric("Recepcionados", formato_cantidad(recepcionados_total))
-
-
-# ============================================================
-# RESUMEN EJECUTIVO
-# ============================================================
+st.markdown("### Resumen ejecutivo")
 
 mostrar_card_estado(resumen_ejecutivo)
+
+c1, c2, c3, c4 = st.columns(4)
+
+with c1:
+    mostrar_kpi_html(
+        "Registros filtrados",
+        formato_cantidad(resumen_ejecutivo["total_filtrado"]),
+        f"{resumen_ejecutivo['pct_filtrado']:.1f}% del total archivo.",
+    )
+
+with c2:
+    mostrar_kpi_html(
+        "Vencidos sin recepción",
+        formato_cantidad(resumen_ejecutivo["vencidos"]),
+        "Prioridad máxima.",
+        "kpi-critical",
+    )
+
+with c3:
+    mostrar_kpi_html(
+        "Por vencer 0-30 días",
+        formato_cantidad(resumen_ejecutivo["proximos"]),
+        "Vence hoy + próximos 30 días.",
+        "kpi-warning",
+    )
+
+with c4:
+    mostrar_kpi_html(
+        "Foco de acción",
+        formato_cantidad(resumen_ejecutivo["foco_accion"]),
+        "Vencidos + próximos + datos incompletos.",
+        "kpi-bad",
+    )
+
+c5, c6, c7, c8 = st.columns(4)
+
+with c5:
+    mostrar_kpi_html(
+        "Vence hoy",
+        formato_cantidad(resumen_ejecutivo["vence_hoy"]),
+        "Registros sin recepción que vencen hoy.",
+        "kpi-critical",
+    )
+
+with c6:
+    mostrar_kpi_html(
+        "Por vencer 1-7 días",
+        formato_cantidad(resumen_ejecutivo["proximos_1_7"]),
+        "Prioridad semanal.",
+        "kpi-warning",
+    )
+
+with c7:
+    mostrar_kpi_html(
+        "Datos incompletos",
+        formato_cantidad(resumen_ejecutivo["sin_fecha"]),
+        "Sin fecha de vencimiento calculable.",
+        "kpi-warning",
+    )
+
+with c8:
+    mostrar_kpi_html(
+        "Recepcionados",
+        formato_cantidad(resumen_ejecutivo["recepcionados"]),
+        "Registros cerrados.",
+        "kpi-good",
+    )
+
+
+# ============================================================
+# RETENCIÓN POR FILTROS
+# ============================================================
+
+st.markdown("### 1. Retención por filtros")
+
+col_ret1, col_ret2 = st.columns([1.1, 1])
+
+with col_ret1:
+    grafico_donut_retencion(
+        total_base=len(df_panel),
+        total_filtrado=len(df_filtrado),
+    )
+
+with col_ret2:
+    st.markdown("#### Detalle de filtros aplicados")
+
+    if resumen_filtros_df.empty:
+        st.info("No hay detalle de filtros disponible.")
+    else:
+        st.dataframe(
+            resumen_filtros_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Registros antes": st.column_config.NumberColumn(
+                    "Registros antes",
+                    format="%d",
+                ),
+                "Registros después": st.column_config.NumberColumn(
+                    "Registros después",
+                    format="%d",
+                ),
+                "Registros excluidos": st.column_config.NumberColumn(
+                    "Registros excluidos",
+                    format="%d",
+                ),
+                "% retenido": st.column_config.ProgressColumn(
+                    "% retenido",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+                "% excluido": st.column_config.ProgressColumn(
+                    "% excluido",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+            },
+        )
 
 
 # ============================================================
 # DESGLOSE VISUAL
 # ============================================================
 
-st.markdown("### Desglose visual de alertas")
+st.markdown("### 2. Distribución global de alertas")
 st.caption(
-    "El primer gráfico muestra la distribución porcentual. "
-    "El segundo gráfico muestra valores absolutos con mayor detalle en los rangos mayores a 7 días."
+    "Permite entender rápidamente qué parte del problema corresponde a vencidos, próximos vencimientos, datos incompletos o registros cerrados."
 )
-
-col_g1, col_g2 = st.columns(2)
-
-with col_g1:
-    grafico_donut_alertas_porcentual(df_filtrado)
-
-with col_g2:
-    grafico_alertas_valores_absolutos(df_filtrado)
 
 desglose_alertas = crear_desglose_alertas(df_filtrado)
 
-with st.expander("Ver tabla de desglose de alertas", expanded=False):
-    if desglose_alertas.empty:
-        st.info("No hay desglose disponible.")
+grafico_donut_alertas_porcentual(desglose_alertas)
+
+
+st.markdown("### 3. Valores absolutos por vencimiento")
+st.caption(
+    "Esta vista responde cuántos registros están vencidos, vencen hoy, vencen en pocos días o están más lejos del vencimiento."
+)
+
+tabla_buckets = crear_resumen_buckets(df_filtrado)
+
+grafico_alertas_valores_absolutos(tabla_buckets)
+
+
+# ============================================================
+# PLAN DE ATAQUE
+# ============================================================
+
+st.markdown("### 4. Plan de ataque")
+st.caption(
+    "Vista ejecutiva para decidir dónde concentrar la gestión primero."
+)
+
+plan_ataque = crear_plan_ataque(df_filtrado)
+
+if plan_ataque.empty:
+    st.info("No hay datos para construir plan de ataque.")
+else:
+    grafico_plan_ataque(plan_ataque)
+
+    st.dataframe(
+        plan_ataque,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Cantidad": st.column_config.NumberColumn(
+                "Cantidad",
+                format="%d",
+            ),
+            "% del total filtrado": st.column_config.ProgressColumn(
+                "% del total filtrado",
+                format="%.1f%%",
+                min_value=0,
+                max_value=100,
+            ),
+        },
+    )
+
+
+# ============================================================
+# DÓNDE ATACAR PRIMERO
+# ============================================================
+
+st.markdown("### 5. Dónde atacar primero")
+st.caption(
+    "Ranking de centros y grupos de compra con mayor concentración de vencidos, próximos vencimientos o datos incompletos."
+)
+
+col_rank1, col_rank2 = st.columns(2)
+
+with col_rank1:
+    st.markdown("#### Centros con mayor foco de acción")
+
+    ranking_centros = crear_ranking_centros(df_filtrado)
+
+    if ranking_centros.empty:
+        st.info("No hay ranking de centros disponible.")
     else:
-        st.dataframe(
-            desglose_alertas,
-            use_container_width=True,
-            hide_index=True,
+        grafico_top_ranking(
+            ranking_centros,
+            columna_nombre="Centro",
+            titulo="Top centros por foco de acción",
+            top_n=10,
         )
+
+        with st.expander("Ver tabla de centros", expanded=False):
+            st.dataframe(
+                ranking_centros,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Foco acción": st.column_config.NumberColumn(
+                        "Foco acción",
+                        format="%d",
+                    ),
+                    "% foco acción": st.column_config.ProgressColumn(
+                        "% foco acción",
+                        format="%.1f%%",
+                        min_value=0,
+                        max_value=100,
+                    ),
+                    "Score_promedio": st.column_config.NumberColumn(
+                        "Score promedio",
+                        format="%.2f",
+                    ),
+                },
+            )
+
+with col_rank2:
+    st.markdown("#### Grupos de compra con mayor foco")
+
+    ranking_grupos = crear_ranking_grupo_compras(df_filtrado)
+
+    if ranking_grupos.empty:
+        st.info("No hay ranking de grupos de compra disponible.")
+    else:
+        grafico_top_ranking(
+            ranking_grupos,
+            columna_nombre="Grupo de compras",
+            titulo="Top grupos de compra por foco de acción",
+            top_n=10,
+        )
+
+        with st.expander("Ver tabla de grupos de compra", expanded=False):
+            st.dataframe(
+                ranking_grupos,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Foco acción": st.column_config.NumberColumn(
+                        "Foco acción",
+                        format="%d",
+                    ),
+                    "% foco acción": st.column_config.ProgressColumn(
+                        "% foco acción",
+                        format="%.1f%%",
+                        min_value=0,
+                        max_value=100,
+                    ),
+                    "Score_promedio": st.column_config.NumberColumn(
+                        "Score promedio",
+                        format="%.2f",
+                    ),
+                },
+            )
 
 
 # ============================================================
@@ -2104,6 +3177,7 @@ grafico_vencidos_por_anio(df_vencidos)
 
 mostrar_vencidos_por_anio(df_vencidos)
 
+
 st.markdown(
     """
     <div class="section-transition section-warning">
@@ -2119,9 +3193,192 @@ st.markdown(
 
 mostrar_proximos_por_rango(df_proximos)
 
-with st.expander("Datos incompletos para calcular vencimiento", expanded=True):
-    mostrar_tabla_alertas(
-        df_sin_fecha,
-        "Datos incompletos para calcular vencimiento",
-        "Registros sin fecha de vencimiento calculable. Requieren corrección de datos base.",
+
+st.markdown(
+    """
+    <div class="section-transition section-data">
+        <div class="section-title">Bloque 3 · Datos incompletos</div>
+        <div class="section-subtitle">
+            Registros donde no se puede calcular el vencimiento TAT. Antes de gestionarlos operativamente,
+            se deben corregir fechas, tipo OC o umbral.
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+mostrar_tabla_alertas(
+    df_sin_fecha,
+    "Datos incompletos para calcular vencimiento",
+    "Registros sin fecha de vencimiento calculable. Requieren corrección de datos base.",
+)
+
+
+# ============================================================
+# EXPEDIENTE / SEGUIMIENTO DE REGISTRO
+# ============================================================
+
+st.markdown("### Expediente / seguimiento del registro")
+st.caption(
+    "Selecciona un registro para revisar su línea de tiempo, etapa pendiente y acción sugerida."
+)
+
+df_expediente = df_filtrado.copy()
+
+if df_expediente.empty:
+    st.info("No hay registros disponibles para mostrar expediente con los filtros actuales.")
+else:
+    df_expediente = df_expediente.sort_values("score_riesgo", ascending=False).copy()
+
+    def construir_label_expediente(row):
+        solped = formato_id(row.get(COL_SOLPED, "Sin SolPed"))
+        pedido = formato_id(row.get(COL_OC_ME5A, row.get(COL_OC_ME80FN, "Sin pedido")))
+        nivel = row.get(COL_NIVEL_ALERTA_DESC, "-")
+        dias = row.get("dias_hasta_vencimiento", "-")
+        centro = row.get("centro_label", "-")
+
+        return f"{nivel} · {dias} · SolPed {solped} · Pedido {pedido} · {centro}"
+
+    df_expediente["label_expediente"] = df_expediente.apply(construir_label_expediente, axis=1)
+
+    opcion_registro = st.selectbox(
+        "Selecciona registro",
+        options=df_expediente["label_expediente"].tolist(),
+        index=0,
+        key="alertas_expediente_registro",
     )
+
+    row = df_expediente[
+        df_expediente["label_expediente"].eq(opcion_registro)
+    ].iloc[0]
+
+    mostrar_expediente_registro(row)
+
+
+# ============================================================
+# VISTA PREVIA GENERAL
+# ============================================================
+
+with st.expander("Vista previa general de datos filtrados", expanded=False):
+    total_preview = len(df_filtrado)
+
+    if total_preview == 0:
+        st.info("No hay registros para mostrar.")
+    else:
+        limite_preview = st.number_input(
+            "Filas a visualizar",
+            min_value=1,
+            max_value=min(5000, total_preview),
+            value=min(300, total_preview),
+            step=50 if total_preview >= 50 else 1,
+            key="alertas_preview_general_filas",
+        )
+
+        st.info(
+            f"Se están visualizando **{formato_cantidad(min(int(limite_preview), total_preview))} registros** "
+            f"de un total de **{formato_cantidad(total_preview)} registros filtrados**."
+        )
+
+        tabla_preview = crear_tabla_prioridad(df_filtrado)
+
+        st.dataframe(
+            tabla_preview.head(int(limite_preview)),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Score riesgo": st.column_config.NumberColumn(
+                    "Score riesgo",
+                    format="%.2f",
+                ),
+            },
+        )
+
+
+# ============================================================
+# DESCARGA GENERAL
+# ============================================================
+
+with st.expander("Descargar resultado filtrado", expanded=False):
+    st.caption(
+        "Parquet es recomendado para análisis completo. CSV y Excel se preparan bajo demanda."
+    )
+
+    firma_export = f"{len(df_filtrado)}_{firma_filtros}"
+
+    col_d1, col_d2, col_d3 = st.columns(3)
+
+    with col_d1:
+        preparar_parquet = st.button(
+            "Preparar Parquet",
+            use_container_width=True,
+            key="alertas_preparar_parquet",
+        )
+
+        if preparar_parquet:
+            with st.spinner("Preparando Parquet..."):
+                st.session_state["alertas_parquet_bytes"] = convertir_a_parquet_cache(df_filtrado)
+                st.session_state["alertas_parquet_firma"] = firma_export
+                st.session_state["alertas_parquet_nombre"] = generar_nombre_salida("parquet")
+
+        if (
+            st.session_state.get("alertas_parquet_bytes") is not None
+            and st.session_state.get("alertas_parquet_firma") == firma_export
+        ):
+            st.download_button(
+                label="Descargar Parquet",
+                data=st.session_state["alertas_parquet_bytes"],
+                file_name=st.session_state["alertas_parquet_nombre"],
+                mime="application/octet-stream",
+                type="primary",
+                use_container_width=True,
+            )
+
+    with col_d2:
+        preparar_csv = st.button(
+            "Preparar CSV",
+            use_container_width=True,
+            key="alertas_preparar_csv",
+        )
+
+        if preparar_csv:
+            with st.spinner("Preparando CSV..."):
+                st.session_state["alertas_csv_bytes"] = convertir_a_csv_cache(df_filtrado)
+                st.session_state["alertas_csv_firma"] = firma_export
+                st.session_state["alertas_csv_nombre"] = generar_nombre_salida("csv")
+
+        if (
+            st.session_state.get("alertas_csv_bytes") is not None
+            and st.session_state.get("alertas_csv_firma") == firma_export
+        ):
+            st.download_button(
+                label="Descargar CSV",
+                data=st.session_state["alertas_csv_bytes"],
+                file_name=st.session_state["alertas_csv_nombre"],
+                mime="text/csv",
+                use_container_width=True,
+            )
+
+    with col_d3:
+        preparar_excel = st.button(
+            "Preparar Excel",
+            use_container_width=True,
+            key="alertas_preparar_excel",
+        )
+
+        if preparar_excel:
+            with st.spinner("Preparando Excel..."):
+                st.session_state["alertas_excel_bytes"] = convertir_a_excel_cache(df_filtrado)
+                st.session_state["alertas_excel_firma"] = firma_export
+                st.session_state["alertas_excel_nombre"] = generar_nombre_salida("xlsx")
+
+        if (
+            st.session_state.get("alertas_excel_bytes") is not None
+            and st.session_state.get("alertas_excel_firma") == firma_export
+        ):
+            st.download_button(
+                label="Descargar Excel",
+                data=st.session_state["alertas_excel_bytes"],
+                file_name=st.session_state["alertas_excel_nombre"],
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
