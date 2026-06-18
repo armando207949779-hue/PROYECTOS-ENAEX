@@ -10,6 +10,10 @@
 # - Donuts para distribuciones
 # - Barras para rankings y comparativos
 # - Expediente tipo tracking de pedido online aplicado al TAT
+#
+# Ajuste aplicado:
+# - Se agrega pedido_unificado para vistas previas.
+# - La columna Pedido ahora busca en varias fuentes posibles.
 # ============================================================
 
 import io
@@ -50,6 +54,26 @@ COLOR_PREVENTIVO = "#3B82F6"
 COL_SOLPED = "Solicitud de pedido - ME5A"
 COL_OC_ME5A = "Pedido - ME5A"
 COL_OC_ME80FN = "Documento de compras - ME80FN"
+
+# Fuentes candidatas para completar Pedido en vistas previas.
+# Se usa para evitar que Alertas muestre "-" cuando el pedido existe
+# en otra columna del archivo TAT final.
+COLUMNAS_CANDIDATAS_PEDIDO = [
+    "Pedido - ME5A",
+    "Pedido",
+    "pedido",
+    "Documento de compras - ME80FN",
+    "Documento de compras - NME80FN",
+    "me80fn_documento_compras",
+    "nme80fn_documento_compras",
+    "ariba_id_pedido",
+    "ID pedido - ARIBA",
+    "Pedido ARIBA",
+    "Orden de compra",
+    "orden_compra",
+    "oc",
+]
+
 COL_POS_SOLPED = "Posición solicitud de pedido - ME5A"
 COL_POS_OC = "Posición de pedido - ME5A"
 COL_MATERIAL = "Material - ME5A"
@@ -549,6 +573,72 @@ def formato_id(valor: Any) -> str:
     return texto
 
 
+def valor_es_vacio(valor: Any) -> bool:
+    if pd.isna(valor):
+        return True
+
+    texto = str(valor).strip()
+
+    if texto == "":
+        return True
+
+    if texto.lower() in [
+        "nan",
+        "none",
+        "nat",
+        "<na>",
+        "-",
+        "—",
+        "sin dato",
+        "sin datos",
+    ]:
+        return True
+
+    return False
+
+
+def normalizar_pedido(valor: Any) -> str:
+    if valor_es_vacio(valor):
+        return ""
+
+    texto = str(valor).strip()
+
+    try:
+        numero = float(texto)
+
+        if np.isfinite(numero) and numero.is_integer():
+            return str(int(numero))
+    except Exception:
+        pass
+
+    if texto.endswith(".0"):
+        texto = texto[:-2]
+
+    return texto.strip()
+
+
+def obtener_pedido_unificado_con_origen(row: pd.Series) -> tuple[str, str]:
+    for col in COLUMNAS_CANDIDATAS_PEDIDO:
+        if col in row.index:
+            valor = normalizar_pedido(row.get(col))
+
+            if valor:
+                return valor, col
+
+    return "-", "Sin pedido"
+
+
+def crear_columna_pedido_unificado(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+
+    resultado = df.apply(obtener_pedido_unificado_con_origen, axis=1)
+
+    df["pedido_unificado"] = resultado.apply(lambda x: x[0])
+    df["origen_pedido_unificado"] = resultado.apply(lambda x: x[1])
+
+    return df
+
+
 def formato_cantidad(valor: Any) -> str:
     try:
         numero = int(valor)
@@ -851,6 +941,7 @@ def preparar_panel_alertas(df_original: pd.DataFrame, hoy: pd.Timestamp) -> pd.D
     df = limpiar_columnas(df_original.copy())
     df = normalizar_columnas_me80fn(df)
     df = convertir_fechas_visuales(df)
+    df = crear_columna_pedido_unificado(df)
 
     fecha_recepcion = primera_columna_existente(
         df,
@@ -1316,7 +1407,12 @@ def crear_tabla_prioridad(df: pd.DataFrame) -> pd.DataFrame:
         ).copy()
 
     solped = serie_combinada(base, [COL_SOLPED]).apply(formato_id)
-    pedido = serie_combinada(base, [COL_OC_ME5A, COL_OC_ME80FN]).apply(formato_id)
+
+    pedido = base.get(
+        "pedido_unificado",
+        serie_combinada(base, [COL_OC_ME5A, COL_OC_ME80FN]),
+    ).apply(formato_id)
+
     posicion = serie_combinada(base, [COL_POS_SOLPED, COL_POS_OC]).apply(formato_id)
 
     tabla = pd.DataFrame(
@@ -1483,7 +1579,7 @@ def aplicar_filtros_alertas(
 
     busquedas_id = [
         ("SolPed", COL_SOLPED, filtros.get("buscar_solped", "")),
-        ("Pedido", COL_OC_ME5A, filtros.get("buscar_pedido", "")),
+        ("Pedido", "pedido_unificado", filtros.get("buscar_pedido", "")),
         ("Material", COL_MATERIAL, filtros.get("buscar_material", "")),
     ]
 
@@ -2519,6 +2615,8 @@ def mostrar_expediente_registro(row: pd.Series):
 
     detalle_cols = [
         COL_SOLPED,
+        "pedido_unificado",
+        "origen_pedido_unificado",
         COL_OC_ME5A,
         COL_OC_ME80FN,
         COL_POS_SOLPED,
@@ -3181,7 +3279,7 @@ else:
 
     def construir_label_expediente(row):
         solped = formato_id(row.get(COL_SOLPED, "Sin SolPed"))
-        pedido = formato_id(row.get(COL_OC_ME5A, row.get(COL_OC_ME80FN, "Sin pedido")))
+        pedido = formato_id(row.get("pedido_unificado", row.get(COL_OC_ME5A, row.get(COL_OC_ME80FN, "Sin pedido"))))
         nivel = row.get(COL_NIVEL_ALERTA_DESC, "-")
         dias = row.get("dias_hasta_vencimiento", "-")
         centro = row.get("centro_label", "-")
