@@ -4,11 +4,12 @@
 # Usa df_tat cargado desde 06_CARGAR_ARCHIVO
 #
 # Mejoras:
-# - Mantiene visión global mensual
-# - Agrega zoom del último año disponible debajo de los gráficos globales
-# - Agrega KPI Indicators del último año disponible
-# - Promedio de cumplimiento mensual del último año
-# - Cumplimiento acumulado del último año
+# - Orden lógico de la sección mensual:
+#   1. Volumen mensual global
+#   2. Evolución mensual global, solo curva de cumplimiento
+#   3. KPI Indicators del último año
+#   4. Volumen mensual del último año
+#   5. Evolución mensual del último año, solo curva de cumplimiento
 # ============================================================
 
 import io
@@ -1746,7 +1747,7 @@ def mostrar_indicadores_mensuales(kpis_mensuales: dict):
 
 
 def mostrar_indicadores_ultimo_anio(kpis_ultimo_anio: dict):
-    st.markdown(f"#### KPI Indicators último año disponible: {kpis_ultimo_anio['anio']}")
+    st.markdown(f"### KPI Indicators último año disponible: {kpis_ultimo_anio['anio']}")
     st.caption(
         "Estos indicadores se calculan únicamente sobre el último año disponible en los datos filtrados."
     )
@@ -1763,25 +1764,24 @@ def mostrar_indicadores_ultimo_anio(kpis_ultimo_anio: dict):
 
     with col2:
         mostrar_kpi_html(
-            "Promedio no cumplimiento mensual",
-            formatear_porcentaje(kpis_ultimo_anio["promedio_no_cumplimiento_mensual"]),
-            "Promedio mensual de No cumple sobre evaluables.",
-            "kpi-bad",
-        )
-
-    with col3:
-        mostrar_kpi_html(
             "Cumplimiento acumulado año",
             formatear_porcentaje(kpis_ultimo_anio["cumplimiento_acumulado"]),
             f"{formatear_entero(kpis_ultimo_anio['cumple'])} cumplen de {formatear_entero(kpis_ultimo_anio['evaluables'])} evaluables.",
             "kpi-good",
         )
 
+    with col3:
+        mostrar_kpi_html(
+            "Registros evaluables año",
+            formatear_entero(kpis_ultimo_anio["evaluables"]),
+            f"{formatear_entero(kpis_ultimo_anio['cumple'])} cumplen · {formatear_entero(kpis_ultimo_anio['no_cumple'])} no cumplen.",
+        )
+
     with col4:
         mostrar_kpi_html(
-            "No cumplimiento acumulado año",
+            "No cumplimiento acumulado",
             formatear_porcentaje(kpis_ultimo_anio["no_cumplimiento_acumulado"]),
-            f"{formatear_entero(kpis_ultimo_anio['no_cumple'])} no cumplen de {formatear_entero(kpis_ultimo_anio['evaluables'])} evaluables.",
+            "Complemento del cumplimiento acumulado.",
             "kpi-bad",
         )
 
@@ -2850,12 +2850,6 @@ def grafico_mensual_linea_cumplimiento(
         .to_numpy()
     )
 
-    pct_no_cumple = (
-        pd.to_numeric(tabla["% No cumple evaluables"], errors="coerce")
-        .fillna(0)
-        .to_numpy()
-    )
-
     ancho_figura = max(12, min(22, len(labels) * 0.9))
 
     fig, ax = plt.subplots(figsize=(ancho_figura, 6.6), dpi=180)
@@ -2867,15 +2861,6 @@ def grafico_mensual_linea_cumplimiento(
         marker="o",
         linewidth=3,
         label="% Cumple TAT",
-    )
-
-    ax.plot(
-        x,
-        pct_no_cumple,
-        color=COLOR_NO_CUMPLE,
-        marker="o",
-        linewidth=2.5,
-        label="% No cumple TAT",
     )
 
     ax.axhline(
@@ -2918,7 +2903,7 @@ def grafico_mensual_linea_cumplimiento(
         pad=18,
     )
 
-    ax.set_ylabel("% sobre registros evaluables", color=COLOR_TEXTO)
+    ax.set_ylabel("% Cumplimiento TAT sobre evaluables", color=COLOR_TEXTO)
 
     ax.set_xticks(x)
     ax.set_xticklabels(
@@ -2938,7 +2923,7 @@ def grafico_mensual_linea_cumplimiento(
     ax.legend(
         loc="upper center",
         bbox_to_anchor=(0.5, -0.20),
-        ncol=3,
+        ncol=2,
         frameon=False,
         fontsize=10,
     )
@@ -3652,7 +3637,7 @@ mostrar_bloque_distribucion_no_cumple(df_dashboard)
 
 st.markdown("### Cumplimiento TAT mensual")
 st.caption(
-    "Se conserva la vista global completa y se agrega un zoom del último año disponible en los datos filtrados."
+    "Se muestra primero la visión global y luego el acercamiento al último año disponible."
 )
 
 tabla_mensual = crear_resumen_mensual(df_dashboard)
@@ -3664,58 +3649,62 @@ kpis_ultimo_anio = calcular_kpis_ultimo_anio(
     anio=ultimo_anio,
 )
 
-mostrar_indicadores_mensuales(kpis_mensuales)
-
-st.markdown("#### Visión global: volumen mensual de registros evaluables")
+# 1. Volumen mensual global
+st.markdown("#### 1. Volumen mensual de registros evaluables")
 st.caption(
-    "Este gráfico muestra todos los meses disponibles en los datos filtrados."
+    "Visión global de todos los meses disponibles en los datos filtrados."
 )
 
 grafico_mensual_barras_evaluables(
     tabla=tabla_mensual,
-    titulo="Visión global: volumen mensual de registros evaluables",
+    titulo="Volumen mensual de registros evaluables",
 )
 
-if not tabla_ultimo_anio.empty:
-    st.markdown(f"#### Zoom último año disponible: volumen mensual {ultimo_anio}")
-    st.caption(
-        f"Este gráfico muestra únicamente los meses del año {ultimo_anio}, "
-        "para facilitar el análisis del período más reciente."
-    )
-
-    grafico_mensual_barras_evaluables(
-        tabla=tabla_ultimo_anio,
-        titulo=f"Zoom {ultimo_anio}: volumen mensual de registros evaluables",
-    )
-else:
-    st.info("No hay datos suficientes para construir el zoom del último año.")
-
-
-st.markdown("#### Visión global: evolución mensual del cumplimiento TAT")
+# 2. Evolución global solo con curva de cumplimiento
+st.markdown("#### 2. Evolución mensual del cumplimiento")
 st.caption(
-    "Este gráfico muestra la tendencia completa de % Cumple y % No cumple sobre registros evaluables."
+    "La curva muestra solamente el % de cumplimiento TAT. "
+    "No se grafica el no cumplimiento porque ambos porcentajes suman 100%."
 )
 
 grafico_mensual_linea_cumplimiento(
     tabla=tabla_mensual,
-    titulo="Visión global: evolución mensual del cumplimiento TAT",
+    titulo="Evolución mensual del cumplimiento TAT",
 )
 
+# 3. KPI Indicators último año
 if not tabla_ultimo_anio.empty:
     mostrar_indicadores_ultimo_anio(kpis_ultimo_anio)
+else:
+    st.info("No hay datos suficientes para construir los KPI del último año.")
 
-    st.markdown(f"#### Zoom último año disponible: evolución mensual {ultimo_anio}")
+# 4. Volumen mensual último año
+if not tabla_ultimo_anio.empty:
+    st.markdown(f"#### 4. Volumen mensual de registros evaluables - {ultimo_anio}")
     st.caption(
-        f"Este gráfico funciona como un acercamiento al año {ultimo_anio}, "
-        "que normalmente es el período de mayor interés para el seguimiento operativo."
+        f"Zoom del último año disponible en los datos filtrados: {ultimo_anio}."
+    )
+
+    grafico_mensual_barras_evaluables(
+        tabla=tabla_ultimo_anio,
+        titulo=f"Volumen mensual de registros evaluables - {ultimo_anio}",
+    )
+else:
+    st.info("No hay datos suficientes para construir el gráfico de volumen del último año.")
+
+# 5. Evolución último año solo con cumplimiento
+if not tabla_ultimo_anio.empty:
+    st.markdown(f"#### 5. Evolución mensual del cumplimiento - {ultimo_anio}")
+    st.caption(
+        f"Zoom del cumplimiento mensual solamente para el año {ultimo_anio}."
     )
 
     grafico_mensual_linea_cumplimiento(
         tabla=tabla_ultimo_anio,
-        titulo=f"Zoom {ultimo_anio}: evolución mensual del cumplimiento TAT",
+        titulo=f"Evolución mensual del cumplimiento TAT - {ultimo_anio}",
     )
 else:
-    st.info("No hay datos suficientes para construir los KPI del último año.")
+    st.info("No hay datos suficientes para construir la evolución mensual del último año.")
 
 
 # ============================================================
