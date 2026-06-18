@@ -24,6 +24,7 @@
 # - Precio neto
 # ============================================================
 
+import base64
 from pathlib import Path
 from datetime import date
 
@@ -40,6 +41,16 @@ st.set_page_config(
     page_icon="🔎",
     layout="wide",
 )
+
+
+# ============================================================
+# RUTAS DEL PROYECTO
+# ============================================================
+
+BASE_DIR = Path(__file__).resolve().parent
+PROJECT_DIR = BASE_DIR.parent
+
+LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
 
 
 # ============================================================
@@ -72,7 +83,42 @@ COLUMNAS_OUTPUT = [
 
 
 # ============================================================
-# UTILIDADES
+# LOGO
+# ============================================================
+
+def mostrar_logo() -> None:
+    """
+    Muestra el logo institucional desde:
+    PROJECT_DIR / assets / logo.svg
+    """
+    if LOGO_PATH.exists():
+        logo_svg = LOGO_PATH.read_text(encoding="utf-8")
+        logo_base64 = base64.b64encode(logo_svg.encode("utf-8")).decode("utf-8")
+
+        st.markdown(
+            f"""
+            <div style="
+                width: 100%;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                margin-top: 5px;
+                margin-bottom: 10px;
+            ">
+                <img 
+                    src="data:image/svg+xml;base64,{logo_base64}" 
+                    style="width: 220px; display: block;"
+                >
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        st.warning(f"Logo no encontrado: {LOGO_PATH}")
+
+
+# ============================================================
+# UTILIDADES DE LIMPIEZA Y CARGA
 # ============================================================
 
 def normalizar_columnas(df: pd.DataFrame) -> pd.DataFrame:
@@ -99,7 +145,9 @@ def normalizar_columnas(df: pd.DataFrame) -> pd.DataFrame:
 def cargar_csv_me2n(archivo) -> pd.DataFrame:
     """
     Carga robusta del archivo CSV exportado desde ME2N.
-    Usa engine='python' para tolerar problemas de comas o filas irregulares.
+
+    Usa engine='python' para tolerar problemas de comas,
+    comillas o filas irregulares.
     """
     try:
         df = pd.read_csv(
@@ -187,7 +235,10 @@ def preparar_base(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df = normalizar_columnas(df)
 
-    # Validación mínima
+    # ========================================================
+    # VALIDACIÓN DE COLUMNAS MÍNIMAS
+    # ========================================================
+
     columnas_requeridas = [
         "Licitación",
         "Grupo de compras",
@@ -209,7 +260,10 @@ def preparar_base(df: pd.DataFrame) -> pd.DataFrame:
             + ", ".join(columnas_faltantes)
         )
 
-    # Limpieza base
+    # ========================================================
+    # LIMPIEZA GENERAL
+    # ========================================================
+
     for col in df.columns:
         df[col] = limpiar_texto_serie(df[col])
 
@@ -220,15 +274,40 @@ def preparar_base(df: pd.DataFrame) -> pd.DataFrame:
         dayfirst=False,
     )
 
-    # Código proveedor y nombre limpio
+    # Código proveedor y nombre proveedor limpio
     df["Codigo proveedor"] = df["Nombre de proveedor"].apply(extraer_codigo_proveedor)
     df["Nombre proveedor limpio"] = df["Nombre de proveedor"].apply(extraer_nombre_proveedor)
 
     # Normalización de campos clave
-    df["Licitación_norm"] = df["Licitación"].fillna("").astype(str).str.upper().str.strip()
-    df["Grupo de compras_norm"] = df["Grupo de compras"].fillna("").astype(str).str.upper().str.strip()
-    df["Material_norm"] = df["Material"].fillna("").astype(str).str.strip()
-    df["Codigo proveedor_norm"] = df["Codigo proveedor"].fillna("").astype(str).str.strip()
+    df["Licitación_norm"] = (
+        df["Licitación"]
+        .fillna("")
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
+
+    df["Grupo de compras_norm"] = (
+        df["Grupo de compras"]
+        .fillna("")
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
+
+    df["Material_norm"] = (
+        df["Material"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+    )
+
+    df["Codigo proveedor_norm"] = (
+        df["Codigo proveedor"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+    )
 
     # Precio numérico auxiliar
     df["Precio neto num"] = (
@@ -238,10 +317,13 @@ def preparar_base(df: pd.DataFrame) -> pd.DataFrame:
         .str.replace(",", ".", regex=False)
     )
 
-    df["Precio neto num"] = pd.to_numeric(df["Precio neto num"], errors="coerce")
+    df["Precio neto num"] = pd.to_numeric(
+        df["Precio neto num"],
+        errors="coerce",
+    )
 
     # ========================================================
-    # FILTROS DEL PRODUCTO
+    # FILTROS DE NEGOCIO
     # ========================================================
 
     # Grupo de compras válido
@@ -283,14 +365,15 @@ def preparar_base(df: pd.DataFrame) -> pd.DataFrame:
         ]
 
     # Licitación PU y derivados
-    # Incluye:
-    # PU
-    # AD-PU
-    # AD PU
-    # AD-PU-TAR
-    # PU USD462
-    # ad-pu
-    # etc.
+    #
+    # Incluye ejemplos como:
+    # - PU
+    # - AD PU
+    # - AD-PU
+    # - AD-PU-TAR
+    # - AD-PU-URG
+    # - PU USD462
+    # - ad-pu
     df = df[df["Licitación_norm"].str.contains("PU", na=False)]
 
     return df
@@ -326,27 +409,6 @@ def filtrar_por_proveedor_material(
     return resultado[columnas_disponibles]
 
 
-def mostrar_kpis(df_original: pd.DataFrame, df_filtrado: pd.DataFrame) -> None:
-    """
-    Muestra KPIs generales de la carga.
-    """
-    col1, col2, col3, col4 = st.columns(4)
-
-    with col1:
-        st.metric("Registros archivo", f"{len(df_original):,}".replace(",", "."))
-
-    with col2:
-        st.metric("Registros PU filtrados", f"{len(df_filtrado):,}".replace(",", "."))
-
-    with col3:
-        proveedores = df_filtrado["Codigo proveedor"].nunique() if "Codigo proveedor" in df_filtrado.columns else 0
-        st.metric("Proveedores PU", f"{proveedores:,}".replace(",", "."))
-
-    with col4:
-        materiales = df_filtrado["Material"].nunique() if "Material" in df_filtrado.columns else 0
-        st.metric("Materiales PU", f"{materiales:,}".replace(",", "."))
-
-
 def descargar_excel(df: pd.DataFrame) -> bytes:
     """
     Convierte un dataframe a Excel en memoria.
@@ -366,6 +428,8 @@ def descargar_excel(df: pd.DataFrame) -> bytes:
 # ============================================================
 
 def mostrar_encabezado() -> None:
+    mostrar_logo()
+
     st.markdown(
         """
         <h1 style='text-align: center;'>OC PU Explorer</h1>
@@ -405,6 +469,49 @@ def mostrar_instrucciones() -> None:
         )
 
 
+def mostrar_kpis(df_original: pd.DataFrame, df_filtrado: pd.DataFrame) -> None:
+    """
+    Muestra KPIs generales de la carga.
+    """
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        st.metric(
+            "Registros archivo",
+            f"{len(df_original):,}".replace(",", "."),
+        )
+
+    with col2:
+        st.metric(
+            "Registros PU filtrados",
+            f"{len(df_filtrado):,}".replace(",", "."),
+        )
+
+    with col3:
+        proveedores = (
+            df_filtrado["Codigo proveedor"].nunique()
+            if "Codigo proveedor" in df_filtrado.columns
+            else 0
+        )
+
+        st.metric(
+            "Proveedores PU",
+            f"{proveedores:,}".replace(",", "."),
+        )
+
+    with col4:
+        materiales = (
+            df_filtrado["Material"].nunique()
+            if "Material" in df_filtrado.columns
+            else 0
+        )
+
+        st.metric(
+            "Materiales PU",
+            f"{materiales:,}".replace(",", "."),
+        )
+
+
 def mostrar_valores_unicos_licitacion(df: pd.DataFrame) -> None:
     """
     Muestra los valores únicos de licitación encontrados.
@@ -424,7 +531,10 @@ def mostrar_valores_unicos_licitacion(df: pd.DataFrame) -> None:
     )
 
     with st.expander("Ver valores únicos de Licitación", expanded=False):
-        st.write(f"Total valores únicos no vacíos: **{len(valores):,}**".replace(",", "."))
+        st.write(
+            f"Total valores únicos no vacíos: **{len(valores):,}**".replace(",", ".")
+        )
+
         st.dataframe(
             pd.DataFrame({"Licitación": valores}),
             use_container_width=True,
@@ -432,9 +542,57 @@ def mostrar_valores_unicos_licitacion(df: pd.DataFrame) -> None:
         )
 
 
+def mostrar_ayuda_sin_resultados(df_pu: pd.DataFrame) -> None:
+    """
+    Muestra ayuda cuando no hay resultados para la combinación buscada.
+    """
+    with st.expander("Ayuda para revisar posibles valores", expanded=False):
+        proveedores_disponibles = (
+            df_pu["Codigo proveedor"]
+            .dropna()
+            .drop_duplicates()
+            .sort_values()
+            .head(100)
+        )
+
+        materiales_disponibles = (
+            df_pu["Material"]
+            .dropna()
+            .drop_duplicates()
+            .sort_values()
+            .head(100)
+        )
+
+        col_a, col_b = st.columns(2)
+
+        with col_a:
+            st.caption("Primeros proveedores disponibles")
+            st.dataframe(
+                pd.DataFrame({"Codigo proveedor": proveedores_disponibles}),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+        with col_b:
+            st.caption("Primeros materiales disponibles")
+            st.dataframe(
+                pd.DataFrame({"Material": materiales_disponibles}),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+
+# ============================================================
+# PÁGINA PRINCIPAL
+# ============================================================
+
 def pagina_app() -> None:
     mostrar_encabezado()
     mostrar_instrucciones()
+
+    # ========================================================
+    # 1. CARGA DE ARCHIVO
+    # ========================================================
 
     st.subheader("1. Cargar archivo ME2N")
 
@@ -457,10 +615,24 @@ def pagina_app() -> None:
     st.success("Archivo cargado correctamente.")
 
     with st.expander("Vista previa del archivo cargado", expanded=False):
-        st.write(f"Dimensión original: **{df_original.shape[0]:,} filas × {df_original.shape[1]:,} columnas**".replace(",", "."))
-        st.dataframe(df_original.head(20), use_container_width=True)
+        st.write(
+            f"Dimensión original: **{df_original.shape[0]:,} filas × {df_original.shape[1]:,} columnas**"
+            .replace(",", ".")
+        )
+
+        st.dataframe(
+            df_original.head(20),
+            use_container_width=True,
+        )
+
+        st.caption("Columnas detectadas")
+        st.write(df_original.columns.tolist())
 
     mostrar_valores_unicos_licitacion(df_original)
+
+    # ========================================================
+    # 2. PREPARAR BASE PU
+    # ========================================================
 
     try:
         df_pu = preparar_base(df_original)
@@ -475,7 +647,14 @@ def pagina_app() -> None:
     mostrar_kpis(df_original, df_pu)
 
     with st.expander("Vista previa de base PU filtrada", expanded=False):
-        st.dataframe(df_pu.head(50), use_container_width=True)
+        st.dataframe(
+            df_pu.head(50),
+            use_container_width=True,
+        )
+
+    # ========================================================
+    # 3. INPUT USUARIO
+    # ========================================================
 
     st.markdown("---")
     st.subheader("3. Buscar proveedor-material")
@@ -497,12 +676,18 @@ def pagina_app() -> None:
     buscar = st.button("Buscar combinación", type="primary")
 
     if not buscar:
-        st.info("Ingresa un código de proveedor SAP y un código de material para consultar.")
+        st.info(
+            "Ingresa un código de proveedor SAP y un código de material para consultar."
+        )
         st.stop()
 
     if not codigo_proveedor or not codigo_material:
         st.warning("Debes ingresar ambos campos: proveedor SAP y material SAP.")
         st.stop()
+
+    # ========================================================
+    # 4. RESULTADO
+    # ========================================================
 
     resultado = filtrar_por_proveedor_material(
         df=df_pu,
@@ -518,45 +703,13 @@ def pagina_app() -> None:
             "No se encontraron órdenes de compra PU para la combinación proveedor-material ingresada."
         )
 
-        with st.expander("Ayuda para revisar posibles valores", expanded=False):
-            proveedores_disponibles = (
-                df_pu["Codigo proveedor"]
-                .dropna()
-                .drop_duplicates()
-                .sort_values()
-                .head(100)
-            )
-
-            materiales_disponibles = (
-                df_pu["Material"]
-                .dropna()
-                .drop_duplicates()
-                .sort_values()
-                .head(100)
-            )
-
-            col_a, col_b = st.columns(2)
-
-            with col_a:
-                st.caption("Primeros proveedores disponibles")
-                st.dataframe(
-                    pd.DataFrame({"Codigo proveedor": proveedores_disponibles}),
-                    use_container_width=True,
-                    hide_index=True,
-                )
-
-            with col_b:
-                st.caption("Primeros materiales disponibles")
-                st.dataframe(
-                    pd.DataFrame({"Material": materiales_disponibles}),
-                    use_container_width=True,
-                    hide_index=True,
-                )
+        mostrar_ayuda_sin_resultados(df_pu)
 
         st.stop()
 
     st.success(
-        f"Se encontraron **{len(resultado):,} líneas** para la combinación ingresada.".replace(",", ".")
+        f"Se encontraron **{len(resultado):,} líneas** para la combinación ingresada."
+        .replace(",", ".")
     )
 
     st.dataframe(
