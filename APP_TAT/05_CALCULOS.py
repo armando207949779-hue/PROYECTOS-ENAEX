@@ -6,7 +6,7 @@
 # CSV opcional
 # Excel eliminado
 # Nombre de salida único con fecha y hora actual
-# Ejemplo: 05_CALCULOS_20260618_132722_CALCULOS.parquet
+# Ejemplo: 05_CALCULOS_20260618_132722_TAT.parquet
 # ============================================================
 
 import io
@@ -249,18 +249,18 @@ def obtener_separador(separador_csv: str):
 
 def generar_nombre_salida(extension: str) -> str:
     """
-    Genera un nombre único para el archivo de salida de cálculos.
+    Genera un nombre único para el archivo de salida TAT.
 
     Formato:
-    05_CALCULOS_YYYYMMDD_HHMMSS_CALCULOS.extension
+    05_CALCULOS_YYYYMMDD_HHMMSS_TAT.extension
 
     Ejemplo:
-    05_CALCULOS_20260618_132722_CALCULOS.parquet
+    05_CALCULOS_20260618_132722_TAT.parquet
     """
 
     fecha_hora_actual = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    return f"05_CALCULOS_{fecha_hora_actual}_CALCULOS.{extension}"
+    return f"05_CALCULOS_{fecha_hora_actual}_TAT.{extension}"
 
 
 @st.cache_data(show_spinner=False)
@@ -1406,7 +1406,7 @@ st.markdown(
         <h4 style="margin-top:0;">3. Descargar resultado final</h4>
         <p class="small-muted">
             El formato principal de salida es Parquet.
-            El nombre del archivo incluye fecha, hora y la palabra CALCULOS.
+            El nombre del archivo incluye fecha, hora y la palabra TAT.
         </p>
     </div>
     """,
