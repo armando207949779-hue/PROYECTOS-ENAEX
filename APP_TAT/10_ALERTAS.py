@@ -7,8 +7,8 @@
 # - Mirada global para atacar vencidos y por vencer
 # - Priorización operativa clara
 # - Visualizaciones intuitivas
-# - Ranking de focos por centro y grupo de compras
-# - Tablas accionables con menos ruido visual
+# - Donuts para distribuciones
+# - Barras para rankings y comparativos
 # - Expediente tipo tracking de pedido online aplicado al TAT
 # ============================================================
 
@@ -45,6 +45,7 @@ COLOR_CONTROLADO = "#16A34A"
 COLOR_DATOS = "#CA8A04"
 COLOR_SIN_DATOS = "#B0B4BB"
 COLOR_CERRADO = "#64748B"
+COLOR_PREVENTIVO = "#3B82F6"
 
 COL_SOLPED = "Solicitud de pedido - ME5A"
 COL_OC_ME5A = "Pedido - ME5A"
@@ -117,6 +118,21 @@ COLORES_ALERTA_DESC = {
     "Datos incompletos para calcular vencimiento": COLOR_DATOS,
     "Recepcionados": COLOR_CERRADO,
     "Sin datos": COLOR_SIN_DATOS,
+}
+
+COLORES_VENCIMIENTO_DETALLADO = {
+    "Vencido": COLOR_CRITICO,
+    "Vence hoy": "#B91C1C",
+    "1 día": COLOR_ATENCION,
+    "2 días": COLOR_ATENCION,
+    "3-7 días": COLOR_SEGUIMIENTO,
+    "8-15 días": "#EAB308",
+    "16-30 días": COLOR_PREVENTIVO,
+    "31-60 días": "#3B82F6",
+    "61-90 días": "#2563EB",
+    "+90 días": COLOR_CONTROLADO,
+    "Sin datos": COLOR_DATOS,
+    "Recepcionado": COLOR_CERRADO,
 }
 
 FECHAS_CANDIDATAS = [
@@ -1584,41 +1600,48 @@ def formatear_ejes(ax):
     ax.set_facecolor("none")
 
 
-def grafico_donut_retencion(total_base: int, total_filtrado: int):
-    total_excluido = total_base - total_filtrado
-
-    tabla = pd.DataFrame(
-        [
-            {"Categoría": "Retenidos", "Cantidad": total_filtrado},
-            {"Categoría": "Excluidos", "Cantidad": total_excluido},
-        ]
-    )
-
-    tabla = tabla[tabla["Cantidad"].gt(0)].copy()
-
+def grafico_donut_generico(
+    tabla: pd.DataFrame,
+    columna_categoria: str,
+    columna_cantidad: str,
+    titulo: str,
+    subtitulo_centro: str,
+    mapa_colores: dict,
+):
     if tabla.empty:
-        st.info("No hay datos para graficar retención.")
+        st.info("No hay datos para graficar.")
         return
 
-    total = int(tabla["Cantidad"].sum())
+    data = tabla.copy()
+    data = data[pd.to_numeric(data[columna_cantidad], errors="coerce").fillna(0).gt(0)].copy()
 
-    tabla["%"] = np.where(
+    if data.empty:
+        st.info("No hay categorías con cantidad mayor a cero.")
+        return
+
+    categorias = data[columna_categoria].astype(str).tolist()
+
+    cantidades = (
+        pd.to_numeric(data[columna_cantidad], errors="coerce")
+        .fillna(0)
+        .astype(int)
+        .to_numpy()
+    )
+
+    total = int(cantidades.sum())
+
+    colores = [
+        mapa_colores.get(categoria, COLOR_SIN_DATOS)
+        for categoria in categorias
+    ]
+
+    porcentajes = np.where(
         total > 0,
-        tabla["Cantidad"] / total * 100,
+        cantidades / total * 100,
         0,
     )
 
-    colores_mapa = {
-        "Retenidos": "#2E7D32",
-        "Excluidos": COLOR_NO_CUMPLE,
-    }
-
-    cantidades = tabla["Cantidad"].astype(int).to_numpy()
-    porcentajes = tabla["%"].astype(float).to_numpy()
-    etiquetas = tabla["Categoría"].astype(str).tolist()
-    colores = tabla["Categoría"].map(colores_mapa).tolist()
-
-    fig, ax = plt.subplots(figsize=(6.5, 4.8), dpi=180)
+    fig, ax = plt.subplots(figsize=(8.4, 6.2), dpi=180)
 
     wedges, texts, autotexts = ax.pie(
         cantidades,
@@ -1637,16 +1660,16 @@ def grafico_donut_retencion(total_base: int, total_filtrado: int):
 
     for autotext in autotexts:
         autotext.set_fontweight("bold")
-        autotext.set_fontsize(10)
-        autotext.set_color(COLOR_TEXTO)
+        autotext.set_fontsize(9.5)
+        autotext.set_color("white")
 
     ax.text(
         0,
         0.08,
-        f"{total:,}".replace(",", "."),
+        formato_cantidad(total),
         ha="center",
         va="center",
-        fontsize=20,
+        fontsize=23,
         fontweight="bold",
         color=COLOR_TEXTO,
     )
@@ -1654,246 +1677,151 @@ def grafico_donut_retencion(total_base: int, total_filtrado: int):
     ax.text(
         0,
         -0.12,
-        "registros",
+        subtitulo_centro,
         ha="center",
         va="center",
         fontsize=10,
+        fontweight="bold",
         color=COLOR_MUTED,
     )
 
     etiquetas_leyenda = [
         f"{cat} · {cant:,} · {pct:.1f}%".replace(",", ".")
-        for cat, cant, pct in zip(etiquetas, cantidades, porcentajes)
+        for cat, cant, pct in zip(categorias, cantidades, porcentajes)
     ]
 
     ax.legend(
         wedges,
         etiquetas_leyenda,
+        title="Leyenda",
         loc="center left",
         bbox_to_anchor=(1.02, 0.5),
         frameon=False,
-        fontsize=9,
+        fontsize=8.5,
+        title_fontsize=9.5,
     )
 
     ax.set_title(
-        "Retención por filtros",
+        titulo,
         fontsize=14,
         fontweight="bold",
         color=COLOR_TEXTO,
+        pad=16,
     )
 
     ax.axis("equal")
     fig.patch.set_alpha(0)
     fig.tight_layout()
-    fig.subplots_adjust(right=0.70)
+    fig.subplots_adjust(right=0.67)
 
     st.pyplot(fig, clear_figure=True, use_container_width=True)
 
 
+def grafico_donut_retencion(total_base: int, total_filtrado: int):
+    total_excluido = total_base - total_filtrado
+
+    tabla = pd.DataFrame(
+        [
+            {"Categoría": "Retenidos", "Cantidad": total_filtrado},
+            {"Categoría": "Excluidos", "Cantidad": total_excluido},
+        ]
+    )
+
+    grafico_donut_generico(
+        tabla=tabla,
+        columna_categoria="Categoría",
+        columna_cantidad="Cantidad",
+        titulo="Retención por filtros",
+        subtitulo_centro="registros",
+        mapa_colores={
+            "Retenidos": "#2E7D32",
+            "Excluidos": COLOR_NO_CUMPLE,
+        },
+    )
+
+
 def grafico_donut_alertas_porcentual(tabla: pd.DataFrame):
-    if tabla.empty:
-        st.info("No hay datos para graficar.")
-        return
-
-    data = tabla.copy()
-    data = data[data["Cantidad"].gt(0)].copy()
-
-    if data.empty:
-        st.info("No hay categorías disponibles.")
-        return
-
-    data["Color"] = data["Nivel alerta"].map(COLORES_ALERTA_DESC).fillna(COLOR_MUTED)
-
-    total = int(data["Cantidad"].sum())
-    cantidades = data["Cantidad"].astype(int).to_numpy()
-    etiquetas = data["Nivel alerta"].astype(str).tolist()
-    colores = data["Color"].tolist()
-
     col_grafico, col_tabla = st.columns([1.15, 1])
 
     with col_grafico:
-        fig, ax = plt.subplots(figsize=(8.2, 6.2), dpi=180)
-
-        wedges, texts, autotexts = ax.pie(
-            cantidades,
-            labels=None,
-            startangle=90,
-            counterclock=False,
-            colors=colores,
-            autopct=lambda pct: f"{pct:.1f}%" if pct >= 4 else "",
-            pctdistance=0.78,
-            wedgeprops={
-                "width": 0.38,
-                "linewidth": 2.5,
-                "edgecolor": "white",
-            },
+        grafico_donut_generico(
+            tabla=tabla,
+            columna_categoria="Nivel alerta",
+            columna_cantidad="Cantidad",
+            titulo="Distribución porcentual por tipo de alerta",
+            subtitulo_centro="registros",
+            mapa_colores=COLORES_ALERTA_DESC,
         )
-
-        for autotext in autotexts:
-            autotext.set_fontweight("bold")
-            autotext.set_fontsize(9.5)
-            autotext.set_color("white")
-
-        ax.text(
-            0,
-            0.08,
-            formato_cantidad(total),
-            ha="center",
-            va="center",
-            fontsize=23,
-            fontweight="bold",
-            color=COLOR_TEXTO,
-        )
-
-        ax.text(
-            0,
-            -0.12,
-            "registros",
-            ha="center",
-            va="center",
-            fontsize=10,
-            fontweight="bold",
-            color=COLOR_MUTED,
-        )
-
-        porcentajes = np.where(
-            total > 0,
-            cantidades / total * 100,
-            0,
-        )
-
-        etiquetas_leyenda = [
-            f"{etiqueta} · {cantidad:,} · {pct:.1f}%".replace(",", ".")
-            for etiqueta, cantidad, pct in zip(etiquetas, cantidades, porcentajes)
-        ]
-
-        ax.legend(
-            wedges,
-            etiquetas_leyenda,
-            title="Leyenda",
-            loc="center left",
-            bbox_to_anchor=(1.02, 0.5),
-            frameon=False,
-            fontsize=8.5,
-            title_fontsize=9.5,
-        )
-
-        ax.set_title(
-            "Distribución porcentual por tipo de alerta",
-            fontsize=14,
-            fontweight="bold",
-            color=COLOR_TEXTO,
-            pad=16,
-        )
-
-        ax.axis("equal")
-        fig.patch.set_alpha(0)
-        fig.tight_layout()
-        fig.subplots_adjust(right=0.67)
-
-        st.pyplot(fig, clear_figure=True, use_container_width=True)
 
     with col_tabla:
         st.markdown("#### Tabla de alertas")
         st.caption("Base: registros filtrados.")
 
-        st.dataframe(
-            data[
-                [
-                    "Nivel alerta",
-                    "Cantidad",
-                    "% del total filtrado",
-                ]
-            ],
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Cantidad": st.column_config.NumberColumn(
-                    "Cantidad",
-                    format="%d",
-                ),
-                "% del total filtrado": st.column_config.ProgressColumn(
-                    "% del total filtrado",
-                    format="%.1f%%",
-                    min_value=0,
-                    max_value=100,
-                ),
-            },
+        if tabla.empty:
+            st.info("No hay datos para mostrar.")
+        else:
+            st.dataframe(
+                tabla[
+                    [
+                        "Nivel alerta",
+                        "Cantidad",
+                        "% del total filtrado",
+                    ]
+                ],
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Cantidad": st.column_config.NumberColumn(
+                        "Cantidad",
+                        format="%d",
+                    ),
+                    "% del total filtrado": st.column_config.ProgressColumn(
+                        "% del total filtrado",
+                        format="%.1f%%",
+                        min_value=0,
+                        max_value=100,
+                    ),
+                },
+            )
+
+
+def grafico_donut_vencimiento_detallado(tabla: pd.DataFrame):
+    col_grafico, col_tabla = st.columns([1.15, 1])
+
+    with col_grafico:
+        grafico_donut_generico(
+            tabla=tabla,
+            columna_categoria="Clasificación",
+            columna_cantidad="Cantidad",
+            titulo="Distribución por vencimiento detallado",
+            subtitulo_centro="registros",
+            mapa_colores=COLORES_VENCIMIENTO_DETALLADO,
         )
 
+    with col_tabla:
+        st.markdown("#### Tabla de vencimiento")
+        st.caption("Distribución de registros según días hasta vencimiento.")
 
-def grafico_alertas_valores_absolutos(tabla: pd.DataFrame):
-    if tabla.empty:
-        st.info("No hay datos para graficar.")
-        return
-
-    data = tabla.copy()
-    data = data[data["Cantidad"].gt(0)].copy()
-
-    if data.empty:
-        st.info("No hay clasificación de vencimientos.")
-        return
-
-    data = data.sort_values("Cantidad", ascending=True)
-
-    colores_mapa = {
-        "Vencido": COLOR_CRITICO,
-        "Vence hoy": COLOR_CRITICO,
-        "1 día": COLOR_ATENCION,
-        "2 días": COLOR_ATENCION,
-        "3-7 días": COLOR_SEGUIMIENTO,
-        "8-15 días": COLOR_SEGUIMIENTO,
-        "16-30 días": COLOR_CONTROLADO,
-        "31-60 días": COLOR_CONTROLADO,
-        "61-90 días": "#15803D",
-        "+90 días": "#166534",
-        "Sin datos": COLOR_SIN_DATOS,
-        "Recepcionado": COLOR_CERRADO,
-    }
-
-    y = np.arange(len(data))
-
-    fig, ax = plt.subplots(figsize=(9.5, max(5.8, len(data) * 0.45)), dpi=180)
-
-    ax.barh(
-        y,
-        data["Cantidad"],
-        color=[colores_mapa.get(x, COLOR_MUTED) for x in data["Clasificación"]],
-        height=0.55,
-    )
-
-    max_cantidad = max(data["Cantidad"]) if len(data) else 0
-
-    for i, cantidad in enumerate(data["Cantidad"]):
-        ax.text(
-            cantidad + max(max_cantidad * 0.015, 0.5),
-            i,
-            formato_cantidad(cantidad),
-            va="center",
-            ha="left",
-            fontsize=10,
-            fontweight="bold",
-            color=COLOR_TEXTO,
-        )
-
-    ax.set_yticks(y)
-    ax.set_yticklabels(data["Clasificación"], color=COLOR_MUTED)
-    ax.set_xlabel("Cantidad de registros", color=COLOR_TEXTO)
-
-    ax.set_title(
-        "Valores absolutos por vencimiento detallado",
-        fontsize=14,
-        fontweight="bold",
-        color=COLOR_TEXTO,
-        pad=12,
-    )
-
-    formatear_ejes(ax)
-
-    fig.patch.set_alpha(0)
-    fig.tight_layout()
-
-    st.pyplot(fig, clear_figure=True, use_container_width=True)
+        if tabla.empty:
+            st.info("No hay datos para mostrar.")
+        else:
+            st.dataframe(
+                tabla,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Cantidad": st.column_config.NumberColumn(
+                        "Cantidad",
+                        format="%d",
+                    ),
+                    "%": st.column_config.ProgressColumn(
+                        "%",
+                        format="%.1f%%",
+                        min_value=0,
+                        max_value=100,
+                    ),
+                },
+            )
 
 
 def grafico_plan_ataque(tabla: pd.DataFrame):
@@ -2512,18 +2440,22 @@ def mostrar_expediente_registro(row: pd.Series):
     dias_transcurridos = valor_numerico(row.get("dias_transcurridos_alerta", np.nan))
 
     if pd.isna(dias_restantes):
+        titulo_dias = "Vencimiento"
         dias_restantes_txt = "Sin fecha"
         dias_restantes_sub = "No se puede calcular vencimiento."
         clase_dias = "kpi-warning"
     elif dias_restantes < 0:
+        titulo_dias = "Hace cuánto venció"
         dias_restantes_txt = f"{abs(int(dias_restantes))} días"
-        dias_restantes_sub = "Días vencido desde la fecha límite."
+        dias_restantes_sub = "Tiempo transcurrido desde la fecha límite."
         clase_dias = "kpi-critical"
     elif dias_restantes == 0:
+        titulo_dias = "Vencimiento"
         dias_restantes_txt = "Hoy"
         dias_restantes_sub = "El registro vence hoy."
         clase_dias = "kpi-critical"
     else:
+        titulo_dias = "En cuántos días vence"
         dias_restantes_txt = f"{int(dias_restantes)} días"
         dias_restantes_sub = "Días restantes para vencer."
         clase_dias = "kpi-warning" if dias_restantes <= 7 else ""
@@ -2541,7 +2473,7 @@ def mostrar_expediente_registro(row: pd.Series):
 
     with k1:
         mostrar_kpi_html(
-            "En cuántos días vence",
+            titulo_dias,
             dias_restantes_txt,
             dias_restantes_sub,
             clase_dias,
@@ -2664,7 +2596,7 @@ except Exception as e:
 
 
 # ============================================================
-# FILTROS EN ENCABEZADO
+# FILTROS
 # ============================================================
 
 st.markdown("### Filtros")
@@ -2914,12 +2846,12 @@ else:
 
 
 # ============================================================
-# INDICADORES Y RESUMEN EJECUTIVO
+# 1. RESUMEN EJECUTIVO
 # ============================================================
 
 resumen_ejecutivo = construir_resumen_ejecutivo(df_panel, df_filtrado)
 
-st.markdown("### Resumen ejecutivo")
+st.markdown("### 1. Resumen ejecutivo")
 
 mostrar_card_estado(resumen_ejecutivo)
 
@@ -2992,10 +2924,10 @@ with c8:
 
 
 # ============================================================
-# RETENCIÓN POR FILTROS
+# 2. RETENCIÓN POR FILTROS
 # ============================================================
 
-st.markdown("### 1. Retención por filtros")
+st.markdown("### 2. Retención por filtros")
 
 col_ret1, col_ret2 = st.columns([1.1, 1])
 
@@ -3012,28 +2944,38 @@ with col_ret2:
 
 
 # ============================================================
-# DESGLOSE VISUAL
+# 3. DISTRIBUCIÓN GLOBAL DE ALERTAS
 # ============================================================
 
-st.markdown("### 2. Distribución global de alertas")
+st.markdown("### 3. Distribución global de alertas")
 
 desglose_alertas = crear_desglose_alertas(df_filtrado)
 
 grafico_donut_alertas_porcentual(desglose_alertas)
 
 
-st.markdown("### 3. Valores absolutos por vencimiento")
+# ============================================================
+# 4. DISTRIBUCIÓN POR VENCIMIENTO
+# ============================================================
+
+st.markdown("### 4. Distribución por vencimiento detallado")
+st.caption(
+    "Donut con la distribución de vencidos, vencimientos inmediatos, próximos vencimientos, registros preventivos, sin datos y recepcionados."
+)
 
 tabla_buckets = crear_resumen_buckets(df_filtrado)
 
-grafico_alertas_valores_absolutos(tabla_buckets)
+grafico_donut_vencimiento_detallado(tabla_buckets)
 
 
 # ============================================================
-# PLAN DE ATAQUE
+# 5. PLAN DE ATAQUE
 # ============================================================
 
-st.markdown("### 4. Plan de ataque")
+st.markdown("### 5. Plan de ataque")
+st.caption(
+    "Se mantiene en barras porque aquí interesa comparar cantidades y priorizar gestión."
+)
 
 plan_ataque = crear_plan_ataque(df_filtrado)
 
@@ -3062,10 +3004,13 @@ else:
 
 
 # ============================================================
-# DÓNDE ATACAR PRIMERO
+# 6. DÓNDE ATACAR PRIMERO
 # ============================================================
 
-st.markdown("### 5. Dónde atacar primero")
+st.markdown("### 6. Dónde atacar primero")
+st.caption(
+    "Se mantiene en barras porque estos gráficos son rankings comparativos."
+)
 
 col_rank1, col_rank2 = st.columns(2)
 
@@ -3147,7 +3092,7 @@ with col_rank2:
 
 
 # ============================================================
-# ALERTAS PRIORITARIAS
+# 7. BLOQUES ACCIONABLES
 # ============================================================
 
 df_vencidos = df_filtrado[
@@ -3161,6 +3106,8 @@ df_proximos = df_filtrado[
 df_sin_fecha = df_filtrado[
     df_filtrado["nivel_alerta"].eq("Datos incompletos")
 ].copy()
+
+st.markdown("### 7. Bloques accionables")
 
 st.markdown(
     """
@@ -3217,10 +3164,10 @@ mostrar_tabla_alertas(
 
 
 # ============================================================
-# EXPEDIENTE / SEGUIMIENTO DE REGISTRO
+# 8. EXPEDIENTE / SEGUIMIENTO DE REGISTRO
 # ============================================================
 
-st.markdown("### Expediente / seguimiento del registro")
+st.markdown("### 8. Expediente / seguimiento del registro")
 st.caption(
     "Selecciona un registro para revisar sus KPI y el recorrido TAT tipo seguimiento de pedido online."
 )
@@ -3258,10 +3205,10 @@ else:
 
 
 # ============================================================
-# VISTA PREVIA GENERAL
+# 9. VISTA PREVIA GENERAL
 # ============================================================
 
-with st.expander("Vista previa general de datos filtrados", expanded=False):
+with st.expander("9. Vista previa general de datos filtrados", expanded=False):
     total_preview = len(df_filtrado)
 
     if total_preview == 0:
@@ -3291,10 +3238,10 @@ with st.expander("Vista previa general de datos filtrados", expanded=False):
 
 
 # ============================================================
-# DESCARGA GENERAL
+# 10. DESCARGA GENERAL
 # ============================================================
 
-with st.expander("Descargar resultado filtrado", expanded=False):
+with st.expander("10. Descargar resultado filtrado", expanded=False):
     st.caption(
         "Parquet es recomendado para análisis completo. CSV y Excel se preparan bajo demanda."
     )
