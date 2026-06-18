@@ -2,6 +2,11 @@
 # 08_PERFORMANCE_PLANTA_MENSUAL
 # Dashboard mensual de Performance TAT por planta / centro
 # Usa df_tat cargado desde 06_CARGAR_ARCHIVO
+# Mejoras:
+# - KPI de % cumplimiento y % no cumplimiento
+# - KPI de retención por filtros
+# - Desglose de registros filtrados
+# - Donut de Performance TAT
 # ============================================================
 
 import io
@@ -25,12 +30,12 @@ BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
 LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
 
-COLOR_CUMPLE = "#EF3E52"        # Rojo original
+COLOR_CUMPLE = "#EF3E52"
 COLOR_NO_CUMPLE = "#BFC3C7"
 COLOR_EN_PROCESO = "#F4B400"
-COLOR_OTROS = "#9CA3AF"
-COLOR_SIN_DATOS = "#BFC3C7"
-COLOR_META = "#0057B8"          # Azul visible para meta
+COLOR_NO_APLICA = "#9CA3AF"
+COLOR_SIN_DATOS = "#D1D5DB"
+COLOR_META = "#0057B8"
 COLOR_TEXTO = "#1F2937"
 COLOR_MUTED = "#6B7280"
 
@@ -122,7 +127,6 @@ ETAPAS_DASHBOARD = [
 
 # ============================================================
 # Estilos
-# No se modifica .block-container para no afectar el logo.
 # ============================================================
 
 st.markdown(
@@ -138,6 +142,33 @@ st.markdown(
         div[data-testid="stFileUploader"] {
             padding: 10px;
             border-radius: 12px;
+        }
+
+        .kpi-box {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 14px;
+            padding: 16px;
+            height: 100%;
+        }
+
+        .kpi-title {
+            color: #6B7280;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .kpi-value {
+            color: #111827;
+            font-size: 28px;
+            font-weight: 800;
+            margin-bottom: 2px;
+        }
+
+        .kpi-subtitle {
+            color: #6B7280;
+            font-size: 13px;
         }
     </style>
     """,
@@ -281,7 +312,7 @@ def formatear_entero(valor) -> str:
     if pd.isna(numero):
         return "—"
 
-    return f"{int(round(numero)):,}"
+    return f"{int(round(numero)):,}".replace(",", ".")
 
 
 def formatear_porcentaje(valor) -> str:
@@ -335,12 +366,7 @@ def normalizar_rango_incumplimiento(serie: pd.Series) -> pd.Series:
         "Sin datos",
     ]
 
-    texto = (
-        serie
-        .astype("string")
-        .str.strip()
-    )
-
+    texto = serie.astype("string").str.strip()
     texto_lower = texto.str.lower()
 
     mask_sin_datos = (
@@ -767,6 +793,7 @@ def registrar_paso_filtro(
             "Registros después": despues,
             "Registros excluidos": antes - despues,
             "% retenido": round(despues / antes * 100, 2) if antes else 0,
+            "% excluido": round((antes - despues) / antes * 100, 2) if antes else 0,
         }
     )
 
@@ -794,6 +821,7 @@ def aplicar_filtros_con_progreso(
             "Registros después": len(df_base),
             "Registros excluidos": 0,
             "% retenido": 100.0,
+            "% excluido": 0.0,
         }
     ]
 
@@ -889,7 +917,7 @@ def aplicar_filtros_con_progreso(
 
 
 # ============================================================
-# Resúmenes y detalles
+# Resúmenes
 # ============================================================
 
 def crear_resumen_mensual(df: pd.DataFrame) -> pd.DataFrame:
@@ -987,13 +1015,117 @@ def crear_desglose_performance(df: pd.DataFrame) -> pd.DataFrame:
 
     tabla["% del total filtrado"] = tabla["% del total filtrado"].round(2)
 
-    tabla.loc[len(tabla)] = {
-        "Categoría": "Total",
-        "Cantidad": total,
-        "% del total filtrado": 100.00 if total else 0,
-    }
+    return tabla
+
+
+def crear_desglose_retencion_filtros(
+    total_inicial: int,
+    total_filtrado: int,
+) -> pd.DataFrame:
+
+    excluidos = total_inicial - total_filtrado
+
+    tabla = pd.DataFrame(
+        [
+            {
+                "Categoría": "Retenidos por filtros",
+                "Cantidad": total_filtrado,
+            },
+            {
+                "Categoría": "Excluidos por filtros",
+                "Cantidad": excluidos,
+            },
+        ]
+    )
+
+    total = int(tabla["Cantidad"].sum())
+
+    tabla["% del total ingresado"] = np.where(
+        total > 0,
+        tabla["Cantidad"] / total * 100,
+        0,
+    )
+
+    tabla["% del total ingresado"] = tabla["% del total ingresado"].round(2)
 
     return tabla
+
+
+def calcular_kpis_principales(
+    df_base: pd.DataFrame,
+    df_filtrado: pd.DataFrame,
+) -> dict:
+
+    total_inicial = int(len(df_base))
+    total_filtrado = int(len(df_filtrado))
+    total_excluido = total_inicial - total_filtrado
+
+    pct_retenido = (
+        total_filtrado / total_inicial * 100
+        if total_inicial
+        else 0
+    )
+
+    pct_excluido = (
+        total_excluido / total_inicial * 100
+        if total_inicial
+        else 0
+    )
+
+    if "performance_tat_total" in df_filtrado.columns:
+        estado = df_filtrado["performance_tat_total"].apply(normalizar_estado_performance)
+    else:
+        estado = pd.Series([], dtype="object")
+
+    cumple = int(estado.eq("Cumple").sum())
+    no_cumple = int(estado.eq("No cumple").sum())
+    en_proceso = int(estado.eq("En proceso").sum())
+    no_aplica = int(estado.eq("No aplica").sum())
+    sin_datos = int(estado.eq("Sin datos").sum())
+
+    evaluables = cumple + no_cumple
+
+    pct_cumple_evaluable = (
+        cumple / evaluables * 100
+        if evaluables
+        else 0
+    )
+
+    pct_no_cumple_evaluable = (
+        no_cumple / evaluables * 100
+        if evaluables
+        else 0
+    )
+
+    pct_cumple_total = (
+        cumple / total_filtrado * 100
+        if total_filtrado
+        else 0
+    )
+
+    pct_no_cumple_total = (
+        no_cumple / total_filtrado * 100
+        if total_filtrado
+        else 0
+    )
+
+    return {
+        "total_inicial": total_inicial,
+        "total_filtrado": total_filtrado,
+        "total_excluido": total_excluido,
+        "pct_retenido": pct_retenido,
+        "pct_excluido": pct_excluido,
+        "cumple": cumple,
+        "no_cumple": no_cumple,
+        "en_proceso": en_proceso,
+        "no_aplica": no_aplica,
+        "sin_datos": sin_datos,
+        "evaluables": evaluables,
+        "pct_cumple_evaluable": pct_cumple_evaluable,
+        "pct_no_cumple_evaluable": pct_no_cumple_evaluable,
+        "pct_cumple_total": pct_cumple_total,
+        "pct_no_cumple_total": pct_no_cumple_total,
+    }
 
 
 def datos_etapa(df: pd.DataFrame, etapa: dict) -> dict:
@@ -1080,10 +1212,88 @@ def obtener_mejor_peor_mes(tabla: pd.DataFrame):
     return mejor, peor
 
 
+# ============================================================
+# Detalle de filtros y calidad
+# ============================================================
+
+def mostrar_kpi_html(titulo: str, valor: str, subtitulo: str):
+    st.markdown(
+        f"""
+        <div class="kpi-box">
+            <div class="kpi-title">{titulo}</div>
+            <div class="kpi-value">{valor}</div>
+            <div class="kpi-subtitle">{subtitulo}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def mostrar_indicadores_principales(kpis: dict):
+    st.markdown("### KPI Indicators")
+    st.caption(
+        "Los porcentajes de cumplimiento y no cumplimiento se calculan sobre registros evaluables: Cumple + No cumple."
+    )
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        mostrar_kpi_html(
+            "Registros ingresados",
+            formatear_entero(kpis["total_inicial"]),
+            "Cantidad total antes de aplicar filtros.",
+        )
+
+    with col2:
+        mostrar_kpi_html(
+            "Retenidos por filtros",
+            formatear_porcentaje(kpis["pct_retenido"]),
+            f"{formatear_entero(kpis['total_filtrado'])} retenidos · {formatear_entero(kpis['total_excluido'])} excluidos",
+        )
+
+    with col3:
+        mostrar_kpi_html(
+            "% Cumplimiento TAT",
+            formatear_porcentaje(kpis["pct_cumple_evaluable"]),
+            f"{formatear_entero(kpis['cumple'])} cumple de {formatear_entero(kpis['evaluables'])} evaluables",
+        )
+
+    with col4:
+        mostrar_kpi_html(
+            "% No cumplimiento TAT",
+            formatear_porcentaje(kpis["pct_no_cumple_evaluable"]),
+            f"{formatear_entero(kpis['no_cumple'])} no cumple de {formatear_entero(kpis['evaluables'])} evaluables",
+        )
+
+    col5, col6, col7, col8 = st.columns(4)
+
+    col5.metric(
+        "Cumple sobre total filtrado",
+        formatear_porcentaje(kpis["pct_cumple_total"]),
+        f"{formatear_entero(kpis['cumple'])} registros",
+    )
+
+    col6.metric(
+        "No cumple sobre total filtrado",
+        formatear_porcentaje(kpis["pct_no_cumple_total"]),
+        f"{formatear_entero(kpis['no_cumple'])} registros",
+    )
+
+    col7.metric(
+        "En proceso",
+        formatear_entero(kpis["en_proceso"]),
+    )
+
+    col8.metric(
+        "No aplica / Sin datos",
+        formatear_entero(kpis["no_aplica"] + kpis["sin_datos"]),
+    )
+
+
 def mostrar_detalle_filtros_aplicados(resumen_filtros_df: pd.DataFrame):
     st.markdown("### Detalle de filtros aplicados")
     st.caption(
-        "Esta sección muestra cómo cambia la cantidad de registros después de cada filtro."
+        "Esta sección muestra cuántos registros se retienen y cuántos se excluyen en cada filtro."
     )
 
     if resumen_filtros_df is None or resumen_filtros_df.empty:
@@ -1102,12 +1312,18 @@ def mostrar_detalle_filtros_aplicados(resumen_filtros_df: pd.DataFrame):
         else 0
     )
 
+    pct_excluido = (
+        registros_excluidos / registros_iniciales * 100
+        if registros_iniciales
+        else 0
+    )
+
     col_f1, col_f2, col_f3, col_f4 = st.columns(4)
 
-    col_f1.metric("Registros iniciales", f"{registros_iniciales:,}")
-    col_f2.metric("Registros finales", f"{registros_finales:,}")
-    col_f3.metric("Registros excluidos", f"{registros_excluidos:,}")
-    col_f4.metric("% retenido", f"{pct_retenido:.1f}%")
+    col_f1.metric("Registros ingresados", f"{registros_iniciales:,}".replace(",", "."))
+    col_f2.metric("Registros retenidos", f"{registros_finales:,}".replace(",", "."), f"{pct_retenido:.1f}%")
+    col_f3.metric("Registros excluidos", f"{registros_excluidos:,}".replace(",", "."), f"{pct_excluido:.1f}%")
+    col_f4.metric("Filtros aplicados", f"{max(len(resumen) - 1, 0):,}".replace(",", "."))
 
     columnas_mostrar = [
         "Paso",
@@ -1117,6 +1333,7 @@ def mostrar_detalle_filtros_aplicados(resumen_filtros_df: pd.DataFrame):
         "Registros después",
         "Registros excluidos",
         "% retenido",
+        "% excluido",
     ]
 
     columnas_mostrar = [
@@ -1408,7 +1625,7 @@ def grafico_mensual_principal(tabla: pd.DataFrame):
             ax.text(
                 barra.get_x() + barra.get_width() / 2,
                 alto / 2,
-                f"{cumple[i]:,}",
+                f"{cumple[i]:,}".replace(",", "."),
                 ha="center",
                 va="center",
                 fontsize=9,
@@ -1638,6 +1855,301 @@ def grafico_etapa_individual(fila: pd.Series):
     st.pyplot(fig, clear_figure=True, use_container_width=True)
 
 
+def grafico_donut_performance(tabla: pd.DataFrame):
+    if tabla.empty:
+        st.info("No hay datos para graficar Performance TAT.")
+        return
+
+    data = tabla[tabla["Cantidad"].gt(0)].copy()
+
+    if data.empty:
+        st.info("No hay categorías con cantidad mayor a cero.")
+        return
+
+    colores_mapa = {
+        "Cumple": COLOR_CUMPLE,
+        "No cumple": COLOR_NO_CUMPLE,
+        "En proceso": COLOR_EN_PROCESO,
+        "No aplica": COLOR_NO_APLICA,
+        "Sin datos": COLOR_SIN_DATOS,
+    }
+
+    data["Color"] = data["Categoría"].map(colores_mapa).fillna(COLOR_NO_APLICA)
+
+    cantidades = (
+        pd.to_numeric(data["Cantidad"], errors="coerce")
+        .fillna(0)
+        .astype(int)
+        .to_numpy()
+    )
+
+    porcentajes = (
+        pd.to_numeric(data["% del total filtrado"], errors="coerce")
+        .fillna(0)
+        .to_numpy()
+    )
+
+    colores = data["Color"].tolist()
+    etiquetas = data["Categoría"].astype(str).tolist()
+
+    total = int(cantidades.sum())
+
+    col_grafico, col_resumen = st.columns([1.15, 1])
+
+    with col_grafico:
+        fig, ax = plt.subplots(figsize=(8.2, 6.4))
+
+        def autopct_func(pct):
+            if pct < 4:
+                return ""
+
+            return f"{pct:.1f}%"
+
+        wedges, texts, autotexts = ax.pie(
+            cantidades,
+            labels=None,
+            startangle=90,
+            counterclock=False,
+            colors=colores,
+            autopct=autopct_func,
+            pctdistance=0.78,
+            wedgeprops={
+                "width": 0.38,
+                "linewidth": 2.5,
+                "edgecolor": "white",
+            },
+        )
+
+        for i, autotext in enumerate(autotexts):
+            categoria = etiquetas[i]
+
+            if categoria in ["No cumple", "En proceso", "No aplica", "Sin datos"]:
+                autotext.set_color(COLOR_TEXTO)
+            else:
+                autotext.set_color("white")
+
+            autotext.set_fontweight("bold")
+            autotext.set_fontsize(10)
+
+        ax.text(
+            0,
+            0.08,
+            f"{total:,}".replace(",", "."),
+            ha="center",
+            va="center",
+            fontsize=24,
+            fontweight="bold",
+            color=COLOR_TEXTO,
+        )
+
+        ax.text(
+            0,
+            -0.12,
+            "filtrados",
+            ha="center",
+            va="center",
+            fontsize=10,
+            fontweight="bold",
+            color=COLOR_MUTED,
+        )
+
+        etiquetas_leyenda = []
+
+        for categoria, cantidad, porcentaje in zip(etiquetas, cantidades, porcentajes):
+            cantidad_txt = f"{int(cantidad):,}".replace(",", ".")
+            etiquetas_leyenda.append(
+                f"{categoria} · {cantidad_txt} · {porcentaje:.1f}%"
+            )
+
+        legend = ax.legend(
+            wedges,
+            etiquetas_leyenda,
+            title="Performance TAT",
+            loc="center left",
+            bbox_to_anchor=(1.02, 0.5),
+            frameon=False,
+            fontsize=9.5,
+            title_fontsize=10,
+        )
+
+        for texto in legend.get_texts():
+            texto.set_color(COLOR_TEXTO)
+
+        legend.get_title().set_color(COLOR_TEXTO)
+        legend.get_title().set_fontweight("bold")
+
+        ax.set_title(
+            "Desglose de datos filtrados por Performance TAT",
+            fontsize=15,
+            fontweight="bold",
+            color=COLOR_TEXTO,
+            pad=16,
+        )
+
+        ax.axis("equal")
+        fig.patch.set_alpha(0)
+        fig.tight_layout()
+        fig.subplots_adjust(right=0.72)
+
+        st.pyplot(fig, clear_figure=True, use_container_width=True)
+
+    with col_resumen:
+        st.markdown("#### Resumen del filtrado")
+        st.caption("Cantidad y participación de cada estado sobre la base filtrada.")
+
+        tabla_resumen = data.copy()
+
+        tabla_resumen["Cantidad"] = (
+            pd.to_numeric(tabla_resumen["Cantidad"], errors="coerce")
+            .fillna(0)
+            .astype(int)
+        )
+
+        tabla_resumen["% del total filtrado"] = (
+            pd.to_numeric(tabla_resumen["% del total filtrado"], errors="coerce")
+            .fillna(0)
+            .round(1)
+        )
+
+        tabla_resumen = tabla_resumen[
+            [
+                "Categoría",
+                "Cantidad",
+                "% del total filtrado",
+            ]
+        ]
+
+        st.dataframe(
+            tabla_resumen,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Cantidad": st.column_config.NumberColumn(
+                    "Cantidad",
+                    format="%d",
+                ),
+                "% del total filtrado": st.column_config.ProgressColumn(
+                    "% del total filtrado",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+            },
+        )
+
+        mayor = data.sort_values(
+            "Cantidad",
+            ascending=False,
+        ).iloc[0]
+
+        cantidad_mayor = int(mayor["Cantidad"])
+        cantidad_mayor_txt = f"{cantidad_mayor:,}".replace(",", ".")
+        porcentaje_mayor = float(mayor["% del total filtrado"])
+
+        st.info(
+            f"Mayor concentración: **{mayor['Categoría']}** "
+            f"con **{cantidad_mayor_txt} registros** "
+            f"(**{porcentaje_mayor:.1f}%**)."
+        )
+
+
+def grafico_donut_retencion(tabla: pd.DataFrame):
+    if tabla.empty:
+        st.info("No hay datos para graficar retención por filtros.")
+        return
+
+    data = tabla[tabla["Cantidad"].gt(0)].copy()
+
+    if data.empty:
+        st.info("No hay datos con cantidad mayor a cero.")
+        return
+
+    colores_mapa = {
+        "Retenidos por filtros": "#2E7D32",
+        "Excluidos por filtros": "#BFC3C7",
+    }
+
+    data["Color"] = data["Categoría"].map(colores_mapa).fillna("#9CA3AF")
+
+    cantidades = data["Cantidad"].astype(int).to_numpy()
+    porcentajes = data["% del total ingresado"].astype(float).to_numpy()
+    etiquetas = data["Categoría"].astype(str).tolist()
+    colores = data["Color"].tolist()
+
+    total = int(cantidades.sum())
+
+    fig, ax = plt.subplots(figsize=(6.5, 4.8))
+
+    wedges, texts, autotexts = ax.pie(
+        cantidades,
+        labels=None,
+        startangle=90,
+        counterclock=False,
+        colors=colores,
+        autopct=lambda pct: f"{pct:.1f}%" if pct >= 4 else "",
+        pctdistance=0.78,
+        wedgeprops={
+            "width": 0.38,
+            "linewidth": 2.5,
+            "edgecolor": "white",
+        },
+    )
+
+    for autotext in autotexts:
+        autotext.set_fontweight("bold")
+        autotext.set_fontsize(10)
+        autotext.set_color(COLOR_TEXTO)
+
+    ax.text(
+        0,
+        0.08,
+        f"{total:,}".replace(",", "."),
+        ha="center",
+        va="center",
+        fontsize=20,
+        fontweight="bold",
+        color=COLOR_TEXTO,
+    )
+
+    ax.text(
+        0,
+        -0.12,
+        "ingresados",
+        ha="center",
+        va="center",
+        fontsize=10,
+        color=COLOR_MUTED,
+    )
+
+    etiquetas_leyenda = [
+        f"{cat} · {cant:,} · {pct:.1f}%".replace(",", ".")
+        for cat, cant, pct in zip(etiquetas, cantidades, porcentajes)
+    ]
+
+    ax.legend(
+        wedges,
+        etiquetas_leyenda,
+        loc="center left",
+        bbox_to_anchor=(1.02, 0.5),
+        frameon=False,
+        fontsize=9,
+    )
+
+    ax.set_title(
+        "Retención por filtros",
+        fontsize=14,
+        fontweight="bold",
+        color=COLOR_TEXTO,
+    )
+
+    ax.axis("equal")
+    fig.patch.set_alpha(0)
+    fig.tight_layout()
+    fig.subplots_adjust(right=0.70)
+
+    st.pyplot(fig, clear_figure=True, use_container_width=True)
+
+
 def preparar_tabla_rangos_incumplimiento(df: pd.DataFrame) -> pd.DataFrame:
     if "rango_incumplimiento_tat" not in df.columns:
         return pd.DataFrame()
@@ -1676,106 +2188,6 @@ def preparar_tabla_rangos_incumplimiento(df: pd.DataFrame) -> pd.DataFrame:
 
     return tabla
 
-
-def crear_desglose_sin_datos_incumplimiento(df: pd.DataFrame) -> pd.DataFrame:
-    columnas_necesarias = [
-        "rango_incumplimiento_tat",
-        "dias_tat_total",
-        "umbral_tat_total",
-        "dias_incumplimiento_tat",
-        "performance_tat_total",
-    ]
-
-    columnas_existentes = [
-        col for col in columnas_necesarias
-        if col in df.columns
-    ]
-
-    if "rango_incumplimiento_tat" not in columnas_existentes:
-        return pd.DataFrame()
-
-    temp = df.copy()
-
-    temp["rango_incumplimiento_tat"] = normalizar_rango_incumplimiento(
-        temp["rango_incumplimiento_tat"]
-    )
-
-    base_sin_datos = temp[
-        temp["rango_incumplimiento_tat"].eq("Sin datos")
-    ].copy()
-
-    if base_sin_datos.empty:
-        return pd.DataFrame()
-
-    registros = []
-    total_sin_datos = len(base_sin_datos)
-
-    def agregar_motivo(nombre, mask):
-        cantidad = int(mask.sum())
-
-        registros.append(
-            {
-                "Motivo": nombre,
-                "Cantidad": cantidad,
-                "% sobre Sin datos": round(
-                    cantidad / total_sin_datos * 100,
-                    2,
-                ) if total_sin_datos else 0,
-            }
-        )
-
-    if "dias_tat_total" in base_sin_datos.columns:
-        agregar_motivo(
-            "Falta días TAT total",
-            base_sin_datos["dias_tat_total"].isna(),
-        )
-
-    if "umbral_tat_total" in base_sin_datos.columns:
-        agregar_motivo(
-            "Falta umbral TAT total",
-            base_sin_datos["umbral_tat_total"].isna(),
-        )
-
-    if (
-        "dias_tat_total" in base_sin_datos.columns
-        and "umbral_tat_total" in base_sin_datos.columns
-    ):
-        agregar_motivo(
-            "Faltan días TAT total y umbral TAT total",
-            base_sin_datos["dias_tat_total"].isna()
-            & base_sin_datos["umbral_tat_total"].isna(),
-        )
-
-    if "dias_incumplimiento_tat" in base_sin_datos.columns:
-        agregar_motivo(
-            "Falta días de incumplimiento TAT",
-            base_sin_datos["dias_incumplimiento_tat"].isna(),
-        )
-
-    if "performance_tat_total" in base_sin_datos.columns:
-        performance_normalizada = base_sin_datos["performance_tat_total"].apply(
-            normalizar_estado_performance
-        )
-
-        for estado in ["Cumple", "No cumple", "En proceso", "No aplica", "Sin datos"]:
-            agregar_motivo(
-                f"Performance TAT = {estado}",
-                performance_normalizada.eq(estado),
-            )
-
-    desglose = pd.DataFrame(registros)
-
-    if desglose.empty:
-        return desglose
-
-    desglose = desglose[desglose["Cantidad"].gt(0)].copy()
-
-    desglose = desglose.sort_values(
-        "Cantidad",
-        ascending=False,
-    ).reset_index(drop=True)
-
-    return desglose
 
 def grafico_torta_rangos_incumplimiento(tabla: pd.DataFrame):
     if tabla.empty:
@@ -1845,19 +2257,13 @@ def grafico_torta_rangos_incumplimiento(tabla: pd.DataFrame):
     with col_grafico:
         fig, ax = plt.subplots(figsize=(8.2, 6.4))
 
-        def autopct_func(pct):
-            if pct < 4:
-                return ""
-
-            return f"{pct:.1f}%"
-
         wedges, texts, autotexts = ax.pie(
             cantidades,
             labels=None,
             startangle=90,
             counterclock=False,
             colors=colores,
-            autopct=autopct_func,
+            autopct=lambda pct: f"{pct:.1f}%" if pct >= 4 else "",
             pctdistance=0.78,
             wedgeprops={
                 "width": 0.38,
@@ -1983,20 +2389,7 @@ def grafico_torta_rangos_incumplimiento(tabla: pd.DataFrame):
             },
         )
 
-        rango_mayor = data.sort_values(
-            "Cantidad",
-            ascending=False,
-        ).iloc[0]
 
-        cantidad_mayor = int(rango_mayor["Cantidad"])
-        cantidad_mayor_txt = f"{cantidad_mayor:,}".replace(",", ".")
-        porcentaje_mayor = float(rango_mayor["% del total"])
-
-        st.info(
-            f"Mayor concentración: **{rango_mayor['Rango']}** "
-            f"con **{cantidad_mayor_txt} registros** "
-            f"(**{porcentaje_mayor:.1f}%**)."
-        )
 # ============================================================
 # Exportación
 # ============================================================
@@ -2263,6 +2656,9 @@ else:
                     "% retenido": round(len(df_dashboard) / len(df_final) * 100, 2)
                     if len(df_final)
                     else 0,
+                    "% excluido": round((len(df_final) - len(df_dashboard)) / len(df_final) * 100, 2)
+                    if len(df_final)
+                    else 0,
                 }
             ]
         )
@@ -2272,73 +2668,68 @@ else:
 # Indicadores principales
 # ============================================================
 
-total_inicial = len(df_final)
-total_filtrado = len(df_dashboard)
-
-cumple_tat = (
-    int(df_dashboard["performance_tat_total"].eq("Cumple").sum())
-    if "performance_tat_total" in df_dashboard.columns
-    else 0
+kpis = calcular_kpis_principales(
+    df_base=df_final,
+    df_filtrado=df_dashboard,
 )
 
-no_cumple_tat = (
-    int(df_dashboard["performance_tat_total"].eq("No cumple").sum())
-    if "performance_tat_total" in df_dashboard.columns
-    else 0
-)
-
-en_proceso_tat = (
-    int(df_dashboard["performance_tat_total"].eq("En proceso").sum())
-    if "performance_tat_total" in df_dashboard.columns
-    else 0
-)
-
-otros_tat = (
-    int(
-        df_dashboard["performance_tat_total"]
-        .isin(["No aplica", "Sin datos"])
-        .sum()
-    )
-    if "performance_tat_total" in df_dashboard.columns
-    else 0
-)
-
-evaluables_tat = cumple_tat + no_cumple_tat
-
-pct_cumple_tat = cumple_tat / evaluables_tat * 100 if evaluables_tat else 0
-pct_no_cumple_tat = no_cumple_tat / evaluables_tat * 100 if evaluables_tat else 0
-
-pct_filtrado = total_filtrado / total_inicial * 100 if total_inicial else 0
-
-col_k1, col_k2, col_k3, col_k4, col_k5, col_k6 = st.columns(6)
-
-col_k1.metric("Registros base", f"{total_inicial:,}")
-col_k2.metric("Registros filtrados", f"{total_filtrado:,}", f"{pct_filtrado:.1f}%")
-col_k3.metric("% Cumple evaluable", f"{pct_cumple_tat:.1f}%", f"{cumple_tat:,} cumple")
-col_k4.metric("% No cumple evaluable", f"{pct_no_cumple_tat:.1f}%", f"{no_cumple_tat:,} no cumple")
-col_k5.metric("En proceso", f"{en_proceso_tat:,}")
-col_k6.metric("Otros / sin datos", f"{otros_tat:,}")
+mostrar_indicadores_principales(kpis)
 
 
 # ============================================================
-# Desglose performance filtrado
+# Desglose performance filtrado con DONUT
 # ============================================================
 
-st.markdown("#### Desglose de datos filtrados por Performance TAT")
+st.markdown("### Desglose de datos filtrados por Performance TAT")
 st.caption(
-    "Cantidad y porcentaje que representa cada categoría sobre la base filtrada."
+    "El gráfico muestra cómo se distribuyen los registros filtrados entre Cumple, No cumple, En proceso, No aplica y Sin datos."
 )
 
 desglose_performance_df = crear_desglose_performance(df_dashboard)
 
-if desglose_performance_df.empty:
-    st.info("No hay desglose disponible.")
-else:
-    st.dataframe(
-        desglose_performance_df,
-        use_container_width=True,
-        hide_index=True,
+grafico_donut_performance(desglose_performance_df)
+
+
+# ============================================================
+# Retención por filtros
+# ============================================================
+
+with st.expander("Retención y exclusión por filtros", expanded=True):
+    st.caption(
+        "Muestra qué porcentaje de los registros ingresados quedó retenido después de aplicar los filtros."
     )
+
+    tabla_retencion = crear_desglose_retencion_filtros(
+        total_inicial=len(df_final),
+        total_filtrado=len(df_dashboard),
+    )
+
+    col_ret1, col_ret2 = st.columns([1.1, 1])
+
+    with col_ret1:
+        grafico_donut_retencion(tabla_retencion)
+
+    with col_ret2:
+        st.markdown("#### Tabla de retención")
+        st.dataframe(
+            tabla_retencion,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Cantidad": st.column_config.NumberColumn(
+                    "Cantidad",
+                    format="%d",
+                ),
+                "% del total ingresado": st.column_config.ProgressColumn(
+                    "% del total ingresado",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+            },
+        )
+
+    mostrar_detalle_filtros_aplicados(resumen_filtros_df)
 
 
 # ============================================================
@@ -2347,7 +2738,7 @@ else:
 
 st.markdown("### Cumplimiento TAT mensual")
 st.caption(
-    "El gráfico muestra solo el porcentaje de cumplimiento sobre registros evaluables. "
+    "El gráfico muestra el porcentaje de cumplimiento sobre registros evaluables. "
     "La línea segmentada indica la meta de cumplimiento."
 )
 
@@ -2365,6 +2756,7 @@ if mejor_mes is not None and peor_mes is not None:
             f"Mejor mes: {mejor_mes['periodo_label']} · "
             f"{mejor_mes['% Cumple evaluables']:.1f}% de cumplimiento evaluable "
             f"({int(mejor_mes['Cumple']):,} de {int(mejor_mes['Evaluables']):,} evaluables)."
+            .replace(",", ".")
         )
 
     with col_m2:
@@ -2372,6 +2764,7 @@ if mejor_mes is not None and peor_mes is not None:
             f"Peor mes: {peor_mes['periodo_label']} · "
             f"{peor_mes['% Cumple evaluables']:.1f}% de cumplimiento evaluable "
             f"({int(peor_mes['Cumple']):,} de {int(peor_mes['Evaluables']):,} evaluables)."
+            .replace(",", ".")
         )
 
 else:
@@ -2423,60 +2816,30 @@ else:
 
 st.markdown("### Incumplimiento TAT")
 st.caption(
-    "Distribución porcentual de rangos de incumplimiento. "
-    "El detalle absoluto se muestra debajo del gráfico."
+    "Distribución porcentual de rangos de incumplimiento."
 )
 
 tabla_rangos_incumplimiento = preparar_tabla_rangos_incumplimiento(df_dashboard)
 
 grafico_torta_rangos_incumplimiento(tabla_rangos_incumplimiento)
 
-st.markdown("#### Detalle absoluto por rango")
-
-if tabla_rangos_incumplimiento.empty:
-    st.info("No hay detalle disponible.")
-else:
-    st.dataframe(
-        tabla_rangos_incumplimiento,
-        use_container_width=True,
-        hide_index=True,
-    )
-
-st.markdown("#### Desglose de registros clasificados como Sin datos")
-
-st.caption(
-    "Este desglose explica por qué los registros aparecen como 'Sin datos' "
-    "en el rango de incumplimiento. No necesariamente coincide con el indicador "
-    "'Otros / sin datos', porque ese indicador usa performance_tat_total."
-)
-
-desglose_sin_datos_incumplimiento = crear_desglose_sin_datos_incumplimiento(
-    df_dashboard
-)
-
-if desglose_sin_datos_incumplimiento.empty:
-    st.success("No hay registros clasificados como Sin datos en el rango de incumplimiento.")
-else:
-    st.dataframe(
-        desglose_sin_datos_incumplimiento,
-        use_container_width=True,
-        hide_index=True,
-    )
+with st.expander("Detalle absoluto por rango", expanded=False):
+    if tabla_rangos_incumplimiento.empty:
+        st.info("No hay detalle disponible.")
+    else:
+        st.dataframe(
+            tabla_rangos_incumplimiento,
+            use_container_width=True,
+            hide_index=True,
+        )
 
 
 # ============================================================
 # Calidad de datos
 # ============================================================
 
-mostrar_detalle_nan_sin_datos(df_dashboard, col_centro)
-
-
-# ============================================================
-# Detalle de filtros aplicados
-# ============================================================
-
-with st.expander("Detalle de filtros aplicados", expanded=False):
-    mostrar_detalle_filtros_aplicados(resumen_filtros_df)
+with st.expander("Calidad de datos: NaN vs Sin datos", expanded=False):
+    mostrar_detalle_nan_sin_datos(df_dashboard, col_centro)
 
 
 # ============================================================
@@ -2567,7 +2930,7 @@ with st.expander("Descargar resultado filtrado", expanded=False):
         )
 
         if preparar_parquet:
-            with st.spinner("Preparando Parquet..."):
+            with st.spinner("Preparando Parquet."):
                 st.session_state["mensual_parquet_bytes"] = convertir_a_parquet_cache(df_dashboard)
                 st.session_state["mensual_parquet_firma"] = firma_export
 
@@ -2592,7 +2955,7 @@ with st.expander("Descargar resultado filtrado", expanded=False):
         )
 
         if preparar_csv:
-            with st.spinner("Preparando CSV..."):
+            with st.spinner("Preparando CSV."):
                 st.session_state["mensual_csv_bytes"] = convertir_a_csv_cache(df_dashboard)
                 st.session_state["mensual_csv_firma"] = firma_export
 
