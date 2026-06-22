@@ -9,12 +9,13 @@
 # - Default: Cumple + No cumple
 # - Base de análisis: registros evaluables
 # - Visual ejecutivo tipo Power BI
+# - Zoom último año con gráfico nativo Streamlit
+# - Detalle mensual por defecto en último mes disponible
 # ============================================================
 
 import io
 import base64
 from pathlib import Path
-from datetime import datetime
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -1397,6 +1398,321 @@ def grafico_ejecutivo_mensual(tabla_mensual: pd.DataFrame, titulo: str = "Perfor
     st.pyplot(fig, clear_figure=True, use_container_width=True)
 
 
+def preparar_zoom_ultimo_anio_streamlit(tabla_mensual: pd.DataFrame) -> tuple[pd.DataFrame, int | None]:
+    if tabla_mensual.empty or "periodo_fecha" not in tabla_mensual.columns:
+        return pd.DataFrame(), None
+
+    data = tabla_mensual.copy()
+    data["periodo_fecha"] = pd.to_datetime(data["periodo_fecha"], errors="coerce")
+    data = data[data["periodo_fecha"].notna()].copy()
+
+    if data.empty:
+        return pd.DataFrame(), None
+
+    data["anio_zoom"] = data["periodo_fecha"].dt.year
+    ultimo_anio = int(data["anio_zoom"].max())
+
+    data = (
+        data[data["anio_zoom"].eq(ultimo_anio)]
+        .sort_values("periodo_fecha")
+        .reset_index(drop=True)
+    )
+
+    if data.empty:
+        return pd.DataFrame(), ultimo_anio
+
+    data["Mes"] = data["periodo_fecha"].dt.month.map(MESES_NOMBRE).str.title()
+
+    data["Cumple %"] = (
+        pd.to_numeric(data["% Cumple evaluables"], errors="coerce")
+        .fillna(0)
+        .round(1)
+    )
+
+    data["No cumple %"] = (
+        pd.to_numeric(data["% No cumple evaluables"], errors="coerce")
+        .fillna(0)
+        .round(1)
+    )
+
+    data["Evaluables"] = (
+        pd.to_numeric(data["Evaluables"], errors="coerce")
+        .fillna(0)
+        .astype(int)
+    )
+
+    return data, ultimo_anio
+
+
+def mostrar_zoom_ultimo_anio_streamlit(tabla_mensual: pd.DataFrame):
+    st.markdown(
+        "<div class='exec-section-title'>Zoom último año disponible</div>",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        """
+        <div class='exec-small'>
+            Gráfico nativo de Streamlit sobre el último año disponible en los datos filtrados.
+            Muestra la evolución mensual del porcentaje de Cumple y No cumple sobre registros evaluables.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    data_zoom, ultimo_anio = preparar_zoom_ultimo_anio_streamlit(tabla_mensual)
+
+    if data_zoom.empty:
+        st.info("No hay datos disponibles para construir el zoom del último año.")
+        return
+
+    col_z1, col_z2, col_z3 = st.columns(3)
+
+    evaluables_anio = int(data_zoom["Evaluables"].sum())
+
+    cumple_promedio = (
+        float(data_zoom["Cumple %"].mean())
+        if not data_zoom.empty
+        else 0
+    )
+
+    no_cumple_promedio = (
+        float(data_zoom["No cumple %"].mean())
+        if not data_zoom.empty
+        else 0
+    )
+
+    with col_z1:
+        mostrar_kpi_ejecutivo(
+            "Año en zoom",
+            str(ultimo_anio),
+            f"{len(data_zoom)} mes(es) con registros evaluables.",
+        )
+
+    with col_z2:
+        mostrar_kpi_ejecutivo(
+            "Evaluables año",
+            formatear_entero(evaluables_anio),
+            "Total de registros evaluables en el año mostrado.",
+        )
+
+    with col_z3:
+        mostrar_kpi_ejecutivo(
+            "Cumplimiento promedio",
+            formatear_porcentaje(cumple_promedio),
+            f"No cumplimiento promedio: {formatear_porcentaje(no_cumple_promedio)}.",
+        )
+
+    chart_data = (
+        data_zoom[["Mes", "Cumple %", "No cumple %"]]
+        .set_index("Mes")
+    )
+
+    st.bar_chart(
+        chart_data,
+        use_container_width=True,
+        height=360,
+    )
+
+    with st.expander("Tabla zoom último año", expanded=False):
+        st.dataframe(
+            data_zoom[
+                [
+                    "periodo_label",
+                    "Cumple",
+                    "No cumple",
+                    "Evaluables",
+                    "Cumple %",
+                    "No cumple %",
+                ]
+            ],
+            use_container_width=True,
+            hide_index=True,
+        )
+
+
+def obtener_periodos_disponibles_detalle(tabla_mensual: pd.DataFrame) -> pd.DataFrame:
+    if tabla_mensual.empty or "periodo_fecha" not in tabla_mensual.columns:
+        return pd.DataFrame()
+
+    periodos = tabla_mensual.copy()
+    periodos["periodo_fecha"] = pd.to_datetime(periodos["periodo_fecha"], errors="coerce")
+    periodos = periodos[periodos["periodo_fecha"].notna()].copy()
+    periodos = periodos[periodos["Evaluables"].gt(0)].copy()
+
+    if periodos.empty:
+        return pd.DataFrame()
+
+    periodos = periodos.sort_values("periodo_fecha", ascending=False).reset_index(drop=True)
+
+    return periodos
+
+
+def mostrar_detalle_mes_ejecutivo(
+    df_dashboard: pd.DataFrame,
+    tabla_mensual: pd.DataFrame,
+    col_centro: str | None,
+):
+    st.markdown(
+        "<div class='exec-section-title'>Detalle mensual</div>",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        """
+        <div class='exec-small'>
+            Por defecto se muestra el último mes disponible. Puedes cambiar el mes para revisar el detalle.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    periodos = obtener_periodos_disponibles_detalle(tabla_mensual)
+
+    if periodos.empty:
+        st.info("No hay meses evaluables disponibles para mostrar detalle.")
+        return
+
+    opciones = periodos["periodo_label"].astype(str).tolist()
+
+    mes_sel = st.selectbox(
+        "Mes a revisar",
+        options=opciones,
+        index=0,
+        key="ejecutiva_mes_detalle",
+    )
+
+    fila_mes = periodos[periodos["periodo_label"].astype(str).eq(mes_sel)].iloc[0]
+    periodo_sel = pd.Timestamp(fila_mes["periodo_fecha"])
+
+    df_mes = df_dashboard[
+        df_dashboard["periodo_fecha"].eq(periodo_sel)
+    ].copy()
+
+    if df_mes.empty:
+        st.info("No hay registros para el mes seleccionado.")
+        return
+
+    estado_mes = df_mes["performance_tat_total"].apply(normalizar_estado_performance)
+
+    cumple_mes = int(estado_mes.eq("Cumple").sum())
+    no_cumple_mes = int(estado_mes.eq("No cumple").sum())
+    evaluables_mes = cumple_mes + no_cumple_mes
+
+    pct_cumple_mes = cumple_mes / evaluables_mes * 100 if evaluables_mes else 0
+    pct_no_cumple_mes = no_cumple_mes / evaluables_mes * 100 if evaluables_mes else 0
+
+    if "dias_tat_total" in df_mes.columns:
+        dias_tat = pd.to_numeric(df_mes["dias_tat_total"], errors="coerce")
+        promedio_dias_tat = dias_tat[dias_tat.ge(0)].mean() if not dias_tat.empty else 0
+    else:
+        promedio_dias_tat = 0
+
+    col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+
+    with col_m1:
+        mostrar_kpi_ejecutivo(
+            "Mes seleccionado",
+            mes_sel,
+            "Detalle de registros evaluables del mes.",
+        )
+
+    with col_m2:
+        mostrar_kpi_ejecutivo(
+            "Evaluables mes",
+            formatear_entero(evaluables_mes),
+            f"{formatear_entero(cumple_mes)} cumplen · {formatear_entero(no_cumple_mes)} no cumplen.",
+        )
+
+    with col_m3:
+        mostrar_kpi_ejecutivo(
+            "Cumplimiento mes",
+            formatear_porcentaje(pct_cumple_mes),
+            f"No cumplimiento: {formatear_porcentaje(pct_no_cumple_mes)}.",
+        )
+
+    with col_m4:
+        mostrar_kpi_ejecutivo(
+            "Promedio días TAT",
+            formatear_entero(promedio_dias_tat),
+            "Promedio de días TAT del mes seleccionado.",
+        )
+
+    columnas_preferidas = [
+        "Solicitud de pedido - ME5A",
+        COL_PEDIDO,
+        COL_DOCUMENTO_COMPRAS,
+        col_centro,
+        "tipo_oc",
+        "origen",
+        "sistema",
+        COL_FECHA_SOLICITUD_FINAL,
+        COL_FECHA_RECEPCION_FINAL,
+        "dias_tat_total",
+        "umbral_tat_total",
+        "performance_tat_total",
+        "dias_incumplimiento_tat",
+        "rango_incumplimiento_tat",
+    ]
+
+    columnas_preferidas = [
+        col for col in columnas_preferidas
+        if col is not None and col in df_mes.columns
+    ]
+
+    st.dataframe(
+        df_mes[columnas_preferidas] if columnas_preferidas else df_mes,
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    col_desc1, col_desc2, col_desc3 = st.columns(3)
+
+    periodo_archivo = periodo_sel.strftime("%Y_%m")
+
+    with col_desc1:
+        excel_mes = convertir_a_excel_cache(df_mes)
+
+        st.download_button(
+            label="Descargar mes seleccionado",
+            data=excel_mes,
+            file_name=f"12_VISTA_EJECUTIVA_{periodo_archivo}_DETALLE.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            type="primary",
+        )
+
+    with col_desc2:
+        df_mes_cumple = df_mes[
+            df_mes["performance_tat_total"].apply(normalizar_estado_performance).eq("Cumple")
+        ].copy()
+
+        excel_mes_cumple = convertir_a_excel_cache(df_mes_cumple)
+
+        st.download_button(
+            label="Descargar Cumple",
+            data=excel_mes_cumple,
+            file_name=f"12_VISTA_EJECUTIVA_{periodo_archivo}_CUMPLE.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
+
+    with col_desc3:
+        df_mes_no_cumple = df_mes[
+            df_mes["performance_tat_total"].apply(normalizar_estado_performance).eq("No cumple")
+        ].copy()
+
+        excel_mes_no_cumple = convertir_a_excel_cache(df_mes_no_cumple)
+
+        st.download_button(
+            label="Descargar No cumple",
+            data=excel_mes_no_cumple,
+            file_name=f"12_VISTA_EJECUTIVA_{periodo_archivo}_NO_CUMPLE.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
+
+
 def grafico_donut_etapa_ejecutiva(etapa: dict, datos: dict):
     cumple = int(datos.get("cumple", 0))
     no_cumple = int(datos.get("no_cumple", 0))
@@ -1709,7 +2025,7 @@ with st.form("form_filtros_vista_ejecutiva"):
             help="Por diseño ejecutivo, esta vista se calcula sobre registros evaluables.",
         )
 
-    aplicar_filtros = st.form_submit_button(
+    st.form_submit_button(
         "Actualizar vista ejecutiva",
         use_container_width=True,
         type="primary",
@@ -1833,6 +2149,24 @@ grafico_ejecutivo_mensual(
 
 
 # ============================================================
+# Zoom último año
+# ============================================================
+
+mostrar_zoom_ultimo_anio_streamlit(tabla_mensual)
+
+
+# ============================================================
+# Detalle mensual
+# ============================================================
+
+mostrar_detalle_mes_ejecutivo(
+    df_dashboard=df_dashboard,
+    tabla_mensual=tabla_mensual,
+    col_centro=col_centro,
+)
+
+
+# ============================================================
 # Visual 2: Cumplimiento por etapa
 # ============================================================
 
@@ -1840,10 +2174,10 @@ mostrar_etapas_ejecutivas(df_dashboard)
 
 
 # ============================================================
-# Detalle mensual
+# Detalle mensual consolidado
 # ============================================================
 
-with st.expander("Detalle mensual", expanded=False):
+with st.expander("Detalle mensual consolidado", expanded=False):
     if tabla_mensual.empty:
         st.info("No hay tabla mensual disponible.")
     else:
@@ -1948,7 +2282,7 @@ with st.expander("Vista previa de registros evaluables filtrados", expanded=Fals
 
 
 # ============================================================
-# Descarga
+# Descarga base filtrada
 # ============================================================
 
 with st.expander("Descargar base ejecutiva filtrada", expanded=False):
