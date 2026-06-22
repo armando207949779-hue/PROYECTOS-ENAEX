@@ -8,8 +8,10 @@
 # - Default: E002 si existe
 # - Default: Cumple + No cumple
 # - Base de análisis: registros evaluables
-# - Visual ejecutivo tipo Power BI
-# - Zoom último año con gráfico nativo Streamlit
+# - Visual ejecutivo con gráficos nativos de Streamlit
+# - Verde = Cumple
+# - Rojo = No cumple
+# - Zoom último año disponible
 # - Detalle mensual por defecto en último mes disponible
 # ============================================================
 
@@ -31,8 +33,8 @@ BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
 LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
 
-COLOR_CUMPLE = "#5F6264"
-COLOR_NO_CUMPLE = "#E83E51"
+COLOR_CUMPLE = "#2E7D32"
+COLOR_NO_CUMPLE = "#D32F2F"
 COLOR_META = "#00593A"
 COLOR_TEXTO = "#1F2937"
 COLOR_MUTED = "#6B7280"
@@ -223,6 +225,38 @@ st.markdown(
         .exec-small {
             color: #6B7280;
             font-size: 12px;
+        }
+
+        .legend-row {
+            display: flex;
+            gap: 16px;
+            align-items: center;
+            margin-top: 4px;
+            margin-bottom: 8px;
+            color: #4B5563;
+            font-size: 12px;
+        }
+
+        .legend-item {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+
+        .legend-dot-green {
+            width: 11px;
+            height: 11px;
+            border-radius: 999px;
+            background: #2E7D32;
+            display: inline-block;
+        }
+
+        .legend-dot-red {
+            width: 11px;
+            height: 11px;
+            border-radius: 999px;
+            background: #D32F2F;
+            display: inline-block;
         }
     </style>
     """,
@@ -1211,6 +1245,24 @@ def mostrar_kpi_ejecutivo(titulo: str, valor: str, subtitulo: str):
     )
 
 
+def mostrar_leyenda_cumplimiento():
+    st.markdown(
+        """
+        <div class="legend-row">
+            <div class="legend-item">
+                <span class="legend-dot-green"></span>
+                <span>Cumple</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-dot-red"></span>
+                <span>No cumple</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def etiqueta_mes_corta(fecha) -> str:
     if pd.isna(fecha):
         return "—"
@@ -1219,183 +1271,140 @@ def etiqueta_mes_corta(fecha) -> str:
     return MESES_NOMBRE.get(int(fecha.month), str(fecha.month))
 
 
-def grafico_ejecutivo_mensual(tabla_mensual: pd.DataFrame, titulo: str = "Performance TAT"):
+def preparar_chart_streamlit(
+    tabla_mensual: pd.DataFrame,
+    incluir_anio: bool = True,
+) -> pd.DataFrame:
+
     if tabla_mensual.empty:
+        return pd.DataFrame()
+
+    data = tabla_mensual.copy()
+    data["periodo_fecha"] = pd.to_datetime(data["periodo_fecha"], errors="coerce")
+    data = data[data["periodo_fecha"].notna()].copy()
+    data = data[data["Evaluables"].gt(0)].copy()
+
+    if data.empty:
+        return pd.DataFrame()
+
+    data = data.sort_values("periodo_fecha").reset_index(drop=True)
+
+    if incluir_anio:
+        data["Mes"] = data["periodo_fecha"].dt.month.map(MESES_NOMBRE).str.title() + " " + data["periodo_fecha"].dt.year.astype(str)
+    else:
+        data["Mes"] = data["periodo_fecha"].dt.month.map(MESES_NOMBRE).str.title()
+
+    data["Cumple"] = (
+        pd.to_numeric(data["% Cumple evaluables"], errors="coerce")
+        .fillna(0)
+        .round(1)
+    )
+
+    data["No cumple"] = (
+        pd.to_numeric(data["% No cumple evaluables"], errors="coerce")
+        .fillna(0)
+        .round(1)
+    )
+
+    data["Evaluables"] = (
+        pd.to_numeric(data["Evaluables"], errors="coerce")
+        .fillna(0)
+        .astype(int)
+    )
+
+    return data
+
+
+def mostrar_evolucion_mensual_streamlit(tabla_mensual: pd.DataFrame):
+    st.markdown(
+        "<div class='exec-section-title'>Evolución mensual ejecutiva</div>",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        f"""
+        <div class='exec-small'>
+            Gráfico nativo de Streamlit. Verde = Cumple, rojo = No cumple.
+            Base: registros evaluables. Meta referencial de cumplimiento: {META_CUMPLIMIENTO}%.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    mostrar_leyenda_cumplimiento()
+
+    chart_data = preparar_chart_streamlit(
+        tabla_mensual=tabla_mensual,
+        incluir_anio=True,
+    )
+
+    if chart_data.empty:
         st.info("No hay datos mensuales evaluables para graficar.")
         return
 
-    data = tabla_mensual.copy()
-    data = data[data["Evaluables"].gt(0)].sort_values("periodo_fecha").reset_index(drop=True)
+    promedio_cumple = float(chart_data["Cumple"].mean())
+    promedio_no_cumple = float(chart_data["No cumple"].mean())
+    evaluables_total = int(chart_data["Evaluables"].sum())
 
-    if data.empty:
-        st.info("No hay meses con registros evaluables para graficar.")
-        return
+    col_c1, col_c2, col_c3 = st.columns(3)
 
-    x = np.arange(len(data))
-
-    cumple_pct = pd.to_numeric(data["% Cumple evaluables"], errors="coerce").fillna(0).to_numpy()
-    no_cumple_pct = pd.to_numeric(data["% No cumple evaluables"], errors="coerce").fillna(0).to_numpy()
-
-    cumple_n = pd.to_numeric(data["Cumple"], errors="coerce").fillna(0).astype(int).to_numpy()
-    no_cumple_n = pd.to_numeric(data["No cumple"], errors="coerce").fillna(0).astype(int).to_numpy()
-    evaluables = pd.to_numeric(data["Evaluables"], errors="coerce").fillna(0).astype(int).to_numpy()
-
-    labels = [etiqueta_mes_corta(v) for v in data["periodo_fecha"]]
-    years = pd.to_datetime(data["periodo_fecha"], errors="coerce").dt.year.astype("Int64").astype(str).tolist()
-
-    fig_width = max(10.8, len(data) * 0.78)
-    fig, ax = plt.subplots(figsize=(fig_width, 4.55), dpi=180)
-
-    bar_width = 0.78
-
-    ax.bar(
-        x,
-        cumple_pct,
-        width=bar_width,
-        color=COLOR_CUMPLE,
-        label="Cumple",
-        edgecolor="white",
-        linewidth=1.0,
-    )
-
-    ax.bar(
-        x,
-        no_cumple_pct,
-        bottom=cumple_pct,
-        width=bar_width,
-        color=COLOR_NO_CUMPLE,
-        label="No cumple",
-        edgecolor="white",
-        linewidth=1.0,
-    )
-
-    ax.axhline(
-        META_CUMPLIMIENTO,
-        color=COLOR_META,
-        linestyle=(0, (2, 2)),
-        linewidth=1.7,
-        alpha=0.95,
-        label=f"Meta {META_CUMPLIMIENTO}%",
-    )
-
-    for i, (c_pct, nc_pct, c_n, nc_n, total) in enumerate(
-        zip(cumple_pct, no_cumple_pct, cumple_n, no_cumple_n, evaluables)
-    ):
-        if total <= 0:
-            continue
-
-        if c_pct >= 10:
-            ax.text(
-                i,
-                c_pct / 2,
-                f"{c_pct:.1f}%",
-                ha="center",
-                va="center",
-                fontsize=7.4,
-                color="white",
-                fontweight="bold",
-            )
-        elif c_pct > 0:
-            ax.text(
-                i,
-                max(c_pct + 2.0, 3.0),
-                f"{c_pct:.1f}%",
-                ha="center",
-                va="bottom",
-                fontsize=6.8,
-                color=COLOR_TEXTO,
-                fontweight="bold",
-            )
-
-        if nc_pct >= 10:
-            ax.text(
-                i,
-                c_pct + nc_pct / 2,
-                f"{nc_pct:.1f}%",
-                ha="center",
-                va="center",
-                fontsize=7.4,
-                color="white",
-                fontweight="bold",
-            )
-        elif nc_pct > 0:
-            ax.text(
-                i,
-                min(98, c_pct + nc_pct + 1.8),
-                f"{nc_pct:.1f}%",
-                ha="center",
-                va="bottom",
-                fontsize=6.8,
-                color=COLOR_NO_CUMPLE,
-                fontweight="bold",
-            )
-
-    cambios_anio = []
-
-    for idx in range(1, len(years)):
-        if years[idx] != years[idx - 1]:
-            cambios_anio.append(idx)
-            ax.axvline(idx - 0.5, color=COLOR_GRID, linestyle=":", linewidth=0.9)
-
-    grupos = []
-    inicio = 0
-
-    for idx in cambios_anio + [len(years)]:
-        grupos.append((inicio, idx - 1, years[inicio]))
-        inicio = idx
-
-    for inicio, fin, anio in grupos:
-        centro = (inicio + fin) / 2
-
-        ax.text(
-            centro,
-            -18,
-            anio,
-            ha="center",
-            va="top",
-            fontsize=8.2,
-            color=COLOR_MUTED,
-            transform=ax.transData,
-            clip_on=False,
+    with col_c1:
+        mostrar_kpi_ejecutivo(
+            "Meses evaluables",
+            formatear_entero(len(chart_data)),
+            "Cantidad de meses con registros evaluables.",
         )
 
-    ax.set_ylim(0, 105)
-    ax.set_yticks([0, 50, 100])
-    ax.set_yticklabels(["0%", "50%", "100%"], fontsize=8, color=COLOR_MUTED)
+    with col_c2:
+        mostrar_kpi_ejecutivo(
+            "Cumplimiento promedio",
+            formatear_porcentaje(promedio_cumple),
+            f"No cumplimiento promedio: {formatear_porcentaje(promedio_no_cumple)}.",
+        )
 
-    ax.set_xticks(x)
-    ax.set_xticklabels(labels, rotation=0, fontsize=8, color=COLOR_MUTED)
+    with col_c3:
+        mostrar_kpi_ejecutivo(
+            "Evaluables graficados",
+            formatear_entero(evaluables_total),
+            "Total de registros evaluables incluidos en el gráfico.",
+        )
 
-    ax.set_title(
-        titulo,
-        loc="left",
-        fontsize=14.5,
-        fontweight="bold",
-        color=COLOR_TEXTO,
-        pad=10,
+    chart_plot = chart_data[["Mes", "Cumple", "No cumple"]].set_index("Mes")
+
+    st.bar_chart(
+        chart_plot,
+        use_container_width=True,
+        height=390,
+        color=[COLOR_CUMPLE, COLOR_NO_CUMPLE],
     )
 
-    ax.grid(axis="y", linestyle=":", linewidth=0.7, color=COLOR_GRID)
-    ax.grid(axis="x", visible=False)
-    ax.tick_params(axis="both", length=0)
-
-    for spine in ax.spines.values():
-        spine.set_visible(False)
-
-    ax.legend(
-        loc="upper center",
-        bbox_to_anchor=(0.5, -0.20),
-        ncol=3,
-        frameon=False,
-        fontsize=8.6,
-    )
-
-    fig.patch.set_facecolor("white")
-    ax.set_facecolor("white")
-    fig.tight_layout()
-    fig.subplots_adjust(bottom=0.24)
-
-    st.pyplot(fig, clear_figure=True, use_container_width=True)
+    with st.expander("Tabla evolución mensual", expanded=False):
+        st.dataframe(
+            chart_data[
+                [
+                    "Mes",
+                    "Cumple",
+                    "No cumple",
+                    "Evaluables",
+                ]
+            ],
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Cumple": st.column_config.ProgressColumn(
+                    "Cumple %",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+                "No cumple": st.column_config.ProgressColumn(
+                    "No cumple %",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+            },
+        )
 
 
 def preparar_zoom_ultimo_anio_streamlit(tabla_mensual: pd.DataFrame) -> tuple[pd.DataFrame, int | None]:
@@ -1421,24 +1430,9 @@ def preparar_zoom_ultimo_anio_streamlit(tabla_mensual: pd.DataFrame) -> tuple[pd
     if data.empty:
         return pd.DataFrame(), ultimo_anio
 
-    data["Mes"] = data["periodo_fecha"].dt.month.map(MESES_NOMBRE).str.title()
-
-    data["Cumple %"] = (
-        pd.to_numeric(data["% Cumple evaluables"], errors="coerce")
-        .fillna(0)
-        .round(1)
-    )
-
-    data["No cumple %"] = (
-        pd.to_numeric(data["% No cumple evaluables"], errors="coerce")
-        .fillna(0)
-        .round(1)
-    )
-
-    data["Evaluables"] = (
-        pd.to_numeric(data["Evaluables"], errors="coerce")
-        .fillna(0)
-        .astype(int)
+    data = preparar_chart_streamlit(
+        tabla_mensual=data,
+        incluir_anio=False,
     )
 
     return data, ultimo_anio
@@ -1454,11 +1448,13 @@ def mostrar_zoom_ultimo_anio_streamlit(tabla_mensual: pd.DataFrame):
         """
         <div class='exec-small'>
             Gráfico nativo de Streamlit sobre el último año disponible en los datos filtrados.
-            Muestra la evolución mensual del porcentaje de Cumple y No cumple sobre registros evaluables.
+            Verde = Cumple, rojo = No cumple.
         </div>
         """,
         unsafe_allow_html=True,
     )
+
+    mostrar_leyenda_cumplimiento()
 
     data_zoom, ultimo_anio = preparar_zoom_ultimo_anio_streamlit(tabla_mensual)
 
@@ -1471,13 +1467,13 @@ def mostrar_zoom_ultimo_anio_streamlit(tabla_mensual: pd.DataFrame):
     evaluables_anio = int(data_zoom["Evaluables"].sum())
 
     cumple_promedio = (
-        float(data_zoom["Cumple %"].mean())
+        float(data_zoom["Cumple"].mean())
         if not data_zoom.empty
         else 0
     )
 
     no_cumple_promedio = (
-        float(data_zoom["No cumple %"].mean())
+        float(data_zoom["No cumple"].mean())
         if not data_zoom.empty
         else 0
     )
@@ -1503,31 +1499,41 @@ def mostrar_zoom_ultimo_anio_streamlit(tabla_mensual: pd.DataFrame):
             f"No cumplimiento promedio: {formatear_porcentaje(no_cumple_promedio)}.",
         )
 
-    chart_data = (
-        data_zoom[["Mes", "Cumple %", "No cumple %"]]
-        .set_index("Mes")
-    )
+    chart_plot = data_zoom[["Mes", "Cumple", "No cumple"]].set_index("Mes")
 
     st.bar_chart(
-        chart_data,
+        chart_plot,
         use_container_width=True,
         height=360,
+        color=[COLOR_CUMPLE, COLOR_NO_CUMPLE],
     )
 
     with st.expander("Tabla zoom último año", expanded=False):
         st.dataframe(
             data_zoom[
                 [
-                    "periodo_label",
+                    "Mes",
                     "Cumple",
                     "No cumple",
                     "Evaluables",
-                    "Cumple %",
-                    "No cumple %",
                 ]
             ],
             use_container_width=True,
             hide_index=True,
+            column_config={
+                "Cumple": st.column_config.ProgressColumn(
+                    "Cumple %",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+                "No cumple": st.column_config.ProgressColumn(
+                    "No cumple %",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+            },
         )
 
 
@@ -2124,32 +2130,14 @@ with col_k4:
 
 
 # ============================================================
-# Visual 1: Performance mensual
+# Visual 1: Evolución mensual nativa Streamlit
 # ============================================================
 
-st.markdown(
-    "<div class='exec-section-title'>Evolución mensual ejecutiva</div>",
-    unsafe_allow_html=True,
-)
-
-st.markdown(
-    """
-    <div class='exec-small'>
-        Barras 100% apiladas: gris = Cumple, rojo = No cumple.
-        La línea punteada indica la meta de cumplimiento.
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-
-grafico_ejecutivo_mensual(
-    tabla_mensual,
-    titulo="Performance TAT por mes",
-)
+mostrar_evolucion_mensual_streamlit(tabla_mensual)
 
 
 # ============================================================
-# Zoom último año
+# Zoom último año nativo Streamlit
 # ============================================================
 
 mostrar_zoom_ultimo_anio_streamlit(tabla_mensual)
