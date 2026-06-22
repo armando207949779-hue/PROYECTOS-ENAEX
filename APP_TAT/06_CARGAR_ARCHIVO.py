@@ -7,9 +7,13 @@
 # ============================================================
 
 import base64
+import re
+import hashlib
+import hmac
 from pathlib import Path
 from io import BytesIO
 from urllib.parse import urlparse
+from datetime import datetime
 
 import requests
 import pandas as pd
@@ -37,19 +41,7 @@ LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
 
 
 # ============================================================
-# CONFIGURACIÓN SHAREPOINT
-# ============================================================
-
-URL_PARQUET_TAT_SHAREPOINT = (
-    "https://empresassk-my.sharepoint.com/:u:/g/personal/"
-    "enrique_brun_aep_enaex_com/"
-    "IQC5EjhhupQsRIoiSgySri7uAbJDT60Jgc6xlieg9wwrq-Y?e=svCDl8"
-)
-
-
-# ============================================================
 # ESTILOS
-# No se modifica .block-container para no afectar el logo.
 # ============================================================
 
 st.markdown(
@@ -82,13 +74,6 @@ st.markdown(
             margin-bottom: 18px;
         }
 
-        .section-caption {
-            color: #6B7280;
-            font-size: 14px;
-            margin-top: -6px;
-            margin-bottom: 10px;
-        }
-
         .step-box {
             background-color: #f8f9fa;
             border: 1px solid #e9ecef;
@@ -100,6 +85,15 @@ st.markdown(
         .small-muted {
             color: #6B7280;
             font-size: 14px;
+        }
+
+        .clean-box {
+            background-color: #ffffff;
+            border: 1px solid #eeeeee;
+            border-radius: 14px;
+            padding: 18px;
+            margin-top: 10px;
+            margin-bottom: 12px;
         }
     </style>
     """,
@@ -190,6 +184,81 @@ def inicializar_estado():
     if "nombre_archivo_tat" not in st.session_state:
         st.session_state["nombre_archivo_tat"] = None
 
+    if "sharepoint_tat_autorizado" not in st.session_state:
+        st.session_state["sharepoint_tat_autorizado"] = False
+
+
+# ============================================================
+# FUNCIONES DE SEGURIDAD SHAREPOINT
+# ============================================================
+
+def obtener_url_sharepoint_segura() -> str:
+    """
+    Obtiene la URL de SharePoint desde st.secrets.
+    La URL no se muestra en pantalla.
+    """
+
+    try:
+        url = st.secrets["sharepoint_tat"]["url"]
+    except Exception:
+        raise ValueError(
+            "No se encontró la configuración de SharePoint."
+        )
+
+    if not str(url).strip():
+        raise ValueError(
+            "La URL de SharePoint está vacía en la configuración."
+        )
+
+    return str(url).strip()
+
+
+def obtener_hash_clave_sharepoint() -> str:
+    """
+    Obtiene el hash SHA-256 de la clave desde st.secrets.
+    """
+
+    try:
+        clave_hash = st.secrets["sharepoint_tat"]["access_key_sha256"]
+    except Exception:
+        raise ValueError(
+            "No se encontró la clave de acceso de SharePoint."
+        )
+
+    if not str(clave_hash).strip():
+        raise ValueError(
+            "La clave de acceso de SharePoint está vacía."
+        )
+
+    return str(clave_hash).strip()
+
+
+def calcular_sha256(texto: str) -> str:
+    """
+    Calcula SHA-256 de un texto.
+    """
+
+    return hashlib.sha256(
+        texto.encode("utf-8")
+    ).hexdigest()
+
+
+def validar_clave_sharepoint(clave_ingresada: str) -> bool:
+    """
+    Valida la clave ingresada contra el hash guardado en st.secrets.
+    """
+
+    if not clave_ingresada:
+        return False
+
+    hash_esperado = obtener_hash_clave_sharepoint()
+    hash_ingresado = calcular_sha256(clave_ingresada)
+
+    return hmac.compare_digest(
+        hash_ingresado,
+        hash_esperado,
+    )
+
 
 # ============================================================
 # FUNCIONES BASE
@@ -252,9 +321,6 @@ def preparar_url_descarga_sharepoint(url: str) -> str:
     """
     Convierte un link compartido de SharePoint/OneDrive en intento
     de descarga directa.
-
-    Si ya tiene parámetros, agrega &download=1.
-    Si no tiene parámetros, agrega ?download=1.
     """
 
     url = url.strip()
@@ -273,7 +339,7 @@ def preparar_url_descarga_sharepoint(url: str) -> str:
 def detectar_nombre_desde_url(url: str) -> str:
     """
     Intenta obtener el nombre del archivo desde la URL final.
-    Si no puede, usa un nombre estándar.
+    La URL no se muestra en la interfaz.
     """
 
     try:
@@ -289,15 +355,44 @@ def detectar_nombre_desde_url(url: str) -> str:
     return "05_CALCULOS_SHAREPOINT_TAT.parquet"
 
 
+def obtener_version_desde_nombre_archivo(nombre_archivo: str) -> dict:
+    """
+    Detecta fecha y hora desde nombres como:
+    05_CALCULOS_20260618_134450_TAT.parquet
+    """
+
+    patron = r"05_CALCULOS_(\d{8})_(\d{6})_TAT"
+    match = re.search(patron, nombre_archivo.upper())
+
+    if not match:
+        return {
+            "version_detectada": False,
+            "fecha_version": None,
+            "texto_version": "No se pudo detectar versión desde el nombre del archivo.",
+        }
+
+    fecha_txt = match.group(1)
+    hora_txt = match.group(2)
+
+    fecha_version = datetime.strptime(
+        fecha_txt + hora_txt,
+        "%Y%m%d%H%M%S",
+    )
+
+    texto_version = fecha_version.strftime("%d-%m-%Y %H:%M:%S")
+
+    return {
+        "version_detectada": True,
+        "fecha_version": fecha_version,
+        "texto_version": texto_version,
+    }
+
+
 @st.cache_data(show_spinner=False)
 def leer_parquet_sharepoint_cache(url: str):
     """
     Descarga un Parquet desde SharePoint usando requests.
-
-    Devuelve:
-    - DataFrame
-    - Nombre detectado del archivo
-    - URL final resuelta
+    No expone la URL en pantalla.
     """
 
     url_descarga = preparar_url_descarga_sharepoint(url)
@@ -315,8 +410,7 @@ def leer_parquet_sharepoint_cache(url: str):
 
     if "text/html" in content_type or b"<html" in contenido_inicio:
         raise ValueError(
-            "SharePoint devolvió HTML, no el archivo Parquet. "
-            "Verifica que el link permita descarga directa."
+            "SharePoint no devolvió el archivo Parquet."
         )
 
     if not (
@@ -324,15 +418,15 @@ def leer_parquet_sharepoint_cache(url: str):
         and response.content[-4:] == b"PAR1"
     ):
         raise ValueError(
-            "El archivo descargado no parece ser un Parquet válido. "
-            "No se encontró la firma PAR1 al inicio y al final."
+            "El archivo descargado no parece ser un Parquet válido."
         )
 
     df = pd.read_parquet(BytesIO(response.content))
 
     nombre_archivo = detectar_nombre_desde_url(response.url)
+    version = obtener_version_desde_nombre_archivo(nombre_archivo)
 
-    return df, nombre_archivo, response.url
+    return df, nombre_archivo, version
 
 
 def limpiar_nombres_columnas(df: pd.DataFrame) -> pd.DataFrame:
@@ -465,10 +559,12 @@ def obtener_resumen_archivos() -> pd.DataFrame:
 
     for nombre, df in st.session_state["archivos_tat"].items():
         validacion = validar_columnas_tat(df)
+        version = obtener_version_desde_nombre_archivo(nombre)
 
         resumen.append(
             {
                 "Archivo": nombre,
+                "Versión detectada": version["texto_version"],
                 "Archivo 05_CALCULOS_TAT": detectar_nombre_archivo_tat(nombre),
                 "TAT válido": validacion["es_valido"],
                 "Filas": df.shape[0],
@@ -571,7 +667,7 @@ st.markdown(
 
 
 # ============================================================
-# CONFIGURACIÓN DE LECTURA
+# CONFIGURACIÓN CSV
 # ============================================================
 
 with st.expander("Configuración CSV", expanded=False):
@@ -598,31 +694,40 @@ st.markdown(
     <div class="step-box">
         <h4 style="margin-top:0;">1. Cargar archivo TAT</h4>
         <p class="small-muted">
-            Carga el archivo generado por 05_CALCULOS.
-            Ejemplo esperado: 05_CALCULOS_20260618_132722_TAT.parquet.
-            Puedes subirlo manualmente o cargarlo directamente desde SharePoint.
+            Selecciona una opción de carga. Puedes subir un archivo manualmente
+            o usar la conexión protegida con SharePoint.
         </p>
     </div>
     """,
     unsafe_allow_html=True,
 )
 
-tab_subir, tab_sharepoint = st.tabs(
-    [
-        "Subir archivo",
-        "Cargar desde SharePoint",
-    ]
+opcion_carga = st.radio(
+    "Método de carga",
+    options=[
+        "Cargar archivo",
+        "Conexión SharePoint",
+    ],
+    horizontal=True,
+    label_visibility="collapsed",
 )
 
 
 # ============================================================
-# OPCIÓN 1: SUBIR ARCHIVO MANUALMENTE
+# OPCIÓN 1: CARGAR ARCHIVO MANUALMENTE
 # ============================================================
 
-with tab_subir:
-    st.caption(
-        "Usa esta opción si quieres cargar manualmente uno o varios archivos "
-        "CSV, XLSX, XLS o PARQUET."
+if opcion_carga == "Cargar archivo":
+    st.markdown(
+        """
+        <div class="clean-box">
+            <b>Carga manual</b><br>
+            <span class="small-muted">
+                Formatos permitidos: PARQUET, CSV, XLSX o XLS.
+            </span>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
     archivos = st.file_uploader(
@@ -630,7 +735,6 @@ with tab_subir:
         type=["xlsx", "xls", "csv", "parquet"],
         accept_multiple_files=True,
         key="archivos_base_tat_uploader",
-        label_visibility="collapsed",
     )
 
     if archivos:
@@ -657,8 +761,7 @@ with tab_subir:
                                 "archivo": archivo.name,
                                 "advertencia": (
                                     "El nombre no sigue el patrón esperado "
-                                    "05_CALCULOS_YYYYMMDD_HHMMSS_TAT, "
-                                    "pero se validará por columnas."
+                                    "05_CALCULOS_YYYYMMDD_HHMMSS_TAT."
                                 ),
                             }
                         )
@@ -679,97 +782,119 @@ with tab_subir:
                     )
 
         if archivos_cargados:
-            st.success(
-                f"{len(archivos_cargados)} archivo(s) TAT cargado(s). "
-                f"Activo: {st.session_state['nombre_archivo_tat']}"
-            )
+            nombre_activo = st.session_state["nombre_archivo_tat"]
+            version = obtener_version_desde_nombre_archivo(nombre_activo)
+
+            st.success("Archivo cargado correctamente.")
+
+            if version["version_detectada"]:
+                st.info(
+                    f"Última versión detectada: "
+                    f"**{version['texto_version']}**"
+                )
+            else:
+                st.warning(version["texto_version"])
 
         if archivos_con_advertencia:
             st.warning(
-                f"{len(archivos_con_advertencia)} archivo(s) fueron cargados, "
+                "Uno o más archivos fueron cargados, "
                 "pero su nombre no sigue el patrón esperado."
             )
-
-            with st.expander("Ver advertencias de nombre", expanded=False):
-                for item in archivos_con_advertencia:
-                    st.write(f"**{item['archivo']}**")
-                    st.code(item["advertencia"])
 
         if archivos_con_error:
             st.error(
                 f"No se pudieron cargar {len(archivos_con_error)} archivo(s)."
             )
 
-            with st.expander("Ver errores de carga", expanded=False):
+            with st.expander("Ver errores", expanded=False):
                 for item in archivos_con_error:
                     st.write(f"**{item['archivo']}**")
                     st.code(item["error"])
 
 
 # ============================================================
-# OPCIÓN 2: CARGAR DESDE SHAREPOINT
+# OPCIÓN 2: CONEXIÓN SHAREPOINT
 # ============================================================
 
-with tab_sharepoint:
-    st.caption(
-        "Usa esta opción para cargar el archivo Parquet directamente desde "
-        "SharePoint sin subirlo manualmente."
+if opcion_carga == "Conexión SharePoint":
+    st.markdown(
+        """
+        <div class="clean-box">
+            <b>Conexión SharePoint protegida</b><br>
+            <span class="small-muted">
+                Ingresa la clave autorizada para habilitar la conexión.
+                La URL y la clave se leen desde Streamlit Secrets.
+            </span>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
-    url_sharepoint = st.text_input(
-        "URL del archivo Parquet en SharePoint",
-        value=URL_PARQUET_TAT_SHAREPOINT,
-        key="url_parquet_tat_sharepoint",
+    clave_sharepoint = st.text_input(
+        "Clave de conexión",
+        type="password",
+        placeholder="Ingresa la clave de acceso",
+        key="clave_conexion_sharepoint_tat",
     )
 
-    cargar_sharepoint = st.button(
-        "Cargar Parquet desde SharePoint",
-        use_container_width=True,
-        key="boton_cargar_sharepoint_tat",
-    )
-
-    if cargar_sharepoint:
+    if clave_sharepoint:
         try:
-            with st.spinner("Descargando y validando archivo Parquet desde SharePoint..."):
-                df, nombre_archivo, url_final = leer_parquet_sharepoint_cache(
-                    url_sharepoint
-                )
+            if validar_clave_sharepoint(clave_sharepoint):
+                st.session_state["sharepoint_tat_autorizado"] = True
+                st.success("Clave validada correctamente.")
+            else:
+                st.session_state["sharepoint_tat_autorizado"] = False
+                st.error("Clave incorrecta. No se permite la conexión.")
 
-                es_nombre_tat = detectar_nombre_archivo_tat(nombre_archivo)
-
-                if not es_nombre_tat:
-                    st.warning(
-                        "El nombre del archivo no sigue el patrón esperado "
-                        "05_CALCULOS_YYYYMMDD_HHMMSS_TAT, "
-                        "pero se validará por columnas."
-                    )
-
-                guardar_archivo_en_sesion(
-                    df=df,
-                    nombre_archivo=nombre_archivo,
-                )
-
-            st.success(
-                f"Archivo TAT cargado correctamente desde SharePoint: "
-                f"**{nombre_archivo}**"
+        except Exception:
+            st.session_state["sharepoint_tat_autorizado"] = False
+            st.error(
+                "No se pudo validar la clave. "
+                "Revisa la configuración en Streamlit Secrets."
             )
 
-            with st.expander("Detalle de conexión SharePoint", expanded=False):
-                st.write("**URL final resuelta:**")
-                st.code(url_final)
+    if st.session_state["sharepoint_tat_autorizado"]:
+        cargar_sharepoint = st.button(
+            "Conectar y cargar archivo TAT",
+            use_container_width=True,
+            key="boton_cargar_sharepoint_tat",
+        )
 
-                st.write("**Dimensiones del archivo:**")
-                st.code(f"{df.shape[0]:,} filas x {df.shape[1]:,} columnas")
+        if cargar_sharepoint:
+            try:
+                with st.spinner("Conectando con SharePoint y validando archivo..."):
+                    url_sharepoint = obtener_url_sharepoint_segura()
 
-                st.write("**Vista previa:**")
-                st.dataframe(
-                    df.head(),
-                    use_container_width=True,
+                    df, nombre_archivo, version = leer_parquet_sharepoint_cache(
+                        url_sharepoint
+                    )
+
+                    guardar_archivo_en_sesion(
+                        df=df,
+                        nombre_archivo=nombre_archivo,
+                    )
+
+                st.success("Archivo cargado correctamente desde SharePoint.")
+
+                if version["version_detectada"]:
+                    st.info(
+                        f"Última versión detectada: "
+                        f"**{version['texto_version']}**"
+                    )
+                else:
+                    st.warning(version["texto_version"])
+
+                col_v1, col_v2 = st.columns(2)
+
+                col_v1.metric("Filas cargadas", f"{df.shape[0]:,}")
+                col_v2.metric("Columnas", f"{df.shape[1]:,}")
+
+            except Exception:
+                st.error("No se pudo cargar el archivo desde SharePoint.")
+                st.warning(
+                    "Verifica que la configuración de SharePoint esté correcta "
+                    "en Streamlit Secrets y que el archivo permita descarga directa."
                 )
-
-        except Exception as error:
-            st.error("No se pudo cargar el archivo desde SharePoint.")
-            st.code(str(error))
 
 
 # ============================================================
@@ -810,6 +935,7 @@ activar_archivo(archivo_seleccionado)
 df_tat = st.session_state["df_tat"]
 nombre_archivo = st.session_state["nombre_archivo_tat"]
 validacion_activa = validar_columnas_tat(df_tat)
+version_activa = obtener_version_desde_nombre_archivo(nombre_archivo)
 
 col1, col2, col3, col4 = st.columns(4)
 
@@ -817,6 +943,14 @@ col1.metric("Archivo activo", nombre_archivo)
 col2.metric("Filas", f"{df_tat.shape[0]:,}")
 col3.metric("Columnas", f"{df_tat.shape[1]:,}")
 col4.metric("TAT válido", "Sí" if validacion_activa["es_valido"] else "No")
+
+if version_activa["version_detectada"]:
+    st.info(
+        f"Última versión del archivo activo: "
+        f"**{version_activa['texto_version']}**"
+    )
+else:
+    st.warning(version_activa["texto_version"])
 
 st.success(
     f"Archivo activo guardado correctamente como **df_tat**: **{nombre_archivo}**"
