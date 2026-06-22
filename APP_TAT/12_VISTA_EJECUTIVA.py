@@ -227,6 +227,45 @@ st.markdown(
             color: #6B7280;
             font-size: 12px;
         }
+
+        .stage-stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
+            margin-top: 8px;
+        }
+
+        .stage-stat-card {
+            background: #F9FAFB;
+            border: 1px solid #E5E7EB;
+            border-radius: 10px;
+            padding: 7px 5px;
+            text-align: center;
+            min-height: 58px;
+        }
+
+        .stage-stat-value {
+            color: #111827;
+            font-size: 18px;
+            font-weight: 850;
+            line-height: 1.05;
+            white-space: nowrap;
+        }
+
+        .stage-stat-label {
+            color: #6B7280;
+            font-size: 9.5px;
+            margin-top: 4px;
+            line-height: 1.1;
+        }
+
+        .stage-note {
+            color: #6B7280;
+            font-size: 10.5px;
+            text-align: center;
+            margin-top: 6px;
+            line-height: 1.25;
+        }
     </style>
     """,
     unsafe_allow_html=True,
@@ -1707,7 +1746,7 @@ def grafico_donut_etapa_ejecutiva(etapa: dict, datos: dict):
     pct_cumple = cumple / total * 100
     pct_no_cumple = no_cumple / total * 100
 
-    fig, ax = plt.subplots(figsize=(3.1, 2.65), dpi=180)
+    fig, ax = plt.subplots(figsize=(3.1, 2.55), dpi=180)
 
     ax.pie(
         valores,
@@ -1776,62 +1815,39 @@ def grafico_donut_etapa_ejecutiva(etapa: dict, datos: dict):
 
     st.markdown(
         f"""
-        <div style="text-align:center; margin-top:-8px;">
-            <div style="font-size:27px; color:#111827; font-weight:850;">
+        <div style="text-align:center; margin-top:-10px;">
+            <div style="font-size:28px; color:#111827; font-weight:900; line-height:1;">
                 {promedio:.1f}
             </div>
-            <div style="font-size:11px; color:#6B7280;">
-                Promedio días {etapa["titulo"]}
+            <div style="font-size:10.5px; color:#6B7280; margin-top:4px;">
+                Promedio días
             </div>
         </div>
-        """,
-        unsafe_allow_html=True,
-    )
 
-    col_std, col_cv = st.columns(2)
+        <div class="stage-stats-grid">
+            <div class="stage-stat-card">
+                <div class="stage-stat-value">{desviacion_estandar:.1f}</div>
+                <div class="stage-stat-label">Desv.<br>estándar</div>
+            </div>
 
-    with col_std:
-        st.metric(
-            label="Desv. estándar",
-            value=f"{desviacion_estandar:.1f}",
-        )
+            <div class="stage-stat-card">
+                <div class="stage-stat-value">{coeficiente_variacion:.1f}%</div>
+                <div class="stage-stat-label">Coef.<br>variación</div>
+            </div>
 
-    with col_cv:
-        st.metric(
-            label="Coef. variación",
-            value=f"{coeficiente_variacion:.1f}%",
-        )
+            <div class="stage-stat-card">
+                <div class="stage-stat-value">{formatear_entero(n_promedio)}</div>
+                <div class="stage-stat-label">Base<br>promedio</div>
+            </div>
+        </div>
 
-    st.caption(
-        f"Base promedio: {formatear_entero(n_promedio)} registro(s)"
-    )
-
-    st.caption(etapa["regla"])
-
-
-def mostrar_etapas_ejecutivas(df_dashboard: pd.DataFrame):
-    st.markdown(
-        "<div class='exec-section-title'>Cumplimiento por etapa</div>",
-        unsafe_allow_html=True,
-    )
-
-    st.markdown(
-        """
-        <div class='exec-small'>
-            Base: registros evaluables filtrados. Visual ejecutivo con cumplimiento, no cumplimiento,
-            promedio de días, desviación estándar y coeficiente de variación.
+        <div class="stage-note">
+            {etapa["regla"]}
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    cols = st.columns(4)
-
-    for col, etapa in zip(cols, ETAPAS_DASHBOARD):
-        with col:
-            datos = datos_etapa(df_dashboard, etapa)
-            grafico_donut_etapa_ejecutiva(etapa, datos)
-
 
 def mostrar_etapas_ejecutivas(df_dashboard: pd.DataFrame):
     st.markdown(
@@ -1842,8 +1858,8 @@ def mostrar_etapas_ejecutivas(df_dashboard: pd.DataFrame):
     st.markdown(
         """
         <div class='exec-small'>
-            Base: registros evaluables filtrados. Visual ejecutivo con cumplimiento, no cumplimiento,
-            promedio de días, desviación estándar y coeficiente de variación.
+            Base: registros evaluables filtrados. Cada etapa muestra cumplimiento, promedio de días,
+            dispersión y variabilidad relativa.
         </div>
         """,
         unsafe_allow_html=True,
