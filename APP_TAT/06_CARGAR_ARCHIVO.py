@@ -9,7 +9,9 @@
 import base64
 from pathlib import Path
 from io import BytesIO
+from urllib.parse import urlparse
 
+import requests
 import pandas as pd
 import streamlit as st
 
@@ -32,6 +34,17 @@ st.set_page_config(
 BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
 LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
+
+
+# ============================================================
+# CONFIGURACIÓN SHAREPOINT
+# ============================================================
+
+URL_PARQUET_TAT_SHAREPOINT = (
+    "https://empresassk-my.sharepoint.com/:u:/g/personal/"
+    "enrique_brun_aep_enaex_com/"
+    "IQC5EjhhupQsRIoiSgySri7uAbJDT60Jgc6xlieg9wwrq-Y?e=svCDl8"
+)
 
 
 # ============================================================
@@ -235,6 +248,93 @@ def leer_archivo_cache(
     raise ValueError("Formato no soportado. Usa CSV, XLSX, XLS o PARQUET.")
 
 
+def preparar_url_descarga_sharepoint(url: str) -> str:
+    """
+    Convierte un link compartido de SharePoint/OneDrive en intento
+    de descarga directa.
+
+    Si ya tiene parámetros, agrega &download=1.
+    Si no tiene parámetros, agrega ?download=1.
+    """
+
+    url = url.strip()
+
+    if not url:
+        raise ValueError("La URL de SharePoint está vacía.")
+
+    if "download=1" in url.lower():
+        return url
+
+    separador = "&" if "?" in url else "?"
+
+    return f"{url}{separador}download=1"
+
+
+def detectar_nombre_desde_url(url: str) -> str:
+    """
+    Intenta obtener el nombre del archivo desde la URL final.
+    Si no puede, usa un nombre estándar.
+    """
+
+    try:
+        path = urlparse(url).path
+        nombre = Path(path).name
+
+        if nombre.lower().endswith(".parquet"):
+            return nombre
+
+    except Exception:
+        pass
+
+    return "05_CALCULOS_SHAREPOINT_TAT.parquet"
+
+
+@st.cache_data(show_spinner=False)
+def leer_parquet_sharepoint_cache(url: str):
+    """
+    Descarga un Parquet desde SharePoint usando requests.
+
+    Devuelve:
+    - DataFrame
+    - Nombre detectado del archivo
+    - URL final resuelta
+    """
+
+    url_descarga = preparar_url_descarga_sharepoint(url)
+
+    response = requests.get(
+        url_descarga,
+        allow_redirects=True,
+        timeout=90,
+    )
+
+    response.raise_for_status()
+
+    content_type = response.headers.get("Content-Type", "").lower()
+    contenido_inicio = response.content[:500].lower()
+
+    if "text/html" in content_type or b"<html" in contenido_inicio:
+        raise ValueError(
+            "SharePoint devolvió HTML, no el archivo Parquet. "
+            "Verifica que el link permita descarga directa."
+        )
+
+    if not (
+        response.content[:4] == b"PAR1"
+        and response.content[-4:] == b"PAR1"
+    ):
+        raise ValueError(
+            "El archivo descargado no parece ser un Parquet válido. "
+            "No se encontró la firma PAR1 al inicio y al final."
+        )
+
+    df = pd.read_parquet(BytesIO(response.content))
+
+    nombre_archivo = detectar_nombre_desde_url(response.url)
+
+    return df, nombre_archivo, response.url
+
+
 def limpiar_nombres_columnas(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df.columns = df.columns.astype(str).str.strip()
@@ -397,8 +497,6 @@ def construir_tabla_columnas(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def construir_resumen_tat(df: pd.DataFrame) -> pd.DataFrame:
-    data = []
-
     if "performance_tat_total" in df.columns:
         conteo = (
             df["performance_tat_total"]
@@ -502,92 +600,176 @@ st.markdown(
         <p class="small-muted">
             Carga el archivo generado por 05_CALCULOS.
             Ejemplo esperado: 05_CALCULOS_20260618_132722_TAT.parquet.
-            También se aceptan CSV, XLSX y XLS.
+            Puedes subirlo manualmente o cargarlo directamente desde SharePoint.
         </p>
     </div>
     """,
     unsafe_allow_html=True,
 )
 
-archivos = st.file_uploader(
-    "Selecciona uno o varios archivos TAT",
-    type=["xlsx", "xls", "csv", "parquet"],
-    accept_multiple_files=True,
-    key="archivos_base_tat_uploader",
-    label_visibility="collapsed",
+tab_subir, tab_sharepoint = st.tabs(
+    [
+        "Subir archivo",
+        "Cargar desde SharePoint",
+    ]
 )
 
-if archivos:
-    archivos_cargados = []
-    archivos_con_error = []
-    archivos_con_advertencia = []
 
-    with st.spinner("Leyendo y validando archivos TAT..."):
-        for archivo in archivos:
-            try:
-                archivo_bytes = archivo.getvalue()
+# ============================================================
+# OPCIÓN 1: SUBIR ARCHIVO MANUALMENTE
+# ============================================================
 
-                df = leer_archivo_cache(
-                    archivo_bytes=archivo_bytes,
-                    nombre_archivo=archivo.name,
-                    separador_csv=separador_csv,
-                )
+with tab_subir:
+    st.caption(
+        "Usa esta opción si quieres cargar manualmente uno o varios archivos "
+        "CSV, XLSX, XLS o PARQUET."
+    )
 
-                es_nombre_tat = detectar_nombre_archivo_tat(archivo.name)
+    archivos = st.file_uploader(
+        "Selecciona uno o varios archivos TAT",
+        type=["xlsx", "xls", "csv", "parquet"],
+        accept_multiple_files=True,
+        key="archivos_base_tat_uploader",
+        label_visibility="collapsed",
+    )
 
-                if not es_nombre_tat:
-                    archivos_con_advertencia.append(
+    if archivos:
+        archivos_cargados = []
+        archivos_con_error = []
+        archivos_con_advertencia = []
+
+        with st.spinner("Leyendo y validando archivos TAT..."):
+            for archivo in archivos:
+                try:
+                    archivo_bytes = archivo.getvalue()
+
+                    df = leer_archivo_cache(
+                        archivo_bytes=archivo_bytes,
+                        nombre_archivo=archivo.name,
+                        separador_csv=separador_csv,
+                    )
+
+                    es_nombre_tat = detectar_nombre_archivo_tat(archivo.name)
+
+                    if not es_nombre_tat:
+                        archivos_con_advertencia.append(
+                            {
+                                "archivo": archivo.name,
+                                "advertencia": (
+                                    "El nombre no sigue el patrón esperado "
+                                    "05_CALCULOS_YYYYMMDD_HHMMSS_TAT, "
+                                    "pero se validará por columnas."
+                                ),
+                            }
+                        )
+
+                    guardar_archivo_en_sesion(
+                        df=df,
+                        nombre_archivo=archivo.name,
+                    )
+
+                    archivos_cargados.append(archivo.name)
+
+                except Exception as error:
+                    archivos_con_error.append(
                         {
                             "archivo": archivo.name,
-                            "advertencia": (
-                                "El nombre no sigue el patrón esperado "
-                                "05_CALCULOS_YYYYMMDD_HHMMSS_TAT, "
-                                "pero se validará por columnas."
-                            ),
+                            "error": str(error),
                         }
+                    )
+
+        if archivos_cargados:
+            st.success(
+                f"{len(archivos_cargados)} archivo(s) TAT cargado(s). "
+                f"Activo: {st.session_state['nombre_archivo_tat']}"
+            )
+
+        if archivos_con_advertencia:
+            st.warning(
+                f"{len(archivos_con_advertencia)} archivo(s) fueron cargados, "
+                "pero su nombre no sigue el patrón esperado."
+            )
+
+            with st.expander("Ver advertencias de nombre", expanded=False):
+                for item in archivos_con_advertencia:
+                    st.write(f"**{item['archivo']}**")
+                    st.code(item["advertencia"])
+
+        if archivos_con_error:
+            st.error(
+                f"No se pudieron cargar {len(archivos_con_error)} archivo(s)."
+            )
+
+            with st.expander("Ver errores de carga", expanded=False):
+                for item in archivos_con_error:
+                    st.write(f"**{item['archivo']}**")
+                    st.code(item["error"])
+
+
+# ============================================================
+# OPCIÓN 2: CARGAR DESDE SHAREPOINT
+# ============================================================
+
+with tab_sharepoint:
+    st.caption(
+        "Usa esta opción para cargar el archivo Parquet directamente desde "
+        "SharePoint sin subirlo manualmente."
+    )
+
+    url_sharepoint = st.text_input(
+        "URL del archivo Parquet en SharePoint",
+        value=URL_PARQUET_TAT_SHAREPOINT,
+        key="url_parquet_tat_sharepoint",
+    )
+
+    cargar_sharepoint = st.button(
+        "Cargar Parquet desde SharePoint",
+        use_container_width=True,
+        key="boton_cargar_sharepoint_tat",
+    )
+
+    if cargar_sharepoint:
+        try:
+            with st.spinner("Descargando y validando archivo Parquet desde SharePoint..."):
+                df, nombre_archivo, url_final = leer_parquet_sharepoint_cache(
+                    url_sharepoint
+                )
+
+                es_nombre_tat = detectar_nombre_archivo_tat(nombre_archivo)
+
+                if not es_nombre_tat:
+                    st.warning(
+                        "El nombre del archivo no sigue el patrón esperado "
+                        "05_CALCULOS_YYYYMMDD_HHMMSS_TAT, "
+                        "pero se validará por columnas."
                     )
 
                 guardar_archivo_en_sesion(
                     df=df,
-                    nombre_archivo=archivo.name,
+                    nombre_archivo=nombre_archivo,
                 )
 
-                archivos_cargados.append(archivo.name)
+            st.success(
+                f"Archivo TAT cargado correctamente desde SharePoint: "
+                f"**{nombre_archivo}**"
+            )
 
-            except Exception as error:
-                archivos_con_error.append(
-                    {
-                        "archivo": archivo.name,
-                        "error": str(error),
-                    }
+            with st.expander("Detalle de conexión SharePoint", expanded=False):
+                st.write("**URL final resuelta:**")
+                st.code(url_final)
+
+                st.write("**Dimensiones del archivo:**")
+                st.code(f"{df.shape[0]:,} filas x {df.shape[1]:,} columnas")
+
+                st.write("**Vista previa:**")
+                st.dataframe(
+                    df.head(),
+                    use_container_width=True,
                 )
 
-    if archivos_cargados:
-        st.success(
-            f"{len(archivos_cargados)} archivo(s) TAT cargado(s). "
-            f"Activo: {st.session_state['nombre_archivo_tat']}"
-        )
-
-    if archivos_con_advertencia:
-        st.warning(
-            f"{len(archivos_con_advertencia)} archivo(s) fueron cargados, "
-            "pero su nombre no sigue el patrón esperado."
-        )
-
-        with st.expander("Ver advertencias de nombre", expanded=False):
-            for item in archivos_con_advertencia:
-                st.write(f"**{item['archivo']}**")
-                st.code(item["advertencia"])
-
-    if archivos_con_error:
-        st.error(
-            f"No se pudieron cargar {len(archivos_con_error)} archivo(s)."
-        )
-
-        with st.expander("Ver errores de carga", expanded=False):
-            for item in archivos_con_error:
-                st.write(f"**{item['archivo']}**")
-                st.code(item["error"])
+        except Exception as error:
+            st.error("No se pudo cargar el archivo desde SharePoint.")
+            st.code(str(error))
 
 
 # ============================================================
