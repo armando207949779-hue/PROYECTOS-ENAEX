@@ -9,9 +9,9 @@
 # - Default: Cumple + No cumple
 # - Base de análisis: registros evaluables
 # - Visual ejecutivo con gráficos nativos de Streamlit
-# - Colores originales:
-#   Cumple = rojo
-#   No cumple = gris
+# - Colores:
+#   Cumple = gris original
+#   No cumple = rojo original
 # - Zoom último año disponible
 # - Detalle mensual por defecto en último mes disponible
 # ============================================================
@@ -34,8 +34,8 @@ BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
 LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
 
-COLOR_CUMPLE = "#EF3E52"
-COLOR_NO_CUMPLE = "#BFC3C7"
+COLOR_CUMPLE = "#BFC3C7"
+COLOR_NO_CUMPLE = "#EF3E52"
 COLOR_META = "#0057B8"
 COLOR_TEXTO = "#1F2937"
 COLOR_MUTED = "#6B7280"
@@ -139,7 +139,7 @@ st.markdown(
     """
     <style>
         .block-container {
-            padding-top: 1.1rem;
+            padding-top: 3.8rem;
             padding-bottom: 1.2rem;
             max-width: 1380px;
         }
@@ -248,7 +248,7 @@ st.markdown(
             width: 11px;
             height: 11px;
             border-radius: 999px;
-            background: #EF3E52;
+            background: #BFC3C7;
             display: inline-block;
         }
 
@@ -256,7 +256,7 @@ st.markdown(
             width: 11px;
             height: 11px;
             border-radius: 999px;
-            background: #BFC3C7;
+            background: #EF3E52;
             display: inline-block;
         }
     </style>
@@ -1323,7 +1323,7 @@ def mostrar_evolucion_mensual_streamlit(tabla_mensual: pd.DataFrame):
     st.markdown(
         f"""
         <div class='exec-small'>
-            Gráfico nativo de Streamlit. Rojo = Cumple, gris = No cumple.
+            Gráfico nativo de Streamlit. Gris = Cumple, rojo = No cumple.
             Base: registros evaluables. Meta referencial de cumplimiento: {META_CUMPLIMIENTO}%.
         </div>
         """,
@@ -1447,7 +1447,7 @@ def mostrar_zoom_ultimo_anio_streamlit(tabla_mensual: pd.DataFrame):
         """
         <div class='exec-small'>
             Gráfico nativo de Streamlit sobre el último año disponible en los datos filtrados.
-            Rojo = Cumple, gris = No cumple.
+            Gris = Cumple, rojo = No cumple.
         </div>
         """,
         unsafe_allow_html=True,
