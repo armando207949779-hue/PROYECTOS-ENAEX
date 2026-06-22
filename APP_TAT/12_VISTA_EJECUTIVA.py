@@ -1813,41 +1813,33 @@ def grafico_donut_etapa_ejecutiva(etapa: dict, datos: dict):
     coeficiente_variacion = datos.get("coeficiente_variacion_dias", 0)
     n_promedio = datos.get("n_promedio", 0)
 
+      promedio = datos.get("promedio_dias", 0)
+    desviacion_estandar = datos.get("desviacion_estandar_dias", 0)
+    coeficiente_variacion = datos.get("coeficiente_variacion_dias", 0)
+    n_promedio = datos.get("n_promedio", 0)
+
     st.markdown(
-        f"""
-        <div style="text-align:center; margin-top:-10px;">
-            <div style="font-size:28px; color:#111827; font-weight:900; line-height:1;">
-                {promedio:.1f}
-            </div>
-            <div style="font-size:10.5px; color:#6B7280; margin-top:4px;">
-                Promedio días
-            </div>
-        </div>
-
-        <div class="stage-stats-grid">
-            <div class="stage-stat-card">
-                <div class="stage-stat-value">{desviacion_estandar:.1f}</div>
-                <div class="stage-stat-label">Desv.<br>estándar</div>
-            </div>
-
-            <div class="stage-stat-card">
-                <div class="stage-stat-value">{coeficiente_variacion:.1f}%</div>
-                <div class="stage-stat-label">Coef.<br>variación</div>
-            </div>
-
-            <div class="stage-stat-card">
-                <div class="stage-stat-value">{formatear_entero(n_promedio)}</div>
-                <div class="stage-stat-label">Base<br>promedio</div>
-            </div>
-        </div>
-
-        <div class="stage-note">
-            {etapa["regla"]}
-        </div>
-        """,
-        unsafe_allow_html=True,
+        f"### {promedio:.1f}",
+        help=f"Promedio de días de la etapa {etapa['titulo']}",
     )
 
+    st.caption(f"Promedio días {etapa['titulo']}")
+
+    col_s1, col_s2, col_s3 = st.columns(3)
+
+    with col_s1:
+        st.caption("Desv. estándar")
+        st.markdown(f"**{desviacion_estandar:.1f}**")
+
+    with col_s2:
+        st.caption("Coef. variación")
+        st.markdown(f"**{coeficiente_variacion:.1f}%**")
+
+    with col_s3:
+        st.caption("Base promedio")
+        st.markdown(f"**{formatear_entero(n_promedio)}**")
+
+    st.caption(etapa["regla"])
 
 def mostrar_etapas_ejecutivas(df_dashboard: pd.DataFrame):
     st.markdown(
