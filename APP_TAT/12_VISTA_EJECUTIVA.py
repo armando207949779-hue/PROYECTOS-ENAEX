@@ -1147,6 +1147,8 @@ def datos_etapa(df: pd.DataFrame, etapa: dict) -> dict:
             "pct_cumple": 0,
             "pct_no_cumple": 0,
             "promedio_dias": 0,
+            "desviacion_estandar_dias": 0,
+            "coeficiente_variacion_dias": 0,
             "n_promedio": 0,
         }
 
@@ -1159,13 +1161,29 @@ def datos_etapa(df: pd.DataFrame, etapa: dict) -> dict:
     pct_cumple = cumple / evaluables * 100 if evaluables else 0
     pct_no_cumple = no_cumple / evaluables * 100 if evaluables else 0
 
-    if col_dias in df.columns:
-        dias = pd.to_numeric(df[col_dias], errors="coerce")
+    if col_dias in temp.columns:
+        dias = pd.to_numeric(temp[col_dias], errors="coerce")
         dias = dias[dias > 0]
-        promedio = dias.mean() if not dias.empty else 0
+
+        promedio = float(dias.mean()) if not dias.empty else 0
+
+        desviacion_estandar = (
+            float(dias.std(ddof=1))
+            if len(dias) > 1
+            else 0
+        )
+
+        coeficiente_variacion = (
+            desviacion_estandar / promedio * 100
+            if promedio != 0
+            else 0
+        )
+
         n_promedio = int(len(dias))
     else:
         promedio = 0
+        desviacion_estandar = 0
+        coeficiente_variacion = 0
         n_promedio = 0
 
     return {
@@ -1175,6 +1193,8 @@ def datos_etapa(df: pd.DataFrame, etapa: dict) -> dict:
         "pct_cumple": pct_cumple,
         "pct_no_cumple": pct_no_cumple,
         "promedio_dias": promedio,
+        "desviacion_estandar_dias": desviacion_estandar,
+        "coeficiente_variacion_dias": coeficiente_variacion,
         "n_promedio": n_promedio,
     }
 
@@ -1746,6 +1766,9 @@ def grafico_donut_etapa_ejecutiva(etapa: dict, datos: dict):
     st.pyplot(fig, clear_figure=True, use_container_width=True)
 
     promedio = datos.get("promedio_dias", 0)
+    desviacion_estandar = datos.get("desviacion_estandar_dias", 0)
+    coeficiente_variacion = datos.get("coeficiente_variacion_dias", 0)
+    n_promedio = datos.get("n_promedio", 0)
 
     st.markdown(
         f"""
@@ -1753,9 +1776,50 @@ def grafico_donut_etapa_ejecutiva(etapa: dict, datos: dict):
             <div style="font-size:27px; color:#111827; font-weight:850;">
                 {promedio:.0f}
             </div>
+
             <div style="font-size:11px; color:#6B7280;">
                 Promedio de Dx {etapa["titulo"]}
             </div>
+
+            <div style="
+                margin-top:8px;
+                display:grid;
+                grid-template-columns:1fr 1fr;
+                gap:6px;
+            ">
+                <div style="
+                    background:#F9FAFB;
+                    border:1px solid #E5E7EB;
+                    border-radius:10px;
+                    padding:6px 4px;
+                ">
+                    <div style="font-size:15px; color:#111827; font-weight:800;">
+                        {desviacion_estandar:.1f}
+                    </div>
+                    <div style="font-size:9.5px; color:#6B7280;">
+                        Desv. estándar
+                    </div>
+                </div>
+
+                <div style="
+                    background:#F9FAFB;
+                    border:1px solid #E5E7EB;
+                    border-radius:10px;
+                    padding:6px 4px;
+                ">
+                    <div style="font-size:15px; color:#111827; font-weight:800;">
+                        {coeficiente_variacion:.1f}%
+                    </div>
+                    <div style="font-size:9.5px; color:#6B7280;">
+                        Coef. variación
+                    </div>
+                </div>
+            </div>
+
+            <div style="font-size:10px; color:#6B7280; margin-top:5px;">
+                Base promedio: {n_promedio:,} registro(s)
+            </div>
+
             <div style="font-size:10.5px; color:#6B7280; margin-top:4px;">
                 {etapa["regla"]}
             </div>
@@ -1774,7 +1838,8 @@ def mostrar_etapas_ejecutivas(df_dashboard: pd.DataFrame):
     st.markdown(
         """
         <div class='exec-small'>
-            Base: registros evaluables filtrados. Visual ejecutivo con cumplimiento, no cumplimiento y promedio de días.
+            Base: registros evaluables filtrados. Visual ejecutivo con cumplimiento, no cumplimiento,
+            promedio de días, desviación estándar y coeficiente de variación.
         </div>
         """,
         unsafe_allow_html=True,
