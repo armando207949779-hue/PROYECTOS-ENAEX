@@ -9,8 +9,9 @@
 # - Default: Cumple + No cumple
 # - Base de análisis: registros evaluables
 # - Visual ejecutivo con gráficos nativos de Streamlit
-# - Verde = Cumple
-# - Rojo = No cumple
+# - Colores pastel:
+#   Cumple = verde pastel
+#   No cumple = rojo pastel
 # - Zoom último año disponible
 # - Detalle mensual por defecto en último mes disponible
 # ============================================================
@@ -33,16 +34,16 @@ BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
 LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
 
-COLOR_CUMPLE = "#2E7D32"
-COLOR_NO_CUMPLE = "#D32F2F"
-COLOR_META = "#00593A"
+COLOR_CUMPLE = "#9CCB9E"
+COLOR_NO_CUMPLE = "#F2A0A0"
+COLOR_META = "#6FAE8C"
 COLOR_TEXTO = "#1F2937"
 COLOR_MUTED = "#6B7280"
 COLOR_GRID = "#D1D5DB"
 
-COLOR_EN_PROCESO = "#F4B400"
-COLOR_NO_APLICA = "#9CA3AF"
-COLOR_SIN_DATOS = "#D1D5DB"
+COLOR_EN_PROCESO = "#F8D77A"
+COLOR_NO_APLICA = "#C7CBD1"
+COLOR_SIN_DATOS = "#E5E7EB"
 
 META_CUMPLIMIENTO = 65
 
@@ -247,16 +248,18 @@ st.markdown(
             width: 11px;
             height: 11px;
             border-radius: 999px;
-            background: #2E7D32;
+            background: #9CCB9E;
             display: inline-block;
+            border: 1px solid #7FB783;
         }
 
         .legend-dot-red {
             width: 11px;
             height: 11px;
             border-radius: 999px;
-            background: #D32F2F;
+            background: #F2A0A0;
             display: inline-block;
+            border: 1px solid #E38484;
         }
     </style>
     """,
@@ -278,19 +281,21 @@ def mostrar_logo():
             <div style="
                 width: 100%;
                 display: flex;
-                justify-content: flex-start;
+                justify-content: center;
                 align-items: center;
-                margin-top: 2px;
-                margin-bottom: 8px;
+                margin-top: 5px;
+                margin-bottom: 10px;
             ">
-                <img
-                    src="data:image/svg+xml;base64,{logo_base64}"
-                    style="width: 185px; display: block;"
+                <img 
+                    src="data:image/svg+xml;base64,{logo_base64}" 
+                    style="width: 220px; display: block;"
                 >
             </div>
             """,
             unsafe_allow_html=True,
         )
+    else:
+        st.warning(f"Logo no encontrado: {LOGO_PATH}")
 
 
 # ============================================================
@@ -1290,7 +1295,11 @@ def preparar_chart_streamlit(
     data = data.sort_values("periodo_fecha").reset_index(drop=True)
 
     if incluir_anio:
-        data["Mes"] = data["periodo_fecha"].dt.month.map(MESES_NOMBRE).str.title() + " " + data["periodo_fecha"].dt.year.astype(str)
+        data["Mes"] = (
+            data["periodo_fecha"].dt.month.map(MESES_NOMBRE).str.title()
+            + " "
+            + data["periodo_fecha"].dt.year.astype(str)
+        )
     else:
         data["Mes"] = data["periodo_fecha"].dt.month.map(MESES_NOMBRE).str.title()
 
@@ -1324,7 +1333,7 @@ def mostrar_evolucion_mensual_streamlit(tabla_mensual: pd.DataFrame):
     st.markdown(
         f"""
         <div class='exec-small'>
-            Gráfico nativo de Streamlit. Verde = Cumple, rojo = No cumple.
+            Gráfico nativo de Streamlit. Verde pastel = Cumple, rojo pastel = No cumple.
             Base: registros evaluables. Meta referencial de cumplimiento: {META_CUMPLIMIENTO}%.
         </div>
         """,
@@ -1448,7 +1457,7 @@ def mostrar_zoom_ultimo_anio_streamlit(tabla_mensual: pd.DataFrame):
         """
         <div class='exec-small'>
             Gráfico nativo de Streamlit sobre el último año disponible en los datos filtrados.
-            Verde = Cumple, rojo = No cumple.
+            Verde pastel = Cumple, rojo pastel = No cumple.
         </div>
         """,
         unsafe_allow_html=True,
