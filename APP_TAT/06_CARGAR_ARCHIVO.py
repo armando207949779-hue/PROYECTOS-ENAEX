@@ -1,6 +1,6 @@
 # ============================================================
 # 06_CARGAR_ARCHIVO
-# Carga archivo TAT generado por 05_CALCULOS
+# Carga del archivo TAT generado por 05_CALCULOS
 # Guarda archivo activo en sesión como df_tat
 # ============================================================
 
@@ -36,6 +36,40 @@ st.set_page_config(
 BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
 LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
+
+
+# ============================================================
+# ESTILOS MÍNIMOS
+# ============================================================
+
+st.markdown(
+    """
+    <style>
+        div[data-testid="stMetric"] {
+            background-color: #fafafa;
+            padding: 10px;
+            border-radius: 10px;
+            border: 1px solid #eeeeee;
+        }
+
+        .page-title {
+            text-align: center;
+            font-size: 30px;
+            font-weight: 800;
+            color: #111827;
+            margin-bottom: 2px;
+        }
+
+        .page-subtitle {
+            text-align: center;
+            color: #6B7280;
+            font-size: 15px;
+            margin-bottom: 16px;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 
 # ============================================================
@@ -77,14 +111,15 @@ COLUMNAS_RECOMENDADAS_TAT = [
 # ============================================================
 
 def inicializar_estado():
-    valores_iniciales = {
+    valores = {
         "archivos_tat": {},
         "archivo_tat_activo": None,
         "df_tat": None,
         "nombre_archivo_tat": None,
+        "mensaje_carga_tat": None,
     }
 
-    for clave, valor in valores_iniciales.items():
+    for clave, valor in valores.items():
         if clave not in st.session_state:
             st.session_state[clave] = valor
 
@@ -108,12 +143,13 @@ def mostrar_logo():
             width:100%;
             display:flex;
             justify-content:center;
-            margin-top:4px;
-            margin-bottom:8px;
+            align-items:center;
+            margin-top:5px;
+            margin-bottom:10px;
         ">
             <img 
                 src="data:image/svg+xml;base64,{logo_base64}" 
-                style="width:200px;"
+                style="width:210px; display:block;"
             >
         </div>
         """,
@@ -226,11 +262,14 @@ def leer_archivo_cache(
                 on_bad_lines="skip",
             )
 
-    raise ValueError("Formato no soportado.")
+    raise ValueError("Formato no soportado. Usa CSV, XLSX, XLS o PARQUET.")
 
 
 def preparar_url_descarga_sharepoint(url: str) -> str:
     url = url.strip()
+
+    if not url:
+        raise ValueError("La URL de SharePoint está vacía.")
 
     if "download=1" in url.lower():
         return url
@@ -293,10 +332,10 @@ def leer_parquet_sharepoint_cache(url: str):
     response.raise_for_status()
 
     content_type = response.headers.get("Content-Type", "").lower()
-    inicio = response.content[:500].lower()
+    contenido_inicio = response.content[:500].lower()
 
-    if "text/html" in content_type or b"<html" in inicio:
-        raise ValueError("SharePoint no devolvió un archivo Parquet.")
+    if "text/html" in content_type or b"<html" in contenido_inicio:
+        raise ValueError("SharePoint no devolvió el archivo Parquet.")
 
     if not (
         response.content[:4] == b"PAR1"
@@ -425,6 +464,39 @@ def eliminar_todos_los_archivos():
     st.session_state["nombre_archivo_tat"] = None
 
 
+def obtener_resumen_archivos() -> pd.DataFrame:
+    resumen = []
+
+    for nombre, df in st.session_state["archivos_tat"].items():
+        validacion = validar_columnas_tat(df)
+        version = obtener_version_desde_nombre_archivo(nombre)
+
+        resumen.append(
+            {
+                "Archivo": nombre,
+                "Versión detectada": version["texto_version"],
+                "TAT válido": "Sí" if validacion["es_valido"] else "No",
+                "Filas": df.shape[0],
+                "Columnas": df.shape[1],
+                "Activo": "Sí" if nombre == st.session_state.get("archivo_tat_activo") else "No",
+            }
+        )
+
+    return pd.DataFrame(resumen)
+
+
+def construir_tabla_columnas(df: pd.DataFrame) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "N°": range(1, len(df.columns) + 1),
+            "Columna": list(df.columns),
+            "Tipo de dato": [str(df[col].dtype) for col in df.columns],
+            "Valores no nulos": [int(df[col].notna().sum()) for col in df.columns],
+            "Valores nulos": [int(df[col].isna().sum()) for col in df.columns],
+        }
+    )
+
+
 def construir_resumen_tat(df: pd.DataFrame) -> pd.DataFrame:
     if "performance_tat_total" not in df.columns:
         return pd.DataFrame(
@@ -481,37 +553,20 @@ def construir_resumen_rango_incumplimiento(df: pd.DataFrame) -> pd.DataFrame:
     return conteo
 
 
-def construir_tabla_columnas(df: pd.DataFrame) -> pd.DataFrame:
-    return pd.DataFrame(
-        {
-            "N°": range(1, len(df.columns) + 1),
-            "Columna": list(df.columns),
-            "Tipo de dato": [str(df[col].dtype) for col in df.columns],
-            "Valores no nulos": [int(df[col].notna().sum()) for col in df.columns],
-            "Valores nulos": [int(df[col].isna().sum()) for col in df.columns],
-        }
-    )
+def mostrar_estado_archivo(df: pd.DataFrame, nombre_archivo: str):
+    version = obtener_version_desde_nombre_archivo(nombre_archivo)
+    validacion = validar_columnas_tat(df)
 
+    st.success("Conexión realizada correctamente. Archivo cargado.")
 
-def construir_resumen_archivos() -> pd.DataFrame:
-    resumen = []
+    st.caption(f"Archivo activo: **{nombre_archivo}**")
 
-    for nombre, df in st.session_state["archivos_tat"].items():
-        validacion = validar_columnas_tat(df)
-        version = obtener_version_desde_nombre_archivo(nombre)
+    col1, col2, col3, col4 = st.columns(4)
 
-        resumen.append(
-            {
-                "Archivo": nombre,
-                "Versión": version["texto_version"],
-                "Filas": df.shape[0],
-                "Columnas": df.shape[1],
-                "TAT válido": "Sí" if validacion["es_valido"] else "No",
-                "Activo": "Sí" if nombre == st.session_state["archivo_tat_activo"] else "No",
-            }
-        )
-
-    return pd.DataFrame(resumen)
+    col1.metric("Versión", version["texto_version"])
+    col2.metric("Filas", f"{df.shape[0]:,}")
+    col3.metric("Columnas", f"{df.shape[1]:,}")
+    col4.metric("TAT válido", "Sí" if validacion["es_valido"] else "No")
 
 
 # ============================================================
@@ -523,22 +578,13 @@ mostrar_logo()
 
 st.markdown(
     """
-    <h2 style="text-align:center; margin-bottom:0;">
-        06_CARGAR_ARCHIVO
-    </h2>
-    <p style="text-align:center; color:#6B7280; margin-top:4px;">
-        Carga el archivo TAT y déjalo disponible como df_tat.
-    </p>
+    <div class="page-title">06_CARGAR_ARCHIVO</div>
+    <div class="page-subtitle">
+        Carga el archivo TAT generado por 05_CALCULOS y déjalo disponible como df_tat.
+    </div>
     """,
     unsafe_allow_html=True,
 )
-
-st.divider()
-
-
-# ============================================================
-# MÉTODO DE CARGA
-# ============================================================
 
 opcion_carga = st.radio(
     "Método de carga",
@@ -555,22 +601,24 @@ opcion_carga = st.radio(
 # ============================================================
 
 if opcion_carga == "Cargar archivo":
-    separador_csv = st.selectbox(
-        "Separador CSV",
-        options=[
-            "Automático",
-            "Punto y coma (;)",
-            "Coma (,)",
-            "Tabulación",
-        ],
-        index=0,
-    )
+    with st.expander("Opciones de archivo", expanded=True):
+        separador_csv = st.selectbox(
+            "Separador CSV",
+            options=[
+                "Automático",
+                "Punto y coma (;)",
+                "Coma (,)",
+                "Tabulación",
+            ],
+            index=0,
+        )
 
-    archivos = st.file_uploader(
-        "Archivo TAT",
-        type=["xlsx", "xls", "csv", "parquet"],
-        accept_multiple_files=True,
-    )
+        archivos = st.file_uploader(
+            "Selecciona uno o varios archivos TAT",
+            type=["xlsx", "xls", "csv", "parquet"],
+            accept_multiple_files=True,
+            key="archivos_base_tat_uploader",
+        )
 
     if archivos:
         errores = []
@@ -590,26 +638,15 @@ if opcion_carga == "Cargar archivo":
                     )
 
                 except Exception as error:
-                    errores.append(
-                        f"{archivo.name}: {error}"
-                    )
+                    errores.append(f"{archivo.name}: {error}")
 
         if errores:
             st.error("Uno o más archivos no pudieron cargarse.")
-            with st.expander("Ver errores"):
+            with st.expander("Ver errores", expanded=False):
                 for error in errores:
                     st.write(error)
         else:
-            version = obtener_version_desde_nombre_archivo(
-                st.session_state["nombre_archivo_tat"]
-            )
-
-            st.success("Archivo cargado correctamente.")
-
-            if version["version_detectada"]:
-                st.caption(
-                    f"Última versión detectada: {version['texto_version']}"
-                )
+            st.session_state["mensaje_carga_tat"] = "Archivo cargado correctamente."
 
 
 # ============================================================
@@ -617,16 +654,17 @@ if opcion_carga == "Cargar archivo":
 # ============================================================
 
 if opcion_carga == "Conexión SharePoint":
-    clave_sharepoint = st.text_input(
-        "Clave de conexión",
-        type="password",
-        placeholder="Ingresa la clave",
-    )
+    with st.form("form_sharepoint_tat"):
+        clave_sharepoint = st.text_input(
+            "Clave de conexión",
+            type="password",
+            placeholder="Ingresa la clave autorizada",
+        )
 
-    conectar = st.button(
-        "Conectar y cargar archivo",
-        use_container_width=True,
-    )
+        conectar = st.form_submit_button(
+            "Conectar y cargar archivo",
+            use_container_width=True,
+        )
 
     if conectar:
         try:
@@ -645,24 +683,19 @@ if opcion_carga == "Conexión SharePoint":
                         nombre_archivo=nombre_archivo,
                     )
 
-                st.success("Archivo cargado correctamente desde SharePoint.")
-
-                if version["version_detectada"]:
-                    st.caption(
-                        f"Última versión detectada: {version['texto_version']}"
-                    )
-                else:
-                    st.caption("Versión no detectada desde el nombre del archivo.")
+                st.session_state["mensaje_carga_tat"] = (
+                    "Conexión realizada correctamente. Archivo cargado."
+                )
 
         except Exception:
             st.error(
-                "No se pudo completar la conexión. "
+                "No se pudo cargar el archivo desde SharePoint. "
                 "Revisa la clave y la configuración en Secrets."
             )
 
 
 # ============================================================
-# SIN ARCHIVO CARGADO
+# SIN ARCHIVO
 # ============================================================
 
 if not st.session_state["archivos_tat"]:
@@ -693,39 +726,18 @@ if len(archivos_disponibles) > 1:
 
 df_tat = st.session_state["df_tat"]
 nombre_archivo = st.session_state["nombre_archivo_tat"]
-validacion = validar_columnas_tat(df_tat)
-version = obtener_version_desde_nombre_archivo(nombre_archivo)
 
-st.markdown("### Archivo activo")
-
-col1, col2, col3, col4 = st.columns(4)
-
-col1.metric("Archivo", nombre_archivo)
-col2.metric("Versión", version["texto_version"])
-col3.metric("Filas", f"{df_tat.shape[0]:,}")
-col4.metric("Columnas", f"{df_tat.shape[1]:,}")
-
-if validacion["es_valido"]:
-    st.success("Archivo TAT válido y disponible como df_tat.")
-else:
-    st.error("Archivo TAT no válido.")
-
-
-# ============================================================
-# DETALLE SIMPLE
-# ============================================================
-
-tab_resumen, tab_preview, tab_columnas, tab_gestion = st.tabs(
-    [
-        "Resumen",
-        "Vista previa",
-        "Columnas",
-        "Gestión",
-    ]
+mostrar_estado_archivo(
+    df=df_tat,
+    nombre_archivo=nombre_archivo,
 )
 
 
-with tab_resumen:
+# ============================================================
+# DETALLE COLAPSADO
+# ============================================================
+
+with st.expander("Resumen TAT", expanded=False):
     col_res1, col_res2 = st.columns(2)
 
     with col_res1:
@@ -737,7 +749,7 @@ with tab_resumen:
         )
 
     with col_res2:
-        st.markdown("#### Rango incumplimiento")
+        st.markdown("#### Rango incumplimiento TAT")
         st.dataframe(
             construir_resumen_rango_incumplimiento(df_tat),
             use_container_width=True,
@@ -745,7 +757,17 @@ with tab_resumen:
         )
 
 
-with tab_preview:
+with st.expander("Vista previa", expanded=False):
+    max_filas = min(200, max(5, df_tat.shape[0]))
+
+    filas_preview = st.slider(
+        "Cantidad de filas a mostrar",
+        min_value=5,
+        max_value=max_filas,
+        value=min(50, max_filas),
+        step=5,
+    )
+
     columnas_preferidas = [
         "Solicitud de pedido - ME5A",
         "Pedido - ME5A",
@@ -769,14 +791,6 @@ with tab_preview:
         if col in df_tat.columns
     ]
 
-    filas_preview = st.slider(
-        "Filas a mostrar",
-        min_value=5,
-        max_value=min(200, max(5, df_tat.shape[0])),
-        value=min(50, max(5, df_tat.shape[0])),
-        step=5,
-    )
-
     if columnas_preferidas:
         st.dataframe(
             df_tat[columnas_preferidas].head(filas_preview),
@@ -789,7 +803,7 @@ with tab_preview:
         )
 
 
-with tab_columnas:
+with st.expander("Columnas", expanded=False):
     st.dataframe(
         construir_tabla_columnas(df_tat),
         use_container_width=True,
@@ -797,27 +811,33 @@ with tab_columnas:
     )
 
 
-with tab_gestion:
+with st.expander("Gestión", expanded=False):
+    resumen_df = obtener_resumen_archivos()
+
     st.dataframe(
-        construir_resumen_archivos(),
+        resumen_df,
         use_container_width=True,
         hide_index=True,
     )
 
-    col_g1, col_g2 = st.columns(2)
+    col1, col2 = st.columns(2)
 
-    with col_g1:
-        if st.button(
+    with col1:
+        eliminar_activo = st.button(
             "Eliminar archivo activo",
             use_container_width=True,
-        ):
+        )
+
+        if eliminar_activo:
             eliminar_archivo_de_sesion(nombre_archivo)
             st.rerun()
 
-    with col_g2:
-        if st.button(
-            "Eliminar todos",
+    with col2:
+        eliminar_todos = st.button(
+            "Eliminar todos los archivos",
             use_container_width=True,
-        ):
+        )
+
+        if eliminar_todos:
             eliminar_todos_los_archivos()
             st.rerun()
