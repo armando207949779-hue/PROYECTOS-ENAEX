@@ -5,9 +5,10 @@
 # Orden de módulos:
 # 01 Preparación de datos
 # 02 Cargar archivo
-# 03 Alertas
-# 04 Filtro
-# 05 Performances
+# 03 Vista Ejecutiva
+# 04 Alertas
+# 05 Filtro
+# 06 Performances
 # ============================================================
 
 import base64
@@ -103,7 +104,26 @@ APP_SECTIONS = [
         ],
     },
     {
-        "grupo": "03 Alertas",
+        "grupo": "03 Vista Ejecutiva",
+        "descripcion": (
+            "Vista ejecutiva principal del TAT. "
+            "Debe revisarse después de cargar el archivo activo."
+        ),
+        "apps": [
+            {
+                "nombre": "12_VISTA_EJECUTIVA",
+                "archivo": "12_VISTA_EJECUTIVA.py",
+                "titulo": "12 Vista Ejecutiva",
+                "icono": "📌",
+                "descripcion": (
+                    "Dashboard ejecutivo por centro con foco en registros evaluables: "
+                    "Cumple y No cumple."
+                ),
+            },
+        ],
+    },
+    {
+        "grupo": "04 Alertas",
         "descripcion": (
             "Módulo para revisar alertas, vencimientos, pedidos críticos "
             "y seguimiento operativo TAT."
@@ -119,7 +139,7 @@ APP_SECTIONS = [
         ],
     },
     {
-        "grupo": "04 Filtro",
+        "grupo": "05 Filtro",
         "descripcion": (
             "Módulo para consultar, filtrar, buscar SolPed y segmentar "
             "la información TAT cargada en sesión."
@@ -145,7 +165,7 @@ APP_SECTIONS = [
         ],
     },
     {
-        "grupo": "05 Performances",
+        "grupo": "06 Performances",
         "descripcion": (
             "Módulo para analizar performance mensual, comparativos por planta "
             "y cumplimiento TAT."
