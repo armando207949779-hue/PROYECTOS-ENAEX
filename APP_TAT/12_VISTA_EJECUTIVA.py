@@ -9,9 +9,8 @@
 # - Default: Cumple + No cumple
 # - Base de análisis: registros evaluables
 # - Visual ejecutivo con gráficos nativos de Streamlit
-# - Colores:
-#   Cumple = gris original
-#   No cumple = rojo original
+# - Cumple = gris oscuro abajo
+# - No cumple = rojo arriba
 # - Zoom último año disponible
 # - Detalle mensual por defecto en último mes disponible
 # ============================================================
@@ -34,9 +33,9 @@ BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
 LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
 
-COLOR_CUMPLE = "#BFC3C7"
-COLOR_NO_CUMPLE = "#EF3E52"
-COLOR_META = "#0057B8"
+COLOR_CUMPLE = "#5F6264"
+COLOR_NO_CUMPLE = "#E83E51"
+COLOR_META = "#00593A"
 COLOR_TEXTO = "#1F2937"
 COLOR_MUTED = "#6B7280"
 COLOR_GRID = "#D1D5DB"
@@ -139,7 +138,7 @@ st.markdown(
     """
     <style>
         .block-container {
-            padding-top: 3.8rem;
+            padding-top: 4.25rem;
             padding-bottom: 1.2rem;
             max-width: 1380px;
         }
@@ -248,7 +247,7 @@ st.markdown(
             width: 11px;
             height: 11px;
             border-radius: 999px;
-            background: #BFC3C7;
+            background: #5F6264;
             display: inline-block;
         }
 
@@ -256,7 +255,7 @@ st.markdown(
             width: 11px;
             height: 11px;
             border-radius: 999px;
-            background: #EF3E52;
+            background: #E83E51;
             display: inline-block;
         }
     </style>
@@ -1314,6 +1313,34 @@ def preparar_chart_streamlit(
     return data
 
 
+def mostrar_bar_chart_apilado_streamlit(
+    chart_plot: pd.DataFrame,
+    height: int,
+):
+    try:
+        st.bar_chart(
+            chart_plot,
+            use_container_width=True,
+            height=height,
+            color=[COLOR_CUMPLE, COLOR_NO_CUMPLE],
+            stack="normalize",
+        )
+    except TypeError:
+        try:
+            st.bar_chart(
+                chart_plot,
+                use_container_width=True,
+                height=height,
+                color=[COLOR_CUMPLE, COLOR_NO_CUMPLE],
+            )
+        except TypeError:
+            st.bar_chart(
+                chart_plot,
+                use_container_width=True,
+                height=height,
+            )
+
+
 def mostrar_evolucion_mensual_streamlit(tabla_mensual: pd.DataFrame):
     st.markdown(
         "<div class='exec-section-title'>Evolución mensual ejecutiva</div>",
@@ -1323,7 +1350,7 @@ def mostrar_evolucion_mensual_streamlit(tabla_mensual: pd.DataFrame):
     st.markdown(
         f"""
         <div class='exec-small'>
-            Gráfico nativo de Streamlit. Gris = Cumple, rojo = No cumple.
+            Gráfico nativo de Streamlit. Gris oscuro = Cumple abajo, rojo = No cumple arriba.
             Base: registros evaluables. Meta referencial de cumplimiento: {META_CUMPLIMIENTO}%.
         </div>
         """,
@@ -1370,11 +1397,9 @@ def mostrar_evolucion_mensual_streamlit(tabla_mensual: pd.DataFrame):
 
     chart_plot = chart_data[["Mes", "Cumple", "No cumple"]].set_index("Mes")
 
-    st.bar_chart(
-        chart_plot,
-        use_container_width=True,
+    mostrar_bar_chart_apilado_streamlit(
+        chart_plot=chart_plot,
         height=390,
-        color=[COLOR_CUMPLE, COLOR_NO_CUMPLE],
     )
 
     with st.expander("Tabla evolución mensual", expanded=False):
@@ -1447,7 +1472,7 @@ def mostrar_zoom_ultimo_anio_streamlit(tabla_mensual: pd.DataFrame):
         """
         <div class='exec-small'>
             Gráfico nativo de Streamlit sobre el último año disponible en los datos filtrados.
-            Gris = Cumple, rojo = No cumple.
+            Gris oscuro = Cumple abajo, rojo = No cumple arriba.
         </div>
         """,
         unsafe_allow_html=True,
@@ -1500,11 +1525,9 @@ def mostrar_zoom_ultimo_anio_streamlit(tabla_mensual: pd.DataFrame):
 
     chart_plot = data_zoom[["Mes", "Cumple", "No cumple"]].set_index("Mes")
 
-    st.bar_chart(
-        chart_plot,
-        use_container_width=True,
+    mostrar_bar_chart_apilado_streamlit(
+        chart_plot=chart_plot,
         height=360,
-        color=[COLOR_CUMPLE, COLOR_NO_CUMPLE],
     )
 
     with st.expander("Tabla zoom último año", expanded=False):
