@@ -1162,7 +1162,11 @@ def datos_etapa(df: pd.DataFrame, etapa: dict) -> dict:
     pct_no_cumple = no_cumple / evaluables * 100 if evaluables else 0
 
     if col_dias in temp.columns:
-        dias = pd.to_numeric(temp[col_dias], errors="coerce")
+        dias = pd.to_numeric(
+            temp[col_dias],
+            errors="coerce",
+        )
+
         dias = dias[dias > 0]
 
         promedio = float(dias.mean()) if not dias.empty else 0
@@ -1774,59 +1778,59 @@ def grafico_donut_etapa_ejecutiva(etapa: dict, datos: dict):
         f"""
         <div style="text-align:center; margin-top:-8px;">
             <div style="font-size:27px; color:#111827; font-weight:850;">
-                {promedio:.0f}
+                {promedio:.1f}
             </div>
-
             <div style="font-size:11px; color:#6B7280;">
-                Promedio de Dx {etapa["titulo"]}
-            </div>
-
-            <div style="
-                margin-top:8px;
-                display:grid;
-                grid-template-columns:1fr 1fr;
-                gap:6px;
-            ">
-                <div style="
-                    background:#F9FAFB;
-                    border:1px solid #E5E7EB;
-                    border-radius:10px;
-                    padding:6px 4px;
-                ">
-                    <div style="font-size:15px; color:#111827; font-weight:800;">
-                        {desviacion_estandar:.1f}
-                    </div>
-                    <div style="font-size:9.5px; color:#6B7280;">
-                        Desv. estándar
-                    </div>
-                </div>
-
-                <div style="
-                    background:#F9FAFB;
-                    border:1px solid #E5E7EB;
-                    border-radius:10px;
-                    padding:6px 4px;
-                ">
-                    <div style="font-size:15px; color:#111827; font-weight:800;">
-                        {coeficiente_variacion:.1f}%
-                    </div>
-                    <div style="font-size:9.5px; color:#6B7280;">
-                        Coef. variación
-                    </div>
-                </div>
-            </div>
-
-            <div style="font-size:10px; color:#6B7280; margin-top:5px;">
-                Base promedio: {n_promedio:,} registro(s)
-            </div>
-
-            <div style="font-size:10.5px; color:#6B7280; margin-top:4px;">
-                {etapa["regla"]}
+                Promedio días {etapa["titulo"]}
             </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
+
+    col_std, col_cv = st.columns(2)
+
+    with col_std:
+        st.metric(
+            label="Desv. estándar",
+            value=f"{desviacion_estandar:.1f}",
+        )
+
+    with col_cv:
+        st.metric(
+            label="Coef. variación",
+            value=f"{coeficiente_variacion:.1f}%",
+        )
+
+    st.caption(
+        f"Base promedio: {formatear_entero(n_promedio)} registro(s)"
+    )
+
+    st.caption(etapa["regla"])
+
+
+def mostrar_etapas_ejecutivas(df_dashboard: pd.DataFrame):
+    st.markdown(
+        "<div class='exec-section-title'>Cumplimiento por etapa</div>",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        """
+        <div class='exec-small'>
+            Base: registros evaluables filtrados. Visual ejecutivo con cumplimiento, no cumplimiento,
+            promedio de días, desviación estándar y coeficiente de variación.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    cols = st.columns(4)
+
+    for col, etapa in zip(cols, ETAPAS_DASHBOARD):
+        with col:
+            datos = datos_etapa(df_dashboard, etapa)
+            grafico_donut_etapa_ejecutiva(etapa, datos)
 
 
 def mostrar_etapas_ejecutivas(df_dashboard: pd.DataFrame):
