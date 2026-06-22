@@ -9,9 +9,9 @@
 # - Default: Cumple + No cumple
 # - Base de análisis: registros evaluables
 # - Visual ejecutivo con gráficos nativos de Streamlit
-# - Colores pastel:
-#   Cumple = verde pastel
-#   No cumple = rojo pastel
+# - Colores originales:
+#   Cumple = rojo
+#   No cumple = gris
 # - Zoom último año disponible
 # - Detalle mensual por defecto en último mes disponible
 # ============================================================
@@ -34,16 +34,16 @@ BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
 LOGO_PATH = ROOT_DIR / "assets" / "logo.svg"
 
-COLOR_CUMPLE = "#9CCB9E"
-COLOR_NO_CUMPLE = "#F2A0A0"
-COLOR_META = "#6FAE8C"
+COLOR_CUMPLE = "#EF3E52"
+COLOR_NO_CUMPLE = "#BFC3C7"
+COLOR_META = "#0057B8"
 COLOR_TEXTO = "#1F2937"
 COLOR_MUTED = "#6B7280"
 COLOR_GRID = "#D1D5DB"
 
-COLOR_EN_PROCESO = "#F8D77A"
-COLOR_NO_APLICA = "#C7CBD1"
-COLOR_SIN_DATOS = "#E5E7EB"
+COLOR_EN_PROCESO = "#F4B400"
+COLOR_NO_APLICA = "#9CA3AF"
+COLOR_SIN_DATOS = "#D1D5DB"
 
 META_CUMPLIMIENTO = 65
 
@@ -244,22 +244,20 @@ st.markdown(
             align-items: center;
         }
 
-        .legend-dot-green {
+        .legend-dot-cumple {
             width: 11px;
             height: 11px;
             border-radius: 999px;
-            background: #9CCB9E;
+            background: #EF3E52;
             display: inline-block;
-            border: 1px solid #7FB783;
         }
 
-        .legend-dot-red {
+        .legend-dot-no-cumple {
             width: 11px;
             height: 11px;
             border-radius: 999px;
-            background: #F2A0A0;
+            background: #BFC3C7;
             display: inline-block;
-            border: 1px solid #E38484;
         }
     </style>
     """,
@@ -1255,25 +1253,17 @@ def mostrar_leyenda_cumplimiento():
         """
         <div class="legend-row">
             <div class="legend-item">
-                <span class="legend-dot-green"></span>
+                <span class="legend-dot-cumple"></span>
                 <span>Cumple</span>
             </div>
             <div class="legend-item">
-                <span class="legend-dot-red"></span>
+                <span class="legend-dot-no-cumple"></span>
                 <span>No cumple</span>
             </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
-
-
-def etiqueta_mes_corta(fecha) -> str:
-    if pd.isna(fecha):
-        return "—"
-
-    fecha = pd.Timestamp(fecha)
-    return MESES_NOMBRE.get(int(fecha.month), str(fecha.month))
 
 
 def preparar_chart_streamlit(
@@ -1333,7 +1323,7 @@ def mostrar_evolucion_mensual_streamlit(tabla_mensual: pd.DataFrame):
     st.markdown(
         f"""
         <div class='exec-small'>
-            Gráfico nativo de Streamlit. Verde pastel = Cumple, rojo pastel = No cumple.
+            Gráfico nativo de Streamlit. Rojo = Cumple, gris = No cumple.
             Base: registros evaluables. Meta referencial de cumplimiento: {META_CUMPLIMIENTO}%.
         </div>
         """,
@@ -1457,7 +1447,7 @@ def mostrar_zoom_ultimo_anio_streamlit(tabla_mensual: pd.DataFrame):
         """
         <div class='exec-small'>
             Gráfico nativo de Streamlit sobre el último año disponible en los datos filtrados.
-            Verde pastel = Cumple, rojo pastel = No cumple.
+            Rojo = Cumple, gris = No cumple.
         </div>
         """,
         unsafe_allow_html=True,
