@@ -1677,7 +1677,7 @@ def grafico_donut_etapa_ejecutiva(etapa: dict, datos: dict):
     no_cumple = int(datos.get("no_cumple", 0))
     total = cumple + no_cumple
 
-    st.markdown(f"#### {etapa['titulo']}")
+    st.markdown(f"##### Cumplimiento {etapa['titulo']}")
 
     if total <= 0:
         st.info("Sin evaluables")
@@ -1689,7 +1689,7 @@ def grafico_donut_etapa_ejecutiva(etapa: dict, datos: dict):
     pct_cumple = cumple / total * 100
     pct_no_cumple = no_cumple / total * 100
 
-    fig, ax = plt.subplots(figsize=(3.1, 2.65), dpi=180)
+    fig, ax = plt.subplots(figsize=(3.05, 2.25), dpi=180)
 
     ax.pie(
         valores,
@@ -1705,49 +1705,64 @@ def grafico_donut_etapa_ejecutiva(etapa: dict, datos: dict):
     )
 
     ax.text(
-        0,
-        0.07,
-        f"{pct_cumple:.0f}%",
-        ha="center",
-        va="center",
-        fontsize=18,
-        fontweight="bold",
-        color=COLOR_TEXTO,
-    )
-
-    ax.text(
-        0,
-        -0.14,
-        "Cumple",
-        ha="center",
-        va="center",
-        fontsize=8,
-        color=COLOR_MUTED,
-    )
-
-    ax.text(
         1.05,
-        -0.58,
+        -0.55,
         f"Cumple\n{pct_cumple:.0f}%",
         ha="left",
         va="center",
-        fontsize=7.2,
+        fontsize=7.0,
         color=COLOR_TEXTO,
     )
 
     ax.text(
         -1.05,
-        0.82,
+        0.78,
         f"No cumple\n{pct_no_cumple:.0f}%",
         ha="right",
         va="center",
-        fontsize=7.2,
+        fontsize=7.0,
         color=COLOR_TEXTO,
+    )
+
+    legend_handles = [
+        plt.Line2D(
+            [0],
+            [0],
+            marker="o",
+            color="none",
+            label="Cumple",
+            markerfacecolor=COLOR_CUMPLE,
+            markeredgecolor=COLOR_CUMPLE,
+            markersize=5,
+        ),
+        plt.Line2D(
+            [0],
+            [0],
+            marker="o",
+            color="none",
+            label="No cumple",
+            markerfacecolor=COLOR_NO_CUMPLE,
+            markeredgecolor=COLOR_NO_CUMPLE,
+            markersize=5,
+        ),
+    ]
+
+    ax.legend(
+        handles=legend_handles,
+        loc="lower center",
+        bbox_to_anchor=(0.5, -0.24),
+        ncol=2,
+        frameon=False,
+        fontsize=7.0,
+        handlelength=0.8,
+        handletextpad=0.3,
+        columnspacing=0.8,
     )
 
     ax.axis("equal")
     fig.patch.set_alpha(0)
-    fig.tight_layout(pad=0.2)
+    fig.tight_layout(pad=0.15)
+    fig.subplots_adjust(bottom=0.22)
 
     st.pyplot(fig, clear_figure=True, use_container_width=True)
     plt.close(fig)
@@ -1757,10 +1772,14 @@ def grafico_donut_etapa_ejecutiva(etapa: dict, datos: dict):
     coeficiente_variacion = datos.get("coeficiente_variacion_dias", 0)
     n_promedio = datos.get("n_promedio", 0)
 
-    st.markdown(f"### {promedio:.1f}")
-    st.caption(f"Promedio días {etapa['titulo']}")
+    col_prom_1, col_prom_2, col_prom_3 = st.columns([1, 1.4, 1])
 
-    col_s1, col_s2, col_s3 = st.columns(3)
+    with col_prom_2:
+        st.markdown(f"### {promedio:.0f}")
+
+    st.caption(f"Promedio de Dx {etapa['titulo']}")
+
+    col_s1, col_s2 = st.columns(2)
 
     with col_s1:
         st.caption("Desv. estándar")
@@ -1770,10 +1789,7 @@ def grafico_donut_etapa_ejecutiva(etapa: dict, datos: dict):
         st.caption("Coef. variación")
         st.markdown(f"**{coeficiente_variacion:.1f}%**")
 
-    with col_s3:
-        st.caption("Base promedio")
-        st.markdown(f"**{formatear_entero(n_promedio)}**")
-
+    st.caption(f"Base promedio: {formatear_entero(n_promedio)} registro(s)")
     st.caption(etapa["regla"])
 
 
