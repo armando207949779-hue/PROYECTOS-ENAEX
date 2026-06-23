@@ -1312,7 +1312,7 @@ def grafico_donut_planta(planta: str, datos: pd.Series):
         startangle=90,
         counterclock=False,
         colors=[
-            COLORES_PLANTAS.get(planta, COLOR_CUMPLE),
+            COLOR_CUMPLE,
             COLOR_NO_CUMPLE,
         ],
         labels=None,
