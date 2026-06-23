@@ -908,6 +908,79 @@ def calcular_score_gestion(row: pd.Series) -> float:
 # Tabla de gestión
 # ============================================================
 
+
+def ticket_fecha(valor: Any) -> str:
+    fecha = pd.to_datetime(valor, errors="coerce")
+
+    if pd.notna(fecha):
+        return "✅"
+
+    return "❌"
+
+
+def estado_busqueda_visual(encontrado: bool) -> str:
+    return "✅ Encontrada" if encontrado else "❌ No encontrada"
+
+
+def icono_nivel_alerta(valor: Any) -> str:
+    texto = str(valor).strip()
+
+    mapa = {
+        "Crítico": "🔴 Crítico",
+        "Atención": "🟠 Atención",
+        "Seguimiento": "🟡 Seguimiento",
+        "Controlado": "🔵 Controlado",
+        "Datos incompletos": "🟤 Datos incompletos",
+        "Cerrado": "🟢 Cerrado",
+        "Sin datos": "⚪ Sin datos",
+        "No encontrada": "⚫ No encontrada",
+    }
+
+    return mapa.get(texto, f"⚪ {texto}" if texto else "⚪ Sin datos")
+
+
+def icono_estado_vencimiento(valor: Any) -> str:
+    texto = str(valor).strip()
+
+    mapa = {
+        "Vencido": "🔴 Vencido",
+        "Vence hoy": "🔴 Vence hoy",
+        "1-7 días": "🟠 1-7 días",
+        "8-30 días": "🟡 8-30 días",
+        "+30 días": "🔵 +30 días",
+        "Sin datos": "🟤 Sin datos",
+        "Recepcionado": "🟢 Recepcionado",
+        "-": "⚪ -",
+        "No encontrada": "⚫ No encontrada",
+    }
+
+    return mapa.get(texto, f"⚪ {texto}" if texto else "⚪ -")
+
+
+def construir_resumen_busqueda(
+    solpeds_ingresadas: list[str],
+    solpeds_encontradas: list[str],
+    solpeds_no_encontradas: list[str],
+) -> pd.DataFrame:
+    encontrados_set = set(solpeds_encontradas)
+    no_encontrados_set = set(solpeds_no_encontradas)
+
+    registros = []
+
+    for idx, solped in enumerate(solpeds_ingresadas, start=1):
+        encontrada = solped in encontrados_set
+
+        registros.append(
+            {
+                "Orden": idx,
+                "SolPed": solped,
+                "Resultado": estado_busqueda_visual(encontrada),
+            }
+        )
+
+    return pd.DataFrame(registros)
+
+
 def crear_tabla_gestion(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame()
@@ -918,11 +991,41 @@ def crear_tabla_gestion(df: pd.DataFrame) -> pd.DataFrame:
     solped = serie_combinada(base, [COL_SOLPED])
     posicion = serie_combinada(base, [COL_POS_SOLPED, COL_POS_OC])
 
+    fecha_solicitud = base.get(COL_FECHA_SOLICITUD_FINAL, pd.Series(pd.NaT, index=base.index))
+    fecha_liberacion = base.get(COL_FECHA_LIBERACION_FINAL, pd.Series(pd.NaT, index=base.index))
+    fecha_pedido = base.get(COL_FECHA_PEDIDO_FINAL, pd.Series(pd.NaT, index=base.index))
+    fecha_facturacion = base.get(COL_FECHA_FACTURACION_FINAL, pd.Series(pd.NaT, index=base.index))
+    fecha_recepcion = base.get(COL_FECHA_RECEPCION_FINAL, pd.Series(pd.NaT, index=base.index))
+
+    nivel_alerta = base.get("nivel_alerta", pd.Series("-", index=base.index))
+    estado_vencimiento = base.get("clasificacion_vencimiento", pd.Series("-", index=base.index))
+
     tabla = pd.DataFrame(
         {
+            "Estado búsqueda": "✅ Encontrada",
             "SolPed": solped.apply(formato_id),
+            "Estado visual": nivel_alerta.apply(icono_nivel_alerta),
+            "Vencimiento visual": estado_vencimiento.apply(icono_estado_vencimiento),
+            "% avance": pd.to_numeric(base.get("porcentaje_avance", pd.Series(0, index=base.index)), errors="coerce").fillna(0),
+            "Fecha solicitud OK": fecha_solicitud.apply(ticket_fecha),
+            "Fecha liberación OK": fecha_liberacion.apply(ticket_fecha),
+            "Fecha pedido OK": fecha_pedido.apply(ticket_fecha),
+            "Fecha facturación OK": fecha_facturacion.apply(ticket_fecha),
+            "Fecha recepción OK": fecha_recepcion.apply(ticket_fecha),
             "Pedido": pedido.apply(formato_id),
             "Posición": posicion.apply(formato_id),
+            "Estado recepción": base.get(COL_ESTADO_RECEPCION_ALERTA, pd.Series("-", index=base.index)),
+            "Nivel alerta": nivel_alerta,
+            "Estado vencimiento": estado_vencimiento,
+            "Fecha solicitud": base.get("fecha_solicitud_texto", pd.Series("-", index=base.index)),
+            "Fecha liberación": fecha_liberacion.apply(formato_fecha),
+            "Fecha pedido": fecha_pedido.apply(formato_fecha),
+            "Fecha facturación": fecha_facturacion.apply(formato_fecha),
+            "Fecha recepción": fecha_recepcion.apply(formato_fecha),
+            "Fecha vencimiento TAT": base.get("fecha_vencimiento_texto", pd.Series("-", index=base.index)),
+            "Días hasta vencimiento": base.get("dias_hasta_vencimiento", pd.Series("-", index=base.index)),
+            "Última etapa": base.get("ultima_etapa_registrada", pd.Series("-", index=base.index)),
+            "Etapa pendiente": base.get("etapa_pendiente", pd.Series("-", index=base.index)),
             "Material": serie_combinada(base, [COL_MATERIAL]).fillna("-"),
             "Texto breve": serie_combinada(base, [COL_TEXTO]).fillna("-"),
             "Centro": serie_combinada(base, [COL_CENTRO]).fillna("-"),
@@ -931,19 +1034,6 @@ def crear_tabla_gestion(df: pd.DataFrame) -> pd.DataFrame:
             "Tipo OC": serie_combinada(base, [COL_TIPO_OC]).fillna("-"),
             "Sistema": serie_combinada(base, [COL_SISTEMA]).fillna("-"),
             "Origen": serie_combinada(base, [COL_ORIGEN]).fillna("-"),
-            "Estado recepción": base.get(COL_ESTADO_RECEPCION_ALERTA, pd.Series("-", index=base.index)),
-            "Nivel alerta": base.get("nivel_alerta", pd.Series("-", index=base.index)),
-            "Estado vencimiento": base.get("clasificacion_vencimiento", pd.Series("-", index=base.index)),
-            "Fecha solicitud": base.get("fecha_solicitud_texto", pd.Series("-", index=base.index)),
-            "Fecha liberación": base.get(COL_FECHA_LIBERACION_FINAL, pd.Series(pd.NaT, index=base.index)).apply(formato_fecha),
-            "Fecha pedido": base.get(COL_FECHA_PEDIDO_FINAL, pd.Series(pd.NaT, index=base.index)).apply(formato_fecha),
-            "Fecha facturación": base.get(COL_FECHA_FACTURACION_FINAL, pd.Series(pd.NaT, index=base.index)).apply(formato_fecha),
-            "Fecha recepción": base.get(COL_FECHA_RECEPCION_FINAL, pd.Series(pd.NaT, index=base.index)).apply(formato_fecha),
-            "Fecha vencimiento TAT": base.get("fecha_vencimiento_texto", pd.Series("-", index=base.index)),
-            "Días hasta vencimiento": base.get("dias_hasta_vencimiento", pd.Series("-", index=base.index)),
-            "Última etapa": base.get("ultima_etapa_registrada", pd.Series("-", index=base.index)),
-            "Etapa pendiente": base.get("etapa_pendiente", pd.Series("-", index=base.index)),
-            "% avance": pd.to_numeric(base.get("porcentaje_avance", pd.Series(0, index=base.index)), errors="coerce").fillna(0),
             "Performance TAT total": serie_combinada(base, [COL_PERF_TAT]).fillna("-"),
             "Días TAT total": serie_combinada(base, [COL_DIAS_TAT]).fillna("-"),
             "Umbral TAT": serie_combinada(base, [COL_UMBRAL_TAT, "umbral_tat_calculado"]).fillna("-"),
@@ -1258,6 +1348,52 @@ solpeds_no_encontradas = [
 
 
 # ============================================================
+# Resultado claro de búsqueda
+# ============================================================
+
+resumen_busqueda_df = construir_resumen_busqueda(
+    solpeds_ingresadas=solpeds_ingresadas,
+    solpeds_encontradas=solpeds_encontradas,
+    solpeds_no_encontradas=solpeds_no_encontradas,
+)
+
+st.markdown("### Resultado de búsqueda")
+st.caption("Identifica rápidamente cuáles SolPed fueron encontradas en el archivo activo y cuáles no.")
+
+col_res_1, col_res_2 = st.columns(2)
+
+with col_res_1:
+    st.success(f"Encontradas: {len(solpeds_encontradas)} de {len(solpeds_ingresadas)}")
+
+    if solpeds_encontradas:
+        st.dataframe(
+            pd.DataFrame({"✅ SolPed encontradas": solpeds_encontradas}),
+            use_container_width=True,
+            hide_index=True,
+        )
+    else:
+        st.info("No se encontraron SolPed en el archivo activo.")
+
+with col_res_2:
+    if solpeds_no_encontradas:
+        st.error(f"No encontradas: {len(solpeds_no_encontradas)} de {len(solpeds_ingresadas)}")
+        st.dataframe(
+            pd.DataFrame({"❌ SolPed no encontradas": solpeds_no_encontradas}),
+            use_container_width=True,
+            hide_index=True,
+        )
+    else:
+        st.success("Todas las SolPed ingresadas fueron encontradas.")
+
+with st.expander("Ver listado completo de búsqueda", expanded=False):
+    st.dataframe(
+        resumen_busqueda_df,
+        use_container_width=True,
+        hide_index=True,
+    )
+
+
+# ============================================================
 # KPIs
 # ============================================================
 
@@ -1312,7 +1448,7 @@ if solpeds_no_encontradas:
 
 st.markdown("### Tabla ordenada de gestión")
 st.caption(
-    "La tabla incluye datos relevantes, fechas principales, estado, avance del flujo TAT y acción sugerida."
+    "Tabla priorizada con resultado de búsqueda, estado visual, vencimiento, fechas clave con ticket verde/rojo y porcentaje de avance."
 )
 
 if df_filtrado.empty:
@@ -1327,20 +1463,21 @@ if mostrar_solo_con_resultado:
 else:
     filas_no_encontradas = pd.DataFrame(
         {
+            "Estado búsqueda": "❌ No encontrada",
             "SolPed": solpeds_no_encontradas,
+            "Estado visual": "⚫ No encontrada",
+            "Vencimiento visual": "⚫ No encontrada",
+            "% avance": 0,
+            "Fecha solicitud OK": "❌",
+            "Fecha liberación OK": "❌",
+            "Fecha pedido OK": "❌",
+            "Fecha facturación OK": "❌",
+            "Fecha recepción OK": "❌",
             "Pedido": "-",
             "Posición": "-",
-            "Material": "-",
-            "Texto breve": "No encontrada en archivo activo",
-            "Centro": "-",
-            "Centro nombre": "-",
-            "Grupo de compras": "-",
-            "Tipo OC": "-",
-            "Sistema": "-",
-            "Origen": "-",
             "Estado recepción": "No encontrada",
             "Nivel alerta": "No encontrada",
-            "Estado vencimiento": "-",
+            "Estado vencimiento": "No encontrada",
             "Fecha solicitud": "-",
             "Fecha liberación": "-",
             "Fecha pedido": "-",
@@ -1350,7 +1487,14 @@ else:
             "Días hasta vencimiento": "-",
             "Última etapa": "-",
             "Etapa pendiente": "-",
-            "% avance": 0,
+            "Material": "-",
+            "Texto breve": "No encontrada en archivo activo",
+            "Centro": "-",
+            "Centro nombre": "-",
+            "Grupo de compras": "-",
+            "Tipo OC": "-",
+            "Sistema": "-",
+            "Origen": "-",
             "Performance TAT total": "-",
             "Días TAT total": "-",
             "Umbral TAT": "-",
@@ -1443,85 +1587,86 @@ with st.expander("Vista resumida por SolPed", expanded=False):
 # Descarga
 # ============================================================
 
-st.markdown("### Descarga")
+with st.expander("Descargar resultado", expanded=False):
+    st.markdown("### Descarga")
 
-tabla_export = preparar_tabla_exportar(tabla_visual)
+    tabla_export = preparar_tabla_exportar(tabla_visual)
 
-firma_export = f"{len(tabla_export)}_{hash(tuple(solpeds_ingresadas))}_{modo_orden}_{incluir_cerrados}_{mostrar_solo_con_resultado}"
+    firma_export = f"{len(tabla_export)}_{hash(tuple(solpeds_ingresadas))}_{modo_orden}_{incluir_cerrados}_{mostrar_solo_con_resultado}"
 
-col_d1, col_d2, col_d3 = st.columns(3)
+    col_d1, col_d2, col_d3 = st.columns(3)
 
-with col_d1:
-    preparar_excel = st.button(
-        "Preparar Excel",
-        use_container_width=True,
-        key="filtro_multiple_preparar_excel",
-    )
-
-    if preparar_excel:
-        with st.spinner("Preparando Excel..."):
-            st.session_state["filtro_multiple_excel_bytes"] = convertir_a_excel_cache(tabla_export)
-            st.session_state["filtro_multiple_excel_firma"] = firma_export
-            st.session_state["filtro_multiple_excel_nombre"] = generar_nombre_salida("xlsx")
-
-    if (
-        st.session_state.get("filtro_multiple_excel_bytes") is not None
-        and st.session_state.get("filtro_multiple_excel_firma") == firma_export
-    ):
-        st.download_button(
-            label="Descargar Excel",
-            data=st.session_state["filtro_multiple_excel_bytes"],
-            file_name=st.session_state["filtro_multiple_excel_nombre"],
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    with col_d1:
+        preparar_excel = st.button(
+            "Preparar Excel",
             use_container_width=True,
+            key="filtro_multiple_preparar_excel",
         )
 
-with col_d2:
-    preparar_csv = st.button(
-        "Preparar CSV",
-        use_container_width=True,
-        key="filtro_multiple_preparar_csv",
-    )
+        if preparar_excel:
+            with st.spinner("Preparando Excel..."):
+                st.session_state["filtro_multiple_excel_bytes"] = convertir_a_excel_cache(tabla_export)
+                st.session_state["filtro_multiple_excel_firma"] = firma_export
+                st.session_state["filtro_multiple_excel_nombre"] = generar_nombre_salida("xlsx")
 
-    if preparar_csv:
-        with st.spinner("Preparando CSV..."):
-            st.session_state["filtro_multiple_csv_bytes"] = convertir_a_csv_cache(tabla_export)
-            st.session_state["filtro_multiple_csv_firma"] = firma_export
-            st.session_state["filtro_multiple_csv_nombre"] = generar_nombre_salida("csv")
+        if (
+            st.session_state.get("filtro_multiple_excel_bytes") is not None
+            and st.session_state.get("filtro_multiple_excel_firma") == firma_export
+        ):
+            st.download_button(
+                label="Descargar Excel",
+                data=st.session_state["filtro_multiple_excel_bytes"],
+                file_name=st.session_state["filtro_multiple_excel_nombre"],
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
 
-    if (
-        st.session_state.get("filtro_multiple_csv_bytes") is not None
-        and st.session_state.get("filtro_multiple_csv_firma") == firma_export
-    ):
-        st.download_button(
-            label="Descargar CSV",
-            data=st.session_state["filtro_multiple_csv_bytes"],
-            file_name=st.session_state["filtro_multiple_csv_nombre"],
-            mime="text/csv",
+    with col_d2:
+        preparar_csv = st.button(
+            "Preparar CSV",
             use_container_width=True,
+            key="filtro_multiple_preparar_csv",
         )
 
-with col_d3:
-    preparar_parquet = st.button(
-        "Preparar Parquet",
-        use_container_width=True,
-        key="filtro_multiple_preparar_parquet",
-    )
+        if preparar_csv:
+            with st.spinner("Preparando CSV..."):
+                st.session_state["filtro_multiple_csv_bytes"] = convertir_a_csv_cache(tabla_export)
+                st.session_state["filtro_multiple_csv_firma"] = firma_export
+                st.session_state["filtro_multiple_csv_nombre"] = generar_nombre_salida("csv")
 
-    if preparar_parquet:
-        with st.spinner("Preparando Parquet..."):
-            st.session_state["filtro_multiple_parquet_bytes"] = convertir_a_parquet_cache(tabla_export)
-            st.session_state["filtro_multiple_parquet_firma"] = firma_export
-            st.session_state["filtro_multiple_parquet_nombre"] = generar_nombre_salida("parquet")
+        if (
+            st.session_state.get("filtro_multiple_csv_bytes") is not None
+            and st.session_state.get("filtro_multiple_csv_firma") == firma_export
+        ):
+            st.download_button(
+                label="Descargar CSV",
+                data=st.session_state["filtro_multiple_csv_bytes"],
+                file_name=st.session_state["filtro_multiple_csv_nombre"],
+                mime="text/csv",
+                use_container_width=True,
+            )
 
-    if (
-        st.session_state.get("filtro_multiple_parquet_bytes") is not None
-        and st.session_state.get("filtro_multiple_parquet_firma") == firma_export
-    ):
-        st.download_button(
-            label="Descargar Parquet",
-            data=st.session_state["filtro_multiple_parquet_bytes"],
-            file_name=st.session_state["filtro_multiple_parquet_nombre"],
-            mime="application/octet-stream",
+    with col_d3:
+        preparar_parquet = st.button(
+            "Preparar Parquet",
             use_container_width=True,
+            key="filtro_multiple_preparar_parquet",
         )
+
+        if preparar_parquet:
+            with st.spinner("Preparando Parquet..."):
+                st.session_state["filtro_multiple_parquet_bytes"] = convertir_a_parquet_cache(tabla_export)
+                st.session_state["filtro_multiple_parquet_firma"] = firma_export
+                st.session_state["filtro_multiple_parquet_nombre"] = generar_nombre_salida("parquet")
+
+        if (
+            st.session_state.get("filtro_multiple_parquet_bytes") is not None
+            and st.session_state.get("filtro_multiple_parquet_firma") == firma_export
+        ):
+            st.download_button(
+                label="Descargar Parquet",
+                data=st.session_state["filtro_multiple_parquet_bytes"],
+                file_name=st.session_state["filtro_multiple_parquet_nombre"],
+                mime="application/octet-stream",
+                use_container_width=True,
+            )
