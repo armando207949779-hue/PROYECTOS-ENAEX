@@ -2671,7 +2671,8 @@ mostrar_logo()
 
 st.title("10_ALERTAS")
 st.caption(
-    "Panel global para priorizar vencidos sin recepción, próximos vencimientos y datos incompletos."
+    "Panel global para priorizar vencidos sin recepción, próximos vencimientos y datos incompletos. "
+    "Vista simplificada: el detalle operativo y los filtros aplicados quedan colapsados para reducir ruido visual."
 )
 
 if "df_tat" not in st.session_state or st.session_state.get("df_tat") is None:
@@ -3025,45 +3026,60 @@ with c8:
 # 2. RETENCIÓN POR FILTROS
 # ============================================================
 
-st.markdown("### 2. Retención por filtros")
+with st.expander("Ver retención por filtros y detalle de filtros aplicados", expanded=False):
 
-col_ret1, col_ret2 = st.columns([1.1, 1])
 
-with col_ret1:
-    grafico_donut_retencion(
-        total_base=len(df_panel),
-        total_filtrado=len(df_filtrado),
-    )
+    st.markdown("### 2. Retención por filtros")
 
-with col_ret2:
-    st.markdown("#### Detalle de filtros aplicado")
-    st.caption("Vista reducida a lo más importante: porcentaje retenido y porcentaje excluido.")
-    mostrar_detalle_filtros_reducido(resumen_filtros_df)
+    col_ret1, col_ret2 = st.columns([1.1, 1])
+
+    with col_ret1:
+        grafico_donut_retencion(
+            total_base=len(df_panel),
+            total_filtrado=len(df_filtrado),
+        )
+
+    with col_ret2:
+        st.markdown("#### Detalle de filtros aplicado")
+        st.caption("Vista reducida a lo más importante: porcentaje retenido y porcentaje excluido.")
+        mostrar_detalle_filtros_reducido(resumen_filtros_df)
+
+
 
 
 # ============================================================
 # 3. DISTRIBUCIÓN GLOBAL DE ALERTAS
 # ============================================================
 
-st.markdown("### 3. Distribución global de alertas")
+with st.expander("Ver distribución global de alertas", expanded=False):
 
-desglose_alertas = crear_desglose_alertas(df_filtrado)
 
-grafico_donut_alertas_porcentual(desglose_alertas)
+    st.markdown("### 3. Distribución global de alertas")
+
+    desglose_alertas = crear_desglose_alertas(df_filtrado)
+
+    grafico_donut_alertas_porcentual(desglose_alertas)
+
+
 
 
 # ============================================================
 # 4. DISTRIBUCIÓN POR VENCIMIENTO
 # ============================================================
 
-st.markdown("### 4. Distribución por vencimiento detallado")
-st.caption(
-    "Donut con la distribución de vencidos, vencimientos inmediatos, próximos vencimientos, registros preventivos, sin datos y recepcionados."
-)
+with st.expander("Ver distribución por vencimiento detallado", expanded=False):
 
-tabla_buckets = crear_resumen_buckets(df_filtrado)
 
-grafico_donut_vencimiento_detallado(tabla_buckets)
+    st.markdown("### 4. Distribución por vencimiento detallado")
+    st.caption(
+        "Donut con la distribución de vencidos, vencimientos inmediatos, próximos vencimientos, registros preventivos, sin datos y recepcionados."
+    )
+
+    tabla_buckets = crear_resumen_buckets(df_filtrado)
+
+    grafico_donut_vencimiento_detallado(tabla_buckets)
+
+
 
 
 # ============================================================
@@ -3082,23 +3098,24 @@ if plan_ataque.empty:
 else:
     grafico_plan_ataque(plan_ataque)
 
-    st.dataframe(
-        plan_ataque,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Cantidad": st.column_config.NumberColumn(
-                "Cantidad",
-                format="%d",
-            ),
-            "% del total filtrado": st.column_config.ProgressColumn(
-                "% del total filtrado",
-                format="%.1f%%",
-                min_value=0,
-                max_value=100,
-            ),
-        },
-    )
+    with st.expander("Ver tabla del plan de ataque", expanded=False):
+        st.dataframe(
+            plan_ataque,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Cantidad": st.column_config.NumberColumn(
+                    "Cantidad",
+                    format="%d",
+                ),
+                "% del total filtrado": st.column_config.ProgressColumn(
+                    "% del total filtrado",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+            },
+        )
 
 
 # ============================================================
@@ -3193,113 +3210,123 @@ with col_rank2:
 # 7. BLOQUES ACCIONABLES
 # ============================================================
 
-df_vencidos = df_filtrado[
-    df_filtrado["nivel_alerta"].eq("Crítico")
-].copy()
+with st.expander("Ver bloques accionables detallados", expanded=False):
 
-df_proximos = df_filtrado[
-    df_filtrado["nivel_alerta"].isin(["Atención", "Seguimiento"])
-].copy()
 
-df_sin_fecha = df_filtrado[
-    df_filtrado["nivel_alerta"].eq("Datos incompletos")
-].copy()
+    df_vencidos = df_filtrado[
+        df_filtrado["nivel_alerta"].eq("Crítico")
+    ].copy()
 
-st.markdown("### 7. Bloques accionables")
+    df_proximos = df_filtrado[
+        df_filtrado["nivel_alerta"].isin(["Atención", "Seguimiento"])
+    ].copy()
 
-st.markdown(
-    """
-    <div class="section-transition section-danger">
-        <div class="section-title">Bloque 1 · Vencidos sin recepción</div>
-        <div class="section-subtitle">
-            Registros que ya superaron la fecha de vencimiento TAT y todavía no tienen recepción registrada.
-            Esta sección representa la prioridad más alta de gestión.
+    df_sin_fecha = df_filtrado[
+        df_filtrado["nivel_alerta"].eq("Datos incompletos")
+    ].copy()
+
+    st.markdown("### 7. Bloques accionables")
+
+    st.markdown(
+        """
+        <div class="section-transition section-danger">
+            <div class="section-title">Bloque 1 · Vencidos sin recepción</div>
+            <div class="section-subtitle">
+                Registros que ya superaron la fecha de vencimiento TAT y todavía no tienen recepción registrada.
+                Esta sección representa la prioridad más alta de gestión.
+            </div>
         </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+        """,
+        unsafe_allow_html=True,
+    )
 
-grafico_vencidos_por_anio(df_vencidos)
+    grafico_vencidos_por_anio(df_vencidos)
 
-mostrar_vencidos_por_anio(df_vencidos)
+    mostrar_vencidos_por_anio(df_vencidos)
 
 
-st.markdown(
-    """
-    <div class="section-transition section-warning">
-        <div class="section-title">Bloque 2 · Por vencer sin recepción</div>
-        <div class="section-subtitle">
-            Registros que aún no vencen, pero se encuentran dentro de la ventana de gestión preventiva.
-            Esta sección permite anticipar acciones antes del incumplimiento.
+    st.markdown(
+        """
+        <div class="section-transition section-warning">
+            <div class="section-title">Bloque 2 · Por vencer sin recepción</div>
+            <div class="section-subtitle">
+                Registros que aún no vencen, pero se encuentran dentro de la ventana de gestión preventiva.
+                Esta sección permite anticipar acciones antes del incumplimiento.
+            </div>
         </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+        """,
+        unsafe_allow_html=True,
+    )
 
-mostrar_proximos_por_rango(df_proximos)
+    mostrar_proximos_por_rango(df_proximos)
 
 
-st.markdown(
-    """
-    <div class="section-transition section-data">
-        <div class="section-title">Bloque 3 · Datos incompletos</div>
-        <div class="section-subtitle">
-            Registros donde no se puede calcular el vencimiento TAT. Antes de gestionarlos operativamente,
-            se deben corregir fechas, tipo OC o umbral.
+    st.markdown(
+        """
+        <div class="section-transition section-data">
+            <div class="section-title">Bloque 3 · Datos incompletos</div>
+            <div class="section-subtitle">
+                Registros donde no se puede calcular el vencimiento TAT. Antes de gestionarlos operativamente,
+                se deben corregir fechas, tipo OC o umbral.
+            </div>
         </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+        """,
+        unsafe_allow_html=True,
+    )
 
-mostrar_tabla_alertas(
-    df_sin_fecha,
-    "Datos incompletos para calcular vencimiento",
-    "Registros sin fecha de vencimiento calculable. Requieren corrección de datos base.",
-)
+    mostrar_tabla_alertas(
+        df_sin_fecha,
+        "Datos incompletos para calcular vencimiento",
+        "Registros sin fecha de vencimiento calculable. Requieren corrección de datos base.",
+    )
+
+
 
 
 # ============================================================
 # 8. EXPEDIENTE / SEGUIMIENTO DE REGISTRO
 # ============================================================
 
-st.markdown("### 8. Expediente / seguimiento del registro")
-st.caption(
-    "Selecciona un registro para revisar sus KPI y el recorrido TAT tipo seguimiento de pedido online."
-)
+with st.expander("Ver expediente / seguimiento de registro", expanded=False):
 
-df_expediente = df_filtrado.copy()
 
-if df_expediente.empty:
-    st.info("No hay registros disponibles para mostrar expediente con los filtros actuales.")
-else:
-    df_expediente = df_expediente.sort_values("score_riesgo", ascending=False).copy()
-
-    def construir_label_expediente(row):
-        solped = formato_id(row.get(COL_SOLPED, "Sin SolPed"))
-        pedido = formato_id(row.get("pedido_unificado", row.get(COL_OC_ME5A, row.get(COL_OC_ME80FN, "Sin pedido"))))
-        nivel = row.get(COL_NIVEL_ALERTA_DESC, "-")
-        dias = row.get("dias_hasta_vencimiento", "-")
-        centro = row.get("centro_label", "-")
-
-        return f"{nivel} · {dias} · SolPed {solped} · Pedido {pedido} · {centro}"
-
-    df_expediente["label_expediente"] = df_expediente.apply(construir_label_expediente, axis=1)
-
-    opcion_registro = st.selectbox(
-        "Selecciona registro",
-        options=df_expediente["label_expediente"].tolist(),
-        index=0,
-        key="alertas_expediente_registro",
+    st.markdown("### 8. Expediente / seguimiento del registro")
+    st.caption(
+        "Selecciona un registro para revisar sus KPI y el recorrido TAT tipo seguimiento de pedido online."
     )
 
-    row = df_expediente[
-        df_expediente["label_expediente"].eq(opcion_registro)
-    ].iloc[0]
+    df_expediente = df_filtrado.copy()
 
-    mostrar_expediente_registro(row)
+    if df_expediente.empty:
+        st.info("No hay registros disponibles para mostrar expediente con los filtros actuales.")
+    else:
+        df_expediente = df_expediente.sort_values("score_riesgo", ascending=False).copy()
+
+        def construir_label_expediente(row):
+            solped = formato_id(row.get(COL_SOLPED, "Sin SolPed"))
+            pedido = formato_id(row.get("pedido_unificado", row.get(COL_OC_ME5A, row.get(COL_OC_ME80FN, "Sin pedido"))))
+            nivel = row.get(COL_NIVEL_ALERTA_DESC, "-")
+            dias = row.get("dias_hasta_vencimiento", "-")
+            centro = row.get("centro_label", "-")
+
+            return f"{nivel} · {dias} · SolPed {solped} · Pedido {pedido} · {centro}"
+
+        df_expediente["label_expediente"] = df_expediente.apply(construir_label_expediente, axis=1)
+
+        opcion_registro = st.selectbox(
+            "Selecciona registro",
+            options=df_expediente["label_expediente"].tolist(),
+            index=0,
+            key="alertas_expediente_registro",
+        )
+
+        row = df_expediente[
+            df_expediente["label_expediente"].eq(opcion_registro)
+        ].iloc[0]
+
+        mostrar_expediente_registro(row)
+
+
 
 
 # ============================================================
