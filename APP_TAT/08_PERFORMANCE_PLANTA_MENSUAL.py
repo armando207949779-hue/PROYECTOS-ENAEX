@@ -1638,6 +1638,7 @@ def mostrar_kpi_html(titulo: str, valor: str, subtitulo: str, clase: str = ""):
 def mostrar_indicadores_tat(kpis: dict):
     st.markdown("### KPI Indicators")
     st.caption(
+        "Vista principal simplificada: se dejan visibles KPIs y evolución mensual; el detalle queda colapsado. "
         "Cumplimiento TAT se calcula solo sobre registros evaluables: Cumple + No cumple. "
         "Los registros En proceso, No aplica y Sin datos no entran al porcentaje de cumplimiento."
     )
@@ -3544,71 +3545,81 @@ mostrar_indicadores_tat(kpis)
 # ============================================================
 
 st.markdown("### 1. Retención por filtros")
-st.caption(
-    "Este gráfico muestra cuántos registros ingresaron, cuántos quedaron retenidos y cuántos fueron excluidos por los filtros."
-)
 
-col_ret1, col_ret2 = st.columns([1.1, 1])
+with st.expander("Ver retención por filtros y detalle de filtros", expanded=False):
 
-with col_ret1:
-    grafico_donut_retencion(
-        total_ingresado=kpis["total_ingresado"],
-        total_retenido=kpis["total_retenido"],
+    st.caption(
+        "Este gráfico muestra cuántos registros ingresaron, cuántos quedaron retenidos y cuántos fueron excluidos por los filtros."
     )
 
-with col_ret2:
-    st.markdown("#### Resumen filtros")
-    resumen_retencion = pd.DataFrame(
-        [
-            {
-                "Métrica": "Registros ingresados",
-                "Cantidad": kpis["total_ingresado"],
-                "%": 100.0,
-            },
-            {
-                "Métrica": "Registros retenidos",
-                "Cantidad": kpis["total_retenido"],
-                "%": round(kpis["pct_retenido"], 2),
-            },
-            {
-                "Métrica": "Registros excluidos",
-                "Cantidad": kpis["total_excluido"],
-                "%": round(kpis["pct_excluido"], 2),
-            },
-        ]
-    )
+    col_ret1, col_ret2 = st.columns([1.1, 1])
 
-    st.dataframe(
-        resumen_retencion,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Cantidad": st.column_config.NumberColumn(
-                "Cantidad",
-                format="%d",
-            ),
-            "%": st.column_config.ProgressColumn(
-                "%",
-                format="%.1f%%",
-                min_value=0,
-                max_value=100,
-            ),
-        },
-    )
+    with col_ret1:
+        grafico_donut_retencion(
+            total_ingresado=kpis["total_ingresado"],
+            total_retenido=kpis["total_retenido"],
+        )
 
-with st.expander("Detalle de filtros aplicados", expanded=False):
-    mostrar_detalle_filtros_aplicados(resumen_filtros_df)
+    with col_ret2:
+        st.markdown("#### Resumen filtros")
+        resumen_retencion = pd.DataFrame(
+            [
+                {
+                    "Métrica": "Registros ingresados",
+                    "Cantidad": kpis["total_ingresado"],
+                    "%": 100.0,
+                },
+                {
+                    "Métrica": "Registros retenidos",
+                    "Cantidad": kpis["total_retenido"],
+                    "%": round(kpis["pct_retenido"], 2),
+                },
+                {
+                    "Métrica": "Registros excluidos",
+                    "Cantidad": kpis["total_excluido"],
+                    "%": round(kpis["pct_excluido"], 2),
+                },
+            ]
+        )
+
+        st.dataframe(
+            resumen_retencion,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Cantidad": st.column_config.NumberColumn(
+                    "Cantidad",
+                    format="%d",
+                ),
+                "%": st.column_config.ProgressColumn(
+                    "%",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+            },
+        )
+
+    with st.expander("Detalle de filtros aplicados", expanded=False):
+        mostrar_detalle_filtros_aplicados(resumen_filtros_df)
+
+
 
 
 st.markdown("### 2. Retenidos por Performance TAT")
-st.caption(
-    "Este gráfico muestra cómo se distribuyen todos los registros retenidos por filtros: "
-    "Cumple, No cumple, En proceso, No aplica y Sin datos."
-)
 
-desglose_filtrado_df = crear_desglose_filtrado_tat(df_dashboard)
+with st.expander("Ver desglose de retenidos por Performance TAT", expanded=False):
 
-grafico_donut_desglose_filtrado(desglose_filtrado_df)
+    st.caption(
+        "Este gráfico muestra cómo se distribuyen todos los registros retenidos por filtros: "
+        "Cumple, No cumple, En proceso, No aplica y Sin datos."
+    )
+
+    desglose_filtrado_df = crear_desglose_filtrado_tat(df_dashboard)
+
+    grafico_donut_desglose_filtrado(desglose_filtrado_df)
+
+
 
 
 st.markdown("### 3. TAT sobre registros evaluables")
@@ -3626,9 +3637,14 @@ grafico_donut_evaluables_tat(desglose_evaluables_df)
 # Distribuciones intuitivas debajo de TAT evaluable
 # ============================================================
 
-mostrar_bloque_distribucion_cumple(df_dashboard)
+with st.expander("Ver distribuciones de eficiencia y severidad TAT", expanded=False):
 
-mostrar_bloque_distribucion_no_cumple(df_dashboard)
+
+    mostrar_bloque_distribucion_cumple(df_dashboard)
+
+    mostrar_bloque_distribucion_no_cumple(df_dashboard)
+
+
 
 
 # ============================================================
@@ -3650,15 +3666,16 @@ kpis_ultimo_anio = calcular_kpis_ultimo_anio(
 )
 
 # 1. Volumen mensual global
-st.markdown("#### 1. Volumen mensual de registros evaluables")
-st.caption(
-    "Visión global de todos los meses disponibles en los datos filtrados."
-)
+with st.expander("Ver volumen mensual de registros evaluables", expanded=False):
+    st.markdown("#### 1. Volumen mensual de registros evaluables")
+    st.caption(
+        "Visión global de todos los meses disponibles en los datos filtrados."
+    )
 
-grafico_mensual_barras_evaluables(
-    tabla=tabla_mensual,
-    titulo="Volumen mensual de registros evaluables",
-)
+    grafico_mensual_barras_evaluables(
+        tabla=tabla_mensual,
+        titulo="Volumen mensual de registros evaluables",
+    )
 
 # 2. Evolución global solo con curva de cumplimiento
 st.markdown("#### 2. Evolución mensual del cumplimiento")
@@ -3679,18 +3696,19 @@ else:
     st.info("No hay datos suficientes para construir los KPI del último año.")
 
 # 4. Volumen mensual último año
-if not tabla_ultimo_anio.empty:
-    st.markdown(f"#### 4. Volumen mensual de registros evaluables - {ultimo_anio}")
-    st.caption(
-        f"Zoom del último año disponible en los datos filtrados: {ultimo_anio}."
-    )
+with st.expander("Ver volumen mensual del último año", expanded=False):
+    if not tabla_ultimo_anio.empty:
+        st.markdown(f"#### 4. Volumen mensual de registros evaluables - {ultimo_anio}")
+        st.caption(
+            f"Zoom del último año disponible en los datos filtrados: {ultimo_anio}."
+        )
 
-    grafico_mensual_barras_evaluables(
-        tabla=tabla_ultimo_anio,
-        titulo=f"Volumen mensual de registros evaluables - {ultimo_anio}",
-    )
-else:
-    st.info("No hay datos suficientes para construir el gráfico de volumen del último año.")
+        grafico_mensual_barras_evaluables(
+            tabla=tabla_ultimo_anio,
+            titulo=f"Volumen mensual de registros evaluables - {ultimo_anio}",
+        )
+    else:
+        st.info("No hay datos suficientes para construir el gráfico de volumen del último año.")
 
 # 5. Evolución último año solo con cumplimiento
 if not tabla_ultimo_anio.empty:
@@ -3711,401 +3729,416 @@ else:
 # Ranking mensual
 # ============================================================
 
-st.markdown("### Ranking mensual de cumplimiento TAT")
-st.caption(
-    "A diferencia de los gráficos de evolución, aquí sí importa ordenar de mayor a menor cumplimiento."
-)
+with st.expander("Ver ranking mensual de cumplimiento TAT", expanded=False):
 
-ranking_mensual_df = preparar_ranking_mensual(tabla_mensual)
 
-if ranking_mensual_df.empty:
-    st.info("No hay datos evaluables para construir el ranking mensual.")
-else:
-    grafico_ranking_mensual(ranking_mensual_df)
-
-    st.markdown("#### Tabla ranking mensual")
+    st.markdown("### Ranking mensual de cumplimiento TAT")
     st.caption(
-        "Ordenada de mayor a menor % Cumplimiento TAT."
+        "A diferencia de los gráficos de evolución, aquí sí importa ordenar de mayor a menor cumplimiento."
     )
 
-    st.dataframe(
-        ranking_mensual_df,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Ranking": st.column_config.NumberColumn(
-                "Ranking",
-                format="%d",
-            ),
-            "Cumple": st.column_config.NumberColumn(
-                "Cumple",
-                format="%d",
-            ),
-            "No cumple": st.column_config.NumberColumn(
-                "No cumple",
-                format="%d",
-            ),
-            "Evaluables": st.column_config.NumberColumn(
-                "Evaluables",
-                format="%d",
-            ),
-            "Total registros": st.column_config.NumberColumn(
-                "Total registros",
-                format="%d",
-            ),
-            "% Cumplimiento TAT": st.column_config.ProgressColumn(
-                "% Cumplimiento TAT",
-                format="%.1f%%",
-                min_value=0,
-                max_value=100,
-            ),
-            "% No cumplimiento TAT": st.column_config.ProgressColumn(
-                "% No cumplimiento TAT",
-                format="%.1f%%",
-                min_value=0,
-                max_value=100,
-            ),
-            "% Evaluables sobre total": st.column_config.ProgressColumn(
-                "% Evaluables sobre total",
-                format="%.1f%%",
-                min_value=0,
-                max_value=100,
-            ),
-        },
-    )
+    ranking_mensual_df = preparar_ranking_mensual(tabla_mensual)
+
+    if ranking_mensual_df.empty:
+        st.info("No hay datos evaluables para construir el ranking mensual.")
+    else:
+        grafico_ranking_mensual(ranking_mensual_df)
+
+        st.markdown("#### Tabla ranking mensual")
+        st.caption(
+            "Ordenada de mayor a menor % Cumplimiento TAT."
+        )
+
+        st.dataframe(
+            ranking_mensual_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Ranking": st.column_config.NumberColumn(
+                    "Ranking",
+                    format="%d",
+                ),
+                "Cumple": st.column_config.NumberColumn(
+                    "Cumple",
+                    format="%d",
+                ),
+                "No cumple": st.column_config.NumberColumn(
+                    "No cumple",
+                    format="%d",
+                ),
+                "Evaluables": st.column_config.NumberColumn(
+                    "Evaluables",
+                    format="%d",
+                ),
+                "Total registros": st.column_config.NumberColumn(
+                    "Total registros",
+                    format="%d",
+                ),
+                "% Cumplimiento TAT": st.column_config.ProgressColumn(
+                    "% Cumplimiento TAT",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+                "% No cumplimiento TAT": st.column_config.ProgressColumn(
+                    "% No cumplimiento TAT",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+                "% Evaluables sobre total": st.column_config.ProgressColumn(
+                    "% Evaluables sobre total",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+            },
+        )
+
+
 
 
 # ============================================================
 # Vista previa y descarga por mes
 # ============================================================
 
-st.markdown("### Vista previa y descarga por mes")
-st.caption(
-    "Selecciona un mes/año para revisar los registros del período. "
-    "Además, puedes separar la vista en registros que Cumplen y No cumplen."
-)
+with st.expander("Ver vista previa y descarga por mes", expanded=False):
 
-if tabla_mensual.empty:
-    st.info("No hay meses disponibles para seleccionar.")
-else:
-    meses_disponibles_df = (
-        tabla_mensual[["periodo_fecha", "periodo_label"]]
-        .dropna()
-        .drop_duplicates()
-        .sort_values("periodo_fecha")
-        .reset_index(drop=True)
+
+    st.markdown("### Vista previa y descarga por mes")
+    st.caption(
+        "Selecciona un mes/año para revisar los registros del período. "
+        "Además, puedes separar la vista en registros que Cumplen y No cumplen."
     )
 
-    opciones_mes = meses_disponibles_df["periodo_label"].tolist()
-
-    ultimo_mes_label = opciones_mes[-1] if opciones_mes else None
-
-    mes_seleccionado_label = st.selectbox(
-        "Selecciona mes/año",
-        options=opciones_mes,
-        index=opciones_mes.index(ultimo_mes_label) if ultimo_mes_label in opciones_mes else 0,
-        key="mensual_selector_mes_descarga",
-    )
-
-    periodo_seleccionado = meses_disponibles_df.loc[
-        meses_disponibles_df["periodo_label"].eq(mes_seleccionado_label),
-        "periodo_fecha",
-    ].iloc[0]
-
-    df_mes = df_dashboard[
-        df_dashboard["periodo_fecha"].eq(periodo_seleccionado)
-    ].copy()
-
-    df_mes_cumple = df_mes[
-        df_mes["performance_tat_total"].astype("string").eq("Cumple")
-    ].copy()
-
-    df_mes_no_cumple = df_mes[
-        df_mes["performance_tat_total"].astype("string").eq("No cumple")
-    ].copy()
-
-    total_mes = len(df_mes)
-    total_mes_cumple = len(df_mes_cumple)
-    total_mes_no_cumple = len(df_mes_no_cumple)
-
-    col_vm1, col_vm2, col_vm3 = st.columns(3)
-
-    col_vm1.metric(
-        "Total mes",
-        f"{total_mes:,}".replace(",", "."),
-    )
-
-    col_vm2.metric(
-        "Cumple",
-        f"{total_mes_cumple:,}".replace(",", "."),
-        f"{(total_mes_cumple / total_mes * 100):.1f}%" if total_mes else "0.0%",
-    )
-
-    col_vm3.metric(
-        "No cumple",
-        f"{total_mes_no_cumple:,}".replace(",", "."),
-        f"{(total_mes_no_cumple / total_mes * 100):.1f}%" if total_mes else "0.0%",
-    )
-
-    columnas_preferidas_mes = [
-        "Solicitud de pedido - ME5A",
-        COL_PEDIDO,
-        COL_DOCUMENTO_COMPRAS,
-        col_centro,
-        "tipo_oc",
-        "origen",
-        "sistema",
-        COL_FECHA_SOLICITUD_FINAL,
-        COL_FECHA_RECEPCION_FINAL,
-        "dias_tat_total",
-        "umbral_tat_total",
-        "performance_tat_total",
-        "dias_incumplimiento_tat",
-        "rango_incumplimiento_tat",
-    ]
-
-    columnas_preferidas_mes = [
-        col for col in columnas_preferidas_mes
-        if col is not None and col in df_mes.columns
-    ]
-
-    def mostrar_vista_previa_mes(
-        df_vista: pd.DataFrame,
-        nombre_vista: str,
-        key_prefix: str,
-    ):
-        total_vista = len(df_vista)
-
-        if total_vista == 0:
-            st.info(f"No hay registros para la vista: {nombre_vista}.")
-            return
-
-        max_preview = min(1000, max(total_vista, 1))
-
-        filas_preview = st.number_input(
-            f"Filas a visualizar - {nombre_vista}",
-            min_value=1,
-            max_value=max_preview,
-            value=min(300, max_preview),
-            step=50 if max_preview >= 50 else 1,
-            key=f"{key_prefix}_filas_preview",
+    if tabla_mensual.empty:
+        st.info("No hay meses disponibles para seleccionar.")
+    else:
+        meses_disponibles_df = (
+            tabla_mensual[["periodo_fecha", "periodo_label"]]
+            .dropna()
+            .drop_duplicates()
+            .sort_values("periodo_fecha")
+            .reset_index(drop=True)
         )
 
-        st.info(
-            f"Se están visualizando **{min(int(filas_preview), total_vista):,} registros** "
-            f"de un total de **{total_vista:,} registros** para **{nombre_vista}** en **{mes_seleccionado_label}**."
-            .replace(",", ".")
+        opciones_mes = meses_disponibles_df["periodo_label"].tolist()
+
+        ultimo_mes_label = opciones_mes[-1] if opciones_mes else None
+
+        mes_seleccionado_label = st.selectbox(
+            "Selecciona mes/año",
+            options=opciones_mes,
+            index=opciones_mes.index(ultimo_mes_label) if ultimo_mes_label in opciones_mes else 0,
+            key="mensual_selector_mes_descarga",
         )
 
-        if columnas_preferidas_mes:
-            columnas_disponibles = [
-                col for col in columnas_preferidas_mes
-                if col in df_vista.columns
-            ]
+        periodo_seleccionado = meses_disponibles_df.loc[
+            meses_disponibles_df["periodo_label"].eq(mes_seleccionado_label),
+            "periodo_fecha",
+        ].iloc[0]
 
-            st.dataframe(
-                df_vista[columnas_disponibles].head(int(filas_preview)),
-                use_container_width=True,
-                hide_index=True,
-            )
-        else:
-            st.dataframe(
-                df_vista.head(int(filas_preview)),
-                use_container_width=True,
-                hide_index=True,
-            )
+        df_mes = df_dashboard[
+            df_dashboard["periodo_fecha"].eq(periodo_seleccionado)
+        ].copy()
 
-    tab_general, tab_cumple, tab_no_cumple = st.tabs(
-        [
-            "Vista mes completo",
-            "Vista Cumple",
-            "Vista No cumple",
+        df_mes_cumple = df_mes[
+            df_mes["performance_tat_total"].astype("string").eq("Cumple")
+        ].copy()
+
+        df_mes_no_cumple = df_mes[
+            df_mes["performance_tat_total"].astype("string").eq("No cumple")
+        ].copy()
+
+        total_mes = len(df_mes)
+        total_mes_cumple = len(df_mes_cumple)
+        total_mes_no_cumple = len(df_mes_no_cumple)
+
+        col_vm1, col_vm2, col_vm3 = st.columns(3)
+
+        col_vm1.metric(
+            "Total mes",
+            f"{total_mes:,}".replace(",", "."),
+        )
+
+        col_vm2.metric(
+            "Cumple",
+            f"{total_mes_cumple:,}".replace(",", "."),
+            f"{(total_mes_cumple / total_mes * 100):.1f}%" if total_mes else "0.0%",
+        )
+
+        col_vm3.metric(
+            "No cumple",
+            f"{total_mes_no_cumple:,}".replace(",", "."),
+            f"{(total_mes_no_cumple / total_mes * 100):.1f}%" if total_mes else "0.0%",
+        )
+
+        columnas_preferidas_mes = [
+            "Solicitud de pedido - ME5A",
+            COL_PEDIDO,
+            COL_DOCUMENTO_COMPRAS,
+            col_centro,
+            "tipo_oc",
+            "origen",
+            "sistema",
+            COL_FECHA_SOLICITUD_FINAL,
+            COL_FECHA_RECEPCION_FINAL,
+            "dias_tat_total",
+            "umbral_tat_total",
+            "performance_tat_total",
+            "dias_incumplimiento_tat",
+            "rango_incumplimiento_tat",
         ]
-    )
 
-    with tab_general:
-        mostrar_vista_previa_mes(
-            df_vista=df_mes,
-            nombre_vista="Mes completo",
-            key_prefix="mensual_mes_completo",
-        )
+        columnas_preferidas_mes = [
+            col for col in columnas_preferidas_mes
+            if col is not None and col in df_mes.columns
+        ]
 
-    with tab_cumple:
-        mostrar_vista_previa_mes(
-            df_vista=df_mes_cumple,
-            nombre_vista="Cumple",
-            key_prefix="mensual_mes_cumple",
-        )
-
-    with tab_no_cumple:
-        mostrar_vista_previa_mes(
-            df_vista=df_mes_no_cumple,
-            nombre_vista="No cumple",
-            key_prefix="mensual_mes_no_cumple",
-        )
-
-    periodo_archivo = pd.Timestamp(periodo_seleccionado).strftime("%Y%m")
-
-    firma_mes_completo = f"{periodo_archivo}_{len(df_mes)}_COMPLETO"
-    firma_mes_cumple = f"{periodo_archivo}_{len(df_mes_cumple)}_CUMPLE"
-    firma_mes_no_cumple = f"{periodo_archivo}_{len(df_mes_no_cumple)}_NO_CUMPLE"
-
-    st.markdown("#### Descargas Excel del mes seleccionado")
-
-    col_x1, col_x2, col_x3 = st.columns(3)
-
-    with col_x1:
-        preparar_excel_completo = st.button(
-            "Preparar Excel mes completo",
-            use_container_width=True,
-            key="mensual_preparar_excel_mes_completo",
-        )
-
-        if preparar_excel_completo:
-            nombre_excel = generar_nombre_excel_mes(
-                periodo_archivo=periodo_archivo,
-                sufijo="MES_COMPLETO",
-            )
-
-            with st.spinner("Preparando Excel del mes completo..."):
-                st.session_state["mensual_excel_mes_completo_bytes"] = convertir_a_excel_cache(df_mes)
-                st.session_state["mensual_excel_mes_completo_firma"] = firma_mes_completo
-                st.session_state["mensual_excel_mes_completo_nombre"] = nombre_excel
-
-        if (
-            st.session_state.get("mensual_excel_mes_completo_bytes") is not None
-            and st.session_state.get("mensual_excel_mes_completo_firma") == firma_mes_completo
+        def mostrar_vista_previa_mes(
+            df_vista: pd.DataFrame,
+            nombre_vista: str,
+            key_prefix: str,
         ):
-            st.download_button(
-                label="Descargar mes completo",
-                data=st.session_state["mensual_excel_mes_completo_bytes"],
-                file_name=st.session_state["mensual_excel_mes_completo_nombre"],
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-                type="primary",
+            total_vista = len(df_vista)
+
+            if total_vista == 0:
+                st.info(f"No hay registros para la vista: {nombre_vista}.")
+                return
+
+            max_preview = min(1000, max(total_vista, 1))
+
+            filas_preview = st.number_input(
+                f"Filas a visualizar - {nombre_vista}",
+                min_value=1,
+                max_value=max_preview,
+                value=min(300, max_preview),
+                step=50 if max_preview >= 50 else 1,
+                key=f"{key_prefix}_filas_preview",
             )
 
-    with col_x2:
-        preparar_excel_cumple = st.button(
-            "Preparar Excel Cumple",
-            use_container_width=True,
-            key="mensual_preparar_excel_mes_cumple",
+            st.info(
+                f"Se están visualizando **{min(int(filas_preview), total_vista):,} registros** "
+                f"de un total de **{total_vista:,} registros** para **{nombre_vista}** en **{mes_seleccionado_label}**."
+                .replace(",", ".")
+            )
+
+            if columnas_preferidas_mes:
+                columnas_disponibles = [
+                    col for col in columnas_preferidas_mes
+                    if col in df_vista.columns
+                ]
+
+                st.dataframe(
+                    df_vista[columnas_disponibles].head(int(filas_preview)),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+            else:
+                st.dataframe(
+                    df_vista.head(int(filas_preview)),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+        tab_general, tab_cumple, tab_no_cumple = st.tabs(
+            [
+                "Vista mes completo",
+                "Vista Cumple",
+                "Vista No cumple",
+            ]
         )
 
-        if preparar_excel_cumple:
-            nombre_excel = generar_nombre_excel_mes(
-                periodo_archivo=periodo_archivo,
-                sufijo="CUMPLE",
+        with tab_general:
+            mostrar_vista_previa_mes(
+                df_vista=df_mes,
+                nombre_vista="Mes completo",
+                key_prefix="mensual_mes_completo",
             )
 
-            with st.spinner("Preparando Excel de registros Cumple..."):
-                st.session_state["mensual_excel_mes_cumple_bytes"] = convertir_a_excel_cache(df_mes_cumple)
-                st.session_state["mensual_excel_mes_cumple_firma"] = firma_mes_cumple
-                st.session_state["mensual_excel_mes_cumple_nombre"] = nombre_excel
+        with tab_cumple:
+            mostrar_vista_previa_mes(
+                df_vista=df_mes_cumple,
+                nombre_vista="Cumple",
+                key_prefix="mensual_mes_cumple",
+            )
 
-        if (
-            st.session_state.get("mensual_excel_mes_cumple_bytes") is not None
-            and st.session_state.get("mensual_excel_mes_cumple_firma") == firma_mes_cumple
-        ):
-            st.download_button(
-                label="Descargar Cumple",
-                data=st.session_state["mensual_excel_mes_cumple_bytes"],
-                file_name=st.session_state["mensual_excel_mes_cumple_nombre"],
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        with tab_no_cumple:
+            mostrar_vista_previa_mes(
+                df_vista=df_mes_no_cumple,
+                nombre_vista="No cumple",
+                key_prefix="mensual_mes_no_cumple",
+            )
+
+        periodo_archivo = pd.Timestamp(periodo_seleccionado).strftime("%Y%m")
+
+        firma_mes_completo = f"{periodo_archivo}_{len(df_mes)}_COMPLETO"
+        firma_mes_cumple = f"{periodo_archivo}_{len(df_mes_cumple)}_CUMPLE"
+        firma_mes_no_cumple = f"{periodo_archivo}_{len(df_mes_no_cumple)}_NO_CUMPLE"
+
+        st.markdown("#### Descargas Excel del mes seleccionado")
+
+        col_x1, col_x2, col_x3 = st.columns(3)
+
+        with col_x1:
+            preparar_excel_completo = st.button(
+                "Preparar Excel mes completo",
                 use_container_width=True,
+                key="mensual_preparar_excel_mes_completo",
             )
 
-    with col_x3:
-        preparar_excel_no_cumple = st.button(
-            "Preparar Excel No cumple",
-            use_container_width=True,
-            key="mensual_preparar_excel_mes_no_cumple",
-        )
+            if preparar_excel_completo:
+                nombre_excel = generar_nombre_excel_mes(
+                    periodo_archivo=periodo_archivo,
+                    sufijo="MES_COMPLETO",
+                )
 
-        if preparar_excel_no_cumple:
-            nombre_excel = generar_nombre_excel_mes(
-                periodo_archivo=periodo_archivo,
-                sufijo="NO_CUMPLE",
-            )
+                with st.spinner("Preparando Excel del mes completo..."):
+                    st.session_state["mensual_excel_mes_completo_bytes"] = convertir_a_excel_cache(df_mes)
+                    st.session_state["mensual_excel_mes_completo_firma"] = firma_mes_completo
+                    st.session_state["mensual_excel_mes_completo_nombre"] = nombre_excel
 
-            with st.spinner("Preparando Excel de registros No cumple..."):
-                st.session_state["mensual_excel_mes_no_cumple_bytes"] = convertir_a_excel_cache(df_mes_no_cumple)
-                st.session_state["mensual_excel_mes_no_cumple_firma"] = firma_mes_no_cumple
-                st.session_state["mensual_excel_mes_no_cumple_nombre"] = nombre_excel
+            if (
+                st.session_state.get("mensual_excel_mes_completo_bytes") is not None
+                and st.session_state.get("mensual_excel_mes_completo_firma") == firma_mes_completo
+            ):
+                st.download_button(
+                    label="Descargar mes completo",
+                    data=st.session_state["mensual_excel_mes_completo_bytes"],
+                    file_name=st.session_state["mensual_excel_mes_completo_nombre"],
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    type="primary",
+                )
 
-        if (
-            st.session_state.get("mensual_excel_mes_no_cumple_bytes") is not None
-            and st.session_state.get("mensual_excel_mes_no_cumple_firma") == firma_mes_no_cumple
-        ):
-            st.download_button(
-                label="Descargar No cumple",
-                data=st.session_state["mensual_excel_mes_no_cumple_bytes"],
-                file_name=st.session_state["mensual_excel_mes_no_cumple_nombre"],
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        with col_x2:
+            preparar_excel_cumple = st.button(
+                "Preparar Excel Cumple",
                 use_container_width=True,
+                key="mensual_preparar_excel_mes_cumple",
             )
+
+            if preparar_excel_cumple:
+                nombre_excel = generar_nombre_excel_mes(
+                    periodo_archivo=periodo_archivo,
+                    sufijo="CUMPLE",
+                )
+
+                with st.spinner("Preparando Excel de registros Cumple..."):
+                    st.session_state["mensual_excel_mes_cumple_bytes"] = convertir_a_excel_cache(df_mes_cumple)
+                    st.session_state["mensual_excel_mes_cumple_firma"] = firma_mes_cumple
+                    st.session_state["mensual_excel_mes_cumple_nombre"] = nombre_excel
+
+            if (
+                st.session_state.get("mensual_excel_mes_cumple_bytes") is not None
+                and st.session_state.get("mensual_excel_mes_cumple_firma") == firma_mes_cumple
+            ):
+                st.download_button(
+                    label="Descargar Cumple",
+                    data=st.session_state["mensual_excel_mes_cumple_bytes"],
+                    file_name=st.session_state["mensual_excel_mes_cumple_nombre"],
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                )
+
+        with col_x3:
+            preparar_excel_no_cumple = st.button(
+                "Preparar Excel No cumple",
+                use_container_width=True,
+                key="mensual_preparar_excel_mes_no_cumple",
+            )
+
+            if preparar_excel_no_cumple:
+                nombre_excel = generar_nombre_excel_mes(
+                    periodo_archivo=periodo_archivo,
+                    sufijo="NO_CUMPLE",
+                )
+
+                with st.spinner("Preparando Excel de registros No cumple..."):
+                    st.session_state["mensual_excel_mes_no_cumple_bytes"] = convertir_a_excel_cache(df_mes_no_cumple)
+                    st.session_state["mensual_excel_mes_no_cumple_firma"] = firma_mes_no_cumple
+                    st.session_state["mensual_excel_mes_no_cumple_nombre"] = nombre_excel
+
+            if (
+                st.session_state.get("mensual_excel_mes_no_cumple_bytes") is not None
+                and st.session_state.get("mensual_excel_mes_no_cumple_firma") == firma_mes_no_cumple
+            ):
+                st.download_button(
+                    label="Descargar No cumple",
+                    data=st.session_state["mensual_excel_mes_no_cumple_bytes"],
+                    file_name=st.session_state["mensual_excel_mes_no_cumple_nombre"],
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                )
+
+
 
 
 # ============================================================
 # Cumplimiento por etapa
 # ============================================================
 
-st.markdown("### Cumplimiento por etapa")
-st.caption(
-    "Visualización consolidada para Lib SolPed, Comprador, Proveedor y Logística."
-)
+with st.expander("Ver cumplimiento por etapa", expanded=False):
 
-resumen_etapas_df = crear_resumen_etapas(df_dashboard)
 
-if resumen_etapas_df.empty:
-    st.info("No hay información de etapas para mostrar.")
-else:
-    grafico_etapas_unificado(resumen_etapas_df)
-
-    st.markdown("#### Tabla de cumplimiento por etapa")
+    st.markdown("### Cumplimiento por etapa")
     st.caption(
-        "La tabla incluye barras de progreso para visualizar rápidamente el cumplimiento y no cumplimiento por etapa."
+        "Visualización consolidada para Lib SolPed, Comprador, Proveedor y Logística."
     )
 
-    st.dataframe(
-        resumen_etapas_df,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Cumple": st.column_config.NumberColumn(
-                "Cumple",
-                format="%d",
-            ),
-            "No cumple": st.column_config.NumberColumn(
-                "No cumple",
-                format="%d",
-            ),
-            "Evaluables": st.column_config.NumberColumn(
-                "Evaluables",
-                format="%d",
-            ),
-            "% Cumple": st.column_config.ProgressColumn(
-                "% Cumple",
-                format="%.1f%%",
-                min_value=0,
-                max_value=100,
-            ),
-            "% No cumple": st.column_config.ProgressColumn(
-                "% No cumple",
-                format="%.1f%%",
-                min_value=0,
-                max_value=100,
-            ),
-            "Promedio días > 0": st.column_config.NumberColumn(
-                "Promedio días > 0",
-                format="%.2f",
-            ),
-            "N promedio": st.column_config.NumberColumn(
-                "N promedio",
-                format="%d",
-            ),
-        },
-    )
+    resumen_etapas_df = crear_resumen_etapas(df_dashboard)
+
+    if resumen_etapas_df.empty:
+        st.info("No hay información de etapas para mostrar.")
+    else:
+        grafico_etapas_unificado(resumen_etapas_df)
+
+        st.markdown("#### Tabla de cumplimiento por etapa")
+        st.caption(
+            "La tabla incluye barras de progreso para visualizar rápidamente el cumplimiento y no cumplimiento por etapa."
+        )
+
+        st.dataframe(
+            resumen_etapas_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Cumple": st.column_config.NumberColumn(
+                    "Cumple",
+                    format="%d",
+                ),
+                "No cumple": st.column_config.NumberColumn(
+                    "No cumple",
+                    format="%d",
+                ),
+                "Evaluables": st.column_config.NumberColumn(
+                    "Evaluables",
+                    format="%d",
+                ),
+                "% Cumple": st.column_config.ProgressColumn(
+                    "% Cumple",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+                "% No cumple": st.column_config.ProgressColumn(
+                    "% No cumple",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+                "Promedio días > 0": st.column_config.NumberColumn(
+                    "Promedio días > 0",
+                    format="%.2f",
+                ),
+                "N promedio": st.column_config.NumberColumn(
+                    "N promedio",
+                    format="%d",
+                ),
+            },
+        )
+
+
 
 
 # ============================================================
