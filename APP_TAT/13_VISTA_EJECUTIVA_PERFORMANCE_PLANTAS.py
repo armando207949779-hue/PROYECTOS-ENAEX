@@ -1013,130 +1013,118 @@ def etiqueta_mes_corta(fecha) -> str:
     return MESES_NOMBRE.get(int(fecha.month), str(fecha.month))
 
 
-def grafico_barras_apiladas_plantas(
-    tabla: pd.DataFrame,
-    titulo: str,
+def grafico_powerbi_planta(
+    tabla_anio: pd.DataFrame,
+    planta: str,
+    anio: int,
 ):
-    if tabla.empty:
-        st.info("No hay datos mensuales evaluables para graficar.")
+    data = tabla_anio[
+        tabla_anio["grupo_planta"].eq(planta)
+    ].copy()
+
+    if data.empty:
+        st.info(f"No hay datos evaluables para {planta} en {anio}.")
         return
 
-    data = tabla.copy()
     data["periodo_fecha"] = pd.to_datetime(data["periodo_fecha"], errors="coerce")
     data = data[data["periodo_fecha"].notna()].copy()
     data = data[data["Evaluables"].gt(0)].copy()
+    data = data.sort_values("periodo_fecha").reset_index(drop=True)
 
     if data.empty:
-        st.info("No hay meses con registros evaluables para graficar.")
+        st.info(f"No hay meses evaluables para {planta} en {anio}.")
         return
 
-    meses = (
-        data[["periodo_fecha", "periodo_label"]]
-        .drop_duplicates()
-        .sort_values("periodo_fecha")
-        .reset_index(drop=True)
+    x = np.arange(len(data))
+
+    cumple_pct = pd.to_numeric(data["% Cumple"], errors="coerce").fillna(0).to_numpy()
+    no_cumple_pct = pd.to_numeric(data["% No cumple"], errors="coerce").fillna(0).to_numpy()
+
+    cumple_n = pd.to_numeric(data["Cumple"], errors="coerce").fillna(0).astype(int).to_numpy()
+    no_cumple_n = pd.to_numeric(data["No cumple"], errors="coerce").fillna(0).astype(int).to_numpy()
+    evaluables = pd.to_numeric(data["Evaluables"], errors="coerce").fillna(0).astype(int).to_numpy()
+
+    labels = [etiqueta_mes_corta(v)[:5] for v in data["periodo_fecha"]]
+
+    fig_width = max(9.5, len(data) * 0.62)
+    fig, ax = plt.subplots(figsize=(fig_width, 2.35), dpi=180)
+
+    bar_width = 0.46
+
+    ax.bar(
+        x,
+        cumple_pct,
+        width=bar_width,
+        color=COLOR_CUMPLE,
+        label="Cumple",
+        edgecolor="white",
+        linewidth=0.8,
     )
 
-    plantas = [
-        planta for planta in ORDEN_PLANTAS.keys()
-        if planta in data["grupo_planta"].unique()
-    ]
-
-    if not plantas:
-        st.info("No hay plantas disponibles para graficar.")
-        return
-
-    x_base = np.arange(len(meses))
-    ancho = 0.22 if len(plantas) >= 3 else 0.30
-
-    fig_width = max(10, len(meses) * 1.05)
-    fig, ax = plt.subplots(figsize=(fig_width, 4.8), dpi=180)
-
-    offsets = np.linspace(
-        -ancho * (len(plantas) - 1),
-        ancho * (len(plantas) - 1),
-        len(plantas),
+    ax.bar(
+        x,
+        no_cumple_pct,
+        bottom=cumple_pct,
+        width=bar_width,
+        color=COLOR_NO_CUMPLE,
+        label="No cumple",
+        edgecolor="white",
+        linewidth=0.8,
     )
-
-    for offset, planta in zip(offsets, plantas):
-        base_planta = (
-            data[data["grupo_planta"].eq(planta)]
-            .set_index("periodo_fecha")
-            .reindex(meses["periodo_fecha"])
-            .reset_index()
-        )
-
-        cumple_pct = pd.to_numeric(base_planta["% Cumple"], errors="coerce").fillna(0).to_numpy()
-        no_cumple_pct = pd.to_numeric(base_planta["% No cumple"], errors="coerce").fillna(0).to_numpy()
-        evaluables = pd.to_numeric(base_planta["Evaluables"], errors="coerce").fillna(0).astype(int).to_numpy()
-
-        x = x_base + offset
-
-        color_base = COLORES_PLANTAS.get(planta, COLOR_CUMPLE)
-
-        ax.bar(
-            x,
-            cumple_pct,
-            width=ancho,
-            color=color_base,
-            label=f"{planta} · Cumple",
-            edgecolor="white",
-            linewidth=0.7,
-        )
-
-        ax.bar(
-            x,
-            no_cumple_pct,
-            bottom=cumple_pct,
-            width=ancho,
-            color=COLOR_NO_CUMPLE,
-            label=f"{planta} · No cumple" if planta == plantas[0] else None,
-            edgecolor="white",
-            linewidth=0.7,
-            alpha=0.85,
-        )
-
-        for i, (c_pct, total) in enumerate(zip(cumple_pct, evaluables)):
-            if total <= 0:
-                continue
-
-            if c_pct >= 15:
-                ax.text(
-                    x[i],
-                    c_pct / 2,
-                    f"{c_pct:.0f}%",
-                    ha="center",
-                    va="center",
-                    fontsize=6.5,
-                    color="white",
-                    fontweight="bold",
-                )
 
     ax.axhline(
         META_CUMPLIMIENTO,
         color=COLOR_META,
         linestyle=(0, (2, 2)),
-        linewidth=1.8,
+        linewidth=1.6,
         alpha=0.95,
         label=f"Meta {META_CUMPLIMIENTO}%",
     )
 
-    labels = [etiqueta_mes_corta(v) for v in meses["periodo_fecha"]]
+    for i, (c_pct, nc_pct, c_n, nc_n, total) in enumerate(
+        zip(cumple_pct, no_cumple_pct, cumple_n, no_cumple_n, evaluables)
+    ):
+        if total <= 0:
+            continue
+
+        if c_pct >= 18:
+            ax.text(
+                i,
+                c_pct / 2,
+                f"{c_pct:.0f}%",
+                ha="center",
+                va="center",
+                fontsize=6.7,
+                color="white",
+                fontweight="bold",
+            )
+
+        if nc_pct >= 18:
+            ax.text(
+                i,
+                c_pct + nc_pct / 2,
+                f"{nc_pct:.0f}%",
+                ha="center",
+                va="center",
+                fontsize=6.7,
+                color="white",
+                fontweight="bold",
+            )
 
     ax.set_ylim(0, 105)
     ax.set_yticks([0, 50, 100])
-    ax.set_yticklabels(["0%", "50%", "100%"], fontsize=8, color=COLOR_MUTED)
+    ax.set_yticklabels(["0%", "50%", "100%"], fontsize=7.5, color=COLOR_MUTED)
 
-    ax.set_xticks(x_base)
-    ax.set_xticklabels(labels, rotation=0, fontsize=8, color=COLOR_MUTED)
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, rotation=90, fontsize=7.2, color=COLOR_MUTED)
 
     ax.set_title(
-        titulo,
+        f"Performance TAT {planta}",
         loc="left",
-        fontsize=14.5,
+        fontsize=12,
         fontweight="bold",
         color=COLOR_TEXTO,
-        pad=10,
+        pad=8,
     )
 
     ax.grid(axis="y", linestyle=":", linewidth=0.7, color=COLOR_GRID)
@@ -1146,29 +1134,20 @@ def grafico_barras_apiladas_plantas(
     for spine in ax.spines.values():
         spine.set_visible(False)
 
-    handles, labels_legend = ax.get_legend_handles_labels()
-    pares = [
-        (h, l) for h, l in zip(handles, labels_legend)
-        if l and not l.startswith("_")
-    ]
-
-    if pares:
-        handles, labels_legend = zip(*pares)
-
-        ax.legend(
-            handles,
-            labels_legend,
-            loc="upper center",
-            bbox_to_anchor=(0.5, -0.17),
-            ncol=min(4, len(labels_legend)),
-            frameon=False,
-            fontsize=8,
-        )
+    ax.legend(
+        loc="upper center",
+        bbox_to_anchor=(0.5, 1.16),
+        ncol=3,
+        frameon=False,
+        fontsize=7.8,
+        handlelength=0.9,
+        columnspacing=0.8,
+    )
 
     fig.patch.set_facecolor("white")
     ax.set_facecolor("white")
     fig.tight_layout()
-    fig.subplots_adjust(bottom=0.23)
+    fig.subplots_adjust(top=0.78, bottom=0.28)
 
     st.pyplot(fig, clear_figure=True, use_container_width=True)
     plt.close(fig)
@@ -1183,8 +1162,8 @@ def mostrar_evolucion_por_anio_plantas(tabla_mensual: pd.DataFrame):
     st.markdown(
         """
         <div class='exec-small'>
-            Barras 100% apiladas por planta. Los años anteriores quedan colapsados
-            y el último año disponible queda visible por defecto.
+            Inspirado en la vista Power BI: tres paneles por planta con barras 100% apiladas.
+            Los años anteriores quedan colapsados y el último año disponible queda visible por defecto.
         </div>
         """,
         unsafe_allow_html=True,
@@ -1236,11 +1215,6 @@ def mostrar_evolucion_por_anio_plantas(tabla_mensual: pd.DataFrame):
         )
 
         with st.expander(titulo_expander, expanded=expanded):
-            resumen_planta = calcular_kpis_por_planta(
-                data_anio.rename(columns={"Evaluables": "_Evaluables_temp"})
-            )
-
-            # En este punto data_anio ya es mensual agregado. Para KPI visual anual se calcula directo.
             kpi_anual_planta = (
                 data_anio
                 .groupby("grupo_planta", as_index=False)
@@ -1273,10 +1247,15 @@ def mostrar_evolucion_por_anio_plantas(tabla_mensual: pd.DataFrame):
                         ),
                     )
 
-            grafico_barras_apiladas_plantas(
-                data_anio,
-                titulo=f"Performance TAT plantas {anio}",
-            )
+            st.markdown("")
+
+            for planta in ORDEN_PLANTAS.keys():
+                if planta in data_anio["grupo_planta"].unique():
+                    grafico_powerbi_planta(
+                        tabla_anio=data_anio,
+                        planta=planta,
+                        anio=anio,
+                    )
 
             with st.expander(f"Tabla mensual plantas {anio}", expanded=False):
                 columnas = [
