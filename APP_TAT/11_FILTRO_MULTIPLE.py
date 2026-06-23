@@ -1122,6 +1122,29 @@ def ordenar_tabla(tabla: pd.DataFrame, modo: str) -> pd.DataFrame:
     return tabla.reset_index(drop=True)
 
 
+
+
+def reordenar_columnas_tabla_gestion(tabla: pd.DataFrame) -> pd.DataFrame:
+    columnas_principales = [
+        "SolPed",
+        "Pedido",
+        "Posición",
+        "Texto breve",
+    ]
+
+    columnas_principales = [
+        col for col in columnas_principales
+        if col in tabla.columns
+    ]
+
+    columnas_restantes = [
+        col for col in tabla.columns
+        if col not in columnas_principales
+    ]
+
+    return tabla[columnas_principales + columnas_restantes].copy()
+
+
 # ============================================================
 # Exportación
 # ============================================================
@@ -1519,6 +1542,8 @@ else:
 
     tabla_visual = ordenar_tabla(tabla_visual, modo_orden)
 
+
+tabla_visual = reordenar_columnas_tabla_gestion(tabla_visual)
 
 st.dataframe(
     tabla_visual.drop(columns=["_orden_solped"], errors="ignore"),
