@@ -22,11 +22,9 @@ import streamlit as st
 # Configuración general
 # ============================================================
 
-st.set_page_config(
-    page_title="04_MATCH",
-    page_icon="🔗",
-    layout="wide",
-)
+# Nota: si esta app corre dentro de 00_APP_TAT con st.navigation(),
+# no debe ejecutar st.set_page_config aquí para evitar errores de configuración duplicada.
+# Si la ejecutas de forma independiente, define st.set_page_config en el portal principal.
 
 
 # ============================================================
@@ -1404,10 +1402,6 @@ try:
             resultado_final
         )
 
-        parquet_bytes = convertir_a_parquet_cache(
-            resultado_exportacion
-        )
-
         nombre_parquet = generar_nombre_salida("parquet")
         nombre_csv = generar_nombre_salida("csv")
 
@@ -1438,6 +1432,10 @@ st.markdown(
 )
 
 st.success("Match generado correctamente.")
+st.caption(
+    "Versión anti-crash: el archivo Parquet y el CSV se generan solo bajo demanda, "
+    "evitando preparar descargas pesadas automáticamente en cada ejecución."
+)
 
 
 # ============================================================
@@ -1474,14 +1472,35 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.download_button(
-    label="Descargar resultado en Parquet",
-    data=parquet_bytes,
-    file_name=nombre_parquet,
-    mime="application/octet-stream",
-    type="primary",
+preparar_parquet = st.button(
+    "Preparar Parquet",
     use_container_width=True,
+    type="primary",
+    key="match_preparar_parquet_principal",
 )
+
+if preparar_parquet:
+    with st.spinner("Preparando Parquet..."):
+        st.session_state["match_parquet_bytes"] = convertir_a_parquet_cache(
+            resultado_exportacion
+        )
+        st.session_state["match_parquet_firma"] = firma_archivos
+        st.session_state["match_parquet_nombre"] = nombre_parquet
+
+if (
+    st.session_state.get("match_parquet_bytes") is not None
+    and st.session_state.get("match_parquet_firma") == firma_archivos
+):
+    st.download_button(
+        label="Descargar resultado en Parquet",
+        data=st.session_state["match_parquet_bytes"],
+        file_name=st.session_state["match_parquet_nombre"],
+        mime="application/octet-stream",
+        type="primary",
+        use_container_width=True,
+    )
+else:
+    st.info("Presiona **Preparar Parquet** para generar el archivo de descarga solo cuando lo necesites.")
 
 
 # ============================================================
