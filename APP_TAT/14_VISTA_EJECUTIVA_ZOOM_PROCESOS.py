@@ -888,14 +888,14 @@ def grafico_proceso_horizontal(
 
     etiquetas = data["grupo_compras_zoom"].astype(str).tolist()
 
-    fig_height = max(3.7, len(data) * 0.43)
-    fig, ax = plt.subplots(figsize=(3.2, fig_height), dpi=180)
+    fig_height = max(4.35, len(data) * 0.52)
+    fig, ax = plt.subplots(figsize=(3.85, fig_height), dpi=180)
 
     ax.barh(
         y,
         cumple_pct,
         color=COLOR_CUMPLE,
-        height=0.72,
+        height=0.70,
         label="Cumple",
         edgecolor="white",
         linewidth=0.7,
@@ -906,7 +906,7 @@ def grafico_proceso_horizontal(
         no_cumple_pct,
         left=cumple_pct,
         color=COLOR_NO_CUMPLE,
-        height=0.72,
+        height=0.70,
         label="No cumple",
         edgecolor="white",
         linewidth=0.7,
@@ -916,53 +916,53 @@ def grafico_proceso_horizontal(
         META_CUMPLIMIENTO,
         color=COLOR_META,
         linestyle=(0, (2, 2)),
-        linewidth=1.6,
+        linewidth=1.8,
         alpha=0.95,
     )
 
     for i, (c_pct, nc_pct) in enumerate(zip(cumple_pct, no_cumple_pct)):
-        if c_pct >= 13:
+        if c_pct >= 15:
             ax.text(
                 c_pct / 2,
                 i,
                 f"{c_pct:.1f}%",
                 ha="center",
                 va="center",
-                fontsize=6.8,
+                fontsize=7.2,
                 color="white",
                 fontweight="bold",
             )
 
-        if nc_pct >= 13:
+        if nc_pct >= 15:
             ax.text(
                 c_pct + nc_pct / 2,
                 i,
                 f"{nc_pct:.1f}%",
                 ha="center",
                 va="center",
-                fontsize=6.8,
+                fontsize=7.2,
                 color="white",
                 fontweight="bold",
             )
 
     ax.set_xlim(0, 100)
     ax.set_xticks([0, 50, 100])
-    ax.set_xticklabels(["0%", "50%", "100%"], fontsize=7.5, color=COLOR_MUTED)
+    ax.set_xticklabels(["0%", "50%", "100%"], fontsize=8, color=COLOR_MUTED)
 
     if mostrar_eje_y:
         ax.set_yticks(y)
-        ax.set_yticklabels(etiquetas, fontsize=7.3, color=COLOR_MUTED)
-        ax.set_ylabel("Grupo de compras", fontsize=7.5, color=COLOR_TEXTO)
+        ax.set_yticklabels(etiquetas, fontsize=8, color=COLOR_MUTED)
+        ax.set_ylabel("Grupo de compras", fontsize=8, color=COLOR_TEXTO)
     else:
         ax.set_yticks(y)
         ax.set_yticklabels([""] * len(y))
 
     ax.set_title(
         titulo,
-        fontsize=10.8,
+        fontsize=11.5,
         fontweight="bold",
         color=COLOR_TEXTO,
-        pad=14,
+        pad=10,
     )
 
     ax.grid(axis="x", linestyle=":", linewidth=0.7, color=COLOR_GRID)
@@ -972,20 +972,10 @@ def grafico_proceso_horizontal(
     for spine in ax.spines.values():
         spine.set_visible(False)
 
-    ax.legend(
-        loc="upper center",
-        bbox_to_anchor=(0.5, 1.12),
-        ncol=2,
-        frameon=False,
-        fontsize=7.2,
-        handlelength=0.9,
-        columnspacing=0.7,
-    )
-
     fig.patch.set_facecolor("white")
     ax.set_facecolor("white")
     fig.tight_layout()
-    fig.subplots_adjust(top=0.86)
+    fig.subplots_adjust(top=0.92, bottom=0.10)
 
     st.pyplot(fig, clear_figure=True, use_container_width=True)
     plt.close(fig)
@@ -996,15 +986,46 @@ def mostrar_zoom_procesos(
     grupos_ordenados: list[str],
 ):
     st.markdown(
-        "<div class='exec-section-title'>Performance de procesos</div>",
+        """
+        <div style="
+            text-align:center;
+            font-size:28px;
+            font-weight:900;
+            letter-spacing:4px;
+            color:#2B2B2B;
+            margin-top:4px;
+            margin-bottom:2px;
+        ">
+            PERFORMANCE DE PROCESOS
+        </div>
+        """,
         unsafe_allow_html=True,
     )
 
     st.markdown(
         """
-        <div class='exec-small'>
+        <div class='exec-small' style='text-align:center; margin-bottom:10px;'>
             Barras horizontales 100% apiladas por grupo de compras.
-            Gris = Cumple, rojo = No cumple, línea segmentada = meta.
+            Gris = Cumple, rojo = No cumple, línea segmentada verde = meta.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        f"""
+        <div style="
+            display:flex;
+            justify-content:center;
+            gap:18px;
+            align-items:center;
+            font-size:12px;
+            color:#4B5563;
+            margin-bottom:8px;
+        ">
+            <span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:{COLOR_CUMPLE};margin-right:4px;"></span>Cumple</span>
+            <span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:{COLOR_NO_CUMPLE};margin-right:4px;"></span>No cumple</span>
+            <span><span style="display:inline-block;width:16px;height:0;border-top:2px dashed {COLOR_META};margin-right:4px;"></span>Meta {META_CUMPLIMIENTO}%</span>
         </div>
         """,
         unsafe_allow_html=True,
@@ -1014,7 +1035,7 @@ def mostrar_zoom_procesos(
         st.info("No hay grupos de compras evaluables para mostrar.")
         return
 
-    cols = st.columns(5)
+    cols = st.columns(5, gap="small")
 
     for i, proceso in enumerate(PROCESOS_DASHBOARD):
         resumen = crear_resumen_proceso(
