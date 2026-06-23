@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, unquote
 import base64
 import hashlib
 import hmac
@@ -240,8 +240,8 @@ def leer_csv_robusto_bytes(
     contenido: bytes,
     nombre_archivo: str,
 ) -> tuple[pd.DataFrame, dict[str, str]]:
-    encodings = ["utf-8-sig", "utf-8", "latin1", "cp1252", "ISO-8859-1"]
-    separadores = [",", ";", "\t", "|"]
+    encodings = ["utf-8-sig", "utf-8", "utf-16", "utf-16-le", "utf-16-be", "latin1", "cp1252", "ISO-8859-1"]
+    separadores = [";", ",", "\t", "|", None]
 
     mejor_df: pd.DataFrame | None = None
     mejor_config: dict[str, str] | None = None
@@ -266,7 +266,7 @@ def leer_csv_robusto_bytes(
                     mejor_df = temp.copy()
                     mejor_config = {
                         "encoding": encoding,
-                        "separador": sep,
+                        "separador": "Automático" if sep is None else sep,
                     }
                     mejor_score = score
 
@@ -315,6 +315,10 @@ def detectar_formato_archivo(
     if contenido[:4] == b"PK\x03\x04":
         return "excel"
 
+    # XLS antiguo normalmente usa formato OLE Compound File.
+    if contenido[:8] == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":
+        return "excel"
+
     if "spreadsheet" in content_type or "excel" in content_type:
         return "excel"
 
@@ -342,24 +346,47 @@ def cargar_archivo_desde_bytes(
     nombre_archivo: str,
     content_type: str = "",
 ) -> tuple[pd.DataFrame, dict[str, str]]:
+    nombre_archivo = unquote(str(nombre_archivo))
+
     formato = detectar_formato_archivo(
         contenido=contenido,
         nombre_archivo=nombre_archivo,
         content_type=content_type,
     )
 
-    if formato == "csv":
-        df, config = leer_csv_robusto_bytes(contenido, nombre_archivo)
-    elif formato == "excel":
-        df, config = leer_excel_bytes(contenido)
-    elif formato == "parquet":
-        df, config = leer_parquet_bytes(contenido)
-    else:
-        raise ValueError(f"Formato no soportado: {nombre_archivo}")
+    errores_intentos: list[str] = []
 
-    config["formato_detectado"] = formato
+    orden_intentos = [formato]
 
-    return df, config
+    # Algunos enlaces de SharePoint con ícono de Excel (:x:) pueden descargar
+    # un archivo Excel aunque el nombre esperado sea .csv, o viceversa.
+    for candidato in ["excel", "csv", "parquet"]:
+        if candidato not in orden_intentos:
+            orden_intentos.append(candidato)
+
+    for intento in orden_intentos:
+        try:
+            if intento == "csv":
+                df, config = leer_csv_robusto_bytes(contenido, nombre_archivo)
+            elif intento == "excel":
+                df, config = leer_excel_bytes(contenido)
+            elif intento == "parquet":
+                df, config = leer_parquet_bytes(contenido)
+            else:
+                continue
+
+            config["formato_detectado"] = intento
+            config["formato_sugerido"] = formato
+
+            return df, config
+
+        except Exception as exc:
+            errores_intentos.append(f"{intento}: {exc}")
+
+    raise ValueError(
+        f"No se pudo leer correctamente el archivo: {nombre_archivo}. "
+        f"Intentos realizados -> {' | '.join(errores_intentos)}"
+    )
 
 
 def cargar_archivo_manual(uploaded_file) -> tuple[pd.DataFrame, dict[str, str]]:
@@ -399,7 +426,7 @@ def extraer_nombre_content_disposition(content_disposition: str) -> str | None:
         flags=re.IGNORECASE,
     )
     if match_utf:
-        return match_utf.group(1).strip().strip('"')
+        return unquote(match_utf.group(1).strip().strip('"'))
 
     # filename="archivo.xlsx"
     match = re.search(
@@ -408,7 +435,7 @@ def extraer_nombre_content_disposition(content_disposition: str) -> str | None:
         flags=re.IGNORECASE,
     )
     if match:
-        return match.group(1).strip().strip('"')
+        return unquote(match.group(1).strip().strip('"'))
 
     return None
 
@@ -416,7 +443,7 @@ def extraer_nombre_content_disposition(content_disposition: str) -> str | None:
 def detectar_nombre_desde_url(url: str) -> str | None:
     try:
         path = urlparse(url).path
-        nombre = Path(path).name
+        nombre = unquote(Path(path).name)
         if "." in nombre:
             return nombre
     except Exception:
