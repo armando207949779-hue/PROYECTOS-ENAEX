@@ -120,6 +120,16 @@ APP_SECTIONS = [
                     "Cumple y No cumple."
                 ),
             },
+            {
+                "nombre": "13_VISTA_EJECUTIVA_PERFORMANCE_PLANTAS",
+                "archivo": "13_VISTA_EJECUTIVA_PERFORMANCE_PLANTAS.py",
+                "titulo": "13 Vista Ejecutiva Performance Plantas",
+                "icono": "🏭",
+                "descripcion": (
+                    "Dashboard ejecutivo por planta con foco en Prillex, Rio Loa "
+                    "y Planta de servicios."
+                ),
+            },
         ],
     },
     {
