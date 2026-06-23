@@ -130,6 +130,16 @@ APP_SECTIONS = [
                     "y Planta de servicios."
                 ),
             },
+            {
+                "nombre": "14_VISTA_EJECUTIVA_ZOOM_PROCESOS",
+                "archivo": "14_VISTA_EJECUTIVA_ZOOM_PROCESOS.py",
+                "titulo": "14 Vista Ejecutiva Zoom Procesos",
+                "icono": "🔬",
+                "descripcion": (
+                    "Vista ejecutiva tipo Power BI para analizar cumplimiento por "
+                    "grupo de compras y etapas del proceso TAT."
+                ),
+            },
         ],
     },
     {
