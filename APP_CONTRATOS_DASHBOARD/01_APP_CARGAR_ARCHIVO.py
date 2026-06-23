@@ -8,10 +8,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from io import BytesIO
+from io import BytesIO, StringIO
 from pathlib import Path
 from urllib.parse import urlparse, unquote
 import base64
+import csv
 import hashlib
 import hmac
 import re
@@ -236,13 +237,141 @@ def limpiar_columnas(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def limpiar_valor_csv(valor: object) -> object:
+    if not isinstance(valor, str):
+        return valor
+
+    texto = valor.strip()
+
+    # Algunos CSV descargados desde Excel/SharePoint quedan con apóstrofes
+    # como envoltorio de campos: 'valor';'valor2'
+    if len(texto) >= 2 and texto[0] == "'" and texto[-1] == "'":
+        texto = texto[1:-1].strip()
+
+    return texto
+
+
+def construir_df_desde_texto_csv(
+    texto: str,
+    nombre_archivo: str,
+    encoding: str,
+) -> tuple[pd.DataFrame, dict[str, str]]:
+    texto = texto.replace("\ufeff", "").replace("\x00", "")
+
+    lineas = [
+        linea
+        for linea in texto.splitlines()
+        if linea.strip()
+    ]
+
+    if not lineas:
+        raise ValueError("El archivo no contiene líneas legibles.")
+
+    candidatos_sep = [";", ",", "\t", "|"]
+
+    puntajes = {}
+    muestra = lineas[:50]
+
+    for sep in candidatos_sep:
+        puntajes[sep] = sum(linea.count(sep) for linea in muestra)
+
+    mejor_sep = max(puntajes, key=puntajes.get)
+
+    if puntajes[mejor_sep] <= 0:
+        raise ValueError(
+            "No se detectó separador CSV válido en las primeras líneas."
+        )
+
+    filas = []
+
+    lector = csv.reader(
+        StringIO("\n".join(lineas)),
+        delimiter=mejor_sep,
+        quotechar='"',
+        escapechar="\\",
+        doublequote=True,
+        skipinitialspace=True,
+    )
+
+    for fila in lector:
+        fila_limpia = [
+            limpiar_valor_csv(celda)
+            for celda in fila
+        ]
+
+        if any(str(celda).strip() for celda in fila_limpia):
+            filas.append(fila_limpia)
+
+    if not filas:
+        raise ValueError("No se pudieron construir filas desde el CSV.")
+
+    max_columnas = max(len(fila) for fila in filas)
+
+    if max_columnas <= 1:
+        raise ValueError(
+            "El archivo se leyó como una sola columna. "
+            "No se pudo separar correctamente."
+        )
+
+    filas_normalizadas = [
+        fila + [""] * (max_columnas - len(fila))
+        for fila in filas
+    ]
+
+    encabezados = [
+        str(col).strip().replace("\ufeff", "")
+        for col in filas_normalizadas[0]
+    ]
+
+    encabezados_limpios = []
+    usados = {}
+
+    for i, col in enumerate(encabezados, start=1):
+        nombre_col = col if col else f"columna_{i}"
+
+        if nombre_col in usados:
+            usados[nombre_col] += 1
+            nombre_col = f"{nombre_col}_{usados[nombre_col]}"
+        else:
+            usados[nombre_col] = 1
+
+        encabezados_limpios.append(nombre_col)
+
+    datos = filas_normalizadas[1:]
+
+    df = pd.DataFrame(datos, columns=encabezados_limpios)
+    df = df.dropna(axis=1, how="all")
+
+    if df.empty and len(filas_normalizadas) > 1:
+        raise ValueError("El CSV fue separado, pero no contiene datos.")
+
+    return limpiar_columnas(df), {
+        "encoding": encoding,
+        "separador": mejor_sep,
+        "lector": "csv.reader",
+    }
+
+
 def leer_csv_robusto_bytes(
     contenido: bytes,
     nombre_archivo: str,
 ) -> tuple[pd.DataFrame, dict[str, str]]:
-    encodings = ["utf-8-sig", "utf-8", "utf-16", "utf-16-le", "utf-16-be", "latin1", "cp1252", "ISO-8859-1"]
+    encodings = [
+        "utf-8-sig",
+        "utf-8",
+        "utf-16",
+        "utf-16-le",
+        "utf-16-be",
+        "latin1",
+        "cp1252",
+        "ISO-8859-1",
+    ]
+
     separadores = [";", ",", "\t", "|", None]
 
+    errores: list[str] = []
+
+    # 1) Primero intenta pandas con combinaciones normales.
     mejor_df: pd.DataFrame | None = None
     mejor_config: dict[str, str] | None = None
     mejor_score = -1
@@ -267,17 +396,50 @@ def leer_csv_robusto_bytes(
                     mejor_config = {
                         "encoding": encoding,
                         "separador": "Automático" if sep is None else sep,
+                        "lector": "pandas",
                     }
                     mejor_score = score
 
-            except Exception:
+            except Exception as exc:
+                errores.append(
+                    f"pandas encoding={encoding} sep={sep}: {exc}"
+                )
                 continue
 
-    if mejor_df is None or mejor_config is None:
-        raise ValueError(f"No se pudo leer correctamente el CSV: {nombre_archivo}")
+    if mejor_df is not None and mejor_config is not None:
+        return limpiar_columnas(mejor_df), mejor_config
 
-    return limpiar_columnas(mejor_df), mejor_config
+    # 2) Si pandas no logra separar, decodifica texto y usa csv.reader.
+    for encoding in encodings:
+        try:
+            texto = contenido.decode(encoding, errors="replace")
+            df, config = construir_df_desde_texto_csv(
+                texto=texto,
+                nombre_archivo=nombre_archivo,
+                encoding=encoding,
+            )
+            return df, config
 
+        except Exception as exc:
+            errores.append(f"csv.reader encoding={encoding}: {exc}")
+            continue
+
+    # 3) Diagnóstico compacto para saber qué está llegando desde SharePoint.
+    inicio_hex = contenido[:40].hex(" ")
+    inicio_texto = ""
+
+    for encoding in encodings:
+        try:
+            inicio_texto = contenido[:300].decode(encoding, errors="replace")
+            break
+        except Exception:
+            continue
+
+    raise ValueError(
+        f"No se pudo leer correctamente el CSV: {nombre_archivo}. "
+        f"Primeros bytes HEX: {inicio_hex}. "
+        f"Inicio texto detectado: {inicio_texto[:200]}"
+    )
 
 def leer_excel_bytes(contenido: bytes) -> tuple[pd.DataFrame, dict[str, str]]:
     df = pd.read_excel(BytesIO(contenido))
