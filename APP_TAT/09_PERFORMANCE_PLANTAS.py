@@ -2761,6 +2761,7 @@ kpis = calcular_kpis_generales(
 )
 
 st.markdown("### KPI Indicators")
+st.caption("Vista principal simplificada: se dejan visibles los KPIs, cumplimiento por planta y evolución; el detalle operativo queda colapsado.")
 st.caption(
     "El cumplimiento TAT se calcula solo sobre registros evaluables: Cumple + No cumple."
 )
@@ -2834,66 +2835,76 @@ with col_k8:
 # RETENCIÓN POR FILTROS
 # ============================================================
 
-st.markdown("### 1. Retención por filtros")
+with st.expander("Ver retención por filtros", expanded=False):
 
-col_ret1, col_ret2 = st.columns([1.1, 1])
 
-with col_ret1:
-    grafico_donut_retencion(
-        total_base=kpis["total_base"],
-        total_filtrado=kpis["total_filtrado"],
-    )
+    st.markdown("### 1. Retención por filtros")
 
-with col_ret2:
-    st.markdown("#### Resumen de filtros")
-    resumen_retencion = pd.DataFrame(
-        [
-            {
-                "Métrica": "Registros base",
-                "Cantidad": kpis["total_base"],
-                "%": 100.0,
+    col_ret1, col_ret2 = st.columns([1.1, 1])
+
+    with col_ret1:
+        grafico_donut_retencion(
+            total_base=kpis["total_base"],
+            total_filtrado=kpis["total_filtrado"],
+        )
+
+    with col_ret2:
+        st.markdown("#### Resumen de filtros")
+        resumen_retencion = pd.DataFrame(
+            [
+                {
+                    "Métrica": "Registros base",
+                    "Cantidad": kpis["total_base"],
+                    "%": 100.0,
+                },
+                {
+                    "Métrica": "Registros retenidos",
+                    "Cantidad": kpis["total_filtrado"],
+                    "%": round(kpis["pct_retenido"], 2),
+                },
+                {
+                    "Métrica": "Registros excluidos",
+                    "Cantidad": kpis["total_excluido"],
+                    "%": round(kpis["pct_excluido"], 2),
+                },
+            ]
+        )
+
+        st.dataframe(
+            resumen_retencion,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Cantidad": st.column_config.NumberColumn(
+                    "Cantidad",
+                    format="%d",
+                ),
+                "%": st.column_config.ProgressColumn(
+                    "%",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
             },
-            {
-                "Métrica": "Registros retenidos",
-                "Cantidad": kpis["total_filtrado"],
-                "%": round(kpis["pct_retenido"], 2),
-            },
-            {
-                "Métrica": "Registros excluidos",
-                "Cantidad": kpis["total_excluido"],
-                "%": round(kpis["pct_excluido"], 2),
-            },
-        ]
-    )
+        )
 
-    st.dataframe(
-        resumen_retencion,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Cantidad": st.column_config.NumberColumn(
-                "Cantidad",
-                format="%d",
-            ),
-            "%": st.column_config.ProgressColumn(
-                "%",
-                format="%.1f%%",
-                min_value=0,
-                max_value=100,
-            ),
-        },
-    )
+
 
 
 # ============================================================
 # DESGLOSE PERFORMANCE
 # ============================================================
 
-st.markdown("### 2. Retenidos por Performance TAT")
+with st.expander("Ver desglose de Performance TAT", expanded=False):
 
-desglose_performance = crear_resumen_performance(df_dashboard)
 
-grafico_donut_performance(desglose_performance)
+    st.markdown("### 2. Retenidos por Performance TAT")
+
+    desglose_performance = crear_resumen_performance(df_dashboard)
+
+    grafico_donut_performance(desglose_performance)
+
+
 
 
 # ============================================================
@@ -2906,42 +2917,43 @@ resumen_grupos = crear_resumen_grupos(df_dashboard)
 
 grafico_cumplimiento_grupos(resumen_grupos)
 
-st.markdown("#### Tabla de cumplimiento por planta")
+with st.expander("Ver tabla de cumplimiento por planta", expanded=False):
+    st.markdown("#### Tabla de cumplimiento por planta")
 
-if resumen_grupos.empty:
-    st.info("No hay tabla de cumplimiento disponible.")
-else:
-    st.dataframe(
-        resumen_grupos,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Cumple": st.column_config.NumberColumn(
-                "Cumple",
-                format="%d",
-            ),
-            "No cumple": st.column_config.NumberColumn(
-                "No cumple",
-                format="%d",
-            ),
-            "Total evaluable": st.column_config.NumberColumn(
-                "Total evaluable",
-                format="%d",
-            ),
-            "% Cumple": st.column_config.ProgressColumn(
-                "% Cumple",
-                format="%.1f%%",
-                min_value=0,
-                max_value=100,
-            ),
-            "% No cumple": st.column_config.ProgressColumn(
-                "% No cumple",
-                format="%.1f%%",
-                min_value=0,
-                max_value=100,
-            ),
-        },
-    )
+    if resumen_grupos.empty:
+        st.info("No hay tabla de cumplimiento disponible.")
+    else:
+        st.dataframe(
+            resumen_grupos,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Cumple": st.column_config.NumberColumn(
+                    "Cumple",
+                    format="%d",
+                ),
+                "No cumple": st.column_config.NumberColumn(
+                    "No cumple",
+                    format="%d",
+                ),
+                "Total evaluable": st.column_config.NumberColumn(
+                    "Total evaluable",
+                    format="%d",
+                ),
+                "% Cumple": st.column_config.ProgressColumn(
+                    "% Cumple",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+                "% No cumple": st.column_config.ProgressColumn(
+                    "% No cumple",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+            },
+        )
 
 
 # ============================================================
@@ -2955,15 +2967,16 @@ st.caption(
 
 tabla_mensual_grupos = crear_resumen_mensual_grupos(df_dashboard)
 
-grafico_volumen_mensual_comparativo(
-    tabla=tabla_mensual_grupos,
-    titulo="Volumen mensual de registros evaluables por planta",
-)
-
 grafico_evolucion_mensual_comparativa(
     tabla=tabla_mensual_grupos,
     titulo="Evolución mensual de cumplimiento TAT por planta",
 )
+
+with st.expander("Ver volumen mensual de registros evaluables por planta", expanded=False):
+    grafico_volumen_mensual_comparativo(
+        tabla=tabla_mensual_grupos,
+        titulo="Volumen mensual de registros evaluables por planta",
+    )
 
 
 # ============================================================
@@ -3017,15 +3030,16 @@ if not tabla_ultimo_anio.empty:
         },
     )
 
-    grafico_volumen_mensual_comparativo(
-        tabla=tabla_ultimo_anio,
-        titulo=f"Volumen mensual de registros evaluables por planta - {ultimo_anio}",
-    )
-
     grafico_evolucion_mensual_comparativa(
         tabla=tabla_ultimo_anio,
         titulo=f"Evolución mensual de cumplimiento TAT por planta - {ultimo_anio}",
     )
+
+    with st.expander("Ver volumen mensual del último año", expanded=False):
+        grafico_volumen_mensual_comparativo(
+            tabla=tabla_ultimo_anio,
+            titulo=f"Volumen mensual de registros evaluables por planta - {ultimo_anio}",
+        )
 
 else:
     st.info("No hay información suficiente para construir el zoom del último año.")
@@ -3035,7 +3049,7 @@ else:
 # ANÁLISIS POR CENTRO
 # ============================================================
 
-with st.expander("Análisis por centro específico", expanded=True):
+with st.expander("Análisis por centro específico", expanded=False):
     st.caption(
         "Ranking de centros incluidos en la base filtrada actual."
     )
@@ -3076,160 +3090,165 @@ with st.expander("Análisis por centro específico", expanded=True):
 # VISTA PREVIA Y DESCARGA POR MES, GRUPO Y ESTADO
 # ============================================================
 
-st.markdown("### Vista previa y descarga por mes")
-st.caption(
-    "Selecciona mes, grupo planta y estado TAT para revisar los registros y descargar un Excel."
-)
+with st.expander("Ver vista previa y descarga por mes", expanded=False):
 
-if df_dashboard.empty or df_dashboard["periodo_fecha"].dropna().empty:
-    st.info("No hay meses disponibles con los filtros actuales.")
-else:
-    meses_df = (
-        df_dashboard[["periodo_fecha", "periodo_label"]]
-        .dropna()
-        .drop_duplicates()
-        .sort_values("periodo_fecha")
-        .reset_index(drop=True)
+
+    st.markdown("### Vista previa y descarga por mes")
+    st.caption(
+        "Selecciona mes, grupo planta y estado TAT para revisar los registros y descargar un Excel."
     )
 
-    opciones_mes = meses_df["periodo_label"].astype(str).tolist()
-    ultimo_mes = opciones_mes[-1] if opciones_mes else None
-
-    col_vm1, col_vm2, col_vm3 = st.columns(3)
-
-    with col_vm1:
-        mes_sel = st.selectbox(
-            "Mes / año",
-            options=opciones_mes,
-            index=opciones_mes.index(ultimo_mes) if ultimo_mes in opciones_mes else 0,
-            key="plantas_selector_mes_preview",
+    if df_dashboard.empty or df_dashboard["periodo_fecha"].dropna().empty:
+        st.info("No hay meses disponibles con los filtros actuales.")
+    else:
+        meses_df = (
+            df_dashboard[["periodo_fecha", "periodo_label"]]
+            .dropna()
+            .drop_duplicates()
+            .sort_values("periodo_fecha")
+            .reset_index(drop=True)
         )
 
-    with col_vm2:
-        grupo_preview = st.selectbox(
-            "Grupo planta",
-            options=["Todos"] + grupos_disponibles,
-            index=0,
-            key="plantas_selector_grupo_preview",
+        opciones_mes = meses_df["periodo_label"].astype(str).tolist()
+        ultimo_mes = opciones_mes[-1] if opciones_mes else None
+
+        col_vm1, col_vm2, col_vm3 = st.columns(3)
+
+        with col_vm1:
+            mes_sel = st.selectbox(
+                "Mes / año",
+                options=opciones_mes,
+                index=opciones_mes.index(ultimo_mes) if ultimo_mes in opciones_mes else 0,
+                key="plantas_selector_mes_preview",
+            )
+
+        with col_vm2:
+            grupo_preview = st.selectbox(
+                "Grupo planta",
+                options=["Todos"] + grupos_disponibles,
+                index=0,
+                key="plantas_selector_grupo_preview",
+            )
+
+        with col_vm3:
+            estado_preview = st.selectbox(
+                "Estado TAT",
+                options=["Todos", "Cumple", "No cumple", "En proceso", "No aplica", "Sin datos"],
+                index=0,
+                key="plantas_selector_estado_preview",
+            )
+
+        periodo_sel = meses_df.loc[
+            meses_df["periodo_label"].astype(str).eq(mes_sel),
+            "periodo_fecha",
+        ].iloc[0]
+
+        df_preview = df_dashboard[
+            df_dashboard["periodo_fecha"].eq(periodo_sel)
+        ].copy()
+
+        if grupo_preview != "Todos":
+            df_preview = df_preview[df_preview["grupo_planta"].eq(grupo_preview)].copy()
+
+        if estado_preview != "Todos":
+            df_preview = df_preview[df_preview[COL_PERFORMANCE_TAT].eq(estado_preview)].copy()
+
+        total_preview = len(df_preview)
+
+        st.info(
+            f"Se encontraron **{formatear_entero(total_preview)} registros** "
+            f"para **{mes_sel}**, grupo **{grupo_preview}**, estado **{estado_preview}**."
         )
 
-    with col_vm3:
-        estado_preview = st.selectbox(
-            "Estado TAT",
-            options=["Todos", "Cumple", "No cumple", "En proceso", "No aplica", "Sin datos"],
-            index=0,
-            key="plantas_selector_estado_preview",
-        )
+        if total_preview > 0:
+            limite_preview = st.number_input(
+                "Filas a visualizar",
+                min_value=1,
+                max_value=min(1000, total_preview),
+                value=min(300, total_preview),
+                step=50 if total_preview >= 50 else 1,
+                key="plantas_preview_filas_mes",
+            )
 
-    periodo_sel = meses_df.loc[
-        meses_df["periodo_label"].astype(str).eq(mes_sel),
-        "periodo_fecha",
-    ].iloc[0]
+            columnas_preferidas = [
+                "Solicitud de pedido - ME5A",
+                COL_PEDIDO,
+                COL_DOCUMENTO_COMPRAS,
+                "centro_grafico",
+                "grupo_planta",
+                COL_FECHA_SOLICITUD_FINAL,
+                COL_FECHA_FACTURACION_FINAL,
+                COL_FECHA_RECEPCION_FINAL,
+                "dias_tat_total",
+                COL_PERFORMANCE_TAT,
+            ]
 
-    df_preview = df_dashboard[
-        df_dashboard["periodo_fecha"].eq(periodo_sel)
-    ].copy()
+            columnas_preferidas = [
+                col for col in columnas_preferidas
+                if col in df_preview.columns
+            ]
 
-    if grupo_preview != "Todos":
-        df_preview = df_preview[df_preview["grupo_planta"].eq(grupo_preview)].copy()
+            if columnas_preferidas:
+                st.dataframe(
+                    df_preview[columnas_preferidas].head(int(limite_preview)),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+            else:
+                st.dataframe(
+                    df_preview.head(int(limite_preview)),
+                    use_container_width=True,
+                    hide_index=True,
+                )
 
-    if estado_preview != "Todos":
-        df_preview = df_preview[df_preview[COL_PERFORMANCE_TAT].eq(estado_preview)].copy()
+            periodo_archivo = pd.Timestamp(periodo_sel).strftime("%Y%m")
 
-    total_preview = len(df_preview)
+            firma_excel_mes = (
+                f"{periodo_archivo}_"
+                f"{grupo_preview}_"
+                f"{estado_preview}_"
+                f"{len(df_preview)}"
+            )
 
-    st.info(
-        f"Se encontraron **{formatear_entero(total_preview)} registros** "
-        f"para **{mes_sel}**, grupo **{grupo_preview}**, estado **{estado_preview}**."
-    )
-
-    if total_preview > 0:
-        limite_preview = st.number_input(
-            "Filas a visualizar",
-            min_value=1,
-            max_value=min(1000, total_preview),
-            value=min(300, total_preview),
-            step=50 if total_preview >= 50 else 1,
-            key="plantas_preview_filas_mes",
-        )
-
-        columnas_preferidas = [
-            "Solicitud de pedido - ME5A",
-            COL_PEDIDO,
-            COL_DOCUMENTO_COMPRAS,
-            "centro_grafico",
-            "grupo_planta",
-            COL_FECHA_SOLICITUD_FINAL,
-            COL_FECHA_FACTURACION_FINAL,
-            COL_FECHA_RECEPCION_FINAL,
-            "dias_tat_total",
-            COL_PERFORMANCE_TAT,
-        ]
-
-        columnas_preferidas = [
-            col for col in columnas_preferidas
-            if col in df_preview.columns
-        ]
-
-        if columnas_preferidas:
-            st.dataframe(
-                df_preview[columnas_preferidas].head(int(limite_preview)),
+            preparar_excel = st.button(
+                "Preparar Excel de la vista seleccionada",
                 use_container_width=True,
-                hide_index=True,
-            )
-        else:
-            st.dataframe(
-                df_preview.head(int(limite_preview)),
-                use_container_width=True,
-                hide_index=True,
+                key="plantas_preparar_excel_mes",
             )
 
-        periodo_archivo = pd.Timestamp(periodo_sel).strftime("%Y%m")
+            if preparar_excel:
+                nombre_excel = generar_nombre_excel_mes(
+                    periodo_archivo=periodo_archivo,
+                    grupo=grupo_preview,
+                    estado=estado_preview,
+                )
 
-        firma_excel_mes = (
-            f"{periodo_archivo}_"
-            f"{grupo_preview}_"
-            f"{estado_preview}_"
-            f"{len(df_preview)}"
-        )
+                with st.spinner("Preparando Excel..."):
+                    st.session_state["plantas_excel_mes_bytes"] = convertir_a_excel_cache(df_preview)
+                    st.session_state["plantas_excel_mes_firma"] = firma_excel_mes
+                    st.session_state["plantas_excel_mes_nombre"] = nombre_excel
 
-        preparar_excel = st.button(
-            "Preparar Excel de la vista seleccionada",
-            use_container_width=True,
-            key="plantas_preparar_excel_mes",
-        )
+            if (
+                st.session_state.get("plantas_excel_mes_bytes") is not None
+                and st.session_state.get("plantas_excel_mes_firma") == firma_excel_mes
+            ):
+                st.download_button(
+                    label="Descargar Excel",
+                    data=st.session_state["plantas_excel_mes_bytes"],
+                    file_name=st.session_state["plantas_excel_mes_nombre"],
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    type="primary",
+                )
 
-        if preparar_excel:
-            nombre_excel = generar_nombre_excel_mes(
-                periodo_archivo=periodo_archivo,
-                grupo=grupo_preview,
-                estado=estado_preview,
-            )
 
-            with st.spinner("Preparando Excel..."):
-                st.session_state["plantas_excel_mes_bytes"] = convertir_a_excel_cache(df_preview)
-                st.session_state["plantas_excel_mes_firma"] = firma_excel_mes
-                st.session_state["plantas_excel_mes_nombre"] = nombre_excel
-
-        if (
-            st.session_state.get("plantas_excel_mes_bytes") is not None
-            and st.session_state.get("plantas_excel_mes_firma") == firma_excel_mes
-        ):
-            st.download_button(
-                label="Descargar Excel",
-                data=st.session_state["plantas_excel_mes_bytes"],
-                file_name=st.session_state["plantas_excel_mes_nombre"],
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-                type="primary",
-            )
 
 
 # ============================================================
 # DETALLE SEMANAL CON FILTRO
 # ============================================================
 
-with st.expander("Detalle semanal con filtro por semanas", expanded=True):
+with st.expander("Detalle semanal con filtro por semanas", expanded=False):
     st.caption(
         "Detalle por semana ISO y grupo planta usando fecha_recepcion_final. "
         "Cada semana muestra explícitamente su fecha de inicio y fin."
