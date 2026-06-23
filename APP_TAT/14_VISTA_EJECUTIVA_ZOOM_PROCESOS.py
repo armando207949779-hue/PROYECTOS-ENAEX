@@ -1048,7 +1048,7 @@ def mostrar_zoom_procesos(
             grafico_proceso_horizontal(
                 tabla=resumen,
                 titulo=proceso["titulo"],
-                mostrar_eje_y=i == 0,
+                mostrar_eje_y=True,
             )
 
 
