@@ -1525,6 +1525,12 @@ def crear_ranking_grupo_compras(df: pd.DataFrame) -> pd.DataFrame:
     return tabla.reset_index(drop=True)
 
 
+
+class BarraProgresoSilenciosa:
+    def progress(self, *args, **kwargs):
+        return None
+
+
 # ============================================================
 # FILTROS
 # ============================================================
@@ -1558,7 +1564,7 @@ def aplicar_filtros_alertas(
     df_base: pd.DataFrame,
     filtros: dict,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    barra = st.progress(0, text="Preparando filtros...")
+    barra = BarraProgresoSilenciosa()
 
     df = df_base.copy()
 
@@ -1811,6 +1817,7 @@ def grafico_donut_generico(
     fig.subplots_adjust(right=0.67)
 
     st.pyplot(fig, clear_figure=True, use_container_width=True)
+    plt.close(fig)
 
 
 def grafico_donut_retencion(total_base: int, total_filtrado: int):
@@ -1985,6 +1992,7 @@ def grafico_plan_ataque(tabla: pd.DataFrame):
     fig.tight_layout()
 
     st.pyplot(fig, clear_figure=True, use_container_width=True)
+    plt.close(fig)
 
 
 def grafico_top_ranking(
@@ -2054,6 +2062,7 @@ def grafico_top_ranking(
     fig.tight_layout()
 
     st.pyplot(fig, clear_figure=True, use_container_width=True)
+    plt.close(fig)
 
 
 def grafico_vencidos_por_anio(df_vencidos: pd.DataFrame):
@@ -2131,6 +2140,7 @@ def grafico_vencidos_por_anio(df_vencidos: pd.DataFrame):
     fig.tight_layout()
 
     st.pyplot(fig, clear_figure=True, use_container_width=True)
+    plt.close(fig)
 
 
 # ============================================================
@@ -2694,6 +2704,12 @@ except Exception as e:
     st.stop()
 
 
+
+class BarraProgresoSilenciosa:
+    def progress(self, *args, **kwargs):
+        return None
+
+
 # ============================================================
 # FILTROS
 # ============================================================
@@ -2945,12 +2961,12 @@ else:
 
 
 # ============================================================
-# 1. RESUMEN EJECUTIVO
+# RESUMEN EJECUTIVO
 # ============================================================
 
 resumen_ejecutivo = construir_resumen_ejecutivo(df_panel, df_filtrado)
 
-st.markdown("### 1. Resumen ejecutivo")
+st.markdown("### Resumen ejecutivo")
 
 mostrar_card_estado(resumen_ejecutivo)
 
@@ -3023,13 +3039,13 @@ with c8:
 
 
 # ============================================================
-# 2. RETENCIÓN POR FILTROS
+# RETENCIÓN POR FILTROS
 # ============================================================
 
 with st.expander("Ver retención por filtros y detalle de filtros aplicados", expanded=False):
 
 
-    st.markdown("### 2. Retención por filtros")
+    st.markdown("### Retención por filtros")
 
     col_ret1, col_ret2 = st.columns([1.1, 1])
 
@@ -3048,13 +3064,13 @@ with st.expander("Ver retención por filtros y detalle de filtros aplicados", ex
 
 
 # ============================================================
-# 3. DISTRIBUCIÓN GLOBAL DE ALERTAS
+# DISTRIBUCIÓN GLOBAL DE ALERTAS
 # ============================================================
 
 with st.expander("Ver distribución global de alertas", expanded=False):
 
 
-    st.markdown("### 3. Distribución global de alertas")
+    st.markdown("### Distribución global de alertas")
 
     desglose_alertas = crear_desglose_alertas(df_filtrado)
 
@@ -3064,13 +3080,13 @@ with st.expander("Ver distribución global de alertas", expanded=False):
 
 
 # ============================================================
-# 4. DISTRIBUCIÓN POR VENCIMIENTO
+# DISTRIBUCIÓN POR VENCIMIENTO
 # ============================================================
 
 with st.expander("Ver distribución por vencimiento detallado", expanded=False):
 
 
-    st.markdown("### 4. Distribución por vencimiento detallado")
+    st.markdown("### Distribución por vencimiento detallado")
     st.caption(
         "Donut con la distribución de vencidos, vencimientos inmediatos, próximos vencimientos, registros preventivos, sin datos y recepcionados."
     )
@@ -3083,10 +3099,10 @@ with st.expander("Ver distribución por vencimiento detallado", expanded=False):
 
 
 # ============================================================
-# 5. PLAN DE ATAQUE
+# PLAN DE ATAQUE
 # ============================================================
 
-st.markdown("### 5. Plan de ataque")
+st.markdown("### Plan de ataque")
 st.caption(
     "Se mantiene en barras porque aquí interesa comparar cantidades y priorizar gestión."
 )
@@ -3098,7 +3114,7 @@ if plan_ataque.empty:
 else:
     grafico_plan_ataque(plan_ataque)
 
-    with st.expander("Ver tabla del plan de ataque", expanded=False):
+    with st.expander("Ver tabla del plan de ataque", expanded=True):
         st.dataframe(
             plan_ataque,
             use_container_width=True,
@@ -3119,10 +3135,10 @@ else:
 
 
 # ============================================================
-# 6. DÓNDE ATACAR PRIMERO
+# DÓNDE ATACAR PRIMERO
 # ============================================================
 
-st.markdown("### 6. Dónde atacar primero")
+st.markdown("### Dónde atacar primero")
 st.caption(
     "Se mantiene en barras porque estos gráficos son rankings comparativos."
 )
@@ -3207,10 +3223,10 @@ with col_rank2:
 
 
 # ============================================================
-# 7. BLOQUES ACCIONABLES
+# BLOQUES ACCIONABLES
 # ============================================================
 
-with st.expander("Ver bloques accionables detallados", expanded=False):
+with st.expander("Ver bloques accionables detallados", expanded=True):
 
 
     df_vencidos = df_filtrado[
@@ -3225,7 +3241,7 @@ with st.expander("Ver bloques accionables detallados", expanded=False):
         df_filtrado["nivel_alerta"].eq("Datos incompletos")
     ].copy()
 
-    st.markdown("### 7. Bloques accionables")
+    st.markdown("### Bloques accionables")
 
     st.markdown(
         """
@@ -3284,13 +3300,13 @@ with st.expander("Ver bloques accionables detallados", expanded=False):
 
 
 # ============================================================
-# 8. EXPEDIENTE / SEGUIMIENTO DE REGISTRO
+# EXPEDIENTE / SEGUIMIENTO DE REGISTRO
 # ============================================================
 
 with st.expander("Ver expediente / seguimiento de registro", expanded=False):
 
 
-    st.markdown("### 8. Expediente / seguimiento del registro")
+    st.markdown("### Expediente / seguimiento del registro")
     st.caption(
         "Selecciona un registro para revisar sus KPI y el recorrido TAT tipo seguimiento de pedido online."
     )
@@ -3330,7 +3346,7 @@ with st.expander("Ver expediente / seguimiento de registro", expanded=False):
 
 
 # ============================================================
-# 9. VISTA PREVIA GENERAL
+# VISTA PREVIA GENERAL
 # ============================================================
 
 with st.expander("9. Vista previa general de datos filtrados", expanded=False):
@@ -3363,7 +3379,7 @@ with st.expander("9. Vista previa general de datos filtrados", expanded=False):
 
 
 # ============================================================
-# 10. DESCARGA GENERAL
+# DESCARGA GENERAL
 # ============================================================
 
 with st.expander("10. Descargar resultado filtrado", expanded=False):
