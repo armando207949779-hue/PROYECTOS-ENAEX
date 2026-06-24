@@ -2123,7 +2123,12 @@ def grafico_grupos_compra_foco_bonito(
     pct_foco = pd.to_numeric(data["% foco acción"], errors="coerce").fillna(0).astype(float).to_numpy()
     registros = pd.to_numeric(data["Registros"], errors="coerce").fillna(0).astype(int).to_numpy()
 
-    fig, ax = plt.subplots(figsize=(13.2, max(6.0, len(data) * 0.56)), dpi=140)
+    altura = max(7.0, len(data) * 0.68)
+    fig, ax = plt.subplots(figsize=(13.4, altura), dpi=140)
+
+    # Fondo blanco para evitar pérdida de legibilidad en modo oscuro de Streamlit.
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("white")
 
     ax.barh(
         y,
@@ -2152,7 +2157,7 @@ def grafico_grupos_compra_foco_bonito(
     )
 
     max_foco = max(foco) if len(foco) else 0
-    ax.set_xlim(0, max(max_foco * 1.35, 10))
+    ax.set_xlim(0, max(max_foco * 1.38, 10))
 
     for i, (total_foco, pct, total_registros) in enumerate(zip(foco, pct_foco, registros)):
         ax.text(
@@ -2169,32 +2174,39 @@ def grafico_grupos_compra_foco_bonito(
     ax.set_yticks(y)
     ax.set_yticklabels(grupos, fontsize=10.5, color=COLOR_TEXTO)
 
-    ax.set_xlabel("Registros foco acción", color=COLOR_TEXTO)
+    ax.set_xlabel(
+        "Registros foco acción",
+        color=COLOR_TEXTO,
+        labelpad=12,
+        fontweight="bold",
+    )
 
     ax.set_title(
         "Grupos de compra con mayor foco de acción",
-        fontsize=17,
+        fontsize=18,
         fontweight="bold",
         color=COLOR_TEXTO,
-        pad=34,
+        pad=22,
     )
 
-    ax.legend(
-        loc="lower right",
+    # Leyenda al pie para evitar choque con el título.
+    leyenda = ax.legend(
+        loc="upper center",
         frameon=False,
         ncol=3,
-        bbox_to_anchor=(1, 1.08),
-        fontsize=9.5,
+        bbox_to_anchor=(0.5, -0.13),
+        fontsize=10,
         borderaxespad=0.0,
     )
 
+    for texto in leyenda.get_texts():
+        texto.set_color(COLOR_TEXTO)
+        texto.set_fontweight("bold")
+
     formatear_ejes(ax)
 
-    fig.patch.set_alpha(0)
-
-    # Reserva margen superior para que el título no choque con la leyenda.
-    fig.tight_layout(rect=[0, 0, 1, 0.88])
-    fig.subplots_adjust(top=0.78)
+    # Ajuste de márgenes: espacio inferior reservado para leyenda.
+    fig.tight_layout(rect=[0.02, 0.10, 0.98, 0.94])
 
     st.pyplot(fig, clear_figure=True, use_container_width=True)
     plt.close(fig)
