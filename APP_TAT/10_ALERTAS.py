@@ -1743,7 +1743,7 @@ def grafico_donut_generico(
         0,
     )
 
-    fig, ax = plt.subplots(figsize=(8.4, 6.2), dpi=180)
+    fig, ax = plt.subplots(figsize=(7.8, 5.6), dpi=140)
 
     wedges, texts, autotexts = ax.pie(
         cantidades,
@@ -1948,7 +1948,7 @@ def grafico_plan_ataque(tabla: pd.DataFrame):
 
     y = np.arange(len(labels))
 
-    fig, ax = plt.subplots(figsize=(12, max(5, len(labels) * 0.62)), dpi=180)
+    fig, ax = plt.subplots(figsize=(11.5, max(5, len(labels) * 0.56)), dpi=140)
 
     barras = ax.barh(
         y,
@@ -2018,7 +2018,7 @@ def grafico_top_ranking(
 
     y = np.arange(len(labels))
 
-    fig, ax = plt.subplots(figsize=(12, max(5.5, len(labels) * 0.42)), dpi=180)
+    fig, ax = plt.subplots(figsize=(11.5, max(5.2, len(labels) * 0.40)), dpi=140)
 
     barras = ax.barh(
         y,
@@ -2065,6 +2065,176 @@ def grafico_top_ranking(
     plt.close(fig)
 
 
+
+def grafico_grupos_compra_foco_bonito(
+    tabla: pd.DataFrame,
+    top_n: int = 12,
+):
+    if tabla.empty or "Grupo de compras" not in tabla.columns:
+        st.info("No hay datos para visualizar grupos de compra.")
+        return
+
+    columnas_necesarias = [
+        "Grupo de compras",
+        "Vencidos",
+        "Proximos",
+        "Datos_incompletos",
+        "Recepcionados",
+        "Registros",
+        "Foco acción",
+        "% foco acción",
+    ]
+
+    faltantes = [
+        col for col in columnas_necesarias
+        if col not in tabla.columns
+    ]
+
+    if faltantes:
+        st.info(f"No se puede graficar grupos de compra. Faltan columnas: {faltantes}")
+        return
+
+    data = tabla.copy()
+    data = data[data["Foco acción"].gt(0)].copy()
+
+    if data.empty:
+        st.success("No hay grupos de compra con foco de acción bajo los filtros actuales.")
+        return
+
+    data = (
+        data
+        .sort_values(
+            ["Foco acción", "Vencidos", "Proximos", "Datos_incompletos", "Registros"],
+            ascending=[False, False, False, False, False],
+        )
+        .head(top_n)
+        .copy()
+    )
+
+    data = data.sort_values("Foco acción", ascending=True).reset_index(drop=True)
+
+    grupos = data["Grupo de compras"].astype(str).tolist()
+    y = np.arange(len(data))
+
+    vencidos = pd.to_numeric(data["Vencidos"], errors="coerce").fillna(0).astype(int).to_numpy()
+    proximos = pd.to_numeric(data["Proximos"], errors="coerce").fillna(0).astype(int).to_numpy()
+    datos = pd.to_numeric(data["Datos_incompletos"], errors="coerce").fillna(0).astype(int).to_numpy()
+    foco = pd.to_numeric(data["Foco acción"], errors="coerce").fillna(0).astype(int).to_numpy()
+    pct_foco = pd.to_numeric(data["% foco acción"], errors="coerce").fillna(0).astype(float).to_numpy()
+    registros = pd.to_numeric(data["Registros"], errors="coerce").fillna(0).astype(int).to_numpy()
+
+    fig, ax = plt.subplots(figsize=(13.2, max(6.0, len(data) * 0.56)), dpi=140)
+
+    ax.barh(
+        y,
+        vencidos,
+        color=COLOR_CRITICO,
+        height=0.62,
+        label="Vencidos",
+    )
+
+    ax.barh(
+        y,
+        proximos,
+        left=vencidos,
+        color=COLOR_ATENCION,
+        height=0.62,
+        label="Próximos",
+    )
+
+    ax.barh(
+        y,
+        datos,
+        left=vencidos + proximos,
+        color=COLOR_DATOS,
+        height=0.62,
+        label="Datos incompletos",
+    )
+
+    max_foco = max(foco) if len(foco) else 0
+    ax.set_xlim(0, max(max_foco * 1.35, 10))
+
+    for i, (total_foco, pct, total_registros) in enumerate(zip(foco, pct_foco, registros)):
+        ax.text(
+            total_foco + max(max_foco * 0.025, 0.6),
+            i,
+            f"{total_foco:,} foco · {pct:.1f}% de {total_registros:,}".replace(",", "."),
+            va="center",
+            ha="left",
+            fontsize=9.5,
+            fontweight="bold",
+            color=COLOR_TEXTO,
+        )
+
+    ax.set_yticks(y)
+    ax.set_yticklabels(grupos, fontsize=10.5, color=COLOR_TEXTO)
+
+    ax.set_xlabel("Registros foco acción", color=COLOR_TEXTO)
+
+    ax.set_title(
+        "Grupos de compra con mayor foco de acción",
+        fontsize=17,
+        fontweight="bold",
+        color=COLOR_TEXTO,
+        pad=18,
+    )
+
+    ax.legend(
+        loc="lower right",
+        frameon=False,
+        ncol=3,
+        bbox_to_anchor=(1, 1.01),
+        fontsize=9.5,
+    )
+
+    formatear_ejes(ax)
+
+    fig.patch.set_alpha(0)
+    fig.tight_layout()
+
+    st.pyplot(fig, clear_figure=True, use_container_width=True)
+    plt.close(fig)
+
+
+def mostrar_resumen_grupos_compra(ranking_grupos: pd.DataFrame):
+    if ranking_grupos.empty:
+        return
+
+    total_foco = int(
+        pd.to_numeric(
+            ranking_grupos.get("Foco acción", pd.Series(dtype="float64")),
+            errors="coerce",
+        ).fillna(0).sum()
+    )
+
+    grupos_con_foco = int(
+        pd.to_numeric(
+            ranking_grupos.get("Foco acción", pd.Series(dtype="float64")),
+            errors="coerce",
+        ).fillna(0).gt(0).sum()
+    )
+
+    vencidos = int(
+        pd.to_numeric(
+            ranking_grupos.get("Vencidos", pd.Series(dtype="float64")),
+            errors="coerce",
+        ).fillna(0).sum()
+    )
+
+    proximos = int(
+        pd.to_numeric(
+            ranking_grupos.get("Proximos", pd.Series(dtype="float64")),
+            errors="coerce",
+        ).fillna(0).sum()
+    )
+
+    col_a, col_b, col_c, col_d = st.columns(4)
+
+    col_a.metric("Foco total", formato_cantidad(total_foco))
+    col_b.metric("Grupos con foco", formato_cantidad(grupos_con_foco))
+    col_c.metric("Vencidos", formato_cantidad(vencidos))
+    col_d.metric("Próximos", formato_cantidad(proximos))
+
 def grafico_vencidos_por_anio(df_vencidos: pd.DataFrame):
     if df_vencidos.empty:
         st.info("No hay vencidos sin recepción para graficar.")
@@ -2095,7 +2265,7 @@ def grafico_vencidos_por_anio(df_vencidos: pd.DataFrame):
 
     x = np.arange(len(tabla))
 
-    fig, ax = plt.subplots(figsize=(8.4, 4.8), dpi=180)
+    fig, ax = plt.subplots(figsize=(8.2, 4.6), dpi=140)
 
     ax.bar(
         x,
@@ -3140,86 +3310,64 @@ else:
 
 st.markdown("### Dónde atacar primero")
 st.caption(
-    "Se mantiene en barras porque estos gráficos son rankings comparativos."
+    "Se elimina el gráfico de centros porque el dashboard ya se usa filtrado por centro E002. "
+    "La vista se concentra en grupos de compra, que sí aporta diferenciación operativa."
 )
 
-col_rank1, col_rank2 = st.columns(2)
+ranking_grupos = crear_ranking_grupo_compras(df_filtrado)
 
-with col_rank1:
-    st.markdown("#### Centros con mayor foco de acción")
+if ranking_grupos.empty:
+    st.info("No hay ranking de grupos de compra disponible.")
+else:
+    mostrar_resumen_grupos_compra(ranking_grupos)
 
-    ranking_centros = crear_ranking_centros(df_filtrado)
+    grafico_grupos_compra_foco_bonito(
+        ranking_grupos,
+        top_n=12,
+    )
 
-    if ranking_centros.empty:
-        st.info("No hay ranking de centros disponible.")
-    else:
-        grafico_top_ranking(
-            ranking_centros,
-            columna_nombre="Centro",
-            titulo="Top centros por foco de acción",
-            top_n=10,
-        )
-
-        with st.expander("Ver tabla de centros", expanded=False):
-            st.dataframe(
-                ranking_centros,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Foco acción": st.column_config.NumberColumn(
-                        "Foco acción",
-                        format="%d",
-                    ),
-                    "% foco acción": st.column_config.ProgressColumn(
-                        "% foco acción",
-                        format="%.1f%%",
-                        min_value=0,
-                        max_value=100,
-                    ),
-                    "Score_promedio": st.column_config.NumberColumn(
-                        "Score promedio",
-                        format="%.2f",
-                    ),
-                },
-            )
-
-with col_rank2:
-    st.markdown("#### Grupos de compra con mayor foco")
-
-    ranking_grupos = crear_ranking_grupo_compras(df_filtrado)
-
-    if ranking_grupos.empty:
-        st.info("No hay ranking de grupos de compra disponible.")
-    else:
-        grafico_top_ranking(
+    with st.expander("Ver tabla de grupos de compra", expanded=True):
+        st.dataframe(
             ranking_grupos,
-            columna_nombre="Grupo de compras",
-            titulo="Top grupos de compra por foco de acción",
-            top_n=10,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Registros": st.column_config.NumberColumn(
+                    "Registros",
+                    format="%d",
+                ),
+                "Vencidos": st.column_config.NumberColumn(
+                    "Vencidos",
+                    format="%d",
+                ),
+                "Proximos": st.column_config.NumberColumn(
+                    "Próximos",
+                    format="%d",
+                ),
+                "Datos_incompletos": st.column_config.NumberColumn(
+                    "Datos incompletos",
+                    format="%d",
+                ),
+                "Recepcionados": st.column_config.NumberColumn(
+                    "Recepcionados",
+                    format="%d",
+                ),
+                "Foco acción": st.column_config.NumberColumn(
+                    "Foco acción",
+                    format="%d",
+                ),
+                "% foco acción": st.column_config.ProgressColumn(
+                    "% foco acción",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+                "Score_promedio": st.column_config.NumberColumn(
+                    "Score promedio",
+                    format="%.2f",
+                ),
+            },
         )
-
-        with st.expander("Ver tabla de grupos de compra", expanded=False):
-            st.dataframe(
-                ranking_grupos,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Foco acción": st.column_config.NumberColumn(
-                        "Foco acción",
-                        format="%d",
-                    ),
-                    "% foco acción": st.column_config.ProgressColumn(
-                        "% foco acción",
-                        format="%.1f%%",
-                        min_value=0,
-                        max_value=100,
-                    ),
-                    "Score_promedio": st.column_config.NumberColumn(
-                        "Score promedio",
-                        format="%.2f",
-                    ),
-                },
-            )
 
 
 # ============================================================
