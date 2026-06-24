@@ -97,7 +97,7 @@ FECHAS_CANDIDATAS = [
 
 ETAPAS_PEDIDO = [
     {
-        "titulo": "1. Solicitud",
+        "titulo": "Solicitud",
         "fecha": "fecha_solicitud_final",
         "dias": None,
         "umbral": None,
@@ -105,7 +105,7 @@ ETAPAS_PEDIDO = [
         "nota": "Inicio SolPed",
     },
     {
-        "titulo": "2. Liberación SolPed",
+        "titulo": "Liberación SolPed",
         "fecha": "fecha_liberacion_final",
         "dias": "dias_liberacion_solped",
         "umbral": "umbral_liberacion_solped",
@@ -113,7 +113,7 @@ ETAPAS_PEDIDO = [
         "nota": "Solicitud → Liberación",
     },
     {
-        "titulo": "3. Comprador",
+        "titulo": "Comprador",
         "fecha": "fecha_pedido_final",
         "dias": "dias_comprador",
         "umbral": "umbral_comprador",
@@ -121,7 +121,7 @@ ETAPAS_PEDIDO = [
         "nota": "Liberación → Pedido",
     },
     {
-        "titulo": "4. Proveedor",
+        "titulo": "Proveedor",
         "fecha": "fecha_facturacion_final",
         "dias": "dias_proveedor",
         "umbral": "umbral_proveedor",
@@ -129,7 +129,7 @@ ETAPAS_PEDIDO = [
         "nota": "Pedido → Facturación",
     },
     {
-        "titulo": "5. Logística",
+        "titulo": "Logística",
         "fecha": "fecha_recepcion_final",
         "dias": "dias_logistica",
         "umbral": "umbral_logistica",
@@ -137,7 +137,7 @@ ETAPAS_PEDIDO = [
         "nota": "Facturación → Recepción",
     },
     {
-        "titulo": "6. TAT Total",
+        "titulo": "TAT Total",
         "fecha": "fecha_recepcion_final",
         "dias": "dias_tat_total",
         "umbral": "umbral_tat_total",
@@ -856,6 +856,81 @@ html,body{
     .exp-fields,.exp-kpis,.alert-grid,.avance-grid,.critico-grid{grid-template-columns:repeat(2,minmax(120px,1fr));}
     .stage-grid{grid-template-columns:repeat(3,minmax(130px,1fr));}
 }
+
+.quick-grid{
+    display:grid;
+    grid-template-columns:repeat(3,minmax(180px,1fr));
+    gap:12px;
+}
+.quick-card{
+    background:#ffffff;
+    border:1px solid #e2e8f0;
+    border-radius:14px;
+    padding:13px 15px;
+    box-shadow:0 1px 3px rgba(15,23,42,.04);
+}
+.quick-step{
+    color:#ef3e52;
+    font-size:.72rem;
+    font-weight:900;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+    margin-bottom:5px;
+}
+.quick-title{
+    color:#0f172a;
+    font-size:.98rem;
+    font-weight:900;
+    margin-bottom:4px;
+}
+.quick-text{
+    color:#475569;
+    font-size:.84rem;
+    line-height:1.35;
+}
+.file-summary{
+    background:linear-gradient(135deg,#f8fafc 0%,#ffffff 48%,#eff6ff 100%);
+    border:1px solid #bfdbfe;
+    border-radius:18px;
+    padding:15px 18px;
+}
+.file-summary-title{
+    font-size:.78rem;
+    font-weight:900;
+    color:#1e3a8a;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+    margin-bottom:10px;
+}
+.file-summary-grid{
+    display:grid;
+    grid-template-columns:2fr repeat(4,1fr);
+    gap:8px;
+}
+.file-summary-item{
+    background:rgba(255,255,255,.88);
+    border:1px solid #dbeafe;
+    border-radius:12px;
+    padding:9px 11px;
+}
+.file-summary-label{
+    color:#64748b;
+    font-size:.65rem;
+    font-weight:900;
+    text-transform:uppercase;
+    letter-spacing:.05em;
+    margin-bottom:3px;
+}
+.file-summary-value{
+    color:#0f172a;
+    font-size:.92rem;
+    font-weight:900;
+    overflow-wrap:anywhere;
+}
+@media(max-width:900px){
+    .quick-grid,.file-summary-grid{grid-template-columns:1fr;}
+}
+
 @media(max-width:760px){
     .exp-fields,.exp-kpis,.alert-grid,.avance-grid,.critico-grid,.stage-grid{grid-template-columns:1fr;}
     .stage::after{content:"↓";right:50%;bottom:-12px;top:auto;transform:translateX(50%);}
@@ -1584,13 +1659,78 @@ def html_hero() -> str:
 def html_search_intro() -> str:
     return """
     <div class="search-card">
-        <div class="search-title">Búsqueda específica de expediente</div>
+        <div class="search-title">Búsqueda de expediente TAT</div>
         <div class="search-text">
-            Busca una SOLPED, pedido, posición, material o descripción. 
-            Esta vista está pensada para complementar la pestaña Alertas con una revisión más profunda del registro.
+            Ingresa uno o más criterios para encontrar un registro específico. 
+            Lo más rápido es buscar por <strong>SOLPED</strong> o <strong>Pedido</strong>. 
+            Si no conoces el número completo, usa el modo <strong>Contiene</strong>.
         </div>
     </div>
     """
+
+
+def html_guia_uso() -> str:
+    return """
+    <div class="quick-grid">
+        <div class="quick-card">
+            <div class="quick-step">Paso 1</div>
+            <div class="quick-title">Busca el registro</div>
+            <div class="quick-text">Pega una SOLPED, pedido, posición, material o texto breve. Puedes usar búsqueda parcial.</div>
+        </div>
+        <div class="quick-card">
+            <div class="quick-step">Paso 2</div>
+            <div class="quick-title">Selecciona coincidencia</div>
+            <div class="quick-text">Si aparece más de un resultado, revisa prioridad, estado y vencimiento antes de confirmar.</div>
+        </div>
+        <div class="quick-card">
+            <div class="quick-step">Paso 3</div>
+            <div class="quick-title">Gestiona el expediente</div>
+            <div class="quick-text">Revisa acción sugerida, etapa pendiente, línea TAT y detalle técnico solo cuando sea necesario.</div>
+        </div>
+    </div>
+    """
+
+
+def html_resumen_archivo_filtro(df: pd.DataFrame, nombre_archivo: str) -> str:
+    total = len(df)
+    solpeds = df[COL_SOLPED].nunique(dropna=True) if COL_SOLPED in df.columns else 0
+    pedidos = 0
+
+    for col in [COL_OC_ME5A, COL_OC_ME80FN, COL_OC_NME80FN]:
+        if col in df.columns:
+            pedidos = max(pedidos, df[col].nunique(dropna=True))
+
+    criticos = int(df["nivel_alerta"].eq("Crítico").sum()) if "nivel_alerta" in df.columns else 0
+    sin_recepcion = int(df[COL_ESTADO_RECEPCION_ALERTA].eq("Sin recepción").sum()) if COL_ESTADO_RECEPCION_ALERTA in df.columns else 0
+
+    return f"""
+    <div class="file-summary">
+        <div class="file-summary-title">Archivo activo para búsqueda</div>
+        <div class="file-summary-grid">
+            <div class="file-summary-item">
+                <div class="file-summary-label">Archivo</div>
+                <div class="file-summary-value">{escape(str(nombre_archivo))}</div>
+            </div>
+            <div class="file-summary-item">
+                <div class="file-summary-label">Registros</div>
+                <div class="file-summary-value">{total:,}</div>
+            </div>
+            <div class="file-summary-item">
+                <div class="file-summary-label">SOLPED únicas</div>
+                <div class="file-summary-value">{solpeds:,}</div>
+            </div>
+            <div class="file-summary-item">
+                <div class="file-summary-label">Pedidos únicos</div>
+                <div class="file-summary-value">{pedidos:,}</div>
+            </div>
+            <div class="file-summary-item">
+                <div class="file-summary-label">Críticos / sin recepción</div>
+                <div class="file-summary-value">{criticos:,} / {sin_recepcion:,}</div>
+            </div>
+        </div>
+    </div>
+    """.replace(",", ".")
+
 
 
 def html_message_card(titulo: str, texto: str) -> str:
@@ -2203,46 +2343,47 @@ def mostrar_expediente(row: pd.Series):
         scrolling=True,
     )
 
-    st.markdown("### Tabla de fechas principales")
+    with st.expander("Tablas técnicas del expediente", expanded=False):
+        st.markdown("#### Fechas principales")
 
-    tabla_fechas = pd.DataFrame(
-        [
-            {"Fecha": "Solicitud", "Valor": fecha_texto_simple(row.get("fecha_solicitud_final", pd.NaT))},
-            {"Fecha": "Liberación", "Valor": fecha_texto_simple(row.get("fecha_liberacion_final", pd.NaT))},
-            {"Fecha": "Pedido", "Valor": fecha_texto_simple(row.get("fecha_pedido_final", pd.NaT))},
-            {"Fecha": "Facturación", "Valor": fecha_texto_simple(row.get("fecha_facturacion_final", pd.NaT))},
-            {"Fecha": "Recepción", "Valor": fecha_texto_simple(row.get("fecha_recepcion_final", pd.NaT))},
-            {"Fecha": "Vencimiento TAT", "Valor": fecha_texto_simple(row.get("fecha_vencimiento_tat", pd.NaT))},
-        ]
-    )
-
-    st.dataframe(
-        tabla_fechas,
-        use_container_width=True,
-        hide_index=True,
-    )
-
-    st.markdown("### Tabla técnica de etapas TAT")
-
-    tabla_etapas = []
-
-    for etapa in ETAPAS_PEDIDO:
-        tabla_etapas.append(
-            {
-                "Etapa": etapa["titulo"],
-                "Fecha": fecha_texto_simple(row.get(etapa["fecha"], pd.NaT)) if etapa.get("fecha") else "-",
-                "Días": formato_valor(row.get(etapa["dias"], np.nan)) if etapa.get("dias") else "-",
-                "Umbral": formato_valor(row.get(etapa["umbral"], np.nan)) if etapa.get("umbral") else "-",
-                "Performance": formato_valor(row.get(etapa["performance"], np.nan)) if etapa.get("performance") else "Registrado",
-                "Nota": etapa["nota"],
-            }
+        tabla_fechas = pd.DataFrame(
+            [
+                {"Fecha": "Solicitud", "Valor": fecha_texto_simple(row.get("fecha_solicitud_final", pd.NaT))},
+                {"Fecha": "Liberación", "Valor": fecha_texto_simple(row.get("fecha_liberacion_final", pd.NaT))},
+                {"Fecha": "Pedido", "Valor": fecha_texto_simple(row.get("fecha_pedido_final", pd.NaT))},
+                {"Fecha": "Facturación", "Valor": fecha_texto_simple(row.get("fecha_facturacion_final", pd.NaT))},
+                {"Fecha": "Recepción", "Valor": fecha_texto_simple(row.get("fecha_recepcion_final", pd.NaT))},
+                {"Fecha": "Vencimiento TAT", "Valor": fecha_texto_simple(row.get("fecha_vencimiento_tat", pd.NaT))},
+            ]
         )
 
-    st.dataframe(
-        pd.DataFrame(tabla_etapas),
-        use_container_width=True,
-        hide_index=True,
-    )
+        st.dataframe(
+            tabla_fechas,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        st.markdown("#### Etapas TAT")
+
+        tabla_etapas = []
+
+        for etapa in ETAPAS_PEDIDO:
+            tabla_etapas.append(
+                {
+                    "Etapa": etapa["titulo"],
+                    "Fecha": fecha_texto_simple(row.get(etapa["fecha"], pd.NaT)) if etapa.get("fecha") else "-",
+                    "Días": formato_valor(row.get(etapa["dias"], np.nan)) if etapa.get("dias") else "-",
+                    "Umbral": formato_valor(row.get(etapa["umbral"], np.nan)) if etapa.get("umbral") else "-",
+                    "Performance": formato_valor(row.get(etapa["performance"], np.nan)) if etapa.get("performance") else "Registrado",
+                    "Nota": etapa["nota"],
+                }
+            )
+
+        st.dataframe(
+            pd.DataFrame(tabla_etapas),
+            use_container_width=True,
+            hide_index=True,
+        )
 
     with st.expander("Registro completo del pedido", expanded=False):
         registro_completo = (
@@ -2322,7 +2463,7 @@ def aplicar_filtros_con_progreso(
     modo_busqueda: str,
 ) -> pd.DataFrame:
 
-    barra = st.progress(0, text="Preparando búsqueda...")
+    barra = BarraProgresoSilenciosa()
 
     df = df_base.copy()
 
@@ -2393,6 +2534,58 @@ def etiqueta_selector(row: pd.Series) -> str:
     return f"{nivel} · {estado} · SolPed {solped} · Pedido {pedido} · Pos {pos} · Centro {centro} · Material {material} · {venc}"
 
 
+
+class BarraProgresoSilenciosa:
+    def progress(self, *args, **kwargs):
+        return None
+
+
+def construir_tabla_resultados(df: pd.DataFrame, limite: int = 25) -> pd.DataFrame:
+    if df.empty:
+        return pd.DataFrame()
+
+    base = df.head(limite).copy()
+
+    columnas = {
+        "Nivel": "nivel_alerta",
+        "Estado": "clasificacion_vencimiento",
+        "Vencimiento": "dias_hasta_vencimiento",
+        "SolPed": COL_SOLPED,
+        "Pedido ME5A": COL_OC_ME5A,
+        "Pedido ME80FN": COL_OC_ME80FN,
+        "Posición": COL_POS_SOLPED,
+        "Centro": COL_CENTRO,
+        "Material": COL_MATERIAL,
+        "Texto breve": COL_TEXTO,
+        "Grupo compras": COL_GRUPO_COMPRAS,
+        "Acción sugerida": "accion_sugerida",
+    }
+
+    salida = pd.DataFrame(index=base.index)
+
+    for nombre, col in columnas.items():
+        if col in base.columns:
+            salida[nombre] = base[col].apply(formato_valor)
+        else:
+            salida[nombre] = "-"
+
+    return salida.reset_index(drop=True)
+
+
+def mostrar_resumen_resultados(df: pd.DataFrame):
+    total = len(df)
+    criticos = int(df["nivel_alerta"].eq("Crítico").sum()) if "nivel_alerta" in df.columns else 0
+    atencion = int(df["nivel_alerta"].eq("Atención").sum()) if "nivel_alerta" in df.columns else 0
+    sin_recepcion = int(df[COL_ESTADO_RECEPCION_ALERTA].eq("Sin recepción").sum()) if COL_ESTADO_RECEPCION_ALERTA in df.columns else 0
+
+    col_a, col_b, col_c, col_d = st.columns(4)
+    col_a.metric("Coincidencias", f"{total:,}".replace(",", "."))
+    col_b.metric("Críticos", f"{criticos:,}".replace(",", "."))
+    col_c.metric("Atención", f"{atencion:,}".replace(",", "."))
+    col_d.metric("Sin recepción", f"{sin_recepcion:,}".replace(",", "."))
+
+
+
 # ============================================================
 # App
 # ============================================================
@@ -2436,20 +2629,36 @@ if faltantes_requeridas:
 
 mostrar_search_intro()
 
+mostrar_html_panel(
+    html_resumen_archivo_filtro(df_panel, nombre_archivo),
+    height=140,
+    scrolling=False,
+)
+
+with st.expander("Guía rápida de uso", expanded=False):
+    mostrar_html_panel(
+        html_guia_uso(),
+        height=150,
+        scrolling=False,
+    )
+
 with st.form("form_filtros_solped"):
+    st.caption("Completa al menos un campo. Para búsquedas parciales, usa el modo Contiene.")
     col_f1, col_f2, col_f3 = st.columns(3)
 
     with col_f1:
         filtro_solped = st.text_input(
-            "SOLPED",
+            "SOLPED recomendada",
             placeholder="Ej: 1002614561",
+            help="Mejor criterio para abrir un expediente específico.",
             key="filtro_solped",
         )
 
     with col_f2:
         filtro_pedido = st.text_input(
-            "Pedido",
+            "Pedido / OC",
             placeholder="Ej: 4500123456",
+            help="Busca en Pedido ME5A, ME80FN y NME80FN.",
             key="filtro_pedido",
         )
 
@@ -2457,6 +2666,7 @@ with st.form("form_filtros_solped"):
         filtro_posicion = st.text_input(
             "Posición",
             placeholder="Ej: 10",
+            help="Puedes buscar por posición de SolPed o posición de pedido.",
             key="filtro_posicion",
         )
 
@@ -2466,21 +2676,24 @@ with st.form("form_filtros_solped"):
         filtro_material = st.text_input(
             "Material",
             placeholder="Ej: 20050351",
+            help="Permite ubicar registros asociados a un material.",
             key="filtro_material",
         )
 
     with col_f5:
         filtro_texto = st.text_input(
-            "Texto breve",
-            placeholder="Buscar por descripción",
+            "Texto breve / descripción",
+            placeholder="Ej: servicio, repuesto, nitrato",
+            help="Siempre busca por contenido parcial.",
             key="filtro_texto",
         )
 
     with col_f6:
         modo_busqueda = st.selectbox(
-            "Modo",
+            "Modo de búsqueda",
             options=["Exacta", "Contiene"],
-            index=0,
+            index=1,
+            help="Contiene es más flexible cuando no conoces el número completo.",
             key="filtro_modo",
         )
 
@@ -2488,14 +2701,14 @@ with st.form("form_filtros_solped"):
 
     with b1:
         aplicar_filtros = st.form_submit_button(
-            "Buscar expediente",
+            "Buscar expediente TAT",
             use_container_width=True,
             type="primary",
         )
 
     with b2:
         limpiar_filtros = st.form_submit_button(
-            "Limpiar",
+            "Limpiar búsqueda",
             use_container_width=True,
         )
 
@@ -2590,6 +2803,8 @@ if df_filtrado.empty:
     st.stop()
 
 
+mostrar_resumen_resultados(df_filtrado)
+
 if len(df_filtrado) == 1:
     registro = df_filtrado.iloc[0]
 
@@ -2601,8 +2816,21 @@ if len(df_filtrado) == 1:
 else:
     mostrar_message_card(
         "Coincidencias encontradas",
-        "Se encontró más de un registro. Selecciona el expediente que quieres revisar y confirma.",
+        "Se encontró más de un registro. Revisa la tabla de coincidencias, selecciona el expediente y confirma.",
     )
+
+    with st.expander("Vista previa de coincidencias", expanded=True):
+        st.dataframe(
+            construir_tabla_resultados(df_filtrado, limite=25),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        if len(df_filtrado) > 25:
+            st.caption(
+                f"Mostrando las primeras 25 coincidencias de {len(df_filtrado):,}. Refina la búsqueda si necesitas menos resultados."
+                .replace(",", ".")
+            )
 
     limite_selector = 5000
     df_selector = df_filtrado.head(limite_selector).copy()
@@ -2621,7 +2849,7 @@ else:
     )
 
     etiqueta = st.selectbox(
-        "Expediente a revisar",
+        "Selecciona expediente a revisar",
         options=list(opciones.keys()),
         index=0,
         key="selector_expediente",
@@ -2630,7 +2858,7 @@ else:
     id_seleccionado = opciones[etiqueta]
 
     confirmar = st.button(
-        "Confirmar expediente",
+        "Abrir expediente seleccionado",
         type="primary",
         use_container_width=True,
     )
