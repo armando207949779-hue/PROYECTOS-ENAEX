@@ -356,7 +356,7 @@ def formatear_entero(valor) -> str:
     if pd.isna(numero):
         return "—"
 
-    return f"{int(round(numero)):,}".replace(",", ".")
+    return f"{int(round(numero)):,}"
 
 
 def formatear_porcentaje(valor) -> str:
