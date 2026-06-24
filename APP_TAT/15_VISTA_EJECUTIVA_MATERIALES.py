@@ -577,9 +577,6 @@ def estilo_estado_alerta(row: pd.Series) -> list[str]:
 
 
 def estilo_tat_variabilidad(row: pd.Series) -> list[str]:
-    # No aplicar color de fondo por variabilidad.
-    # El color de las tablas debe representar solo el estado:
-    # verde = recepcionado, naranjo = por vencer, rojo = vencido.
     return [""] * len(row)
 
 
@@ -1394,7 +1391,6 @@ def crear_estadistica_materiales(df: pd.DataFrame) -> pd.DataFrame:
         "Días TAT std",
         "Días TAT max",
         "Días incumplimiento total",
-        "Avance promedio",
         "Score máximo",
         "Score promedio",
         "% foco acción",
@@ -1584,7 +1580,6 @@ def crear_tabla_dias_tat_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
     columnas_base = [
         "Material",
         "Texto_referencial",
-        "Nivel estado material",
         "Registros",
         "Días TAT min",
         "Días TAT promedio",
@@ -1592,14 +1587,9 @@ def crear_tabla_dias_tat_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
         "Coeficiente variación % TAT",
         "Días TAT max",
         "Recurrencia",
-        "Avance promedio",
         "Centro_principal",
         "Grupo compra principal",
         "Días desde última solicitud",
-        "Vencidos",
-        "Por_vencer",
-        "Datos_incompletos",
-        "Recepcionados",
     ]
 
     for col in columnas_base:
@@ -1611,12 +1601,7 @@ def crear_tabla_dias_tat_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
                 "Días TAT std",
                 "Coeficiente variación % TAT",
                 "Días TAT max",
-                "Avance promedio",
-                "Días desde última solicitud",
-                "Vencidos",
-                "Por_vencer",
-                "Datos_incompletos",
-                "Recepcionados",
+                        "Días desde última solicitud",
             ]:
                 data[col] = 0
             else:
@@ -1626,7 +1611,6 @@ def crear_tabla_dias_tat_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
         {
             "Material": data["Material"],
             "Texto referencial": data["Texto_referencial"],
-            "Nivel alerta": data["Nivel estado material"],
             "Registros": pd.to_numeric(data["Registros"], errors="coerce").fillna(0).round(0).astype(int),
             "Min TAT": pd.to_numeric(data["Días TAT min"], errors="coerce"),
             "Media TAT": pd.to_numeric(data["Días TAT promedio"], errors="coerce"),
@@ -1634,17 +1618,15 @@ def crear_tabla_dias_tat_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
             "Desviación estándar TAT": pd.to_numeric(data["Días TAT std"], errors="coerce"),
             "Coeficiente variación % TAT": pd.to_numeric(data["Coeficiente variación % TAT"], errors="coerce"),
             "Recurrencia": data["Recurrencia"],
-            "Avance promedio": pd.to_numeric(data["Avance promedio"], errors="coerce"),
             "Centro principal": data["Centro_principal"],
             "Grupo compra principal": data["Grupo compra principal"],
             "Días desde última solicitud": pd.to_numeric(data["Días desde última solicitud"], errors="coerce").fillna(0).round(0).astype(int),
-            "Estado vencimiento": calcular_estado_material_desde_metricas(data),
         }
     )
 
     salida = salida.sort_values(
-        ["Estado vencimiento", "Coeficiente variación % TAT", "Registros"],
-        ascending=[True, False, False],
+        ["Coeficiente variación % TAT", "Registros"],
+        ascending=[False, False],
     ).reset_index(drop=True)
 
     return salida
@@ -1659,7 +1641,6 @@ def crear_tabla_cantidad_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
     columnas_base = [
         "Material",
         "Texto_referencial",
-        "Nivel estado material",
         "Registros",
         "Cantidad min",
         "Cantidad media",
@@ -1670,10 +1651,6 @@ def crear_tabla_cantidad_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
         "Centro_principal",
         "Grupo compra principal",
         "Días desde última solicitud",
-        "Vencidos",
-        "Por_vencer",
-        "Datos_incompletos",
-        "Recepcionados",
     ]
 
     for col in columnas_base:
@@ -1686,10 +1663,6 @@ def crear_tabla_cantidad_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
                 "Coeficiente variación % Cantidad",
                 "Cantidad max",
                 "Días desde última solicitud",
-                "Vencidos",
-                "Por_vencer",
-                "Datos_incompletos",
-                "Recepcionados",
             ]:
                 data[col] = 0
             else:
@@ -1699,7 +1672,6 @@ def crear_tabla_cantidad_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
         {
             "Material": data["Material"],
             "Texto referencial": data["Texto_referencial"],
-            "Nivel alerta": data["Nivel estado material"],
             "Registros": pd.to_numeric(data["Registros"], errors="coerce").fillna(0).round(0).astype(int),
             "Mínimo cantidad": pd.to_numeric(data["Cantidad min"], errors="coerce").fillna(0).round(0).astype(int),
             "Media cantidad": pd.to_numeric(data["Cantidad media"], errors="coerce").fillna(0).round(0).astype(int),
@@ -1710,13 +1682,12 @@ def crear_tabla_cantidad_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
             "Centro principal": data["Centro_principal"],
             "Grupo compra principal": data["Grupo compra principal"],
             "Días desde última solicitud": pd.to_numeric(data["Días desde última solicitud"], errors="coerce").fillna(0).round(0).astype(int),
-            "Estado vencimiento": calcular_estado_material_desde_metricas(data),
         }
     )
 
     salida = salida.sort_values(
-        ["Estado vencimiento", "Coeficiente variación % cantidad", "Registros"],
-        ascending=[True, False, False],
+        ["Coeficiente variación % cantidad", "Registros"],
+        ascending=[False, False],
     ).reset_index(drop=True)
 
     return salida
@@ -1731,7 +1702,6 @@ def crear_tabla_monto_material(tabla_materiales: pd.DataFrame) -> pd.DataFrame:
     columnas_base = [
         "Material",
         "Texto_referencial",
-        "Nivel estado material",
         "Registros",
         "Monto min",
         "Monto media",
@@ -1742,10 +1712,6 @@ def crear_tabla_monto_material(tabla_materiales: pd.DataFrame) -> pd.DataFrame:
         "Centro_principal",
         "Grupo compra principal",
         "Días desde última solicitud",
-        "Vencidos",
-        "Por_vencer",
-        "Datos_incompletos",
-        "Recepcionados",
     ]
 
     for col in columnas_base:
@@ -1758,10 +1724,6 @@ def crear_tabla_monto_material(tabla_materiales: pd.DataFrame) -> pd.DataFrame:
                 "Coeficiente variación % Monto",
                 "Monto max",
                 "Días desde última solicitud",
-                "Vencidos",
-                "Por_vencer",
-                "Datos_incompletos",
-                "Recepcionados",
             ]:
                 data[col] = 0
             else:
@@ -1771,7 +1733,6 @@ def crear_tabla_monto_material(tabla_materiales: pd.DataFrame) -> pd.DataFrame:
         {
             "Material": data["Material"],
             "Texto referencial": data["Texto_referencial"],
-            "Nivel alerta": data["Nivel estado material"],
             "Registros": pd.to_numeric(data["Registros"], errors="coerce").fillna(0).round(0).astype(int),
             "Mínimo monto": pd.to_numeric(data["Monto min"], errors="coerce").fillna(0).round(0).astype(int),
             "Media monto": pd.to_numeric(data["Monto media"], errors="coerce").fillna(0).round(0).astype(int),
@@ -1782,13 +1743,12 @@ def crear_tabla_monto_material(tabla_materiales: pd.DataFrame) -> pd.DataFrame:
             "Centro principal": data["Centro_principal"],
             "Grupo compra principal": data["Grupo compra principal"],
             "Días desde última solicitud": pd.to_numeric(data["Días desde última solicitud"], errors="coerce").fillna(0).round(0).astype(int),
-            "Estado vencimiento": calcular_estado_material_desde_metricas(data),
         }
     )
 
     salida = salida.sort_values(
-        ["Estado vencimiento", "Coeficiente variación % monto", "Registros"],
-        ascending=[True, False, False],
+        ["Coeficiente variación % monto", "Registros"],
+        ascending=[False, False],
     ).reset_index(drop=True)
 
     return salida
@@ -1899,10 +1859,6 @@ def grafico_materiales_foco(tabla_materiales: pd.DataFrame, top_n: int = 12):
 
     columnas = [
         "Material",
-        "Vencidos",
-        "Por_vencer",
-        "Datos_incompletos",
-        "Recepcionados",
         "Sin_recepcion",
         "Foco acción",
         "% foco acción",
@@ -2624,7 +2580,6 @@ def crear_tabla_dias_tat_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
     columnas_base = [
         "Material",
         "Texto_referencial",
-        "Nivel estado material",
         "Registros",
         "Días TAT min",
         "Días TAT promedio",
@@ -2632,14 +2587,9 @@ def crear_tabla_dias_tat_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
         "Coeficiente variación % TAT",
         "Días TAT max",
         "Recurrencia",
-        "Avance promedio",
         "Centro_principal",
         "Grupo compra principal",
         "Días desde última solicitud",
-        "Vencidos",
-        "Por_vencer",
-        "Datos_incompletos",
-        "Recepcionados",
     ]
 
     for col in columnas_base:
@@ -2651,12 +2601,7 @@ def crear_tabla_dias_tat_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
                 "Días TAT std",
                 "Coeficiente variación % TAT",
                 "Días TAT max",
-                "Avance promedio",
-                "Días desde última solicitud",
-                "Vencidos",
-                "Por_vencer",
-                "Datos_incompletos",
-                "Recepcionados",
+                        "Días desde última solicitud",
             ]:
                 data[col] = 0
             else:
@@ -2666,7 +2611,6 @@ def crear_tabla_dias_tat_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
         {
             "Material": data["Material"],
             "Texto referencial": data["Texto_referencial"],
-            "Nivel alerta": data["Nivel estado material"],
             "Registros": pd.to_numeric(data["Registros"], errors="coerce").fillna(0).round(0).astype(int),
             "Min TAT": pd.to_numeric(data["Días TAT min"], errors="coerce"),
             "Media TAT": pd.to_numeric(data["Días TAT promedio"], errors="coerce"),
@@ -2674,17 +2618,15 @@ def crear_tabla_dias_tat_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
             "Desviación estándar TAT": pd.to_numeric(data["Días TAT std"], errors="coerce"),
             "Coeficiente variación % TAT": pd.to_numeric(data["Coeficiente variación % TAT"], errors="coerce"),
             "Recurrencia": data["Recurrencia"],
-            "Avance promedio": pd.to_numeric(data["Avance promedio"], errors="coerce"),
             "Centro principal": data["Centro_principal"],
             "Grupo compra principal": data["Grupo compra principal"],
             "Días desde última solicitud": pd.to_numeric(data["Días desde última solicitud"], errors="coerce").fillna(0).round(0).astype(int),
-            "Estado vencimiento": calcular_estado_material_desde_metricas(data),
         }
     )
 
     salida = salida.sort_values(
-        ["Estado vencimiento", "Coeficiente variación % TAT", "Registros"],
-        ascending=[True, False, False],
+        ["Coeficiente variación % TAT", "Registros"],
+        ascending=[False, False],
     ).reset_index(drop=True)
 
     return salida
@@ -2699,7 +2641,6 @@ def crear_tabla_cantidad_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
     columnas_base = [
         "Material",
         "Texto_referencial",
-        "Nivel estado material",
         "Registros",
         "Cantidad min",
         "Cantidad media",
@@ -2710,10 +2651,6 @@ def crear_tabla_cantidad_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
         "Centro_principal",
         "Grupo compra principal",
         "Días desde última solicitud",
-        "Vencidos",
-        "Por_vencer",
-        "Datos_incompletos",
-        "Recepcionados",
     ]
 
     for col in columnas_base:
@@ -2726,10 +2663,6 @@ def crear_tabla_cantidad_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
                 "Coeficiente variación % Cantidad",
                 "Cantidad max",
                 "Días desde última solicitud",
-                "Vencidos",
-                "Por_vencer",
-                "Datos_incompletos",
-                "Recepcionados",
             ]:
                 data[col] = 0
             else:
@@ -2739,7 +2672,6 @@ def crear_tabla_cantidad_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
         {
             "Material": data["Material"],
             "Texto referencial": data["Texto_referencial"],
-            "Nivel alerta": data["Nivel estado material"],
             "Registros": pd.to_numeric(data["Registros"], errors="coerce").fillna(0).round(0).astype(int),
             "Mínimo cantidad": pd.to_numeric(data["Cantidad min"], errors="coerce").fillna(0).round(0).astype(int),
             "Media cantidad": pd.to_numeric(data["Cantidad media"], errors="coerce").fillna(0).round(0).astype(int),
@@ -2750,13 +2682,12 @@ def crear_tabla_cantidad_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
             "Centro principal": data["Centro_principal"],
             "Grupo compra principal": data["Grupo compra principal"],
             "Días desde última solicitud": pd.to_numeric(data["Días desde última solicitud"], errors="coerce").fillna(0).round(0).astype(int),
-            "Estado vencimiento": calcular_estado_material_desde_metricas(data),
         }
     )
 
     salida = salida.sort_values(
-        ["Estado vencimiento", "Coeficiente variación % cantidad", "Registros"],
-        ascending=[True, False, False],
+        ["Coeficiente variación % cantidad", "Registros"],
+        ascending=[False, False],
     ).reset_index(drop=True)
 
     return salida
@@ -2771,7 +2702,6 @@ def crear_tabla_monto_material(tabla_materiales: pd.DataFrame) -> pd.DataFrame:
     columnas_base = [
         "Material",
         "Texto_referencial",
-        "Nivel estado material",
         "Registros",
         "Monto min",
         "Monto media",
@@ -2782,10 +2712,6 @@ def crear_tabla_monto_material(tabla_materiales: pd.DataFrame) -> pd.DataFrame:
         "Centro_principal",
         "Grupo compra principal",
         "Días desde última solicitud",
-        "Vencidos",
-        "Por_vencer",
-        "Datos_incompletos",
-        "Recepcionados",
     ]
 
     for col in columnas_base:
@@ -2798,10 +2724,6 @@ def crear_tabla_monto_material(tabla_materiales: pd.DataFrame) -> pd.DataFrame:
                 "Coeficiente variación % Monto",
                 "Monto max",
                 "Días desde última solicitud",
-                "Vencidos",
-                "Por_vencer",
-                "Datos_incompletos",
-                "Recepcionados",
             ]:
                 data[col] = 0
             else:
@@ -2811,7 +2733,6 @@ def crear_tabla_monto_material(tabla_materiales: pd.DataFrame) -> pd.DataFrame:
         {
             "Material": data["Material"],
             "Texto referencial": data["Texto_referencial"],
-            "Nivel alerta": data["Nivel estado material"],
             "Registros": pd.to_numeric(data["Registros"], errors="coerce").fillna(0).round(0).astype(int),
             "Mínimo monto": pd.to_numeric(data["Monto min"], errors="coerce").fillna(0).round(0).astype(int),
             "Media monto": pd.to_numeric(data["Monto media"], errors="coerce").fillna(0).round(0).astype(int),
@@ -2822,13 +2743,12 @@ def crear_tabla_monto_material(tabla_materiales: pd.DataFrame) -> pd.DataFrame:
             "Centro principal": data["Centro_principal"],
             "Grupo compra principal": data["Grupo compra principal"],
             "Días desde última solicitud": pd.to_numeric(data["Días desde última solicitud"], errors="coerce").fillna(0).round(0).astype(int),
-            "Estado vencimiento": calcular_estado_material_desde_metricas(data),
         }
     )
 
     salida = salida.sort_values(
-        ["Estado vencimiento", "Coeficiente variación % monto", "Registros"],
-        ascending=[True, False, False],
+        ["Coeficiente variación % monto", "Registros"],
+        ascending=[False, False],
     ).reset_index(drop=True)
 
     return salida
@@ -2902,7 +2822,7 @@ if tabla_dias_tat_material.empty:
     st.info("No hay tabla de días TAT disponible para los materiales filtrados.")
 else:
     st.dataframe(
-        tabla_dias_tat_material.style.apply(estilo_estado_alerta, axis=1),
+        tabla_dias_tat_material,
         use_container_width=True,
         hide_index=True,
         column_config={
@@ -2931,8 +2851,7 @@ else:
                 format="%.2f%%",
             ),
             "Avance promedio": st.column_config.ProgressColumn(
-                "Avance promedio",
-                format="%.1f%%",
+                        format="%.1f%%",
                 min_value=0,
                 max_value=100,
             ),
@@ -2957,7 +2876,7 @@ if tabla_cantidad_material.empty:
     st.info("No hay tabla de cantidad disponible para los materiales filtrados.")
 else:
     st.dataframe(
-        tabla_cantidad_material.style.apply(estilo_estado_alerta, axis=1),
+        tabla_cantidad_material,
         use_container_width=True,
         hide_index=True,
         column_config={
@@ -3006,7 +2925,7 @@ if tabla_monto_material.empty:
     st.info("No hay tabla de monto disponible para los materiales filtrados.")
 else:
     st.dataframe(
-        tabla_monto_material.style.apply(estilo_estado_alerta, axis=1),
+        tabla_monto_material,
         use_container_width=True,
         hide_index=True,
         column_config={
