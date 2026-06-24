@@ -6,6 +6,7 @@
 # 01 Preparación de datos
 # 02 Cargar archivo
 # 03 Vista Ejecutiva
+#    Incluye Vista Ejecutiva Materiales
 # 04 Alertas
 # 05 Filtro
 # 06 Performances
@@ -138,6 +139,16 @@ APP_SECTIONS = [
                 "descripcion": (
                     "Vista ejecutiva tipo Power BI para analizar cumplimiento por "
                     "grupo de compras y etapas del proceso TAT."
+                ),
+            },
+            {
+                "nombre": "15_VISTA_EJECUTIVA_MATERIALES",
+                "archivo": "15_VISTA_EJECUTIVA_MATERIALES.py",
+                "titulo": "15 Vista Ejecutiva Materiales",
+                "icono": "📦",
+                "descripcion": (
+                    "Vista ejecutiva para analizar materiales: recurrencia, SolPed, pedidos, "
+                    "centros, grupos de compra, vencimientos, TAT y foco de gestión."
                 ),
             },
         ],
