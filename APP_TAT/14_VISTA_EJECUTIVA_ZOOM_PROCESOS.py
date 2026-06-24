@@ -1,3 +1,4 @@
+
 # ============================================================
 # 14_VISTA_EJECUTIVA_ZOOM_PROCESOS
 # Vista ejecutiva Zoom procesos
@@ -5,8 +6,8 @@
 #
 # Inspiración visual:
 # - Power BI Performance de Procesos
-# - Vista vertical por proceso: TAT, Lib SolPed, Comprador, Proveedor, Logística
-# - Barras horizontales 100% apiladas por grupo de compras, en ancho completo
+# - Columnas por proceso: TAT, Lib SolPed, Comprador, Proveedor, Logística
+# - Barras horizontales 100% apiladas por grupo de compras
 # - Cumple = gris, No cumple = rojo
 # - Línea de meta ejecutiva
 # ============================================================
@@ -885,23 +886,19 @@ def grafico_proceso_horizontal(
     cumple_pct = pd.to_numeric(data["% Cumple"], errors="coerce").fillna(0).to_numpy()
     no_cumple_pct = pd.to_numeric(data["% No cumple"], errors="coerce").fillna(0).to_numpy()
 
-    cumple_n = pd.to_numeric(data["Cumple"], errors="coerce").fillna(0).astype(int).to_numpy()
-    no_cumple_n = pd.to_numeric(data["No cumple"], errors="coerce").fillna(0).astype(int).to_numpy()
-    evaluables = pd.to_numeric(data["Evaluables"], errors="coerce").fillna(0).astype(int).to_numpy()
-
     etiquetas = data["grupo_compras_zoom"].astype(str).tolist()
 
-    fig_height = max(5.8, len(data) * 0.68)
-    fig, ax = plt.subplots(figsize=(13.6, fig_height), dpi=155)
+    fig_height = max(4.35, len(data) * 0.52)
+    fig, ax = plt.subplots(figsize=(3.85, fig_height), dpi=180)
 
     ax.barh(
         y,
         cumple_pct,
         color=COLOR_CUMPLE,
-        height=0.68,
+        height=0.70,
         label="Cumple",
         edgecolor="white",
-        linewidth=0.9,
+        linewidth=0.7,
     )
 
     ax.barh(
@@ -909,120 +906,76 @@ def grafico_proceso_horizontal(
         no_cumple_pct,
         left=cumple_pct,
         color=COLOR_NO_CUMPLE,
-        height=0.68,
+        height=0.70,
         label="No cumple",
         edgecolor="white",
-        linewidth=0.9,
+        linewidth=0.7,
     )
 
     ax.axvline(
         META_CUMPLIMIENTO,
         color=COLOR_META,
         linestyle=(0, (2, 2)),
-        linewidth=2.1,
+        linewidth=1.8,
         alpha=0.95,
     )
 
-    for i, (c_pct, nc_pct, c_n, nc_n, total) in enumerate(
-        zip(cumple_pct, no_cumple_pct, cumple_n, no_cumple_n, evaluables)
-    ):
-        if total <= 0:
-            continue
-
-        if c_pct >= 12:
+    for i, (c_pct, nc_pct) in enumerate(zip(cumple_pct, no_cumple_pct)):
+        if c_pct >= 15:
             ax.text(
                 c_pct / 2,
                 i,
-                f"{c_pct:.1f}%\n{formatear_entero(c_n)}",
+                f"{c_pct:.1f}%",
                 ha="center",
                 va="center",
-                fontsize=9.2,
+                fontsize=7.2,
                 color="white",
-                fontweight="bold",
-                linespacing=0.95,
-            )
-        elif c_pct > 0:
-            ax.text(
-                min(c_pct + 1.2, 98),
-                i,
-                f"{c_pct:.1f}%",
-                ha="left",
-                va="center",
-                fontsize=8.4,
-                color=COLOR_CUMPLE,
                 fontweight="bold",
             )
 
-        if nc_pct >= 12:
+        if nc_pct >= 15:
             ax.text(
                 c_pct + nc_pct / 2,
                 i,
-                f"{nc_pct:.1f}%\n{formatear_entero(nc_n)}",
+                f"{nc_pct:.1f}%",
                 ha="center",
                 va="center",
-                fontsize=9.2,
+                fontsize=7.2,
                 color="white",
-                fontweight="bold",
-                linespacing=0.95,
-            )
-        elif nc_pct > 0:
-            ax.text(
-                min(99, c_pct + nc_pct + 1.2),
-                i,
-                f"{nc_pct:.1f}%",
-                ha="left",
-                va="center",
-                fontsize=8.4,
-                color=COLOR_NO_CUMPLE,
                 fontweight="bold",
             )
 
     ax.set_xlim(0, 100)
-    ax.set_xticks([0, 25, 50, 65, 75, 100])
-    ax.set_xticklabels(["0%", "25%", "50%", "Meta", "75%", "100%"], fontsize=9.2, color=COLOR_MUTED)
+    ax.set_xticks([0, 50, 100])
+    ax.set_xticklabels(["0%", "50%", "100%"], fontsize=8, color=COLOR_MUTED)
 
-    ax.set_yticks(y)
-    ax.set_yticklabels(etiquetas, fontsize=10.2, color=COLOR_TEXTO)
-    ax.set_ylabel("Grupo de compras", fontsize=9.5, color=COLOR_TEXTO, fontweight="bold")
+    if mostrar_eje_y:
+        ax.set_yticks(y)
+        ax.set_yticklabels(etiquetas, fontsize=8, color=COLOR_MUTED)
+        ax.set_ylabel("Grupo de compras", fontsize=8, color=COLOR_TEXTO)
+    else:
+        ax.set_yticks(y)
+        ax.set_yticklabels([""] * len(y))
 
     ax.set_title(
         titulo,
-        fontsize=17,
+        fontsize=11.5,
         fontweight="bold",
         color=COLOR_TEXTO,
-        pad=14,
-        loc="left",
+        pad=10,
     )
 
-    ax.grid(axis="x", linestyle=":", linewidth=0.8, color=COLOR_GRID)
+    ax.grid(axis="x", linestyle=":", linewidth=0.7, color=COLOR_GRID)
     ax.grid(axis="y", visible=False)
     ax.tick_params(axis="both", length=0)
 
     for spine in ax.spines.values():
         spine.set_visible(False)
 
-    legend_handles = [
-        plt.Line2D([0], [0], marker="s", color="none", label="Cumple",
-                   markerfacecolor=COLOR_CUMPLE, markeredgecolor=COLOR_CUMPLE, markersize=8),
-        plt.Line2D([0], [0], marker="s", color="none", label="No cumple",
-                   markerfacecolor=COLOR_NO_CUMPLE, markeredgecolor=COLOR_NO_CUMPLE, markersize=8),
-        plt.Line2D([0], [0], color=COLOR_META, linestyle=(0, (2, 2)), linewidth=2.1,
-                   label=f"Meta {META_CUMPLIMIENTO}%"),
-    ]
-
-    ax.legend(
-        handles=legend_handles,
-        loc="upper center",
-        bbox_to_anchor=(0.5, -0.08),
-        ncol=3,
-        frameon=False,
-        fontsize=9.3,
-    )
-
     fig.patch.set_facecolor("white")
     ax.set_facecolor("white")
     fig.tight_layout()
-    fig.subplots_adjust(bottom=0.13)
+    fig.subplots_adjust(top=0.92, bottom=0.10)
 
     st.pyplot(fig, clear_figure=True, use_container_width=True)
     plt.close(fig)
@@ -1052,8 +1005,8 @@ def mostrar_zoom_procesos(
     st.markdown(
         """
         <div class='exec-small' style='text-align:center; margin-bottom:10px;'>
-            Vista vertical por proceso para mejorar lectura de números y porcentajes.
-            Cada gráfico usa ancho completo. Gris = Cumple, rojo = No cumple, línea segmentada verde = meta.
+            Barras horizontales 100% apiladas por grupo de compras.
+            Gris = Cumple, rojo = No cumple, línea segmentada verde = meta.
         </div>
         """,
         unsafe_allow_html=True,
@@ -1082,21 +1035,21 @@ def mostrar_zoom_procesos(
         st.info("No hay grupos de compras evaluables para mostrar.")
         return
 
-    for proceso in PROCESOS_DASHBOARD:
+    cols = st.columns(5, gap="small")
+
+    for i, proceso in enumerate(PROCESOS_DASHBOARD):
         resumen = crear_resumen_proceso(
             df=df_dashboard,
             col_perf=proceso["col_perf"],
             grupos_ordenados=grupos_ordenados,
         )
 
-        with st.container():
+        with cols[i]:
             grafico_proceso_horizontal(
                 tabla=resumen,
                 titulo=proceso["titulo"],
                 mostrar_eje_y=True,
             )
-
-            st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
 
 
 # ============================================================
