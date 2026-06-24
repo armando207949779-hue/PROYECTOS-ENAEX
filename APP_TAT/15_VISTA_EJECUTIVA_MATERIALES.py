@@ -573,17 +573,21 @@ def estilo_estado_alerta(row: pd.Series) -> list[str]:
     nivel = str(row.get("Nivel alerta", row.get("Nivel estado material", ""))).strip()
     vencimiento = str(row.get("Estado vencimiento", row.get("Nivel estado material", ""))).strip()
 
-    # Vencido: rojo
-    if nivel == "Crítico" or vencimiento in ["Vencido", "Vence hoy"]:
+    texto_estado = f"{nivel} {vencimiento}".lower()
+
+    # Verde: recepcionado/cerrado.
+    # Esta regla va primero para evitar que un material recepcionado con más de un registro
+    # quede pintado en rojo por una lectura agregada anterior.
+    if "recepcionado" in texto_estado or "cerrado" in texto_estado:
+        return ["background-color: #dcfce7; color: #14532d; font-weight: 800"] * len(row)
+
+    # Rojo: vencido/crítico.
+    if "vencido" in texto_estado or "crítico" in texto_estado or "critico" in texto_estado:
         return ["background-color: #fee2e2; color: #7f1d1d; font-weight: 800"] * len(row)
 
-    # Por vencer: naranja
-    if nivel in ["Atención", "Seguimiento", "Por vencer"] or vencimiento in ["Por vencer", "1-7 días", "8-30 días"]:
+    # Naranjo: por vencer / atención / seguimiento.
+    if "por vencer" in texto_estado or "atención" in texto_estado or "atencion" in texto_estado or "seguimiento" in texto_estado:
         return ["background-color: #ffedd5; color: #7c2d12; font-weight: 800"] * len(row)
-
-    # Recepcionado: verde
-    if nivel in ["Cerrado", "Recepcionado"] or vencimiento in ["Recepcionado"]:
-        return ["background-color: #dcfce7; color: #14532d; font-weight: 700"] * len(row)
 
     return [""] * len(row)
 
@@ -1407,21 +1411,7 @@ def crear_estadistica_materiales(df: pd.DataFrame) -> pd.DataFrame:
         np.nan,
     )
 
-    tabla["Nivel estado material"] = np.select(
-        [
-            pd.to_numeric(tabla["Vencidos"], errors="coerce").fillna(0).gt(0),
-            pd.to_numeric(tabla["Por_vencer"], errors="coerce").fillna(0).gt(0),
-            pd.to_numeric(tabla["Datos_incompletos"], errors="coerce").fillna(0).gt(0),
-            pd.to_numeric(tabla["Recepcionados"], errors="coerce").fillna(0).eq(tabla["Registros"]),
-        ],
-        [
-            "Vencido",
-            "Por vencer",
-            "Datos incompletos",
-            "Recepcionado",
-        ],
-        default="Controlado",
-    )
+    tabla["Nivel estado material"] = calcular_estado_material_desde_metricas(tabla)
 
     numeric_cols = [
         "Cantidad total",
@@ -1594,6 +1584,33 @@ def crear_ranking_grupos_materiales(df: pd.DataFrame) -> pd.DataFrame:
 
 
 
+def calcular_estado_material_desde_metricas(data: pd.DataFrame) -> pd.Series:
+    registros = pd.to_numeric(data.get("Registros", 0), errors="coerce").fillna(0)
+    recepcionados = pd.to_numeric(data.get("Recepcionados", 0), errors="coerce").fillna(0)
+    vencidos = pd.to_numeric(data.get("Vencidos", 0), errors="coerce").fillna(0)
+    por_vencer = pd.to_numeric(data.get("Por_vencer", 0), errors="coerce").fillna(0)
+    datos_incompletos = pd.to_numeric(data.get("Datos_incompletos", 0), errors="coerce").fillna(0)
+
+    return pd.Series(
+        np.select(
+            [
+                registros.gt(0) & recepcionados.eq(registros),
+                vencidos.gt(0),
+                por_vencer.gt(0),
+                datos_incompletos.gt(0),
+            ],
+            [
+                "Recepcionado",
+                "Vencido",
+                "Por vencer",
+                "Datos incompletos",
+            ],
+            default="Controlado",
+        ),
+        index=data.index,
+    )
+
+
 def crear_tabla_dias_tat_material(tabla_materiales: pd.DataFrame) -> pd.DataFrame:
     if tabla_materiales.empty:
         return pd.DataFrame()
@@ -1617,6 +1634,8 @@ def crear_tabla_dias_tat_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
         "Días desde última solicitud",
         "Vencidos",
         "Por_vencer",
+        "Datos_incompletos",
+        "Recepcionados",
     ]
 
     for col in columnas_base:
@@ -1632,6 +1651,8 @@ def crear_tabla_dias_tat_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
                 "Días desde última solicitud",
                 "Vencidos",
                 "Por_vencer",
+                "Datos_incompletos",
+                "Recepcionados",
             ]:
                 data[col] = 0
             else:
@@ -1653,17 +1674,7 @@ def crear_tabla_dias_tat_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
             "Centro principal": data["Centro_principal"],
             "Grupo compra principal": data["Grupo compra principal"],
             "Días desde última solicitud": pd.to_numeric(data["Días desde última solicitud"], errors="coerce").fillna(0).round(0).astype(int),
-            "Estado vencimiento": np.select(
-                [
-                    pd.to_numeric(data["Vencidos"], errors="coerce").fillna(0).gt(0),
-                    pd.to_numeric(data["Por_vencer"], errors="coerce").fillna(0).gt(0),
-                ],
-                [
-                    "Vencido",
-                    "Por vencer",
-                ],
-                default="Sin foco",
-            ),
+            "Estado vencimiento": calcular_estado_material_desde_metricas(data),
         }
     )
 
@@ -1697,6 +1708,8 @@ def crear_tabla_cantidad_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
         "Días desde última solicitud",
         "Vencidos",
         "Por_vencer",
+        "Datos_incompletos",
+        "Recepcionados",
     ]
 
     for col in columnas_base:
@@ -1711,6 +1724,8 @@ def crear_tabla_cantidad_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
                 "Días desde última solicitud",
                 "Vencidos",
                 "Por_vencer",
+                "Datos_incompletos",
+                "Recepcionados",
             ]:
                 data[col] = 0
             else:
@@ -1731,17 +1746,7 @@ def crear_tabla_cantidad_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
             "Centro principal": data["Centro_principal"],
             "Grupo compra principal": data["Grupo compra principal"],
             "Días desde última solicitud": pd.to_numeric(data["Días desde última solicitud"], errors="coerce").fillna(0).round(0).astype(int),
-            "Estado vencimiento": np.select(
-                [
-                    pd.to_numeric(data["Vencidos"], errors="coerce").fillna(0).gt(0),
-                    pd.to_numeric(data["Por_vencer"], errors="coerce").fillna(0).gt(0),
-                ],
-                [
-                    "Vencido",
-                    "Por vencer",
-                ],
-                default="Sin foco",
-            ),
+            "Estado vencimiento": calcular_estado_material_desde_metricas(data),
         }
     )
 
@@ -1775,6 +1780,8 @@ def crear_tabla_monto_material(tabla_materiales: pd.DataFrame) -> pd.DataFrame:
         "Días desde última solicitud",
         "Vencidos",
         "Por_vencer",
+        "Datos_incompletos",
+        "Recepcionados",
     ]
 
     for col in columnas_base:
@@ -1789,6 +1796,8 @@ def crear_tabla_monto_material(tabla_materiales: pd.DataFrame) -> pd.DataFrame:
                 "Días desde última solicitud",
                 "Vencidos",
                 "Por_vencer",
+                "Datos_incompletos",
+                "Recepcionados",
             ]:
                 data[col] = 0
             else:
@@ -1809,17 +1818,7 @@ def crear_tabla_monto_material(tabla_materiales: pd.DataFrame) -> pd.DataFrame:
             "Centro principal": data["Centro_principal"],
             "Grupo compra principal": data["Grupo compra principal"],
             "Días desde última solicitud": pd.to_numeric(data["Días desde última solicitud"], errors="coerce").fillna(0).round(0).astype(int),
-            "Estado vencimiento": np.select(
-                [
-                    pd.to_numeric(data["Vencidos"], errors="coerce").fillna(0).gt(0),
-                    pd.to_numeric(data["Por_vencer"], errors="coerce").fillna(0).gt(0),
-                ],
-                [
-                    "Vencido",
-                    "Por vencer",
-                ],
-                default="Sin foco",
-            ),
+            "Estado vencimiento": calcular_estado_material_desde_metricas(data),
         }
     )
 
@@ -2625,6 +2624,33 @@ st.markdown(
 
 
 
+def calcular_estado_material_desde_metricas(data: pd.DataFrame) -> pd.Series:
+    registros = pd.to_numeric(data.get("Registros", 0), errors="coerce").fillna(0)
+    recepcionados = pd.to_numeric(data.get("Recepcionados", 0), errors="coerce").fillna(0)
+    vencidos = pd.to_numeric(data.get("Vencidos", 0), errors="coerce").fillna(0)
+    por_vencer = pd.to_numeric(data.get("Por_vencer", 0), errors="coerce").fillna(0)
+    datos_incompletos = pd.to_numeric(data.get("Datos_incompletos", 0), errors="coerce").fillna(0)
+
+    return pd.Series(
+        np.select(
+            [
+                registros.gt(0) & recepcionados.eq(registros),
+                vencidos.gt(0),
+                por_vencer.gt(0),
+                datos_incompletos.gt(0),
+            ],
+            [
+                "Recepcionado",
+                "Vencido",
+                "Por vencer",
+                "Datos incompletos",
+            ],
+            default="Controlado",
+        ),
+        index=data.index,
+    )
+
+
 def crear_tabla_dias_tat_material(tabla_materiales: pd.DataFrame) -> pd.DataFrame:
     if tabla_materiales.empty:
         return pd.DataFrame()
@@ -2648,6 +2674,8 @@ def crear_tabla_dias_tat_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
         "Días desde última solicitud",
         "Vencidos",
         "Por_vencer",
+        "Datos_incompletos",
+        "Recepcionados",
     ]
 
     for col in columnas_base:
@@ -2663,6 +2691,8 @@ def crear_tabla_dias_tat_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
                 "Días desde última solicitud",
                 "Vencidos",
                 "Por_vencer",
+                "Datos_incompletos",
+                "Recepcionados",
             ]:
                 data[col] = 0
             else:
@@ -2684,17 +2714,7 @@ def crear_tabla_dias_tat_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
             "Centro principal": data["Centro_principal"],
             "Grupo compra principal": data["Grupo compra principal"],
             "Días desde última solicitud": pd.to_numeric(data["Días desde última solicitud"], errors="coerce").fillna(0).round(0).astype(int),
-            "Estado vencimiento": np.select(
-                [
-                    pd.to_numeric(data["Vencidos"], errors="coerce").fillna(0).gt(0),
-                    pd.to_numeric(data["Por_vencer"], errors="coerce").fillna(0).gt(0),
-                ],
-                [
-                    "Vencido",
-                    "Por vencer",
-                ],
-                default="Sin foco",
-            ),
+            "Estado vencimiento": calcular_estado_material_desde_metricas(data),
         }
     )
 
@@ -2728,6 +2748,8 @@ def crear_tabla_cantidad_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
         "Días desde última solicitud",
         "Vencidos",
         "Por_vencer",
+        "Datos_incompletos",
+        "Recepcionados",
     ]
 
     for col in columnas_base:
@@ -2742,6 +2764,8 @@ def crear_tabla_cantidad_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
                 "Días desde última solicitud",
                 "Vencidos",
                 "Por_vencer",
+                "Datos_incompletos",
+                "Recepcionados",
             ]:
                 data[col] = 0
             else:
@@ -2762,17 +2786,7 @@ def crear_tabla_cantidad_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
             "Centro principal": data["Centro_principal"],
             "Grupo compra principal": data["Grupo compra principal"],
             "Días desde última solicitud": pd.to_numeric(data["Días desde última solicitud"], errors="coerce").fillna(0).round(0).astype(int),
-            "Estado vencimiento": np.select(
-                [
-                    pd.to_numeric(data["Vencidos"], errors="coerce").fillna(0).gt(0),
-                    pd.to_numeric(data["Por_vencer"], errors="coerce").fillna(0).gt(0),
-                ],
-                [
-                    "Vencido",
-                    "Por vencer",
-                ],
-                default="Sin foco",
-            ),
+            "Estado vencimiento": calcular_estado_material_desde_metricas(data),
         }
     )
 
@@ -2806,6 +2820,8 @@ def crear_tabla_monto_material(tabla_materiales: pd.DataFrame) -> pd.DataFrame:
         "Días desde última solicitud",
         "Vencidos",
         "Por_vencer",
+        "Datos_incompletos",
+        "Recepcionados",
     ]
 
     for col in columnas_base:
@@ -2820,6 +2836,8 @@ def crear_tabla_monto_material(tabla_materiales: pd.DataFrame) -> pd.DataFrame:
                 "Días desde última solicitud",
                 "Vencidos",
                 "Por_vencer",
+                "Datos_incompletos",
+                "Recepcionados",
             ]:
                 data[col] = 0
             else:
@@ -2840,17 +2858,7 @@ def crear_tabla_monto_material(tabla_materiales: pd.DataFrame) -> pd.DataFrame:
             "Centro principal": data["Centro_principal"],
             "Grupo compra principal": data["Grupo compra principal"],
             "Días desde última solicitud": pd.to_numeric(data["Días desde última solicitud"], errors="coerce").fillna(0).round(0).astype(int),
-            "Estado vencimiento": np.select(
-                [
-                    pd.to_numeric(data["Vencidos"], errors="coerce").fillna(0).gt(0),
-                    pd.to_numeric(data["Por_vencer"], errors="coerce").fillna(0).gt(0),
-                ],
-                [
-                    "Vencido",
-                    "Por vencer",
-                ],
-                default="Sin foco",
-            ),
+            "Estado vencimiento": calcular_estado_material_desde_metricas(data),
         }
     )
 
