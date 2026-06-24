@@ -281,7 +281,7 @@ def limpiar_ariba(df: pd.DataFrame) -> pd.DataFrame:
 def aplicar_filtros_y_categoria(
     df: pd.DataFrame,
     excluir_nan_tipo_compra: bool = True,
-    filtrar_solo_cen1: bool = True,
+    filtrar_solo_cen1: bool = False,
 ) -> pd.DataFrame:
 
     df = df.copy()
@@ -533,7 +533,7 @@ with st.expander("Configuración de procesamiento", expanded=False):
     with col_conf2:
         filtrar_solo_cen1 = st.checkbox(
             "Conservar solo CEN1",
-            value=True,
+            value=False,
             help=(
                 "Activado: deja solo registros con ID de unidad de negocio CEN1. "
                 "Desactivado: conserva todas las unidades."
