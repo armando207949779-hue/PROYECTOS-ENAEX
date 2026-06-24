@@ -1,3 +1,7 @@
+DEJA COMO PUNTO EL DECIMAL Y LA COMA COMO SEPARADOR DE MILES 
+
+DIME DONDE HAY QUE ACTUALIZAR ESA INFORMACION EN EL CODIGO 
+
 # ============================================================
 # 12_VISTA_EJECUTIVA
 # Vista ejecutiva de Performance TAT por centro
@@ -369,7 +373,7 @@ def formatear_entero(valor) -> str:
     if pd.isna(numero):
         return "—"
 
-    return f"{int(round(numero)):,}".replace(",", ".")
+    return f"{int(round(numero)):,}"
 
 
 def formatear_porcentaje(valor) -> str:
