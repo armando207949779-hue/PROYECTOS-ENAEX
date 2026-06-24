@@ -1655,9 +1655,9 @@ def crear_tabla_dias_tat_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
             "Registros": pd.to_numeric(data["Registros"], errors="coerce").fillna(0).round(0).astype(int),
             "Min TAT": pd.to_numeric(data["Días TAT min"], errors="coerce"),
             "Media TAT": pd.to_numeric(data["Días TAT promedio"], errors="coerce"),
+            "Máximo TAT": pd.to_numeric(data["Días TAT max"], errors="coerce"),
             "Desviación estándar TAT": pd.to_numeric(data["Días TAT std"], errors="coerce"),
             "Coeficiente variación % TAT": pd.to_numeric(data["Coeficiente variación % TAT"], errors="coerce"),
-            "Máximo TAT": pd.to_numeric(data["Días TAT max"], errors="coerce"),
             "Recurrencia": data["Recurrencia"],
             "Avance promedio": pd.to_numeric(data["Avance promedio"], errors="coerce"),
             "Centro principal": data["Centro_principal"],
@@ -1728,9 +1728,9 @@ def crear_tabla_cantidad_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
             "Registros": pd.to_numeric(data["Registros"], errors="coerce").fillna(0).round(0).astype(int),
             "Mínimo cantidad": pd.to_numeric(data["Cantidad min"], errors="coerce").fillna(0).round(0).astype(int),
             "Media cantidad": pd.to_numeric(data["Cantidad media"], errors="coerce").fillna(0).round(0).astype(int),
+            "Máximo cantidad": pd.to_numeric(data["Cantidad max"], errors="coerce").fillna(0).round(0).astype(int),
             "Desviación estándar cantidad": pd.to_numeric(data["Cantidad std"], errors="coerce"),
             "Coeficiente variación % cantidad": pd.to_numeric(data["Coeficiente variación % Cantidad"], errors="coerce"),
-            "Máximo cantidad": pd.to_numeric(data["Cantidad max"], errors="coerce").fillna(0).round(0).astype(int),
             "Recurrencia": data["Recurrencia"],
             "Centro principal": data["Centro_principal"],
             "Grupo compra principal": data["Grupo compra principal"],
@@ -1800,9 +1800,9 @@ def crear_tabla_monto_material(tabla_materiales: pd.DataFrame) -> pd.DataFrame:
             "Registros": pd.to_numeric(data["Registros"], errors="coerce").fillna(0).round(0).astype(int),
             "Mínimo monto": pd.to_numeric(data["Monto min"], errors="coerce").fillna(0).round(0).astype(int),
             "Media monto": pd.to_numeric(data["Monto media"], errors="coerce").fillna(0).round(0).astype(int),
+            "Máximo monto": pd.to_numeric(data["Monto max"], errors="coerce").fillna(0).round(0).astype(int),
             "Desviación estándar monto": pd.to_numeric(data["Monto std"], errors="coerce"),
             "Coeficiente variación % monto": pd.to_numeric(data["Coeficiente variación % Monto"], errors="coerce"),
-            "Máximo monto": pd.to_numeric(data["Monto max"], errors="coerce").fillna(0).round(0).astype(int),
             "Recurrencia": data["Recurrencia"],
             "Centro principal": data["Centro_principal"],
             "Grupo compra principal": data["Grupo compra principal"],
@@ -2695,9 +2695,9 @@ def crear_tabla_dias_tat_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
             "Registros": pd.to_numeric(data["Registros"], errors="coerce").fillna(0).round(0).astype(int),
             "Min TAT": pd.to_numeric(data["Días TAT min"], errors="coerce"),
             "Media TAT": pd.to_numeric(data["Días TAT promedio"], errors="coerce"),
+            "Máximo TAT": pd.to_numeric(data["Días TAT max"], errors="coerce"),
             "Desviación estándar TAT": pd.to_numeric(data["Días TAT std"], errors="coerce"),
             "Coeficiente variación % TAT": pd.to_numeric(data["Coeficiente variación % TAT"], errors="coerce"),
-            "Máximo TAT": pd.to_numeric(data["Días TAT max"], errors="coerce"),
             "Recurrencia": data["Recurrencia"],
             "Avance promedio": pd.to_numeric(data["Avance promedio"], errors="coerce"),
             "Centro principal": data["Centro_principal"],
@@ -2768,9 +2768,9 @@ def crear_tabla_cantidad_material(tabla_materiales: pd.DataFrame) -> pd.DataFram
             "Registros": pd.to_numeric(data["Registros"], errors="coerce").fillna(0).round(0).astype(int),
             "Mínimo cantidad": pd.to_numeric(data["Cantidad min"], errors="coerce").fillna(0).round(0).astype(int),
             "Media cantidad": pd.to_numeric(data["Cantidad media"], errors="coerce").fillna(0).round(0).astype(int),
+            "Máximo cantidad": pd.to_numeric(data["Cantidad max"], errors="coerce").fillna(0).round(0).astype(int),
             "Desviación estándar cantidad": pd.to_numeric(data["Cantidad std"], errors="coerce"),
             "Coeficiente variación % cantidad": pd.to_numeric(data["Coeficiente variación % Cantidad"], errors="coerce"),
-            "Máximo cantidad": pd.to_numeric(data["Cantidad max"], errors="coerce").fillna(0).round(0).astype(int),
             "Recurrencia": data["Recurrencia"],
             "Centro principal": data["Centro_principal"],
             "Grupo compra principal": data["Grupo compra principal"],
@@ -2840,9 +2840,9 @@ def crear_tabla_monto_material(tabla_materiales: pd.DataFrame) -> pd.DataFrame:
             "Registros": pd.to_numeric(data["Registros"], errors="coerce").fillna(0).round(0).astype(int),
             "Mínimo monto": pd.to_numeric(data["Monto min"], errors="coerce").fillna(0).round(0).astype(int),
             "Media monto": pd.to_numeric(data["Monto media"], errors="coerce").fillna(0).round(0).astype(int),
+            "Máximo monto": pd.to_numeric(data["Monto max"], errors="coerce").fillna(0).round(0).astype(int),
             "Desviación estándar monto": pd.to_numeric(data["Monto std"], errors="coerce"),
             "Coeficiente variación % monto": pd.to_numeric(data["Coeficiente variación % Monto"], errors="coerce"),
-            "Máximo monto": pd.to_numeric(data["Monto max"], errors="coerce").fillna(0).round(0).astype(int),
             "Recurrencia": data["Recurrencia"],
             "Centro principal": data["Centro_principal"],
             "Grupo compra principal": data["Grupo compra principal"],
@@ -2918,7 +2918,7 @@ with tab_g4:
 # Tabla días TAT por material
 # ============================================================
 
-st.markdown("### Estadística: Días TAT")
+st.markdown("### Tabla días TAT por material")
 st.caption(
     "Muestra el comportamiento del TAT por material. El color de la fila representa el estado: verde recepcionado, naranjo por vencer y rojo vencido."
 )
@@ -2943,6 +2943,10 @@ else:
                 "Media TAT",
                 format="%.2f",
             ),
+            "Máximo TAT": st.column_config.NumberColumn(
+                "Máximo TAT",
+                format="%.2f",
+            ),
             "Desviación estándar TAT": st.column_config.NumberColumn(
                 "Desviación estándar TAT",
                 format="%.2f",
@@ -2950,10 +2954,6 @@ else:
             "Coeficiente variación % TAT": st.column_config.NumberColumn(
                 "Coeficiente variación % TAT",
                 format="%.2f%%",
-            ),
-            "Máximo TAT": st.column_config.NumberColumn(
-                "Máximo TAT",
-                format="%.2f",
             ),
             "Avance promedio": st.column_config.ProgressColumn(
                 "Avance promedio",
@@ -2973,7 +2973,7 @@ else:
 # Tabla cantidad por material
 # ============================================================
 
-st.markdown("### Estadística: Cantidad")
+st.markdown("### Tabla cantidad por material")
 st.caption(
     "Muestra la variabilidad de la cantidad solicitada por material."
 )
@@ -2998,6 +2998,10 @@ else:
                 "Media cantidad",
                 format="%d",
             ),
+            "Máximo cantidad": st.column_config.NumberColumn(
+                "Máximo cantidad",
+                format="%d",
+            ),
             "Desviación estándar cantidad": st.column_config.NumberColumn(
                 "Desviación estándar cantidad",
                 format="%.2f",
@@ -3005,10 +3009,6 @@ else:
             "Coeficiente variación % cantidad": st.column_config.NumberColumn(
                 "Coeficiente variación % cantidad",
                 format="%.2f%%",
-            ),
-            "Máximo cantidad": st.column_config.NumberColumn(
-                "Máximo cantidad",
-                format="%d",
             ),
             "Días desde última solicitud": st.column_config.NumberColumn(
                 "Días desde última solicitud",
@@ -3022,7 +3022,7 @@ else:
 # Tabla monto por material
 # ============================================================
 
-st.markdown("### Estadística: Monto")
+st.markdown("### Tabla monto por material")
 st.caption(
     "Muestra la variabilidad del monto por material. Los montos se muestran como enteros con separación de miles."
 )
@@ -3047,6 +3047,10 @@ else:
                 "Media monto",
                 format="%d",
             ),
+            "Máximo monto": st.column_config.NumberColumn(
+                "Máximo monto",
+                format="%d",
+            ),
             "Desviación estándar monto": st.column_config.NumberColumn(
                 "Desviación estándar monto",
                 format="%.2f",
@@ -3054,10 +3058,6 @@ else:
             "Coeficiente variación % monto": st.column_config.NumberColumn(
                 "Coeficiente variación % monto",
                 format="%.2f%%",
-            ),
-            "Máximo monto": st.column_config.NumberColumn(
-                "Máximo monto",
-                format="%d",
             ),
             "Días desde última solicitud": st.column_config.NumberColumn(
                 "Días desde última solicitud",
