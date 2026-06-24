@@ -546,6 +546,62 @@ def formato_porcentaje(valor: Any) -> str:
     return f"{numero:.1f}%"
 
 
+def formato_entero_miles(valor: Any) -> str:
+    numero = valor_numerico(valor)
+
+    if pd.isna(numero):
+        return "-"
+
+    return f"{int(round(numero)):,}".replace(",", ".")
+
+
+def formato_decimal(valor: Any, decimales: int = 2) -> str:
+    numero = valor_numerico(valor)
+
+    if pd.isna(numero):
+        return "-"
+
+    return (
+        f"{numero:,.{decimales}f}"
+        .replace(",", "X")
+        .replace(".", ",")
+        .replace("X", ".")
+    )
+
+
+def estilo_estado_alerta(row: pd.Series) -> list[str]:
+    nivel = str(row.get("Nivel alerta", row.get("Nivel estado material", ""))).strip()
+    vencimiento = str(row.get("Estado vencimiento", row.get("Nivel estado material", ""))).strip()
+
+    if nivel == "Crítico" or vencimiento in ["Vencido", "Vence hoy"]:
+        return ["background-color: #fee2e2; color: #7f1d1d; font-weight: 700"] * len(row)
+
+    if nivel in ["Atención", "Seguimiento"] or vencimiento in ["1-7 días", "8-30 días"]:
+        return ["background-color: #ffedd5; color: #7c2d12; font-weight: 700"] * len(row)
+
+    if nivel == "Cerrado":
+        return ["background-color: #dcfce7; color: #14532d"] * len(row)
+
+    return [""] * len(row)
+
+
+def estilo_tat_variabilidad(row: pd.Series) -> list[str]:
+    cv = valor_numerico(row.get("Coeficiente variación % TAT", np.nan))
+    max_tat = valor_numerico(row.get("Máximo TAT", np.nan))
+    media = valor_numerico(row.get("Media TAT", np.nan))
+
+    if pd.notna(cv) and cv >= 80:
+        return ["background-color: #fee2e2; color: #7f1d1d; font-weight: 700"] * len(row)
+
+    if pd.notna(cv) and cv >= 40:
+        return ["background-color: #ffedd5; color: #7c2d12; font-weight: 700"] * len(row)
+
+    if pd.notna(max_tat) and pd.notna(media) and max_tat > media * 2:
+        return ["background-color: #fef9c3; color: #713f12; font-weight: 700"] * len(row)
+
+    return [""] * len(row)
+
+
 def normalizar_codigo_centro(valor: Any) -> str:
     if pd.isna(valor):
         return "Sin dato"
@@ -1219,7 +1275,9 @@ def crear_estadistica_materiales(df: pd.DataFrame) -> pd.DataFrame:
             Cantidad_total=("_cantidad_num", "sum"),
             Monto_total=("_monto_num", "sum"),
             Monto_promedio=("_monto_num", "mean"),
+            Dias_TAT_min=("_dias_tat_num", "min"),
             Dias_TAT_promedio=("_dias_tat_num", "mean"),
+            Dias_TAT_std=("_dias_tat_num", "std"),
             Dias_TAT_max=("_dias_tat_num", "max"),
             Dias_incumplimiento_total=("_dias_inc_num", "sum"),
             Avance_promedio=("porcentaje_avance", "mean"),
@@ -1245,7 +1303,9 @@ def crear_estadistica_materiales(df: pd.DataFrame) -> pd.DataFrame:
                 "Cantidad_total": "Cantidad total",
                 "Monto_total": "Monto total",
                 "Monto_promedio": "Monto promedio",
+                "Dias_TAT_min": "Días TAT min",
                 "Dias_TAT_promedio": "Días TAT promedio",
+                "Dias_TAT_std": "Días TAT std",
                 "Dias_TAT_max": "Días TAT max",
                 "Dias_incumplimiento_total": "Días incumplimiento total",
                 "Avance_promedio": "Avance promedio",
@@ -1304,11 +1364,37 @@ def crear_estadistica_materiales(df: pd.DataFrame) -> pd.DataFrame:
         0,
     )
 
+    tabla["Coeficiente variación % TAT"] = np.where(
+        pd.to_numeric(tabla["Días TAT promedio"], errors="coerce").abs().gt(0),
+        pd.to_numeric(tabla["Días TAT std"], errors="coerce")
+        / pd.to_numeric(tabla["Días TAT promedio"], errors="coerce").abs()
+        * 100,
+        np.nan,
+    )
+
+    tabla["Nivel estado material"] = np.select(
+        [
+            pd.to_numeric(tabla["Vencidos"], errors="coerce").fillna(0).gt(0),
+            pd.to_numeric(tabla["Por_vencer"], errors="coerce").fillna(0).gt(0),
+            pd.to_numeric(tabla["Datos_incompletos"], errors="coerce").fillna(0).gt(0),
+            pd.to_numeric(tabla["Recepcionados"], errors="coerce").fillna(0).eq(tabla["Registros"]),
+        ],
+        [
+            "Vencido",
+            "Por vencer",
+            "Datos incompletos",
+            "Recepcionado",
+        ],
+        default="Controlado",
+    )
+
     numeric_cols = [
         "Cantidad total",
         "Monto total",
         "Monto promedio",
+        "Días TAT min",
         "Días TAT promedio",
+        "Días TAT std",
         "Días TAT max",
         "Días incumplimiento total",
         "Avance promedio",
@@ -1316,6 +1402,7 @@ def crear_estadistica_materiales(df: pd.DataFrame) -> pd.DataFrame:
         "Score promedio",
         "% foco acción",
         "% recepción",
+        "Coeficiente variación % TAT",
     ]
 
     for col in numeric_cols:
@@ -1461,6 +1548,66 @@ def crear_ranking_grupos_materiales(df: pd.DataFrame) -> pd.DataFrame:
     return tabla.reset_index(drop=True)
 
 
+
+def crear_tabla_estadistica_tat_material(tabla_materiales: pd.DataFrame) -> pd.DataFrame:
+    if tabla_materiales.empty:
+        return pd.DataFrame()
+
+    columnas_necesarias = [
+        "Material",
+        "Texto_referencial",
+        "Registros",
+        "Días TAT min",
+        "Días TAT promedio",
+        "Días TAT std",
+        "Coeficiente variación % TAT",
+        "Días TAT max",
+        "Vencidos",
+        "Por_vencer",
+        "Nivel estado material",
+    ]
+
+    data = tabla_materiales.copy()
+
+    for col in columnas_necesarias:
+        if col not in data.columns:
+            if col in ["Días TAT min", "Días TAT promedio", "Días TAT std", "Coeficiente variación % TAT", "Días TAT max", "Registros", "Vencidos", "Por_vencer"]:
+                data[col] = 0
+            else:
+                data[col] = "-"
+
+    salida = pd.DataFrame(
+        {
+            "Material": data["Material"],
+            "Texto referencial": data["Texto_referencial"],
+            "Registros": pd.to_numeric(data["Registros"], errors="coerce").fillna(0).round(0).astype(int),
+            "Min TAT": pd.to_numeric(data["Días TAT min"], errors="coerce"),
+            "Media TAT": pd.to_numeric(data["Días TAT promedio"], errors="coerce"),
+            "Desviación estándar TAT": pd.to_numeric(data["Días TAT std"], errors="coerce"),
+            "Coeficiente variación % TAT": pd.to_numeric(data["Coeficiente variación % TAT"], errors="coerce"),
+            "Máximo TAT": pd.to_numeric(data["Días TAT max"], errors="coerce"),
+            "Nivel alerta": data["Nivel estado material"],
+            "Estado vencimiento": np.select(
+                [
+                    pd.to_numeric(data["Vencidos"], errors="coerce").fillna(0).gt(0),
+                    pd.to_numeric(data["Por_vencer"], errors="coerce").fillna(0).gt(0),
+                ],
+                [
+                    "Vencido",
+                    "Por vencer",
+                ],
+                default="Sin foco",
+            ),
+        }
+    )
+
+    salida = salida.sort_values(
+        ["Estado vencimiento", "Coeficiente variación % TAT", "Registros"],
+        ascending=[True, False, False],
+    ).reset_index(drop=True)
+
+    return salida
+
 # ============================================================
 # Visualizaciones
 # ============================================================
@@ -1545,45 +1692,80 @@ def grafico_materiales_foco(tabla_materiales: pd.DataFrame, top_n: int = 12):
         st.info("No hay materiales para graficar.")
         return
 
-    columnas = ["Material", "Vencidos", "Por_vencer", "Datos_incompletos", "Foco acción", "% foco acción", "Registros"]
+    columnas = [
+        "Material",
+        "Vencidos",
+        "Por_vencer",
+        "Datos_incompletos",
+        "Recepcionados",
+        "Sin_recepcion",
+        "Foco acción",
+        "% foco acción",
+        "Registros",
+    ]
 
     if any(col not in tabla_materiales.columns for col in columnas):
         st.info("Faltan columnas para graficar foco por material.")
         return
 
     data = tabla_materiales.copy()
-    data = data[pd.to_numeric(data["Foco acción"], errors="coerce").fillna(0).gt(0)].head(top_n).copy()
+    data["Registros"] = pd.to_numeric(data["Registros"], errors="coerce").fillna(0)
+    data["Foco acción"] = pd.to_numeric(data["Foco acción"], errors="coerce").fillna(0)
+    data["% foco acción"] = pd.to_numeric(data["% foco acción"], errors="coerce").fillna(0)
+
+    data = data[data["Registros"].gt(0)].copy()
 
     if data.empty:
-        st.success("No hay materiales con foco de acción bajo los filtros actuales.")
+        st.info("No hay materiales con registros para graficar.")
         return
 
-    data = data.sort_values("Foco acción", ascending=True)
+    data = (
+        data
+        .sort_values(["Foco acción", "% foco acción", "Registros"], ascending=[False, False, False])
+        .head(top_n)
+        .copy()
+    )
+
+    data = data.sort_values("% foco acción", ascending=True).reset_index(drop=True)
+
+    vencidos = pd.to_numeric(data["Vencidos"], errors="coerce").fillna(0)
+    por_vencer = pd.to_numeric(data["Por_vencer"], errors="coerce").fillna(0)
+    datos = pd.to_numeric(data["Datos_incompletos"], errors="coerce").fillna(0)
+    recepcionados = pd.to_numeric(data["Recepcionados"], errors="coerce").fillna(0)
+
+    registros = pd.to_numeric(data["Registros"], errors="coerce").replace(0, np.nan)
+
+    pct_vencidos = (vencidos / registros * 100).fillna(0).to_numpy()
+    pct_por_vencer = (por_vencer / registros * 100).fillna(0).to_numpy()
+    pct_datos = (datos / registros * 100).fillna(0).to_numpy()
+    pct_recepcionados = (recepcionados / registros * 100).fillna(0).to_numpy()
 
     y = np.arange(len(data))
-    vencidos = pd.to_numeric(data["Vencidos"], errors="coerce").fillna(0).astype(int).to_numpy()
-    por_vencer = pd.to_numeric(data["Por_vencer"], errors="coerce").fillna(0).astype(int).to_numpy()
-    datos = pd.to_numeric(data["Datos_incompletos"], errors="coerce").fillna(0).astype(int).to_numpy()
-    foco = pd.to_numeric(data["Foco acción"], errors="coerce").fillna(0).astype(int).to_numpy()
-    registros = pd.to_numeric(data["Registros"], errors="coerce").fillna(0).astype(int).to_numpy()
-    pct = pd.to_numeric(data["% foco acción"], errors="coerce").fillna(0).astype(float).to_numpy()
 
-    fig, ax = plt.subplots(figsize=(13.2, max(6.0, len(data) * 0.58)), dpi=130)
+    fig, ax = plt.subplots(figsize=(13.4, max(6.2, len(data) * 0.60)), dpi=130)
     fig.patch.set_facecolor("white")
     ax.set_facecolor("white")
 
-    ax.barh(y, vencidos, height=0.62, label="Vencidos")
-    ax.barh(y, por_vencer, left=vencidos, height=0.62, label="Por vencer / seguimiento")
-    ax.barh(y, datos, left=vencidos + por_vencer, height=0.62, label="Datos incompletos")
+    ax.barh(y, pct_vencidos, height=0.62, label="Vencido")
+    ax.barh(y, pct_por_vencer, left=pct_vencidos, height=0.62, label="Por vencer / seguimiento")
+    ax.barh(y, pct_datos, left=pct_vencidos + pct_por_vencer, height=0.62, label="Datos incompletos")
+    ax.barh(
+        y,
+        pct_recepcionados,
+        left=pct_vencidos + pct_por_vencer + pct_datos,
+        height=0.62,
+        label="Recepcionado",
+    )
 
-    max_foco = max(foco) if len(foco) else 0
-    ax.set_xlim(0, max(max_foco * 1.42, 10))
+    for i, row in data.iterrows():
+        foco = int(valor_numerico(row.get("Foco acción", 0)))
+        total = int(valor_numerico(row.get("Registros", 0)))
+        pct_foco = valor_numerico(row.get("% foco acción", 0))
 
-    for i, (total, total_reg, pct_val) in enumerate(zip(foco, registros, pct)):
         ax.text(
-            total + max(max_foco * 0.025, 0.6),
+            101,
             i,
-            f"{total:,} foco · {pct_val:.1f}% de {total_reg:,}".replace(",", "."),
+            f"{foco}/{total} foco · {pct_foco:.1f}%",
             va="center",
             ha="left",
             fontsize=9.2,
@@ -1594,22 +1776,33 @@ def grafico_materiales_foco(tabla_materiales: pd.DataFrame, top_n: int = 12):
     ax.set_yticks(y)
     ax.set_yticklabels(data["Material"].astype(str), fontsize=9.5, color="#0f172a")
 
-    ax.set_xlabel("Registros foco acción", color="#0f172a", labelpad=10, fontweight="bold")
+    ax.set_xlim(0, 124)
+    ax.set_xlabel("% de registros del material", color="#0f172a", labelpad=10, fontweight="bold")
 
     ax.set_title(
-        "Materiales con mayor foco de acción",
+        "Composición del riesgo por material",
         fontsize=16,
         fontweight="bold",
         color="#0f172a",
         pad=18,
     )
 
+    ax.text(
+        0,
+        len(data) + 0.10,
+        "Lectura: cada barra suma 100% del material. A la derecha se muestra cuántos registros requieren acción.",
+        fontsize=9.2,
+        color="#475569",
+        ha="left",
+        va="bottom",
+    )
+
     leyenda = ax.legend(
         loc="upper center",
         frameon=False,
-        ncol=3,
-        bbox_to_anchor=(0.5, -0.12),
-        fontsize=9.5,
+        ncol=4,
+        bbox_to_anchor=(0.5, -0.13),
+        fontsize=9.3,
         borderaxespad=0.0,
     )
 
@@ -1618,6 +1811,7 @@ def grafico_materiales_foco(tabla_materiales: pd.DataFrame, top_n: int = 12):
         texto.set_fontweight("bold")
 
     formatear_ejes(ax)
+    ax.grid(axis="x", alpha=0.18)
     fig.tight_layout(rect=[0.02, 0.10, 0.98, 0.94])
 
     st.pyplot(fig, clear_figure=True, use_container_width=True)
@@ -1682,6 +1876,7 @@ def grafico_tendencia_mensual(tabla: pd.DataFrame):
 def convertir_a_excel(
     detalle: pd.DataFrame,
     estadistica: pd.DataFrame,
+    estadistica_tat: pd.DataFrame,
     tendencia: pd.DataFrame,
     resumen_busqueda: pd.DataFrame,
 ) -> bytes:
@@ -1690,6 +1885,7 @@ def convertir_a_excel(
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         detalle.to_excel(writer, index=False, sheet_name="Detalle")
         estadistica.to_excel(writer, index=False, sheet_name="Estadistica_material")
+        estadistica_tat.to_excel(writer, index=False, sheet_name="Estadistica_TAT")
         tendencia.to_excel(writer, index=False, sheet_name="Tendencia")
         resumen_busqueda.to_excel(writer, index=False, sheet_name="Busqueda")
 
@@ -1719,12 +1915,14 @@ def convertir_a_parquet(df: pd.DataFrame) -> bytes:
 def convertir_a_excel_cache(
     detalle: pd.DataFrame,
     estadistica: pd.DataFrame,
+    estadistica_tat: pd.DataFrame,
     tendencia: pd.DataFrame,
     resumen_busqueda: pd.DataFrame,
 ) -> bytes:
     return convertir_a_excel(
         detalle=detalle,
         estadistica=estadistica,
+        estadistica_tat=estadistica_tat,
         tendencia=tendencia,
         resumen_busqueda=resumen_busqueda,
     )
@@ -1966,6 +2164,7 @@ if df_filtrado.empty:
 # ============================================================
 
 tabla_materiales = crear_estadistica_materiales(df_filtrado)
+tabla_tat_material = crear_tabla_estadistica_tat_material(tabla_materiales)
 tabla_detalle = crear_tabla_detalle_materiales(df_filtrado)
 tabla_tendencia = crear_tendencia_materiales(df_filtrado)
 ranking_centros = crear_ranking_centros_materiales(df_filtrado)
@@ -2046,6 +2245,66 @@ st.markdown(
 )
 
 
+
+def crear_tabla_estadistica_tat_material(tabla_materiales: pd.DataFrame) -> pd.DataFrame:
+    if tabla_materiales.empty:
+        return pd.DataFrame()
+
+    columnas_necesarias = [
+        "Material",
+        "Texto_referencial",
+        "Registros",
+        "Días TAT min",
+        "Días TAT promedio",
+        "Días TAT std",
+        "Coeficiente variación % TAT",
+        "Días TAT max",
+        "Vencidos",
+        "Por_vencer",
+        "Nivel estado material",
+    ]
+
+    data = tabla_materiales.copy()
+
+    for col in columnas_necesarias:
+        if col not in data.columns:
+            if col in ["Días TAT min", "Días TAT promedio", "Días TAT std", "Coeficiente variación % TAT", "Días TAT max", "Registros", "Vencidos", "Por_vencer"]:
+                data[col] = 0
+            else:
+                data[col] = "-"
+
+    salida = pd.DataFrame(
+        {
+            "Material": data["Material"],
+            "Texto referencial": data["Texto_referencial"],
+            "Registros": pd.to_numeric(data["Registros"], errors="coerce").fillna(0).round(0).astype(int),
+            "Min TAT": pd.to_numeric(data["Días TAT min"], errors="coerce"),
+            "Media TAT": pd.to_numeric(data["Días TAT promedio"], errors="coerce"),
+            "Desviación estándar TAT": pd.to_numeric(data["Días TAT std"], errors="coerce"),
+            "Coeficiente variación % TAT": pd.to_numeric(data["Coeficiente variación % TAT"], errors="coerce"),
+            "Máximo TAT": pd.to_numeric(data["Días TAT max"], errors="coerce"),
+            "Nivel alerta": data["Nivel estado material"],
+            "Estado vencimiento": np.select(
+                [
+                    pd.to_numeric(data["Vencidos"], errors="coerce").fillna(0).gt(0),
+                    pd.to_numeric(data["Por_vencer"], errors="coerce").fillna(0).gt(0),
+                ],
+                [
+                    "Vencido",
+                    "Por vencer",
+                ],
+                default="Sin foco",
+            ),
+        }
+    )
+
+    salida = salida.sort_values(
+        ["Estado vencimiento", "Coeficiente variación % TAT", "Registros"],
+        ascending=[True, False, False],
+    ).reset_index(drop=True)
+
+    return salida
+
 # ============================================================
 # Visualizaciones
 # ============================================================
@@ -2054,17 +2313,14 @@ st.markdown("### Visualizaciones ejecutivas")
 
 tab_g1, tab_g2, tab_g3, tab_g4 = st.tabs(
     [
-        "Foco por material",
         "Recurrencia",
+        "Riesgo interpretativo",
         "Tendencia mensual",
         "Centro / grupo compra",
     ]
 )
 
 with tab_g1:
-    grafico_materiales_foco(tabla_materiales, top_n=top_n)
-
-with tab_g2:
     grafico_barras_horizontales(
         tabla=tabla_materiales,
         columna_categoria="Material",
@@ -2072,6 +2328,9 @@ with tab_g2:
         titulo="Materiales más recurrentes",
         top_n=top_n,
     )
+
+with tab_g2:
+    grafico_materiales_foco(tabla_materiales, top_n=top_n)
 
 with tab_g3:
     grafico_tendencia_mensual(tabla_tendencia)
@@ -2112,6 +2371,7 @@ columnas_estadistica_visual = [
     "Registros",
     "SolPed únicas",
     "Pedidos únicos",
+    "Nivel estado material",
     "Foco acción",
     "% foco acción",
     "Vencidos",
@@ -2139,10 +2399,14 @@ columnas_estadistica_visual = [
 ]
 
 st.dataframe(
-    tabla_materiales[columnas_estadistica_visual],
+    tabla_materiales[columnas_estadistica_visual].style.apply(estilo_estado_alerta, axis=1),
     use_container_width=True,
     hide_index=True,
     column_config={
+        "Registros": st.column_config.NumberColumn(
+            "Registros",
+            format="%d",
+        ),
         "% foco acción": st.column_config.ProgressColumn(
             "% foco acción",
             format="%.1f%%",
@@ -2163,11 +2427,11 @@ st.dataframe(
         ),
         "Monto total": st.column_config.NumberColumn(
             "Monto total",
-            format="%.2f",
+            format="%d",
         ),
         "Monto promedio": st.column_config.NumberColumn(
             "Monto promedio",
-            format="%.2f",
+            format="%d",
         ),
         "Score máximo": st.column_config.NumberColumn(
             "Score máximo",
@@ -2175,6 +2439,52 @@ st.dataframe(
         ),
     },
 )
+
+
+
+# ============================================================
+# Estadística TAT por material
+# ============================================================
+
+st.markdown("### Estadística TAT por material")
+st.caption(
+    "Tabla enfocada en variabilidad del TAT. El coeficiente de variación permite detectar materiales con comportamiento poco estable."
+)
+
+if tabla_tat_material.empty:
+    st.info("No hay estadística TAT disponible para los materiales filtrados.")
+else:
+    st.dataframe(
+        tabla_tat_material.style.apply(estilo_estado_alerta, axis=1).apply(estilo_tat_variabilidad, axis=1),
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Registros": st.column_config.NumberColumn(
+                "Registros",
+                format="%d",
+            ),
+            "Min TAT": st.column_config.NumberColumn(
+                "Min TAT",
+                format="%.2f",
+            ),
+            "Media TAT": st.column_config.NumberColumn(
+                "Media TAT",
+                format="%.2f",
+            ),
+            "Desviación estándar TAT": st.column_config.NumberColumn(
+                "Desviación estándar TAT",
+                format="%.2f",
+            ),
+            "Coeficiente variación % TAT": st.column_config.NumberColumn(
+                "Coeficiente variación % TAT",
+                format="%.2f%%",
+            ),
+            "Máximo TAT": st.column_config.NumberColumn(
+                "Máximo TAT",
+                format="%.2f",
+            ),
+        },
+    )
 
 
 # ============================================================
@@ -2194,6 +2504,10 @@ with st.expander("Detalle operativo por registro", expanded=False):
                 format="%.1f%%",
                 min_value=0,
                 max_value=100,
+            ),
+            "Monto": st.column_config.NumberColumn(
+                "Monto",
+                format="%d",
             ),
             "Score gestión": st.column_config.NumberColumn(
                 "Score gestión",
@@ -2232,6 +2546,7 @@ with st.expander("Descargar resultado", expanded=False):
     firma_export = (
         f"{len(tabla_detalle)}_"
         f"{len(tabla_materiales)}_"
+        f"{len(tabla_tat_material)}_"
         f"{hash(tuple(materiales_ingresados))}_"
         f"{modo_material}_"
         f"{incluir_cerrados}_"
@@ -2253,6 +2568,7 @@ with st.expander("Descargar resultado", expanded=False):
                 st.session_state["vista_materiales_excel_bytes"] = convertir_a_excel_cache(
                     detalle=tabla_detalle,
                     estadistica=tabla_materiales,
+                    estadistica_tat=tabla_tat_material,
                     tendencia=tabla_tendencia,
                     resumen_busqueda=resumen_busqueda,
                 )
