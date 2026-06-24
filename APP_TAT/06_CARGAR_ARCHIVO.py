@@ -1,3 +1,7 @@
+AL CARGAR EL ARCHIVO COLOCAR LA FECHA DE LA VERSION NO LA HORA 
+
+DAME EL CODIGO CON NOMBRE ARCHIVO
+
 # ============================================================
 # 06_CARGAR_ARCHIVO
 # Carga del archivo TAT generado por 05_CALCULOS
@@ -315,7 +319,7 @@ def obtener_version_desde_nombre_archivo(nombre_archivo: str) -> dict:
     return {
         "version_detectada": True,
         "fecha_version": fecha_version,
-        "texto_version": fecha_version.strftime("%d-%m-%Y %H:%M:%S"),
+        "texto_version": fecha_version.strftime("%d-%m-%Y"),
     }
 
 
