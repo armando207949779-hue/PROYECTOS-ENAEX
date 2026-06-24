@@ -2176,21 +2176,25 @@ def grafico_grupos_compra_foco_bonito(
         fontsize=17,
         fontweight="bold",
         color=COLOR_TEXTO,
-        pad=18,
+        pad=34,
     )
 
     ax.legend(
         loc="lower right",
         frameon=False,
         ncol=3,
-        bbox_to_anchor=(1, 1.01),
+        bbox_to_anchor=(1, 1.08),
         fontsize=9.5,
+        borderaxespad=0.0,
     )
 
     formatear_ejes(ax)
 
     fig.patch.set_alpha(0)
-    fig.tight_layout()
+
+    # Reserva margen superior para que el título no choque con la leyenda.
+    fig.tight_layout(rect=[0, 0, 1, 0.88])
+    fig.subplots_adjust(top=0.78)
 
     st.pyplot(fig, clear_figure=True, use_container_width=True)
     plt.close(fig)
