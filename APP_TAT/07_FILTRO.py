@@ -5,6 +5,7 @@
 # ============================================================
 
 import base64
+import re
 from html import escape
 from pathlib import Path
 from typing import Any
@@ -1131,23 +1132,21 @@ def formato_id(valor: Any) -> str:
     if not texto or texto.lower() in ["nan", "none", "nat", "<na>", "null"]:
         return "-"
 
-    # Quita separadores de miles frecuentes en identificadores SAP.
-    # Ejemplos:
+    # Float textual sin separador de miles: 1002643256.0
+    if re.fullmatch(r"\d+\.0", texto):
+        return texto[:-2]
+
+    # Separadores de miles en identificadores SAP:
     # 1.002.643.256 -> 1002643256
-    # 1,002,643,256 -> 1002643256
+    # 4.502.681.845 -> 4502681845
     texto_limpio = texto.replace(" ", "").replace(".", "").replace(",", "")
 
     try:
         numero = float(texto_limpio)
-
         if np.isfinite(numero) and numero.is_integer():
             return str(int(numero))
-
     except Exception:
         pass
-
-    if texto_limpio.endswith("0") and texto.endswith(".0"):
-        texto_limpio = texto_limpio[:-1]
 
     return texto_limpio if texto_limpio else "-"
 
@@ -1222,22 +1221,38 @@ def normalizar_columnas_id_visual(df: pd.DataFrame) -> pd.DataFrame:
         COL_OC_NME80FN,
         COL_POS_SOLPED,
         COL_POS_OC,
+        "SolPed",
+        "Pedido ME5A",
+        "Pedido ME80FN",
+        "Pedido NME80FN",
+        "Pedido / OC",
+        "Pedido",
+        "OC",
+        "Posición",
     ]
-
-    columnas_detectadas = []
 
     for col in df.columns:
         col_txt = str(col).strip().lower()
 
         es_columna_id = (
             col in columnas_id_base
-            or "solicitud de pedido" in col_txt
+            or col_txt in [
+                "solped",
+                "pedido me5a",
+                "pedido me80fn",
+                "pedido nme80fn",
+                "pedido",
+                "oc",
+                "posición",
+                "posicion",
+            ]
             or "solped" in col_txt
-            or "pedido" in col_txt
+            or "solicitud de pedido" in col_txt
+            or "pedido me5a" in col_txt
+            or "pedido me80fn" in col_txt
             or "documento de compras" in col_txt
         )
 
-        # No tocar columnas que usan texto descriptivo aunque incluyan la palabra pedido.
         excluir = (
             "texto" in col_txt
             or "descripción" in col_txt
@@ -1249,15 +1264,69 @@ def normalizar_columnas_id_visual(df: pd.DataFrame) -> pd.DataFrame:
             or "días" in col_txt
             or "dias" in col_txt
             or "umbral" in col_txt
+            or "accion" in col_txt
+            or "acción" in col_txt
+            or "material" in col_txt
+            or "centro" in col_txt
+            or "grupo" in col_txt
         )
 
         if es_columna_id and not excluir:
-            columnas_detectadas.append(col)
-
-    for col in columnas_detectadas:
-        df[col] = df[col].apply(formato_id)
+            df[col] = df[col].apply(formato_id)
 
     return df
+
+
+def preparar_tabla_coincidencias_visual(df: pd.DataFrame) -> pd.DataFrame:
+    df = normalizar_columnas_id_visual(df)
+
+    for col in [
+        "SolPed",
+        "Pedido ME5A",
+        "Pedido ME80FN",
+        "Pedido NME80FN",
+        "Pedido",
+        "Pedido / OC",
+        "OC",
+        "Posición",
+    ]:
+        if col in df.columns:
+            df[col] = df[col].apply(formato_id)
+
+    return df
+
+
+def estilo_coincidencias_estado(row: pd.Series) -> list[str]:
+    texto_estado = " ".join(
+        [
+            str(row.get("Nivel", "")),
+            str(row.get("Estado", "")),
+            str(row.get("Vencimiento", "")),
+            str(row.get("nivel_alerta", "")),
+            str(row.get(COL_ESTADO_RECEPCION_ALERTA, "")),
+            str(row.get("clasificacion_vencimiento", "")),
+        ]
+    ).lower()
+
+    if "recepcionado" in texto_estado or "cerrado" in texto_estado:
+        return ["background-color: #dcfce7; color: #14532d; font-weight: 800"] * len(row)
+
+    if "vencido" in texto_estado or "crítico" in texto_estado or "critico" in texto_estado:
+        return ["background-color: #fee2e2; color: #7f1d1d; font-weight: 800"] * len(row)
+
+    if (
+        "por vencer" in texto_estado
+        or "vence hoy" in texto_estado
+        or "atención" in texto_estado
+        or "atencion" in texto_estado
+        or "seguimiento" in texto_estado
+        or "1-2 días" in texto_estado
+        or "3-7 días" in texto_estado
+        or "+7 días" in texto_estado
+    ):
+        return ["background-color: #fef9c3; color: #713f12; font-weight: 800"] * len(row)
+
+    return [""] * len(row)
 
 
 def normalizar_valor_busqueda(valor) -> str:
@@ -1269,7 +1338,6 @@ def normalizar_valor_busqueda(valor) -> str:
     if texto.endswith(".0"):
         texto = texto[:-2]
 
-    # Para identificadores SAP, quitar separadores de miles.
     texto = texto.replace(" ", "").replace(".", "").replace(",", "")
 
     return texto
