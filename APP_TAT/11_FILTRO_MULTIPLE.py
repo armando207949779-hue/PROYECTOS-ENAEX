@@ -1,11 +1,11 @@
 # ============================================================
 # 11_FILTRO_MULTIPLE
-# Filtro múltiple de SolPed y tabla ordenada de gestión TAT
+# Filtro múltiple por SolPed, Pedido, Material y otros criterios
 #
 # Usa df_tat cargado desde 06_CARGAR_ARCHIVO
 #
 # Objetivo:
-# - Permitir búsqueda múltiple de SolPed
+# - Permitir búsqueda múltiple por SolPed, Pedido, Material, Texto, Centro y Grupo de compras
 # - Obtener una tabla de gestión ordenada
 # - Mostrar fechas clave, estado, avance y acción sugerida
 # - Descargar resultado filtrado
@@ -763,6 +763,8 @@ def preparar_base_gestion(df_original: pd.DataFrame, hoy: pd.Timestamp) -> pd.Da
     else:
         df["_solped_norm"] = ""
 
+    df = asegurar_columnas_busqueda(df)
+
     return df
 
 
@@ -1219,6 +1221,331 @@ def generar_nombre_salida(extension: str) -> str:
     return f"11_FILTRO_MULTIPLE_{fecha_hora}_GESTION.{extension}"
 
 
+
+
+# ============================================================
+# Filtro múltiple por distintos criterios
+# ============================================================
+
+def parsear_valores_multiples(texto: str, separar_espacios: bool = True) -> list[str]:
+    if not texto or not str(texto).strip():
+        return []
+
+    patron = r"[\s,;|]+" if separar_espacios else r"[\n,;|]+"
+    tokens = re.split(patron, str(texto).strip())
+
+    salida = []
+    vistos = set()
+
+    for token in tokens:
+        normalizado = normalizar_id(token)
+
+        if normalizado and normalizado not in vistos:
+            salida.append(normalizado)
+            vistos.add(normalizado)
+
+    return salida
+
+
+def normalizar_serie_busqueda(serie: pd.Series) -> pd.Series:
+    return (
+        serie
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .str.replace(r"\.0$", "", regex=True)
+    )
+
+
+def crear_columna_pedido_busqueda(df: pd.DataFrame) -> pd.Series:
+    return obtener_columna_pedido(df)
+
+
+def asegurar_columnas_busqueda(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+
+    if "_solped_norm" not in df.columns:
+        col_solped = obtener_columna_solped(df)
+        df["_solped_norm"] = df[col_solped].apply(normalizar_id) if col_solped else ""
+
+    df["_pedido_norm"] = crear_columna_pedido_busqueda(df).apply(normalizar_id)
+
+    if COL_MATERIAL in df.columns:
+        df["_material_norm"] = df[COL_MATERIAL].apply(normalizar_id)
+    else:
+        df["_material_norm"] = ""
+
+    if COL_TEXTO in df.columns:
+        df["_texto_norm"] = normalizar_serie_busqueda(df[COL_TEXTO])
+    else:
+        df["_texto_norm"] = ""
+
+    if COL_CENTRO in df.columns:
+        df["_centro_norm"] = normalizar_serie_busqueda(df[COL_CENTRO]).str.upper()
+    else:
+        df["_centro_norm"] = ""
+
+    if COL_GRUPO_COMPRAS in df.columns:
+        df["_grupo_compras_norm"] = normalizar_serie_busqueda(df[COL_GRUPO_COMPRAS]).str.upper()
+    else:
+        df["_grupo_compras_norm"] = ""
+
+    return df
+
+
+def mascara_por_tokens(
+    serie: pd.Series,
+    tokens: list[str],
+    modo_busqueda: str,
+    normalizar_upper: bool = False,
+) -> pd.Series:
+    if not tokens:
+        return pd.Series(True, index=serie.index)
+
+    s = normalizar_serie_busqueda(serie)
+
+    if normalizar_upper:
+        s = s.str.upper()
+        tokens = [t.upper() for t in tokens]
+
+    if modo_busqueda == "Exacta":
+        return s.isin(tokens)
+
+    mask = pd.Series(False, index=serie.index)
+
+    for token in tokens:
+        if token:
+            mask = mask | s.str.contains(
+                str(token),
+                case=False,
+                na=False,
+                regex=False,
+            )
+
+    return mask
+
+
+def construir_filtros_multiples(
+    texto_solpeds: str,
+    texto_pedidos: str,
+    texto_materiales: str,
+    texto_texto_breve: str,
+    texto_centros: str,
+    texto_grupos_compras: str,
+) -> dict:
+    return {
+        "SolPed": {
+            "columna": "_solped_norm",
+            "tokens": parsear_valores_multiples(texto_solpeds, separar_espacios=True),
+            "normalizar_upper": False,
+        },
+        "Pedido / OC": {
+            "columna": "_pedido_norm",
+            "tokens": parsear_valores_multiples(texto_pedidos, separar_espacios=True),
+            "normalizar_upper": False,
+        },
+        "Material": {
+            "columna": "_material_norm",
+            "tokens": parsear_valores_multiples(texto_materiales, separar_espacios=True),
+            "normalizar_upper": False,
+        },
+        "Texto breve": {
+            "columna": "_texto_norm",
+            "tokens": parsear_valores_multiples(texto_texto_breve, separar_espacios=False),
+            "normalizar_upper": False,
+        },
+        "Centro": {
+            "columna": "_centro_norm",
+            "tokens": parsear_valores_multiples(texto_centros, separar_espacios=True),
+            "normalizar_upper": True,
+        },
+        "Grupo de compras": {
+            "columna": "_grupo_compras_norm",
+            "tokens": parsear_valores_multiples(texto_grupos_compras, separar_espacios=True),
+            "normalizar_upper": True,
+        },
+    }
+
+
+def contar_valores_ingresados(filtros: dict) -> int:
+    return sum(len(info["tokens"]) for info in filtros.values())
+
+
+def aplicar_filtros_multiples(
+    df: pd.DataFrame,
+    filtros: dict,
+    modo_busqueda: str,
+    relacion_campos: str,
+) -> pd.DataFrame:
+    df = asegurar_columnas_busqueda(df)
+
+    filtros_activos = {
+        nombre: info
+        for nombre, info in filtros.items()
+        if info["tokens"]
+    }
+
+    if not filtros_activos:
+        return df.iloc[0:0].copy()
+
+    mascaras = []
+
+    for _, info in filtros_activos.items():
+        columna = info["columna"]
+
+        if columna not in df.columns:
+            mascaras.append(pd.Series(False, index=df.index))
+            continue
+
+        mascaras.append(
+            mascara_por_tokens(
+                serie=df[columna],
+                tokens=info["tokens"],
+                modo_busqueda=modo_busqueda,
+                normalizar_upper=info.get("normalizar_upper", False),
+            )
+        )
+
+    if relacion_campos == "Debe cumplir todos los campos con datos (AND)":
+        mask_final = mascaras[0].copy()
+
+        for mask in mascaras[1:]:
+            mask_final = mask_final & mask
+    else:
+        mask_final = pd.Series(False, index=df.index)
+
+        for mask in mascaras:
+            mask_final = mask_final | mask
+
+    resultado = df[mask_final].copy()
+
+    orden_tokens = {}
+
+    contador = 0
+    for _, info in filtros_activos.items():
+        for token in info["tokens"]:
+            token_norm = token.upper() if info.get("normalizar_upper", False) else token
+            if token_norm not in orden_tokens:
+                orden_tokens[token_norm] = contador
+                contador += 1
+
+    orden_resultado = pd.Series(999999, index=resultado.index, dtype="int64")
+
+    for _, info in filtros_activos.items():
+        columna = info["columna"]
+
+        if columna not in resultado.columns:
+            continue
+
+        serie = normalizar_serie_busqueda(resultado[columna])
+        if info.get("normalizar_upper", False):
+            serie = serie.str.upper()
+
+        for token in info["tokens"]:
+            token_norm = token.upper() if info.get("normalizar_upper", False) else token
+
+            if modo_busqueda == "Exacta":
+                mask_token = serie.eq(token_norm)
+            else:
+                mask_token = serie.str.contains(
+                    str(token_norm),
+                    case=False,
+                    na=False,
+                    regex=False,
+                )
+
+            orden_resultado.loc[mask_token] = np.minimum(
+                orden_resultado.loc[mask_token],
+                orden_tokens.get(token_norm, 999999),
+            )
+
+    resultado["_orden_solped"] = orden_resultado
+
+    return resultado
+
+
+def construir_resumen_busqueda_multiple(
+    df_base: pd.DataFrame,
+    df_filtrado: pd.DataFrame,
+    filtros: dict,
+    modo_busqueda: str,
+) -> pd.DataFrame:
+    registros = []
+
+    df_base = asegurar_columnas_busqueda(df_base)
+    df_filtrado = asegurar_columnas_busqueda(df_filtrado) if not df_filtrado.empty else df_filtrado.copy()
+
+    for criterio, info in filtros.items():
+        columna = info["columna"]
+        tokens = info["tokens"]
+
+        if not tokens:
+            continue
+
+        if columna not in df_base.columns:
+            for token in tokens:
+                registros.append(
+                    {
+                        "Criterio": criterio,
+                        "Valor ingresado": token,
+                        "Resultado": "❌ Columna no disponible",
+                        "Registros en archivo": 0,
+                        "Registros filtrados": 0,
+                    }
+                )
+            continue
+
+        for token in tokens:
+            mask_base = mascara_por_tokens(
+                df_base[columna],
+                [token],
+                modo_busqueda=modo_busqueda,
+                normalizar_upper=info.get("normalizar_upper", False),
+            )
+
+            if not df_filtrado.empty and columna in df_filtrado.columns:
+                mask_filtrado = mascara_por_tokens(
+                    df_filtrado[columna],
+                    [token],
+                    modo_busqueda=modo_busqueda,
+                    normalizar_upper=info.get("normalizar_upper", False),
+                )
+                registros_filtrados = int(mask_filtrado.sum())
+            else:
+                registros_filtrados = 0
+
+            registros_archivo = int(mask_base.sum())
+
+            if registros_filtrados > 0:
+                resultado = "✅ Encontrado en resultado"
+            elif registros_archivo > 0:
+                resultado = "⚠️ Existe, pero no cumple combinación de filtros"
+            else:
+                resultado = "❌ No encontrado"
+
+            registros.append(
+                {
+                    "Criterio": criterio,
+                    "Valor ingresado": token,
+                    "Resultado": resultado,
+                    "Registros en archivo": registros_archivo,
+                    "Registros filtrados": registros_filtrados,
+                }
+            )
+
+    return pd.DataFrame(registros)
+
+
+def construir_tabla_no_encontrados_multiple(resumen: pd.DataFrame) -> pd.DataFrame:
+    if resumen.empty:
+        return pd.DataFrame()
+
+    return resumen[
+        resumen["Resultado"].astype(str).str.contains("No encontrado|no cumple|Columna", case=False, regex=True)
+    ].copy()
+
+
+
 # ============================================================
 # APP
 # ============================================================
@@ -1227,7 +1554,7 @@ mostrar_logo()
 
 st.title("11_FILTRO_MULTIPLE")
 st.caption(
-    "Filtro múltiple de SolPed para generar una tabla ordenada de gestión con fechas, estados y porcentaje de avance."
+    "Filtro múltiple por SolPed, Pedido/OC, Material, Texto breve, Centro y Grupo de compras para generar una tabla ordenada de gestión TAT."
 )
 
 st.markdown(
@@ -1235,10 +1562,10 @@ st.markdown(
     <div class="info-card">
         <div class="info-card-title">Objetivo del módulo</div>
         <div class="info-card-text">
-            Ingresa varias SolPed separadas por salto de línea, coma, punto y coma o espacios.
-            El sistema buscará todos los registros asociados y construirá una tabla de gestión ordenada
-            con las fechas principales, estado de recepción, nivel de alerta, etapa pendiente,
-            porcentaje de avance y acción sugerida.
+            Ingresa múltiples valores en uno o varios campos: SolPed, Pedido/OC, Material, Texto breve,
+            Centro o Grupo de compras. Puedes separar los valores por salto de línea, coma, punto y coma,
+            barra vertical o espacios. El sistema construirá una tabla de gestión ordenada con fechas,
+            estado de recepción, nivel de alerta, etapa pendiente, porcentaje de avance y acción sugerida.
         </div>
     </div>
     """,
@@ -1272,28 +1599,125 @@ if col_solped_base is None:
 
 
 # ============================================================
-# Entrada múltiple de SolPed
+# Entrada múltiple por distintos criterios
 # ============================================================
 
-with st.form("form_filtro_multiple_solped"):
-    st.markdown("### Ingreso múltiple de SolPed")
-
-    texto_solpeds = st.text_area(
-        "Pega aquí las SolPed a gestionar",
-        placeholder=(
-            "Ejemplo:\n"
-            "1001973319\n"
-            "1001973320\n"
-            "1001973321\n\n"
-            "También puedes separarlas por coma, punto y coma o espacios."
-        ),
-        height=180,
-        key="filtro_multiple_texto_solpeds",
+with st.form("form_filtro_multiple"):
+    st.markdown("### Ingreso múltiple por distintos criterios")
+    st.caption(
+        "Puedes completar uno o varios campos. Cada campo acepta múltiples valores separados por salto de línea, coma, punto y coma, barra vertical o espacios."
     )
 
-    col_f1, col_f2, col_f3 = st.columns(3)
+    col_a, col_b, col_c = st.columns(3)
+
+    with col_a:
+        texto_solpeds = st.text_area(
+            "SolPed",
+            placeholder=(
+                "Ejemplo:\n"
+                "1001973319\n"
+                "1001973320"
+            ),
+            height=145,
+            key="filtro_multiple_texto_solpeds",
+            help="Busca en la columna Solicitud de pedido - ME5A.",
+        )
+
+    with col_b:
+        texto_pedidos = st.text_area(
+            "Pedido / OC",
+            placeholder=(
+                "Ejemplo:\n"
+                "4500123456\n"
+                "4500123457"
+            ),
+            height=145,
+            key="filtro_multiple_texto_pedidos",
+            help="Busca en Pedido ME5A, Documento de compras ME80FN y NME80FN.",
+        )
+
+    with col_c:
+        texto_materiales = st.text_area(
+            "Material",
+            placeholder=(
+                "Ejemplo:\n"
+                "20050351\n"
+                "20050352"
+            ),
+            height=145,
+            key="filtro_multiple_texto_materiales",
+            help="Busca en Material - ME5A.",
+        )
+
+    col_d, col_e, col_f = st.columns(3)
+
+    with col_d:
+        texto_texto_breve = st.text_area(
+            "Texto breve / descripción",
+            placeholder=(
+                "Ejemplo:\n"
+                "servicio mantención\n"
+                "repuesto"
+            ),
+            height=115,
+            key="filtro_multiple_texto_breve",
+            help="Busca coincidencias dentro de Texto breve - ME5A. Se separa por salto de línea, coma, punto y coma o barra vertical.",
+        )
+
+    with col_e:
+        texto_centros = st.text_area(
+            "Centro",
+            placeholder=(
+                "Ejemplo:\n"
+                "E002\n"
+                "E030"
+            ),
+            height=115,
+            key="filtro_multiple_texto_centros",
+            help="Busca por centro. Ejemplo: E002.",
+        )
+
+    with col_f:
+        texto_grupos_compras = st.text_area(
+            "Grupo de compras",
+            placeholder=(
+                "Ejemplo:\n"
+                "EAD\n"
+                "EAO\n"
+                "EAL"
+            ),
+            height=115,
+            key="filtro_multiple_texto_grupos_compras",
+            help="Busca por grupo de compras.",
+        )
+
+    col_f1, col_f2, col_f3, col_f4 = st.columns(4)
 
     with col_f1:
+        modo_busqueda = st.selectbox(
+            "Modo de coincidencia",
+            options=[
+                "Exacta",
+                "Contiene",
+            ],
+            index=0,
+            key="filtro_multiple_modo_busqueda",
+            help="Exacta compara el valor completo. Contiene permite búsqueda parcial.",
+        )
+
+    with col_f2:
+        relacion_campos = st.selectbox(
+            "Relación entre campos",
+            options=[
+                "Coincidir con cualquier campo (OR)",
+                "Debe cumplir todos los campos con datos (AND)",
+            ],
+            index=0,
+            key="filtro_multiple_relacion_campos",
+            help="OR trae registros que coincidan con cualquier campo. AND exige coincidencia en todos los campos completados.",
+        )
+
+    with col_f3:
         modo_orden = st.selectbox(
             "Orden de la tabla",
             options=[
@@ -1307,31 +1731,40 @@ with st.form("form_filtro_multiple_solped"):
             key="filtro_multiple_modo_orden",
         )
 
-    with col_f2:
-        mostrar_solo_con_resultado = st.checkbox(
-            "Mostrar solo SolPed encontradas",
-            value=True,
-            key="filtro_multiple_solo_encontradas",
-        )
-
-    with col_f3:
+    with col_f4:
         incluir_cerrados = st.checkbox(
             "Incluir recepcionados/cerrados",
             value=True,
             key="filtro_multiple_incluir_cerrados",
         )
 
+    mostrar_solo_con_resultado = st.checkbox(
+        "Mostrar solo registros encontrados en la tabla principal",
+        value=True,
+        key="filtro_multiple_solo_encontradas",
+        help="Los valores no encontrados se muestran en el resumen de búsqueda.",
+    )
+
     aplicar = st.form_submit_button(
-        "Buscar SolPed",
+        "Buscar registros",
         type="primary",
         use_container_width=True,
     )
 
 
-solpeds_ingresadas = parsear_solpeds(texto_solpeds)
+filtros_multiples = construir_filtros_multiples(
+    texto_solpeds=texto_solpeds,
+    texto_pedidos=texto_pedidos,
+    texto_materiales=texto_materiales,
+    texto_texto_breve=texto_texto_breve,
+    texto_centros=texto_centros,
+    texto_grupos_compras=texto_grupos_compras,
+)
 
-if not solpeds_ingresadas:
-    st.info("Ingresa una o más SolPed para generar la tabla de gestión.")
+total_valores_ingresados = contar_valores_ingresados(filtros_multiples)
+
+if total_valores_ingresados == 0:
+    st.info("Ingresa uno o más valores en SolPed, Pedido, Material, Texto breve, Centro o Grupo de compras.")
     st.stop()
 
 
@@ -1339,29 +1772,37 @@ if not solpeds_ingresadas:
 # Filtro
 # ============================================================
 
-mapa_orden = {
-    solped: idx
-    for idx, solped in enumerate(solpeds_ingresadas)
-}
+df_filtrado = aplicar_filtros_multiples(
+    df=df_base,
+    filtros=filtros_multiples,
+    modo_busqueda=modo_busqueda,
+    relacion_campos=relacion_campos,
+)
 
-df_filtrado = df_base[
-    df_base["_solped_norm"].isin(solpeds_ingresadas)
-].copy()
-
-df_filtrado["_orden_solped"] = df_filtrado["_solped_norm"].map(mapa_orden).fillna(999999)
-
-if not incluir_cerrados:
+if not incluir_cerrados and not df_filtrado.empty:
     df_filtrado = df_filtrado[
         ~df_filtrado[COL_ESTADO_RECEPCION_ALERTA].astype(str).eq("Recepcionado")
     ].copy()
 
 
+resumen_busqueda_df = construir_resumen_busqueda_multiple(
+    df_base=df_base,
+    df_filtrado=df_filtrado,
+    filtros=filtros_multiples,
+    modo_busqueda=modo_busqueda,
+)
+
+tabla_no_encontrados = construir_tabla_no_encontrados_multiple(resumen_busqueda_df)
+
+solpeds_ingresadas = filtros_multiples["SolPed"]["tokens"]
 solpeds_encontradas = (
     df_filtrado["_solped_norm"]
     .dropna()
     .astype(str)
     .unique()
     .tolist()
+    if "_solped_norm" in df_filtrado.columns and not df_filtrado.empty
+    else []
 )
 
 solpeds_no_encontradas = [
@@ -1374,55 +1815,49 @@ solpeds_no_encontradas = [
 # Resultado claro de búsqueda
 # ============================================================
 
-resumen_busqueda_df = construir_resumen_busqueda(
-    solpeds_ingresadas=solpeds_ingresadas,
-    solpeds_encontradas=solpeds_encontradas,
-    solpeds_no_encontradas=solpeds_no_encontradas,
-)
-
 st.markdown("### Resultado de búsqueda")
-st.caption("Identifica rápidamente cuáles SolPed fueron encontradas en el archivo activo y cuáles no.")
+st.caption("Resumen de valores ingresados por criterio, encontrados y no encontrados.")
 
-col_res_1, col_res_2 = st.columns(2)
+total_tokens = len(resumen_busqueda_df)
+total_en_resultado = int(
+    resumen_busqueda_df["Registros filtrados"].gt(0).sum()
+) if not resumen_busqueda_df.empty else 0
+total_no_ok = int(len(tabla_no_encontrados)) if not tabla_no_encontrados.empty else 0
 
-with col_res_1:
-    st.success(f"Encontradas: {len(solpeds_encontradas)} de {len(solpeds_ingresadas)}")
+col_res_1, col_res_2, col_res_3, col_res_4 = st.columns(4)
 
-    if solpeds_encontradas:
-        st.dataframe(
-            pd.DataFrame({"✅ SolPed encontradas": solpeds_encontradas}),
-            use_container_width=True,
-            hide_index=True,
-        )
-    else:
-        st.info("No se encontraron SolPed en el archivo activo.")
+col_res_1.metric("Valores ingresados", total_tokens)
+col_res_2.metric("Valores con resultado", total_en_resultado)
+col_res_3.metric("Valores sin resultado", total_no_ok)
+col_res_4.metric("Registros filtrados", len(df_filtrado))
 
-with col_res_2:
-    if solpeds_no_encontradas:
-        st.error(f"No encontradas: {len(solpeds_no_encontradas)} de {len(solpeds_ingresadas)}")
-        st.dataframe(
-            pd.DataFrame({"❌ SolPed no encontradas": solpeds_no_encontradas}),
-            use_container_width=True,
-            hide_index=True,
-        )
-    else:
-        st.success("Todas las SolPed ingresadas fueron encontradas.")
-
-with st.expander("Ver listado completo de búsqueda", expanded=False):
+with st.expander("Detalle de búsqueda por criterio", expanded=True):
     st.dataframe(
         resumen_busqueda_df,
         use_container_width=True,
         hide_index=True,
     )
 
+if not tabla_no_encontrados.empty:
+    with st.expander("Valores no encontrados o excluidos por combinación de filtros", expanded=True):
+        st.warning(
+            "Estos valores no tienen registros en el resultado final. Si aparecen como existentes en archivo, revisa la relación AND/OR o los demás criterios ingresados."
+        )
+
+        st.dataframe(
+            tabla_no_encontrados,
+            use_container_width=True,
+            hide_index=True,
+        )
+
 
 # ============================================================
 # KPIs
 # ============================================================
 
-total_ingresadas = len(solpeds_ingresadas)
-total_encontradas = len(solpeds_encontradas)
-total_no_encontradas = len(solpeds_no_encontradas)
+total_ingresadas = total_valores_ingresados
+total_encontradas = total_en_resultado
+total_no_encontradas = total_no_ok
 total_registros = len(df_filtrado)
 
 vencidos = int(df_filtrado["nivel_alerta"].astype(str).eq("Crítico").sum()) if not df_filtrado.empty else 0
@@ -1439,9 +1874,9 @@ st.markdown("### Resumen de búsqueda")
 
 k1, k2, k3, k4 = st.columns(4)
 
-k1.metric("SolPed ingresadas", total_ingresadas)
-k2.metric("SolPed encontradas", total_encontradas)
-k3.metric("SolPed no encontradas", total_no_encontradas)
+k1.metric("Valores ingresados", total_ingresadas)
+k2.metric("Valores con resultado", total_encontradas)
+k3.metric("Valores sin resultado", total_no_encontradas)
 k4.metric("Registros encontrados", total_registros)
 
 k5, k6, k7, k8 = st.columns(4)
@@ -1452,14 +1887,10 @@ k7.metric("Recepcionados", cerrados)
 k8.metric("Avance promedio", formato_porcentaje(avance_promedio))
 
 
-if solpeds_no_encontradas:
-    with st.expander("SolPed no encontradas", expanded=True):
-        st.warning(
-            "Las siguientes SolPed no fueron encontradas en el archivo activo:"
-        )
-
+if not tabla_no_encontrados.empty:
+    with st.expander("Resumen compacto de valores sin resultado", expanded=False):
         st.dataframe(
-            pd.DataFrame({"SolPed no encontrada": solpeds_no_encontradas}),
+            tabla_no_encontrados[["Criterio", "Valor ingresado", "Resultado"]],
             use_container_width=True,
             hide_index=True,
         )
@@ -1475,61 +1906,61 @@ st.caption(
 )
 
 if df_filtrado.empty:
-    st.warning("No se encontraron registros para las SolPed ingresadas.")
-    st.stop()
-
-tabla_gestion = crear_tabla_gestion(df_filtrado)
-tabla_gestion = ordenar_tabla(tabla_gestion, modo_orden)
+    st.warning("No se encontraron registros para los criterios ingresados.")
+    tabla_gestion = pd.DataFrame()
+else:
+    tabla_gestion = crear_tabla_gestion(df_filtrado)
+    tabla_gestion = ordenar_tabla(tabla_gestion, modo_orden)
 
 if mostrar_solo_con_resultado:
     tabla_visual = tabla_gestion.copy()
 else:
     filas_no_encontradas = pd.DataFrame(
-        {
-            "Estado búsqueda": "❌ No encontrada",
-            "SolPed": solpeds_no_encontradas,
-            "Estado visual": "⚫ No encontrada",
-            "Vencimiento visual": "⚫ No encontrada",
-            "% avance": 0,
-            "Fecha solicitud OK": "❌",
-            "Fecha liberación OK": "❌",
-            "Fecha pedido OK": "❌",
-            "Fecha facturación OK": "❌",
-            "Fecha recepción OK": "❌",
-            "Pedido": "-",
-            "Posición": "-",
-            "Estado recepción": "No encontrada",
-            "Nivel alerta": "No encontrada",
-            "Estado vencimiento": "No encontrada",
-            "Fecha solicitud": "-",
-            "Fecha liberación": "-",
-            "Fecha pedido": "-",
-            "Fecha facturación": "-",
-            "Fecha recepción": "-",
-            "Fecha vencimiento TAT": "-",
-            "Días hasta vencimiento": "-",
-            "Última etapa": "-",
-            "Etapa pendiente": "-",
-            "Material": "-",
-            "Texto breve": "No encontrada en archivo activo",
-            "Centro": "-",
-            "Centro nombre": "-",
-            "Grupo de compras": "-",
-            "Tipo OC": "-",
-            "Sistema": "-",
-            "Origen": "-",
-            "Performance TAT total": "-",
-            "Días TAT total": "-",
-            "Umbral TAT": "-",
-            "Días incumplimiento": "-",
-            "Monto": "-",
-            "Acción sugerida": "Revisar número de SolPed o archivo cargado.",
-            "Score gestión": 0,
-            "_orden_solped": [
-                mapa_orden.get(solped, 999999)
-                for solped in solpeds_no_encontradas
-            ],
-        }
+        [
+            {
+                "Estado búsqueda": row["Resultado"],
+                "SolPed": row["Valor ingresado"] if row["Criterio"] == "SolPed" else "-",
+                "Estado visual": "⚫ Sin resultado",
+                "Vencimiento visual": "⚫ Sin resultado",
+                "% avance": 0,
+                "Fecha solicitud OK": "❌",
+                "Fecha liberación OK": "❌",
+                "Fecha pedido OK": "❌",
+                "Fecha facturación OK": "❌",
+                "Fecha recepción OK": "❌",
+                "Pedido": row["Valor ingresado"] if row["Criterio"] == "Pedido / OC" else "-",
+                "Posición": "-",
+                "Estado recepción": "Sin resultado",
+                "Nivel alerta": "Sin resultado",
+                "Estado vencimiento": "Sin resultado",
+                "Fecha solicitud": "-",
+                "Fecha liberación": "-",
+                "Fecha pedido": "-",
+                "Fecha facturación": "-",
+                "Fecha recepción": "-",
+                "Fecha vencimiento TAT": "-",
+                "Días hasta vencimiento": "-",
+                "Última etapa": "-",
+                "Etapa pendiente": "-",
+                "Material": row["Valor ingresado"] if row["Criterio"] == "Material" else "-",
+                "Texto breve": row["Valor ingresado"] if row["Criterio"] == "Texto breve" else "Sin resultado en tabla final",
+                "Centro": row["Valor ingresado"] if row["Criterio"] == "Centro" else "-",
+                "Centro nombre": "-",
+                "Grupo de compras": row["Valor ingresado"] if row["Criterio"] == "Grupo de compras" else "-",
+                "Tipo OC": "-",
+                "Sistema": "-",
+                "Origen": "-",
+                "Performance TAT total": "-",
+                "Días TAT total": "-",
+                "Umbral TAT": "-",
+                "Días incumplimiento": "-",
+                "Monto": "-",
+                "Acción sugerida": "Revisar valor ingresado, relación AND/OR o archivo cargado.",
+                "Score gestión": 0,
+                "_orden_solped": 999999,
+            }
+            for _, row in tabla_no_encontrados.iterrows()
+        ]
     )
 
     tabla_visual = pd.concat(
@@ -1541,6 +1972,7 @@ else:
     )
 
     tabla_visual = ordenar_tabla(tabla_visual, modo_orden)
+
 
 
 tabla_visual = reordenar_columnas_tabla_gestion(tabla_visual)
@@ -1569,43 +2001,46 @@ st.dataframe(
 # ============================================================
 
 with st.expander("Vista resumida por SolPed", expanded=False):
-    resumen_solped = (
-        tabla_gestion
-        .groupby("SolPed", dropna=False)
-        .agg(
-            Registros=("SolPed", "size"),
-            Avance_promedio=("% avance", "mean"),
-            Score_maximo=("Score gestión", "max"),
-            Nivel_alerta_max=("Nivel alerta", lambda s: " | ".join(sorted(set(s.astype(str))))),
-            Estado_recepcion=("Estado recepción", lambda s: " | ".join(sorted(set(s.astype(str))))),
+    if tabla_gestion.empty:
+        st.info("No hay registros encontrados para resumir por SolPed.")
+    else:
+        resumen_solped = (
+            tabla_gestion
+            .groupby("SolPed", dropna=False)
+            .agg(
+                Registros=("SolPed", "size"),
+                Avance_promedio=("% avance", "mean"),
+                Score_maximo=("Score gestión", "max"),
+                Nivel_alerta_max=("Nivel alerta", lambda s: " | ".join(sorted(set(s.astype(str))))),
+                Estado_recepcion=("Estado recepción", lambda s: " | ".join(sorted(set(s.astype(str))))),
+            )
+            .reset_index()
         )
-        .reset_index()
-    )
 
-    resumen_solped["Avance_promedio"] = resumen_solped["Avance_promedio"].round(2)
+        resumen_solped["Avance_promedio"] = resumen_solped["Avance_promedio"].round(2)
 
-    resumen_solped = resumen_solped.sort_values(
-        ["Score_maximo", "Avance_promedio"],
-        ascending=[False, True],
-    )
+        resumen_solped = resumen_solped.sort_values(
+            ["Score_maximo", "Avance_promedio"],
+            ascending=[False, True],
+        )
 
-    st.dataframe(
-        resumen_solped,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Avance_promedio": st.column_config.ProgressColumn(
-                "Avance promedio",
-                format="%.1f%%",
-                min_value=0,
-                max_value=100,
-            ),
-            "Score_maximo": st.column_config.NumberColumn(
-                "Score máximo",
-                format="%.2f",
-            ),
-        },
-    )
+        st.dataframe(
+            resumen_solped,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Avance_promedio": st.column_config.ProgressColumn(
+                    "Avance promedio",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+                "Score_maximo": st.column_config.NumberColumn(
+                    "Score máximo",
+                    format="%.2f",
+                ),
+            },
+        )
 
 
 # ============================================================
@@ -1617,7 +2052,7 @@ with st.expander("Descargar resultado", expanded=False):
 
     tabla_export = preparar_tabla_exportar(tabla_visual)
 
-    firma_export = f"{len(tabla_export)}_{hash(tuple(solpeds_ingresadas))}_{modo_orden}_{incluir_cerrados}_{mostrar_solo_con_resultado}"
+    firma_export = f"{len(tabla_export)}_{hash(str(filtros_multiples))}_{modo_orden}_{modo_busqueda}_{relacion_campos}_{incluir_cerrados}_{mostrar_solo_con_resultado}"
 
     col_d1, col_d2, col_d3 = st.columns(3)
 
