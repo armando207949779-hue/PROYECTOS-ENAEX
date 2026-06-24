@@ -1128,8 +1128,17 @@ def formato_id(valor: Any) -> str:
 
     texto = str(valor).strip()
 
+    if not texto or texto.lower() in ["nan", "none", "nat", "<na>", "null"]:
+        return "-"
+
+    # Quita separadores de miles frecuentes en identificadores SAP.
+    # Ejemplos:
+    # 1.002.643.256 -> 1002643256
+    # 1,002,643,256 -> 1002643256
+    texto_limpio = texto.replace(" ", "").replace(".", "").replace(",", "")
+
     try:
-        numero = float(texto)
+        numero = float(texto_limpio)
 
         if np.isfinite(numero) and numero.is_integer():
             return str(int(numero))
@@ -1137,10 +1146,10 @@ def formato_id(valor: Any) -> str:
     except Exception:
         pass
 
-    if texto.endswith(".0"):
-        texto = texto[:-2]
+    if texto_limpio.endswith("0") and texto.endswith(".0"):
+        texto_limpio = texto_limpio[:-1]
 
-    return texto if texto else "-"
+    return texto_limpio if texto_limpio else "-"
 
 
 def valor_numerico(valor: Any) -> float:
@@ -1203,6 +1212,25 @@ def html_id(valor: Any) -> str:
     return escape(formato_id(valor))
 
 
+def normalizar_columnas_id_visual(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+
+    columnas_id = [
+        COL_SOLPED,
+        COL_OC_ME5A,
+        COL_OC_ME80FN,
+        COL_OC_NME80FN,
+        COL_POS_SOLPED,
+        COL_POS_OC,
+    ]
+
+    for col in columnas_id:
+        if col in df.columns:
+            df[col] = df[col].apply(formato_id)
+
+    return df
+
+
 def normalizar_valor_busqueda(valor) -> str:
     if pd.isna(valor):
         return ""
@@ -1211,6 +1239,9 @@ def normalizar_valor_busqueda(valor) -> str:
 
     if texto.endswith(".0"):
         texto = texto[:-2]
+
+    # Para identificadores SAP, quitar separadores de miles.
+    texto = texto.replace(" ", "").replace(".", "").replace(",", "")
 
     return texto
 
@@ -1799,10 +1830,10 @@ def html_resumen_expediente(row: pd.Series) -> str:
     moneda = row.get(COL_MONEDA, np.nan)
 
     campos = [
-        ("Solicitud de pedido", row.get(COL_SOLPED, np.nan), "exp-field-blue"),
-        ("Pedido", oc_principal, "exp-field-blue"),
-        ("Posición SolPed", row.get(COL_POS_SOLPED, np.nan), "exp-field-cyan"),
-        ("Posición pedido", row.get(COL_POS_OC, np.nan), "exp-field-cyan"),
+        ("Solicitud de pedido", formato_id(row.get(COL_SOLPED, np.nan)), "exp-field-blue"),
+        ("Pedido", formato_id(oc_principal), "exp-field-blue"),
+        ("Posición SolPed", formato_id(row.get(COL_POS_SOLPED, np.nan)), "exp-field-cyan"),
+        ("Posición pedido", formato_id(row.get(COL_POS_OC, np.nan)), "exp-field-cyan"),
         ("Centro", etiqueta_centro(row.get(COL_CENTRO, np.nan)), "exp-field-green"),
         ("Material", row.get(COL_MATERIAL, np.nan), "exp-field-purple"),
         ("Descripción", row.get(COL_TEXTO, np.nan), "exp-field-purple"),
