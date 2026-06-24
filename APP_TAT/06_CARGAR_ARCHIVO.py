@@ -1,7 +1,3 @@
-AL CARGAR EL ARCHIVO COLOCAR LA FECHA DE LA VERSION NO LA HORA 
-
-DAME EL CODIGO CON NOMBRE ARCHIVO
-
 # ============================================================
 # 06_CARGAR_ARCHIVO
 # Carga del archivo TAT generado por 05_CALCULOS
