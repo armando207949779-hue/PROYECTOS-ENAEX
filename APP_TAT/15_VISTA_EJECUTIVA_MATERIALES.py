@@ -475,17 +475,12 @@ def formato_valor(valor: Any) -> str:
 
     if isinstance(valor, float):
         if np.isfinite(valor) and valor.is_integer():
-            return f"{int(valor):,}".replace(",", ".")
+            return f"{int(valor):,}"
 
-        return (
-            f"{valor:,.1f}"
-            .replace(",", "X")
-            .replace(".", ",")
-            .replace("X", ".")
-        )
+        return f"{valor:,.1f}"
 
     if isinstance(valor, int):
-        return f"{valor:,}".replace(",", ".")
+        return f"{valor:,}"
 
     texto = str(valor).strip()
 
@@ -527,14 +522,9 @@ def formato_numero(valor: Any) -> str:
         return "-"
 
     if float(numero).is_integer():
-        return f"{int(numero):,}".replace(",", ".")
+        return f"{int(numero):,}"
 
-    return (
-        f"{numero:,.2f}"
-        .replace(",", "X")
-        .replace(".", ",")
-        .replace("X", ".")
-    )
+    return f"{numero:,.2f}"
 
 
 def formato_porcentaje(valor: Any) -> str:
@@ -552,7 +542,7 @@ def formato_entero_miles(valor: Any) -> str:
     if pd.isna(numero):
         return "-"
 
-    return f"{int(round(numero)):,}".replace(",", ".")
+    return f"{int(round(numero)):,}"
 
 
 def formato_decimal(valor: Any, decimales: int = 2) -> str:
@@ -561,12 +551,7 @@ def formato_decimal(valor: Any, decimales: int = 2) -> str:
     if pd.isna(numero):
         return "-"
 
-    return (
-        f"{numero:,.{decimales}f}"
-        .replace(",", "X")
-        .replace(".", ",")
-        .replace("X", ".")
-    )
+    return f"{numero:,.{decimales}f}"
 
 
 def estilo_estado_alerta(row: pd.Series) -> list[str]:
@@ -646,26 +631,16 @@ def texto_tiempo(dias: Any) -> str:
     dias_int = int(round(dias_num))
 
     if abs(dias_int) < 30:
-        return f"{dias_int:,} días".replace(",", ".")
+        return f"{dias_int:,} días"
 
     meses = dias_num / 30.44
 
     if abs(meses) < 12:
-        return (
-            f"{meses:,.1f} meses"
-            .replace(",", "X")
-            .replace(".", ",")
-            .replace("X", ".")
-        )
+        return f"{meses:,.1f} meses"
 
     anos = meses / 12
 
-    return (
-        f"{anos:,.1f} años"
-        .replace(",", "X")
-        .replace(".", ",")
-        .replace("X", ".")
-    )
+    return f"{anos:,.1f} años"
 
 
 def texto_dias_restantes(valor: Any) -> str:
@@ -677,12 +652,12 @@ def texto_dias_restantes(valor: Any) -> str:
     dias = int(round(dias))
 
     if dias < 0:
-        return f"Vencido hace {abs(dias):,} días".replace(",", ".")
+        return f"Vencido hace {abs(dias):,} días"
 
     if dias == 0:
         return "Vence hoy"
 
-    return f"Vence en {dias:,} días".replace(",", ".")
+    return f"Vence en {dias:,} días"
 
 
 def primera_columna_existente(df: pd.DataFrame, candidatas: list[str]) -> pd.Series:
@@ -2567,22 +2542,22 @@ tat_promedio = pd.to_numeric(df_filtrado.get(COL_DIAS_TAT, pd.Series(np.nan, ind
 st.markdown("### Resumen ejecutivo")
 
 k1, k2, k3, k4 = st.columns(4)
-k1.metric("Registros", f"{total_registros:,}".replace(",", "."))
-k2.metric("Materiales únicos", f"{total_materiales:,}".replace(",", "."))
-k3.metric("SolPed únicas", f"{total_solpeds:,}".replace(",", "."))
-k4.metric("Pedidos únicos", f"{total_pedidos:,}".replace(",", "."))
+k1.metric("Registros", f"{total_registros:,}")
+k2.metric("Materiales únicos", f"{total_materiales:,}")
+k3.metric("SolPed únicas", f"{total_solpeds:,}")
+k4.metric("Pedidos únicos", f"{total_pedidos:,}")
 
 k5, k6, k7, k8 = st.columns(4)
-k5.metric("Vencidos", f"{vencidos:,}".replace(",", "."))
-k6.metric("Por vencer / seguimiento", f"{por_vencer:,}".replace(",", "."))
-k7.metric("Sin recepción", f"{sin_recepcion:,}".replace(",", "."))
-k8.metric("Recepcionados", f"{recepcionados:,}".replace(",", "."))
+k5.metric("Vencidos", f"{vencidos:,}")
+k6.metric("Por vencer / seguimiento", f"{por_vencer:,}")
+k7.metric("Sin recepción", f"{sin_recepcion:,}")
+k8.metric("Recepcionados", f"{recepcionados:,}")
 
 k9, k10, k11, k12 = st.columns(4)
 k9.metric("Monto total", formato_numero(monto_total))
 k10.metric("TAT promedio", texto_tiempo(tat_promedio))
-k11.metric("Centros", f"{df_filtrado['_centro_norm'].replace('', pd.NA).dropna().nunique():,}".replace(",", "."))
-k12.metric("Grupos compra", f"{df_filtrado['_grupo_compras_norm'].replace('', pd.NA).dropna().nunique():,}".replace(",", "."))
+k11.metric("Centros", f"{df_filtrado['_centro_norm'].replace('', pd.NA).dropna().nunique():,}")
+k12.metric("Grupos compra", f"{df_filtrado['_grupo_compras_norm'].replace('', pd.NA).dropna().nunique():,}")
 
 
 # ============================================================
