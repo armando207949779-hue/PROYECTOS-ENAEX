@@ -2098,6 +2098,13 @@ mostrar_evolucion_por_anio_matplotlib(tabla_mensual)
 
 
 # ============================================================
+# Visual 2: Cumplimiento por etapa
+# ============================================================
+
+mostrar_etapas_ejecutivas(df_dashboard)
+
+
+# ============================================================
 # Detalle mensual
 # ============================================================
 
@@ -2106,13 +2113,6 @@ mostrar_detalle_mes_ejecutivo(
     tabla_mensual=tabla_mensual,
     col_centro=col_centro,
 )
-
-
-# ============================================================
-# Visual 2: Cumplimiento por etapa
-# ============================================================
-
-mostrar_etapas_ejecutivas(df_dashboard)
 
 
 # ============================================================
