@@ -575,17 +575,16 @@ def estilo_estado_alerta(row: pd.Series) -> list[str]:
 
     texto_estado = f"{nivel} {vencimiento}".lower()
 
-    # Verde: recepcionado/cerrado.
-    # Esta regla va primero para evitar que un material recepcionado con más de un registro
-    # quede pintado en rojo por una lectura agregada anterior.
+    # Verde: Recepcionado/Cerrado.
+    # Esta regla tiene prioridad absoluta.
     if "recepcionado" in texto_estado or "cerrado" in texto_estado:
         return ["background-color: #dcfce7; color: #14532d; font-weight: 800"] * len(row)
 
-    # Rojo: vencido/crítico.
+    # Rojo: Vencido/Crítico.
     if "vencido" in texto_estado or "crítico" in texto_estado or "critico" in texto_estado:
         return ["background-color: #fee2e2; color: #7f1d1d; font-weight: 800"] * len(row)
 
-    # Naranjo: por vencer / atención / seguimiento.
+    # Naranjo: Por vencer / Atención / Seguimiento.
     if "por vencer" in texto_estado or "atención" in texto_estado or "atencion" in texto_estado or "seguimiento" in texto_estado:
         return ["background-color: #ffedd5; color: #7c2d12; font-weight: 800"] * len(row)
 
@@ -593,19 +592,9 @@ def estilo_estado_alerta(row: pd.Series) -> list[str]:
 
 
 def estilo_tat_variabilidad(row: pd.Series) -> list[str]:
-    cv = valor_numerico(row.get("Coeficiente variación % TAT", np.nan))
-    max_tat = valor_numerico(row.get("Máximo TAT", np.nan))
-    media = valor_numerico(row.get("Media TAT", np.nan))
-
-    if pd.notna(cv) and cv >= 80:
-        return ["background-color: #fee2e2; color: #7f1d1d; font-weight: 700"] * len(row)
-
-    if pd.notna(cv) and cv >= 40:
-        return ["background-color: #ffedd5; color: #7c2d12; font-weight: 700"] * len(row)
-
-    if pd.notna(max_tat) and pd.notna(media) and max_tat > media * 2:
-        return ["background-color: #fef9c3; color: #713f12; font-weight: 700"] * len(row)
-
+    # No aplicar color de fondo por variabilidad.
+    # El color de las tablas debe representar solo el estado:
+    # verde = recepcionado, naranjo = por vencer, rojo = vencido.
     return [""] * len(row)
 
 
@@ -2931,14 +2920,14 @@ with tab_g4:
 
 st.markdown("### Tabla días TAT por material")
 st.caption(
-    "Muestra el comportamiento del TAT por material: mínimo, media, desviación estándar, coeficiente de variación y máximo."
+    "Muestra el comportamiento del TAT por material. El color de la fila representa el estado: verde recepcionado, naranjo por vencer y rojo vencido."
 )
 
 if tabla_dias_tat_material.empty:
     st.info("No hay tabla de días TAT disponible para los materiales filtrados.")
 else:
     st.dataframe(
-        tabla_dias_tat_material.style.apply(estilo_estado_alerta, axis=1).apply(estilo_tat_variabilidad, axis=1),
+        tabla_dias_tat_material.style.apply(estilo_estado_alerta, axis=1),
         use_container_width=True,
         hide_index=True,
         column_config={
