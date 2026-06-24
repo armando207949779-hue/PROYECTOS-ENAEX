@@ -573,14 +573,17 @@ def estilo_estado_alerta(row: pd.Series) -> list[str]:
     nivel = str(row.get("Nivel alerta", row.get("Nivel estado material", ""))).strip()
     vencimiento = str(row.get("Estado vencimiento", row.get("Nivel estado material", ""))).strip()
 
+    # Vencido: rojo
     if nivel == "Crítico" or vencimiento in ["Vencido", "Vence hoy"]:
-        return ["background-color: #fee2e2; color: #7f1d1d; font-weight: 700"] * len(row)
+        return ["background-color: #fee2e2; color: #7f1d1d; font-weight: 800"] * len(row)
 
-    if nivel in ["Atención", "Seguimiento"] or vencimiento in ["1-7 días", "8-30 días"]:
-        return ["background-color: #ffedd5; color: #7c2d12; font-weight: 700"] * len(row)
+    # Por vencer: naranja
+    if nivel in ["Atención", "Seguimiento", "Por vencer"] or vencimiento in ["Por vencer", "1-7 días", "8-30 días"]:
+        return ["background-color: #ffedd5; color: #7c2d12; font-weight: 800"] * len(row)
 
-    if nivel == "Cerrado":
-        return ["background-color: #dcfce7; color: #14532d"] * len(row)
+    # Recepcionado: verde
+    if nivel in ["Cerrado", "Recepcionado"] or vencimiento in ["Recepcionado"]:
+        return ["background-color: #dcfce7; color: #14532d; font-weight: 700"] * len(row)
 
     return [""] * len(row)
 
@@ -1455,7 +1458,7 @@ def crear_tabla_detalle_materiales(df: pd.DataFrame) -> pd.DataFrame:
             "Etapa pendiente": base.get("etapa_pendiente", pd.Series("-", index=base.index)),
             "Cantidad": serie_combinada(base, [COL_CANTIDAD]).fillna("-"),
             "Unidad": serie_combinada(base, [COL_UNIDAD]).fillna("-"),
-            "Monto": serie_combinada(base, [COL_MONTO]).fillna("-"),
+            "Monto": pd.to_numeric(serie_combinada(base, [COL_MONTO]), errors="coerce").fillna(0).round(0).astype(int),
             "Tipo OC": serie_combinada(base, [COL_TIPO_OC]).fillna("-"),
             "Sistema": serie_combinada(base, [COL_SISTEMA]).fillna("-"),
             "Origen": serie_combinada(base, [COL_ORIGEN]).fillna("-"),
@@ -1620,7 +1623,7 @@ def preparar_figura():
 
 
 def formatear_ejes(ax):
-    ax.grid(axis="x", alpha=0.22)
+    ax.grid(False)
 
     for spine in ax.spines.values():
         spine.set_visible(False)
@@ -1651,24 +1654,32 @@ def grafico_barras_horizontales(
 
     fig, ax = preparar_figura()
 
+    valores = data[columna_valor].round(0).astype(int)
+
     ax.barh(
         data[columna_categoria].astype(str),
-        data[columna_valor],
+        valores,
     )
 
-    max_valor = data[columna_valor].max()
+    max_valor = int(valores.max()) if len(valores) else 0
 
-    for i, valor in enumerate(data[columna_valor]):
+    for i, valor in enumerate(valores):
         ax.text(
             valor + max(max_valor * 0.02, 0.4),
             i,
-            formato_numero(valor),
+            formato_entero_miles(valor),
             va="center",
             ha="left",
             fontsize=9.5,
             fontweight="bold",
             color="#0f172a",
         )
+
+    ax.set_xlim(0, max(max_valor * 1.18, 5))
+
+    # Eje X entero, sin decimales.
+    from matplotlib.ticker import MaxNLocator
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
 
     ax.set_title(
         titulo,
@@ -1680,7 +1691,14 @@ def grafico_barras_horizontales(
 
     ax.set_xlabel(columna_valor, color="#0f172a")
 
-    formatear_ejes(ax)
+    # Sin grilla ni borde externo.
+    ax.grid(False)
+
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+    ax.tick_params(axis="both", length=0, colors="#475569")
+
     fig.tight_layout()
 
     st.pyplot(fig, clear_figure=True, use_container_width=True)
@@ -1746,15 +1764,16 @@ def grafico_materiales_foco(tabla_materiales: pd.DataFrame, top_n: int = 12):
     fig.patch.set_facecolor("white")
     ax.set_facecolor("white")
 
-    ax.barh(y, pct_vencidos, height=0.62, label="Vencido")
-    ax.barh(y, pct_por_vencer, left=pct_vencidos, height=0.62, label="Por vencer / seguimiento")
-    ax.barh(y, pct_datos, left=pct_vencidos + pct_por_vencer, height=0.62, label="Datos incompletos")
+    ax.barh(y, pct_vencidos, height=0.62, label="Vencido", color="#dc2626")
+    ax.barh(y, pct_por_vencer, left=pct_vencidos, height=0.62, label="Por vencer / seguimiento", color="#f97316")
+    ax.barh(y, pct_datos, left=pct_vencidos + pct_por_vencer, height=0.62, label="Datos incompletos", color="#ca8a04")
     ax.barh(
         y,
         pct_recepcionados,
         left=pct_vencidos + pct_por_vencer + pct_datos,
         height=0.62,
         label="Recepcionado",
+        color="#16a34a",
     )
 
     for i, row in data.iterrows():
@@ -1867,6 +1886,132 @@ def grafico_tendencia_mensual(tabla: pd.DataFrame):
 
     st.pyplot(fig, clear_figure=True, use_container_width=True)
     plt.close(fig)
+
+
+
+def grafico_donut_distribucion(
+    tabla: pd.DataFrame,
+    columna_categoria: str,
+    columna_valor: str,
+    titulo: str,
+    subtitulo: str = "registros foco acción",
+    top_n: int = 8,
+):
+    if tabla.empty or columna_categoria not in tabla.columns or columna_valor not in tabla.columns:
+        st.info("No hay datos para graficar donut.")
+        return
+
+    data = tabla.copy()
+    data[columna_valor] = pd.to_numeric(data[columna_valor], errors="coerce").fillna(0)
+    data = data[data[columna_valor].gt(0)].copy()
+
+    if data.empty:
+        st.info("No hay valores mayores a cero para graficar donut.")
+        return
+
+    data = data.sort_values(columna_valor, ascending=False).copy()
+
+    if len(data) > top_n:
+        top = data.head(top_n).copy()
+        otros_valor = data.iloc[top_n:][columna_valor].sum()
+
+        if otros_valor > 0:
+            otros = pd.DataFrame(
+                [
+                    {
+                        columna_categoria: "Otros",
+                        columna_valor: otros_valor,
+                    }
+                ]
+            )
+            data = pd.concat([top, otros], ignore_index=True)
+        else:
+            data = top
+
+    categorias = data[columna_categoria].astype(str).tolist()
+    valores = data[columna_valor].round(0).astype(int).to_numpy()
+    total = int(valores.sum())
+
+    if total <= 0:
+        st.info("No hay total disponible para graficar donut.")
+        return
+
+    fig, ax = plt.subplots(figsize=(8.2, 5.8), dpi=130)
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("white")
+
+    wedges, texts, autotexts = ax.pie(
+        valores,
+        labels=None,
+        startangle=90,
+        counterclock=False,
+        autopct=lambda pct: f"{pct:.1f}%" if pct >= 4 else "",
+        pctdistance=0.78,
+        wedgeprops={
+            "width": 0.40,
+            "linewidth": 2,
+            "edgecolor": "white",
+        },
+    )
+
+    for autotext in autotexts:
+        autotext.set_fontweight("bold")
+        autotext.set_fontsize(9)
+        autotext.set_color("white")
+
+    ax.text(
+        0,
+        0.08,
+        formato_entero_miles(total),
+        ha="center",
+        va="center",
+        fontsize=22,
+        fontweight="bold",
+        color="#0f172a",
+    )
+
+    ax.text(
+        0,
+        -0.12,
+        subtitulo,
+        ha="center",
+        va="center",
+        fontsize=9.5,
+        fontweight="bold",
+        color="#64748b",
+    )
+
+    etiquetas_leyenda = [
+        f"{cat} · {formato_entero_miles(valor)} · {valor / total * 100:.1f}%"
+        for cat, valor in zip(categorias, valores)
+    ]
+
+    ax.legend(
+        wedges,
+        etiquetas_leyenda,
+        title="Distribución",
+        loc="center left",
+        bbox_to_anchor=(1.02, 0.5),
+        frameon=False,
+        fontsize=8.5,
+        title_fontsize=9.5,
+    )
+
+    ax.set_title(
+        titulo,
+        fontsize=14.5,
+        fontweight="bold",
+        color="#0f172a",
+        pad=14,
+    )
+
+    ax.axis("equal")
+    fig.tight_layout()
+    fig.subplots_adjust(right=0.68)
+
+    st.pyplot(fig, clear_figure=True, use_container_width=True)
+    plt.close(fig)
+
 
 
 # ============================================================
@@ -2339,21 +2484,23 @@ with tab_g4:
     col_centro, col_grupo = st.columns(2)
 
     with col_centro:
-        grafico_barras_horizontales(
+        grafico_donut_distribucion(
             tabla=ranking_centros,
             columna_categoria="Centro",
             columna_valor="Foco acción",
-            titulo="Foco acción por centro",
-            top_n=top_n,
+            titulo="Distribución del foco de acción por centro",
+            subtitulo="foco por centro",
+            top_n=min(top_n, 8),
         )
 
     with col_grupo:
-        grafico_barras_horizontales(
+        grafico_donut_distribucion(
             tabla=ranking_grupos,
             columna_categoria="Grupo de compras",
             columna_valor="Foco acción",
-            titulo="Foco acción por grupo de compras",
-            top_n=top_n,
+            titulo="Distribución del foco de acción por grupo de compras",
+            subtitulo="foco por grupo",
+            top_n=min(top_n, 8),
         )
 
 
