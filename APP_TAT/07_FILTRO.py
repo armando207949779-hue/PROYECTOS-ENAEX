@@ -1215,7 +1215,7 @@ def html_id(valor: Any) -> str:
 def normalizar_columnas_id_visual(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
-    columnas_id = [
+    columnas_id_base = [
         COL_SOLPED,
         COL_OC_ME5A,
         COL_OC_ME80FN,
@@ -1224,9 +1224,38 @@ def normalizar_columnas_id_visual(df: pd.DataFrame) -> pd.DataFrame:
         COL_POS_OC,
     ]
 
-    for col in columnas_id:
-        if col in df.columns:
-            df[col] = df[col].apply(formato_id)
+    columnas_detectadas = []
+
+    for col in df.columns:
+        col_txt = str(col).strip().lower()
+
+        es_columna_id = (
+            col in columnas_id_base
+            or "solicitud de pedido" in col_txt
+            or "solped" in col_txt
+            or "pedido" in col_txt
+            or "documento de compras" in col_txt
+        )
+
+        # No tocar columnas que usan texto descriptivo aunque incluyan la palabra pedido.
+        excluir = (
+            "texto" in col_txt
+            or "descripción" in col_txt
+            or "descripcion" in col_txt
+            or "estado" in col_txt
+            or "performance" in col_txt
+            or "rango" in col_txt
+            or "fecha" in col_txt
+            or "días" in col_txt
+            or "dias" in col_txt
+            or "umbral" in col_txt
+        )
+
+        if es_columna_id and not excluir:
+            columnas_detectadas.append(col)
+
+    for col in columnas_detectadas:
+        df[col] = df[col].apply(formato_id)
 
     return df
 
