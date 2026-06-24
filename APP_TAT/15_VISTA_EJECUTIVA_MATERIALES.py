@@ -1583,13 +1583,13 @@ def crear_tabla_estadistica_tat_material(tabla_materiales: pd.DataFrame) -> pd.D
         {
             "Material": data["Material"],
             "Texto referencial": data["Texto_referencial"],
+            "Nivel alerta": data["Nivel estado material"],
             "Registros": pd.to_numeric(data["Registros"], errors="coerce").fillna(0).round(0).astype(int),
             "Min TAT": pd.to_numeric(data["Días TAT min"], errors="coerce"),
             "Media TAT": pd.to_numeric(data["Días TAT promedio"], errors="coerce"),
             "Desviación estándar TAT": pd.to_numeric(data["Días TAT std"], errors="coerce"),
             "Coeficiente variación % TAT": pd.to_numeric(data["Coeficiente variación % TAT"], errors="coerce"),
             "Máximo TAT": pd.to_numeric(data["Días TAT max"], errors="coerce"),
-            "Nivel alerta": data["Nivel estado material"],
             "Estado vencimiento": np.select(
                 [
                     pd.to_numeric(data["Vencidos"], errors="coerce").fillna(0).gt(0),
@@ -1637,6 +1637,7 @@ def grafico_barras_horizontales(
     columna_valor: str,
     titulo: str,
     top_n: int = 12,
+    mostrar_etiquetas: bool = True,
 ):
     if tabla.empty or columna_categoria not in tabla.columns or columna_valor not in tabla.columns:
         st.info("No hay datos para graficar.")
@@ -1663,19 +1664,22 @@ def grafico_barras_horizontales(
 
     max_valor = int(valores.max()) if len(valores) else 0
 
-    for i, valor in enumerate(valores):
-        ax.text(
-            valor + max(max_valor * 0.02, 0.4),
-            i,
-            formato_entero_miles(valor),
-            va="center",
-            ha="left",
-            fontsize=9.5,
-            fontweight="bold",
-            color="#0f172a",
-        )
+    if mostrar_etiquetas:
+        for i, valor in enumerate(valores):
+            ax.text(
+                valor + max(max_valor * 0.02, 0.4),
+                i,
+                formato_entero_miles(valor),
+                va="center",
+                ha="left",
+                fontsize=9.5,
+                fontweight="bold",
+                color="#0f172a",
+            )
 
-    ax.set_xlim(0, max(max_valor * 1.18, 5))
+        ax.set_xlim(0, max(max_valor * 1.18, 5))
+    else:
+        ax.set_xlim(0, max(max_valor * 1.06, 5))
 
     # Eje X entero, sin decimales.
     from matplotlib.ticker import MaxNLocator
@@ -2422,13 +2426,13 @@ def crear_tabla_estadistica_tat_material(tabla_materiales: pd.DataFrame) -> pd.D
         {
             "Material": data["Material"],
             "Texto referencial": data["Texto_referencial"],
+            "Nivel alerta": data["Nivel estado material"],
             "Registros": pd.to_numeric(data["Registros"], errors="coerce").fillna(0).round(0).astype(int),
             "Min TAT": pd.to_numeric(data["Días TAT min"], errors="coerce"),
             "Media TAT": pd.to_numeric(data["Días TAT promedio"], errors="coerce"),
             "Desviación estándar TAT": pd.to_numeric(data["Días TAT std"], errors="coerce"),
             "Coeficiente variación % TAT": pd.to_numeric(data["Coeficiente variación % TAT"], errors="coerce"),
             "Máximo TAT": pd.to_numeric(data["Días TAT max"], errors="coerce"),
-            "Nivel alerta": data["Nivel estado material"],
             "Estado vencimiento": np.select(
                 [
                     pd.to_numeric(data["Vencidos"], errors="coerce").fillna(0).gt(0),
@@ -2472,6 +2476,7 @@ with tab_g1:
         columna_valor="Registros",
         titulo="Materiales más recurrentes",
         top_n=top_n,
+        mostrar_etiquetas=False,
     )
 
 with tab_g2:
@@ -2514,11 +2519,11 @@ st.caption("Consolida cada material considerando todas sus SolPed y pedidos asoc
 columnas_estadistica_visual = [
     "Material",
     "Texto_referencial",
+    "Nivel estado material",
     "Recurrencia",
     "Registros",
     "SolPed únicas",
     "Pedidos únicos",
-    "Nivel estado material",
     "Foco acción",
     "% foco acción",
     "Vencidos",
@@ -2529,8 +2534,11 @@ columnas_estadistica_visual = [
     "Monto total",
     "Monto promedio",
     "Cantidad total",
+    "Días TAT min",
     "Días TAT promedio",
+    "Días TAT std",
     "Días TAT max",
+    "Coeficiente variación % TAT",
     "Avance promedio",
     "Score máximo",
     "Centro_principal",
@@ -2545,8 +2553,16 @@ columnas_estadistica_visual = [
     if col in tabla_materiales.columns
 ]
 
+tabla_materiales_visual = tabla_materiales[columnas_estadistica_visual].rename(
+    columns={
+        "Texto_referencial": "Texto referencial",
+        "Centro_principal": "Centro principal",
+        "Sin_recepcion": "Sin recepción",
+    }
+)
+
 st.dataframe(
-    tabla_materiales[columnas_estadistica_visual].style.apply(estilo_estado_alerta, axis=1),
+    tabla_materiales_visual.style.apply(estilo_estado_alerta, axis=1),
     use_container_width=True,
     hide_index=True,
     column_config={
