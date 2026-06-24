@@ -1594,7 +1594,7 @@ def crear_ranking_grupos_materiales(df: pd.DataFrame) -> pd.DataFrame:
 
 
 
-def crear_tabla_ejecutiva_material(tabla_materiales: pd.DataFrame) -> pd.DataFrame:
+def crear_tabla_dias_tat_material(tabla_materiales: pd.DataFrame) -> pd.DataFrame:
     if tabla_materiales.empty:
         return pd.DataFrame()
 
@@ -1675,7 +1675,7 @@ def crear_tabla_ejecutiva_material(tabla_materiales: pd.DataFrame) -> pd.DataFra
     return salida
 
 
-def crear_tabla_cantidad_monto_material(tabla_materiales: pd.DataFrame) -> pd.DataFrame:
+def crear_tabla_cantidad_material(tabla_materiales: pd.DataFrame) -> pd.DataFrame:
     if tabla_materiales.empty:
         return pd.DataFrame()
 
@@ -1691,11 +1691,10 @@ def crear_tabla_cantidad_monto_material(tabla_materiales: pd.DataFrame) -> pd.Da
         "Cantidad std",
         "Coeficiente variación % Cantidad",
         "Cantidad max",
-        "Monto min",
-        "Monto media",
-        "Monto std",
-        "Coeficiente variación % Monto",
-        "Monto max",
+        "Recurrencia",
+        "Centro_principal",
+        "Grupo compra principal",
+        "Días desde última solicitud",
         "Vencidos",
         "Por_vencer",
     ]
@@ -1709,11 +1708,7 @@ def crear_tabla_cantidad_monto_material(tabla_materiales: pd.DataFrame) -> pd.Da
                 "Cantidad std",
                 "Coeficiente variación % Cantidad",
                 "Cantidad max",
-                "Monto min",
-                "Monto media",
-                "Monto std",
-                "Coeficiente variación % Monto",
-                "Monto max",
+                "Días desde última solicitud",
                 "Vencidos",
                 "Por_vencer",
             ]:
@@ -1732,11 +1727,88 @@ def crear_tabla_cantidad_monto_material(tabla_materiales: pd.DataFrame) -> pd.Da
             "Desviación estándar cantidad": pd.to_numeric(data["Cantidad std"], errors="coerce"),
             "Coeficiente variación % cantidad": pd.to_numeric(data["Coeficiente variación % Cantidad"], errors="coerce"),
             "Máximo cantidad": pd.to_numeric(data["Cantidad max"], errors="coerce").fillna(0).round(0).astype(int),
+            "Recurrencia": data["Recurrencia"],
+            "Centro principal": data["Centro_principal"],
+            "Grupo compra principal": data["Grupo compra principal"],
+            "Días desde última solicitud": pd.to_numeric(data["Días desde última solicitud"], errors="coerce").fillna(0).round(0).astype(int),
+            "Estado vencimiento": np.select(
+                [
+                    pd.to_numeric(data["Vencidos"], errors="coerce").fillna(0).gt(0),
+                    pd.to_numeric(data["Por_vencer"], errors="coerce").fillna(0).gt(0),
+                ],
+                [
+                    "Vencido",
+                    "Por vencer",
+                ],
+                default="Sin foco",
+            ),
+        }
+    )
+
+    salida = salida.sort_values(
+        ["Estado vencimiento", "Coeficiente variación % cantidad", "Registros"],
+        ascending=[True, False, False],
+    ).reset_index(drop=True)
+
+    return salida
+
+
+def crear_tabla_monto_material(tabla_materiales: pd.DataFrame) -> pd.DataFrame:
+    if tabla_materiales.empty:
+        return pd.DataFrame()
+
+    data = tabla_materiales.copy()
+
+    columnas_base = [
+        "Material",
+        "Texto_referencial",
+        "Nivel estado material",
+        "Registros",
+        "Monto min",
+        "Monto media",
+        "Monto std",
+        "Coeficiente variación % Monto",
+        "Monto max",
+        "Recurrencia",
+        "Centro_principal",
+        "Grupo compra principal",
+        "Días desde última solicitud",
+        "Vencidos",
+        "Por_vencer",
+    ]
+
+    for col in columnas_base:
+        if col not in data.columns:
+            if col in [
+                "Registros",
+                "Monto min",
+                "Monto media",
+                "Monto std",
+                "Coeficiente variación % Monto",
+                "Monto max",
+                "Días desde última solicitud",
+                "Vencidos",
+                "Por_vencer",
+            ]:
+                data[col] = 0
+            else:
+                data[col] = "-"
+
+    salida = pd.DataFrame(
+        {
+            "Material": data["Material"],
+            "Texto referencial": data["Texto_referencial"],
+            "Nivel alerta": data["Nivel estado material"],
+            "Registros": pd.to_numeric(data["Registros"], errors="coerce").fillna(0).round(0).astype(int),
             "Mínimo monto": pd.to_numeric(data["Monto min"], errors="coerce").fillna(0).round(0).astype(int),
             "Media monto": pd.to_numeric(data["Monto media"], errors="coerce").fillna(0).round(0).astype(int),
             "Desviación estándar monto": pd.to_numeric(data["Monto std"], errors="coerce"),
             "Coeficiente variación % monto": pd.to_numeric(data["Coeficiente variación % Monto"], errors="coerce"),
             "Máximo monto": pd.to_numeric(data["Monto max"], errors="coerce").fillna(0).round(0).astype(int),
+            "Recurrencia": data["Recurrencia"],
+            "Centro principal": data["Centro_principal"],
+            "Grupo compra principal": data["Grupo compra principal"],
+            "Días desde última solicitud": pd.to_numeric(data["Días desde última solicitud"], errors="coerce").fillna(0).round(0).astype(int),
             "Estado vencimiento": np.select(
                 [
                     pd.to_numeric(data["Vencidos"], errors="coerce").fillna(0).gt(0),
@@ -2173,8 +2245,9 @@ def grafico_donut_distribucion(
 def convertir_a_excel(
     detalle: pd.DataFrame,
     estadistica: pd.DataFrame,
-    tabla_ejecutiva: pd.DataFrame,
-    tabla_cantidad_monto: pd.DataFrame,
+    tabla_dias_tat: pd.DataFrame,
+    tabla_cantidad: pd.DataFrame,
+    tabla_monto: pd.DataFrame,
     tendencia: pd.DataFrame,
     resumen_busqueda: pd.DataFrame,
 ) -> bytes:
@@ -2183,8 +2256,9 @@ def convertir_a_excel(
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         detalle.to_excel(writer, index=False, sheet_name="Detalle")
         estadistica.to_excel(writer, index=False, sheet_name="Estadistica_material")
-        tabla_ejecutiva.to_excel(writer, index=False, sheet_name="Tabla_ejecutiva")
-        tabla_cantidad_monto.to_excel(writer, index=False, sheet_name="Cantidad_Monto")
+        tabla_dias_tat.to_excel(writer, index=False, sheet_name="Dias_TAT")
+        tabla_cantidad.to_excel(writer, index=False, sheet_name="Cantidad")
+        tabla_monto.to_excel(writer, index=False, sheet_name="Monto")
         tendencia.to_excel(writer, index=False, sheet_name="Tendencia")
         resumen_busqueda.to_excel(writer, index=False, sheet_name="Busqueda")
 
@@ -2214,16 +2288,18 @@ def convertir_a_parquet(df: pd.DataFrame) -> bytes:
 def convertir_a_excel_cache(
     detalle: pd.DataFrame,
     estadistica: pd.DataFrame,
-    tabla_ejecutiva: pd.DataFrame,
-    tabla_cantidad_monto: pd.DataFrame,
+    tabla_dias_tat: pd.DataFrame,
+    tabla_cantidad: pd.DataFrame,
+    tabla_monto: pd.DataFrame,
     tendencia: pd.DataFrame,
     resumen_busqueda: pd.DataFrame,
 ) -> bytes:
     return convertir_a_excel(
         detalle=detalle,
         estadistica=estadistica,
-        tabla_ejecutiva=tabla_ejecutiva,
-        tabla_cantidad_monto=tabla_cantidad_monto,
+        tabla_dias_tat=tabla_dias_tat,
+        tabla_cantidad=tabla_cantidad,
+        tabla_monto=tabla_monto,
         tendencia=tendencia,
         resumen_busqueda=resumen_busqueda,
     )
@@ -2465,8 +2541,9 @@ if df_filtrado.empty:
 # ============================================================
 
 tabla_materiales = crear_estadistica_materiales(df_filtrado)
-tabla_ejecutiva_material = crear_tabla_ejecutiva_material(tabla_materiales)
-tabla_cantidad_monto_material = crear_tabla_cantidad_monto_material(tabla_materiales)
+tabla_dias_tat_material = crear_tabla_dias_tat_material(tabla_materiales)
+tabla_cantidad_material = crear_tabla_cantidad_material(tabla_materiales)
+tabla_monto_material = crear_tabla_monto_material(tabla_materiales)
 tabla_detalle = crear_tabla_detalle_materiales(df_filtrado)
 tabla_tendencia = crear_tendencia_materiales(df_filtrado)
 ranking_centros = crear_ranking_centros_materiales(df_filtrado)
@@ -2548,7 +2625,7 @@ st.markdown(
 
 
 
-def crear_tabla_ejecutiva_material(tabla_materiales: pd.DataFrame) -> pd.DataFrame:
+def crear_tabla_dias_tat_material(tabla_materiales: pd.DataFrame) -> pd.DataFrame:
     if tabla_materiales.empty:
         return pd.DataFrame()
 
@@ -2629,7 +2706,7 @@ def crear_tabla_ejecutiva_material(tabla_materiales: pd.DataFrame) -> pd.DataFra
     return salida
 
 
-def crear_tabla_cantidad_monto_material(tabla_materiales: pd.DataFrame) -> pd.DataFrame:
+def crear_tabla_cantidad_material(tabla_materiales: pd.DataFrame) -> pd.DataFrame:
     if tabla_materiales.empty:
         return pd.DataFrame()
 
@@ -2645,11 +2722,10 @@ def crear_tabla_cantidad_monto_material(tabla_materiales: pd.DataFrame) -> pd.Da
         "Cantidad std",
         "Coeficiente variación % Cantidad",
         "Cantidad max",
-        "Monto min",
-        "Monto media",
-        "Monto std",
-        "Coeficiente variación % Monto",
-        "Monto max",
+        "Recurrencia",
+        "Centro_principal",
+        "Grupo compra principal",
+        "Días desde última solicitud",
         "Vencidos",
         "Por_vencer",
     ]
@@ -2663,11 +2739,7 @@ def crear_tabla_cantidad_monto_material(tabla_materiales: pd.DataFrame) -> pd.Da
                 "Cantidad std",
                 "Coeficiente variación % Cantidad",
                 "Cantidad max",
-                "Monto min",
-                "Monto media",
-                "Monto std",
-                "Coeficiente variación % Monto",
-                "Monto max",
+                "Días desde última solicitud",
                 "Vencidos",
                 "Por_vencer",
             ]:
@@ -2686,11 +2758,88 @@ def crear_tabla_cantidad_monto_material(tabla_materiales: pd.DataFrame) -> pd.Da
             "Desviación estándar cantidad": pd.to_numeric(data["Cantidad std"], errors="coerce"),
             "Coeficiente variación % cantidad": pd.to_numeric(data["Coeficiente variación % Cantidad"], errors="coerce"),
             "Máximo cantidad": pd.to_numeric(data["Cantidad max"], errors="coerce").fillna(0).round(0).astype(int),
+            "Recurrencia": data["Recurrencia"],
+            "Centro principal": data["Centro_principal"],
+            "Grupo compra principal": data["Grupo compra principal"],
+            "Días desde última solicitud": pd.to_numeric(data["Días desde última solicitud"], errors="coerce").fillna(0).round(0).astype(int),
+            "Estado vencimiento": np.select(
+                [
+                    pd.to_numeric(data["Vencidos"], errors="coerce").fillna(0).gt(0),
+                    pd.to_numeric(data["Por_vencer"], errors="coerce").fillna(0).gt(0),
+                ],
+                [
+                    "Vencido",
+                    "Por vencer",
+                ],
+                default="Sin foco",
+            ),
+        }
+    )
+
+    salida = salida.sort_values(
+        ["Estado vencimiento", "Coeficiente variación % cantidad", "Registros"],
+        ascending=[True, False, False],
+    ).reset_index(drop=True)
+
+    return salida
+
+
+def crear_tabla_monto_material(tabla_materiales: pd.DataFrame) -> pd.DataFrame:
+    if tabla_materiales.empty:
+        return pd.DataFrame()
+
+    data = tabla_materiales.copy()
+
+    columnas_base = [
+        "Material",
+        "Texto_referencial",
+        "Nivel estado material",
+        "Registros",
+        "Monto min",
+        "Monto media",
+        "Monto std",
+        "Coeficiente variación % Monto",
+        "Monto max",
+        "Recurrencia",
+        "Centro_principal",
+        "Grupo compra principal",
+        "Días desde última solicitud",
+        "Vencidos",
+        "Por_vencer",
+    ]
+
+    for col in columnas_base:
+        if col not in data.columns:
+            if col in [
+                "Registros",
+                "Monto min",
+                "Monto media",
+                "Monto std",
+                "Coeficiente variación % Monto",
+                "Monto max",
+                "Días desde última solicitud",
+                "Vencidos",
+                "Por_vencer",
+            ]:
+                data[col] = 0
+            else:
+                data[col] = "-"
+
+    salida = pd.DataFrame(
+        {
+            "Material": data["Material"],
+            "Texto referencial": data["Texto_referencial"],
+            "Nivel alerta": data["Nivel estado material"],
+            "Registros": pd.to_numeric(data["Registros"], errors="coerce").fillna(0).round(0).astype(int),
             "Mínimo monto": pd.to_numeric(data["Monto min"], errors="coerce").fillna(0).round(0).astype(int),
             "Media monto": pd.to_numeric(data["Monto media"], errors="coerce").fillna(0).round(0).astype(int),
             "Desviación estándar monto": pd.to_numeric(data["Monto std"], errors="coerce"),
             "Coeficiente variación % monto": pd.to_numeric(data["Coeficiente variación % Monto"], errors="coerce"),
             "Máximo monto": pd.to_numeric(data["Monto max"], errors="coerce").fillna(0).round(0).astype(int),
+            "Recurrencia": data["Recurrencia"],
+            "Centro principal": data["Centro_principal"],
+            "Grupo compra principal": data["Grupo compra principal"],
+            "Días desde última solicitud": pd.to_numeric(data["Días desde última solicitud"], errors="coerce").fillna(0).round(0).astype(int),
             "Estado vencimiento": np.select(
                 [
                     pd.to_numeric(data["Vencidos"], errors="coerce").fillna(0).gt(0),
@@ -2769,19 +2918,19 @@ with tab_g4:
 
 
 # ============================================================
-# Tabla ejecutiva consolidada por material
+# Tabla días TAT por material
 # ============================================================
 
-st.markdown("### Tabla ejecutiva consolidada por material")
+st.markdown("### Tabla días TAT por material")
 st.caption(
-    "Integra la lectura principal del material con su nivel de alerta, recurrencia, estadística TAT y avance."
+    "Muestra el comportamiento del TAT por material: mínimo, media, desviación estándar, coeficiente de variación y máximo."
 )
 
-if tabla_ejecutiva_material.empty:
-    st.info("No hay tabla ejecutiva disponible para los materiales filtrados.")
+if tabla_dias_tat_material.empty:
+    st.info("No hay tabla de días TAT disponible para los materiales filtrados.")
 else:
     st.dataframe(
-        tabla_ejecutiva_material.style.apply(estilo_estado_alerta, axis=1).apply(estilo_tat_variabilidad, axis=1),
+        tabla_dias_tat_material.style.apply(estilo_estado_alerta, axis=1).apply(estilo_tat_variabilidad, axis=1),
         use_container_width=True,
         hide_index=True,
         column_config={
@@ -2824,19 +2973,19 @@ else:
 
 
 # ============================================================
-# Tabla estadística cantidad y monto por material
+# Tabla cantidad por material
 # ============================================================
 
-st.markdown("### Estadística de cantidad y monto por material")
+st.markdown("### Tabla cantidad por material")
 st.caption(
-    "Muestra variabilidad de cantidad y monto para detectar materiales con compras inestables o montos dispersos."
+    "Muestra la variabilidad de la cantidad solicitada por material."
 )
 
-if tabla_cantidad_monto_material.empty:
-    st.info("No hay estadística de cantidad y monto disponible para los materiales filtrados.")
+if tabla_cantidad_material.empty:
+    st.info("No hay tabla de cantidad disponible para los materiales filtrados.")
 else:
     st.dataframe(
-        tabla_cantidad_monto_material.style.apply(estilo_estado_alerta, axis=1),
+        tabla_cantidad_material.style.apply(estilo_estado_alerta, axis=1),
         use_container_width=True,
         hide_index=True,
         column_config={
@@ -2864,6 +3013,35 @@ else:
                 "Máximo cantidad",
                 format="%d",
             ),
+            "Días desde última solicitud": st.column_config.NumberColumn(
+                "Días desde última solicitud",
+                format="%d",
+            ),
+        },
+    )
+
+
+# ============================================================
+# Tabla monto por material
+# ============================================================
+
+st.markdown("### Tabla monto por material")
+st.caption(
+    "Muestra la variabilidad del monto por material. Los montos se muestran como enteros con separación de miles."
+)
+
+if tabla_monto_material.empty:
+    st.info("No hay tabla de monto disponible para los materiales filtrados.")
+else:
+    st.dataframe(
+        tabla_monto_material.style.apply(estilo_estado_alerta, axis=1),
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Registros": st.column_config.NumberColumn(
+                "Registros",
+                format="%d",
+            ),
             "Mínimo monto": st.column_config.NumberColumn(
                 "Mínimo monto",
                 format="%d",
@@ -2882,6 +3060,10 @@ else:
             ),
             "Máximo monto": st.column_config.NumberColumn(
                 "Máximo monto",
+                format="%d",
+            ),
+            "Días desde última solicitud": st.column_config.NumberColumn(
+                "Días desde última solicitud",
                 format="%d",
             ),
         },
@@ -2947,8 +3129,9 @@ with st.expander("Descargar resultado", expanded=False):
     firma_export = (
         f"{len(tabla_detalle)}_"
         f"{len(tabla_materiales)}_"
-        f"{len(tabla_ejecutiva_material)}_"
-        f"{len(tabla_cantidad_monto_material)}_"
+        f"{len(tabla_dias_tat_material)}_"
+        f"{len(tabla_cantidad_material)}_"
+        f"{len(tabla_monto_material)}_"
         f"{hash(tuple(materiales_ingresados))}_"
         f"{modo_material}_"
         f"{incluir_cerrados}_"
@@ -2970,8 +3153,9 @@ with st.expander("Descargar resultado", expanded=False):
                 st.session_state["vista_materiales_excel_bytes"] = convertir_a_excel_cache(
                     detalle=tabla_detalle,
                     estadistica=tabla_materiales,
-                    tabla_ejecutiva=tabla_ejecutiva_material,
-                    tabla_cantidad_monto=tabla_cantidad_monto_material,
+                    tabla_dias_tat=tabla_dias_tat_material,
+                    tabla_cantidad=tabla_cantidad_material,
+                    tabla_monto=tabla_monto_material,
                     tendencia=tabla_tendencia,
                     resumen_busqueda=resumen_busqueda,
                 )
