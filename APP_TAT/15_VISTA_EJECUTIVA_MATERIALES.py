@@ -1263,6 +1263,10 @@ def crear_estadistica_materiales(df: pd.DataFrame) -> pd.DataFrame:
         - tabla["Última solicitud"]
     ).dt.days
 
+    for col in ["Vencidos", "Por_vencer", "Datos_incompletos"]:
+        if col not in tabla.columns:
+            tabla[col] = 0
+
     tabla["Recurrencia"] = np.select(
         [
             tabla["Registros"].ge(20),
@@ -1279,10 +1283,13 @@ def crear_estadistica_materiales(df: pd.DataFrame) -> pd.DataFrame:
         default="Sin datos",
     )
 
+    tabla["Por vencer"] = tabla["Por_vencer"]
+    tabla["Datos incompletos"] = tabla["Datos_incompletos"]
+
     tabla["Foco acción"] = (
         tabla["Vencidos"]
-        + tabla["Por vencer"]
-        + tabla["Datos incompletos"]
+        + tabla["Por_vencer"]
+        + tabla["Datos_incompletos"]
     )
 
     tabla["% foco acción"] = np.where(
@@ -2108,8 +2115,8 @@ columnas_estadistica_visual = [
     "Foco acción",
     "% foco acción",
     "Vencidos",
-    "Por_vencer",
-    "Datos_incompletos",
+    "Por vencer",
+    "Datos incompletos",
     "Recepcionados",
     "Sin_recepcion",
     "Monto total",
