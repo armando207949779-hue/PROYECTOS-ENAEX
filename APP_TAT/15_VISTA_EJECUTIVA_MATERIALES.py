@@ -2918,7 +2918,7 @@ with tab_g4:
 # Tabla días TAT por material
 # ============================================================
 
-st.markdown("### ESTADISTICA: DIAS TAT")
+st.markdown("### Estadística: Días TAT")
 st.caption(
     "Muestra el comportamiento del TAT por material. El color de la fila representa el estado: verde recepcionado, naranjo por vencer y rojo vencido."
 )
@@ -2973,7 +2973,7 @@ else:
 # Tabla cantidad por material
 # ============================================================
 
-st.markdown("### ESTADISTICA: CANTIDAD")
+st.markdown("### Estadística: Cantidad")
 st.caption(
     "Muestra la variabilidad de la cantidad solicitada por material."
 )
@@ -3022,7 +3022,7 @@ else:
 # Tabla monto por material
 # ============================================================
 
-st.markdown("### ESTADISTICA: MONTO")
+st.markdown("### Estadística: Monto")
 st.caption(
     "Muestra la variabilidad del monto por material. Los montos se muestran como enteros con separación de miles."
 )
