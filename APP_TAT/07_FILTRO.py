@@ -2657,7 +2657,7 @@ def etiqueta_selector(row: pd.Series) -> str:
     estado = formato_valor(row.get("clasificacion_vencimiento", np.nan))
     venc = formato_valor(row.get("dias_hasta_vencimiento", np.nan))
     centro = formato_valor(row.get(COL_CENTRO, np.nan))
-    material = formato_id(row.get(COL_MATERIAL, np.nan))
+    material = formato_valor(row.get(COL_MATERIAL, np.nan))
 
     return f"{nivel} · {estado} · SolPed {solped} · Pedido {pedido} · Pos {pos} · Centro {centro} · Material {material} · {venc}"
 
@@ -2689,15 +2689,56 @@ def construir_tabla_resultados(df: pd.DataFrame, limite: int = 25) -> pd.DataFra
         "Acción sugerida": "accion_sugerida",
     }
 
+    # Estas columnas son identificadores SAP y deben verse sin separación de miles.
+    columnas_id = {
+        "SolPed",
+        "Pedido ME5A",
+        "Pedido ME80FN",
+        "Posición",
+    }
+
     salida = pd.DataFrame(index=base.index)
 
     for nombre, col in columnas.items():
         if col in base.columns:
-            salida[nombre] = base[col].apply(formato_valor)
+            if nombre in columnas_id:
+                salida[nombre] = base[col].apply(formato_id)
+            else:
+                salida[nombre] = base[col].apply(formato_valor)
         else:
             salida[nombre] = "-"
 
     return salida.reset_index(drop=True)
+
+
+def estilo_vista_previa_coincidencias(row: pd.Series) -> list[str]:
+    texto = " ".join(
+        [
+            str(row.get("Nivel", "")),
+            str(row.get("Estado", "")),
+            str(row.get("Vencimiento", "")),
+        ]
+    ).lower()
+
+    if "recepcionado" in texto or "cerrado" in texto:
+        return ["background-color: #dcfce7; color: #14532d; font-weight: 800"] * len(row)
+
+    if "vencido" in texto or "crítico" in texto or "critico" in texto:
+        return ["background-color: #fee2e2; color: #7f1d1d; font-weight: 800"] * len(row)
+
+    if (
+        "por vencer" in texto
+        or "vence hoy" in texto
+        or "atención" in texto
+        or "atencion" in texto
+        or "seguimiento" in texto
+        or "1-2 días" in texto
+        or "3-7 días" in texto
+        or "+7 días" in texto
+    ):
+        return ["background-color: #fef9c3; color: #713f12; font-weight: 800"] * len(row)
+
+    return [""] * len(row)
 
 
 def mostrar_resumen_resultados(df: pd.DataFrame):
@@ -2948,8 +2989,10 @@ else:
     )
 
     with st.expander("Vista previa de coincidencias", expanded=True):
+        tabla_coincidencias_visual = construir_tabla_resultados(df_filtrado, limite=25)
+
         st.dataframe(
-            construir_tabla_resultados(df_filtrado, limite=25),
+            tabla_coincidencias_visual.style.apply(estilo_vista_previa_coincidencias, axis=1),
             use_container_width=True,
             hide_index=True,
         )
