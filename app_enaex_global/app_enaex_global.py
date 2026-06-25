@@ -1,3 +1,4 @@
+import sys
 import base64
 from pathlib import Path
 
@@ -12,6 +13,11 @@ BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
 
 LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
+
+if str(PROJECT_DIR) not in sys.path:
+    sys.path.insert(0, str(PROJECT_DIR))
+
+from assets.configurar_espanol import configurar_espanol
 
 APP_DOLAR = PROJECT_DIR / "app_sii_dolar" / "app_sii_dolar.py"
 APP_UTM = PROJECT_DIR / "app_sii_utm" / "app_sii_utm.py"
@@ -31,6 +37,8 @@ st.set_page_config(
     page_icon="🏢",
     layout="wide"
 )
+
+configurar_espanol()
 
 
 # =========================
