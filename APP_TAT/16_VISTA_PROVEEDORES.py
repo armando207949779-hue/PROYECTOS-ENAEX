@@ -1,15 +1,15 @@
 # ============================================================
-# 16_VISTA_PROVEEDORES
+# 16_VISTA_PROVEEDORES_VERSION_3
 # Vista ejecutiva de Performance Proveedor
 # Usa df_tat cargado desde 06_CARGAR_ARCHIVO
 #
 # Enfoque:
 # - Vista ejecutiva inspirada en 13_VISTA_EJECUTIVA_PERFORMANCE_PLANTAS
 # - Base de análisis: registros evaluables Cumple + No cumple
-# - Donut global porcentual Cumple / No cumple
+# - Resumen global proveedor
+# - Tendencia mensual proveedor
 # - Proveedores por cantidad de registros evaluables
-# - Tendencia mensual de performance proveedor
-# - Tablas ejecutivas y descarga de información
+# - Tabla ejecutiva de proveedores con descarga debajo
 # ============================================================
 
 import io
@@ -1276,79 +1276,7 @@ with col_k4:
 
 
 # ============================================================
-# Visual 1: Tabla ejecutiva de proveedores
-# ============================================================
-
-st.markdown(
-    "<div class='exec-section-title'>Tabla ejecutiva de proveedores</div>",
-    unsafe_allow_html=True,
-)
-
-st.caption(
-    "Tabla principal de la vista. Ordenada por cantidad de registros evaluables y porcentaje de no cumplimiento."
-)
-
-tabla_ejecutiva_display = preparar_tabla_ejecutiva_display(tabla_proveedores)
-
-col_tabla_1, col_tabla_2 = st.columns([4, 1])
-
-with col_tabla_2:
-    excel_resumen_principal = convertir_a_excel_cache(tabla_ejecutiva_display)
-
-    st.download_button(
-        label="Descargar resumen proveedores",
-        data=excel_resumen_principal,
-        file_name="16_VISTA_PROVEEDORES_V2_resumen_proveedores.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True,
-        type="primary",
-    )
-
-with col_tabla_1:
-    st.dataframe(
-        tabla_ejecutiva_display,
-        use_container_width=True,
-        hide_index=True,
-        height=560,
-        column_config={
-            "proveedor_grafico": st.column_config.TextColumn(
-                "Proveedor",
-                width="large",
-            ),
-            "Cumple": st.column_config.NumberColumn(
-                "Cumple",
-                format="%d",
-            ),
-            "No cumple": st.column_config.NumberColumn(
-                "No cumple",
-                format="%d",
-            ),
-            "Evaluables": st.column_config.NumberColumn(
-                "Evaluables",
-                format="%d",
-            ),
-            "% Cumple": st.column_config.ProgressColumn(
-                "% Cumple",
-                format="%.1f%%",
-                min_value=0,
-                max_value=100,
-            ),
-            "% No cumple": st.column_config.ProgressColumn(
-                "% No cumple",
-                format="%.1f%%",
-                min_value=0,
-                max_value=100,
-            ),
-            "Promedio días proveedor": st.column_config.NumberColumn(
-                "Promedio días proveedor",
-                format="%.1f",
-            ),
-        },
-    )
-
-
-# ============================================================
-# Visual 2: Resumen global proveedor
+# Visual 1: Resumen global proveedor
 # ============================================================
 
 st.markdown(
@@ -1394,7 +1322,14 @@ with col_g2:
 
 
 # ============================================================
-# Visual 3: Volumen de registros por proveedor
+# Visual 2: Tendencia mensual proveedor
+# ============================================================
+
+mostrar_evolucion_por_anio_proveedor(tabla_mensual)
+
+
+# ============================================================
+# Visual 3: Proveedores por cantidad de registros
 # ============================================================
 
 st.markdown(
@@ -1409,10 +1344,71 @@ grafico_barras_apiladas_top_proveedores(
 
 
 # ============================================================
-# Visual 4: Tendencia mensual por año
+# Visual 4: Tabla ejecutiva de proveedores
 # ============================================================
 
-mostrar_evolucion_por_anio_proveedor(tabla_mensual)
+st.markdown(
+    "<div class='exec-section-title'>Tabla ejecutiva de proveedores</div>",
+    unsafe_allow_html=True,
+)
+
+st.caption(
+    "Tabla principal de la vista. Ordenada por cantidad de registros evaluables y porcentaje de no cumplimiento."
+)
+
+tabla_ejecutiva_display = preparar_tabla_ejecutiva_display(tabla_proveedores)
+
+st.dataframe(
+    tabla_ejecutiva_display,
+    use_container_width=True,
+    hide_index=True,
+    height=620,
+    column_config={
+        "proveedor_grafico": st.column_config.TextColumn(
+            "Proveedor",
+            width="large",
+        ),
+        "Cumple": st.column_config.NumberColumn(
+            "Cumple",
+            format="%d",
+        ),
+        "No cumple": st.column_config.NumberColumn(
+            "No cumple",
+            format="%d",
+        ),
+        "Evaluables": st.column_config.NumberColumn(
+            "Evaluables",
+            format="%d",
+        ),
+        "% Cumple": st.column_config.ProgressColumn(
+            "% Cumple",
+            format="%.1f%%",
+            min_value=0,
+            max_value=100,
+        ),
+        "% No cumple": st.column_config.ProgressColumn(
+            "% No cumple",
+            format="%.1f%%",
+            min_value=0,
+            max_value=100,
+        ),
+        "Promedio días proveedor": st.column_config.NumberColumn(
+            "Promedio días proveedor",
+            format="%.1f",
+        ),
+    },
+)
+
+excel_resumen_principal = convertir_a_excel_cache(tabla_ejecutiva_display)
+
+st.download_button(
+    label="Descargar resumen proveedores",
+    data=excel_resumen_principal,
+    file_name="16_VISTA_PROVEEDORES_VERSION_3_resumen_proveedores.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    use_container_width=True,
+    type="primary",
+)
 
 
 # ============================================================
@@ -1573,7 +1569,7 @@ with st.expander("Descargar base proveedores filtrada", expanded=False):
         st.download_button(
             label="Descargar resumen proveedores",
             data=excel_resumen,
-            file_name="16_VISTA_PROVEEDORES_V2_resumen.xlsx",
+            file_name="16_VISTA_PROVEEDORES_VERSION_3_resumen.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
         )
