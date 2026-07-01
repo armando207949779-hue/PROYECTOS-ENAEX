@@ -329,7 +329,7 @@ def titulo_vista_proveedores(nombre_archivo: str):
             <div>
                 <div class="exec-title">16_VISTA_PROVEEDORES · Performance proveedor</div>
                 <div class="exec-subtitle">
-                    Vista ejecutiva de proveedores: cumplimiento, incumplimiento, volumen y concentración.
+                    Vista ejecutiva de proveedores: tabla principal, cumplimiento, volumen y evolución mensual.
                 </div>
             </div>
             <div class="exec-filter-note">
@@ -340,6 +340,42 @@ def titulo_vista_proveedores(nombre_archivo: str):
         """,
         unsafe_allow_html=True,
     )
+
+
+
+def etiqueta_mes_corta(fecha) -> str:
+    if pd.isna(fecha):
+        return "—"
+
+    fecha = pd.Timestamp(fecha)
+    return MESES_NOMBRE.get(int(fecha.month), str(fecha.month))
+
+
+def preparar_tabla_ejecutiva_display(tabla_proveedores: pd.DataFrame) -> pd.DataFrame:
+    if tabla_proveedores.empty:
+        return pd.DataFrame()
+
+    salida = tabla_proveedores.copy()
+
+    columnas_orden = [
+        "proveedor_grafico",
+        "Cumple",
+        "No cumple",
+        "Evaluables",
+        "% Cumple",
+        "% No cumple",
+        "Promedio días proveedor",
+    ]
+
+    columnas_orden = [c for c in columnas_orden if c in salida.columns]
+
+    salida = salida[columnas_orden].copy()
+    salida = salida.sort_values(
+        ["Evaluables", "% No cumple"],
+        ascending=[False, False],
+    ).reset_index(drop=True)
+
+    return salida
 
 
 # ============================================================
@@ -739,77 +775,272 @@ def grafico_barras_apiladas_top_proveedores(data: pd.DataFrame, top_n: int):
     plt.close(fig)
 
 
-def grafico_tendencia_mensual(tabla_mensual: pd.DataFrame):
+def grafico_performance_proveedor_matplotlib(
+    tabla_mensual: pd.DataFrame,
+    titulo: str,
+):
     if tabla_mensual.empty:
-        st.info("No hay datos mensuales para graficar.")
+        st.info("No hay datos mensuales evaluables para graficar.")
         return
 
     data = tabla_mensual.copy()
     data["periodo_fecha"] = pd.to_datetime(data["periodo_fecha"], errors="coerce")
     data = data[data["periodo_fecha"].notna()].copy()
+    data = data[data["Evaluables"].gt(0)].copy()
+    data = data.sort_values("periodo_fecha").reset_index(drop=True)
 
     if data.empty:
-        st.info("No hay fechas válidas para graficar tendencia.")
+        st.info("No hay meses con registros evaluables para graficar.")
         return
 
-    labels = data["periodo_label"].astype(str).tolist()
     x = np.arange(len(data))
 
-    cumple_pct = pd.to_numeric(data["% Cumple"], errors="coerce").fillna(0)
-    no_cumple_pct = pd.to_numeric(data["% No cumple"], errors="coerce").fillna(0)
+    cumple_pct = pd.to_numeric(data["% Cumple"], errors="coerce").fillna(0).to_numpy()
+    no_cumple_pct = pd.to_numeric(data["% No cumple"], errors="coerce").fillna(0).to_numpy()
 
-    fig_width = max(10, len(data) * 0.55)
-    fig, ax = plt.subplots(figsize=(fig_width, 4.2), dpi=160)
+    cumple_n = pd.to_numeric(data["Cumple"], errors="coerce").fillna(0).astype(int).to_numpy()
+    no_cumple_n = pd.to_numeric(data["No cumple"], errors="coerce").fillna(0).astype(int).to_numpy()
+    evaluables = pd.to_numeric(data["Evaluables"], errors="coerce").fillna(0).astype(int).to_numpy()
 
-    ax.plot(
+    labels = [etiqueta_mes_corta(v) for v in data["periodo_fecha"]]
+
+    fig_width = max(9.5, len(data) * 0.85)
+    fig, ax = plt.subplots(figsize=(fig_width, 4.4), dpi=180)
+
+    bar_width = 0.78
+
+    ax.bar(
         x,
         cumple_pct,
-        marker="o",
-        linewidth=2,
+        width=bar_width,
         color=COLOR_CUMPLE,
-        label="% Cumple",
+        label="Cumple",
+        edgecolor="white",
+        linewidth=1.0,
     )
 
-    ax.plot(
+    ax.bar(
         x,
         no_cumple_pct,
-        marker="o",
-        linewidth=2,
+        bottom=cumple_pct,
+        width=bar_width,
         color=COLOR_NO_CUMPLE,
-        label="% No cumple",
+        label="No cumple",
+        edgecolor="white",
+        linewidth=1.0,
     )
 
     ax.axhline(
         META_CUMPLIMIENTO,
         color=COLOR_META,
         linestyle=(0, (2, 2)),
-        linewidth=1.5,
+        linewidth=1.8,
+        alpha=0.95,
         label=f"Meta {META_CUMPLIMIENTO}%",
     )
 
+    for i, (c_pct, nc_pct, c_n, nc_n, total) in enumerate(
+        zip(cumple_pct, no_cumple_pct, cumple_n, no_cumple_n, evaluables)
+    ):
+        if total <= 0:
+            continue
+
+        if c_pct >= 8:
+            ax.text(
+                i,
+                c_pct / 2,
+                f"{c_pct:.1f}%",
+                ha="center",
+                va="center",
+                fontsize=7.4,
+                color="white",
+                fontweight="bold",
+            )
+
+        if nc_pct >= 8:
+            ax.text(
+                i,
+                c_pct + nc_pct / 2,
+                f"{nc_pct:.1f}%",
+                ha="center",
+                va="center",
+                fontsize=7.4,
+                color="white",
+                fontweight="bold",
+            )
+        elif nc_pct > 0:
+            ax.text(
+                i,
+                min(98, c_pct + nc_pct + 1.8),
+                f"{nc_pct:.1f}%",
+                ha="center",
+                va="bottom",
+                fontsize=6.8,
+                color=COLOR_NO_CUMPLE,
+                fontweight="bold",
+            )
+
+    ax.set_ylim(0, 105)
+    ax.set_yticks([0, 50, 100])
+    ax.set_yticklabels(["0%", "50%", "100%"], fontsize=8, color=COLOR_MUTED)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, rotation=0, fontsize=8, color=COLOR_MUTED)
+
     ax.set_title(
-        "Tendencia mensual de performance proveedor",
+        titulo,
         loc="left",
-        fontsize=13,
+        fontsize=14.5,
         fontweight="bold",
         color=COLOR_TEXTO,
         pad=10,
     )
 
-    ax.set_xticks(x)
-    ax.set_xticklabels(labels, rotation=75, ha="right", fontsize=8)
-    ax.set_ylabel("% sobre evaluables")
-    ax.set_ylim(0, 105)
     ax.grid(axis="y", linestyle=":", linewidth=0.7, color=COLOR_GRID)
-    ax.legend(frameon=False, loc="best")
+    ax.grid(axis="x", visible=False)
+    ax.tick_params(axis="both", length=0)
 
     for spine in ax.spines.values():
         spine.set_visible(False)
 
+    ax.legend(
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.17),
+        ncol=3,
+        frameon=False,
+        fontsize=8.6,
+    )
+
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("white")
     fig.tight_layout()
+    fig.subplots_adjust(bottom=0.22)
 
     st.pyplot(fig, clear_figure=True, use_container_width=True)
     plt.close(fig)
+
+
+def mostrar_evolucion_por_anio_proveedor(tabla_mensual: pd.DataFrame):
+    st.markdown(
+        "<div class='exec-section-title'>Tendencia mensual proveedor</div>",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        """
+        <div class='exec-small'>
+            Barras 100% apiladas: gris oscuro = Cumple, rojo = No cumple.
+            Los años anteriores quedan colapsados y el último año disponible queda visible por defecto.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    if tabla_mensual.empty:
+        st.info("No hay datos mensuales disponibles.")
+        return
+
+    data = tabla_mensual.copy()
+    data["periodo_fecha"] = pd.to_datetime(data["periodo_fecha"], errors="coerce")
+    data = data[data["periodo_fecha"].notna()].copy()
+    data = data[data["Evaluables"].gt(0)].copy()
+
+    if data.empty:
+        st.info("No hay meses con registros evaluables para graficar.")
+        return
+
+    data["anio_grafico"] = data["periodo_fecha"].dt.year
+    anios = sorted(data["anio_grafico"].dropna().astype(int).unique().tolist())
+
+    if not anios:
+        st.info("No hay años disponibles para graficar.")
+        return
+
+    ultimo_anio = max(anios)
+
+    for anio in anios:
+        data_anio = (
+            data[data["anio_grafico"].eq(anio)]
+            .drop(columns=["anio_grafico"])
+            .sort_values("periodo_fecha")
+            .reset_index(drop=True)
+        )
+
+        evaluables_anio = int(pd.to_numeric(data_anio["Evaluables"], errors="coerce").fillna(0).sum())
+        cumple_anio = int(pd.to_numeric(data_anio["Cumple"], errors="coerce").fillna(0).sum())
+        no_cumple_anio = int(pd.to_numeric(data_anio["No cumple"], errors="coerce").fillna(0).sum())
+
+        pct_cumple_anio = cumple_anio / evaluables_anio * 100 if evaluables_anio else 0
+        pct_no_cumple_anio = no_cumple_anio / evaluables_anio * 100 if evaluables_anio else 0
+
+        expanded = anio == ultimo_anio
+        titulo_expander = (
+            f"Año {anio} · "
+            f"Evaluables: {formatear_entero(evaluables_anio)} · "
+            f"Cumple: {formatear_porcentaje(pct_cumple_anio)} · "
+            f"No cumple: {formatear_porcentaje(pct_no_cumple_anio)}"
+        )
+
+        with st.expander(titulo_expander, expanded=expanded):
+            col_a1, col_a2, col_a3 = st.columns(3)
+
+            with col_a1:
+                mostrar_kpi_ejecutivo(
+                    "Evaluables año",
+                    formatear_entero(evaluables_anio),
+                    f"{len(data_anio)} mes(es) con registros evaluables.",
+                )
+
+            with col_a2:
+                mostrar_kpi_ejecutivo(
+                    "Cumplimiento año",
+                    formatear_porcentaje(pct_cumple_anio),
+                    f"{formatear_entero(cumple_anio)} registros cumplen.",
+                )
+
+            with col_a3:
+                mostrar_kpi_ejecutivo(
+                    "No cumplimiento año",
+                    formatear_porcentaje(pct_no_cumple_anio),
+                    f"{formatear_entero(no_cumple_anio)} registros no cumplen.",
+                )
+
+            grafico_performance_proveedor_matplotlib(
+                data_anio,
+                titulo=f"Performance proveedor {anio}",
+            )
+
+            with st.expander(f"Tabla mensual proveedor {anio}", expanded=False):
+                columnas = [
+                    "periodo_label",
+                    "Cumple",
+                    "No cumple",
+                    "Evaluables",
+                    "% Cumple",
+                    "% No cumple",
+                ]
+
+                columnas = [c for c in columnas if c in data_anio.columns]
+
+                st.dataframe(
+                    data_anio[columnas],
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "% Cumple": st.column_config.ProgressColumn(
+                            "% Cumple",
+                            format="%.1f%%",
+                            min_value=0,
+                            max_value=100,
+                        ),
+                        "% No cumple": st.column_config.ProgressColumn(
+                            "% No cumple",
+                            format="%.1f%%",
+                            min_value=0,
+                            max_value=100,
+                        ),
+                    },
+                )
 
 
 # ============================================================
@@ -1045,7 +1276,79 @@ with col_k4:
 
 
 # ============================================================
-# Visual 1: Donut global
+# Visual 1: Tabla ejecutiva de proveedores
+# ============================================================
+
+st.markdown(
+    "<div class='exec-section-title'>Tabla ejecutiva de proveedores</div>",
+    unsafe_allow_html=True,
+)
+
+st.caption(
+    "Tabla principal de la vista. Ordenada por cantidad de registros evaluables y porcentaje de no cumplimiento."
+)
+
+tabla_ejecutiva_display = preparar_tabla_ejecutiva_display(tabla_proveedores)
+
+col_tabla_1, col_tabla_2 = st.columns([4, 1])
+
+with col_tabla_2:
+    excel_resumen_principal = convertir_a_excel_cache(tabla_ejecutiva_display)
+
+    st.download_button(
+        label="Descargar resumen proveedores",
+        data=excel_resumen_principal,
+        file_name="16_VISTA_PROVEEDORES_V2_resumen_proveedores.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+        type="primary",
+    )
+
+with col_tabla_1:
+    st.dataframe(
+        tabla_ejecutiva_display,
+        use_container_width=True,
+        hide_index=True,
+        height=560,
+        column_config={
+            "proveedor_grafico": st.column_config.TextColumn(
+                "Proveedor",
+                width="large",
+            ),
+            "Cumple": st.column_config.NumberColumn(
+                "Cumple",
+                format="%d",
+            ),
+            "No cumple": st.column_config.NumberColumn(
+                "No cumple",
+                format="%d",
+            ),
+            "Evaluables": st.column_config.NumberColumn(
+                "Evaluables",
+                format="%d",
+            ),
+            "% Cumple": st.column_config.ProgressColumn(
+                "% Cumple",
+                format="%.1f%%",
+                min_value=0,
+                max_value=100,
+            ),
+            "% No cumple": st.column_config.ProgressColumn(
+                "% No cumple",
+                format="%.1f%%",
+                min_value=0,
+                max_value=100,
+            ),
+            "Promedio días proveedor": st.column_config.NumberColumn(
+                "Promedio días proveedor",
+                format="%.1f",
+            ),
+        },
+    )
+
+
+# ============================================================
+# Visual 2: Resumen global proveedor
 # ============================================================
 
 st.markdown(
@@ -1091,7 +1394,7 @@ with col_g2:
 
 
 # ============================================================
-# Visual 2: Volumen de registros por proveedor
+# Visual 3: Volumen de registros por proveedor
 # ============================================================
 
 st.markdown(
@@ -1106,59 +1409,15 @@ grafico_barras_apiladas_top_proveedores(
 
 
 # ============================================================
-# Visual 3: Tendencia mensual
+# Visual 4: Tendencia mensual por año
 # ============================================================
 
-st.markdown(
-    "<div class='exec-section-title'>Tendencia mensual proveedor</div>",
-    unsafe_allow_html=True,
-)
-
-grafico_tendencia_mensual(tabla_mensual)
+mostrar_evolucion_por_anio_proveedor(tabla_mensual)
 
 
 # ============================================================
-# Tablas ejecutivas
+# Tablas secundarias
 # ============================================================
-
-with st.expander("Tabla ejecutiva de proveedores", expanded=False):
-    tabla_mostrar = tabla_proveedores.copy()
-
-    columnas = [
-        "proveedor_grafico",
-        "Cumple",
-        "No cumple",
-        "Evaluables",
-        "% Cumple",
-        "% No cumple",
-        "Promedio días proveedor",
-    ]
-
-    columnas = [c for c in columnas if c in tabla_mostrar.columns]
-
-    st.dataframe(
-        tabla_mostrar[columnas],
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "% Cumple": st.column_config.ProgressColumn(
-                "% Cumple",
-                format="%.1f%%",
-                min_value=0,
-                max_value=100,
-            ),
-            "% No cumple": st.column_config.ProgressColumn(
-                "% No cumple",
-                format="%.1f%%",
-                min_value=0,
-                max_value=100,
-            ),
-            "Promedio días proveedor": st.column_config.NumberColumn(
-                "Promedio días proveedor",
-                format="%.1f",
-            ),
-        },
-    )
 
 
 with st.expander("Tabla mensual proveedor", expanded=False):
@@ -1309,12 +1568,12 @@ with st.expander("Descargar base proveedores filtrada", expanded=False):
             )
 
     with col_d3:
-        excel_resumen = convertir_a_excel_cache(tabla_proveedores)
+        excel_resumen = convertir_a_excel_cache(tabla_ejecutiva_display)
 
         st.download_button(
             label="Descargar resumen proveedores",
             data=excel_resumen,
-            file_name="16_VISTA_PROVEEDORES_resumen.xlsx",
+            file_name="16_VISTA_PROVEEDORES_V2_resumen.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
         )
