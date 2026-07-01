@@ -6,7 +6,7 @@
 # 01 Preparación de datos
 # 02 Cargar archivo
 # 03 Vista Ejecutiva
-#    Incluye Vista Ejecutiva Materiales
+#    Incluye Vista Ejecutiva Materiales y Proveedores
 # 04 Alertas
 # 05 Filtro
 # 06 Performances
@@ -149,6 +149,16 @@ APP_SECTIONS = [
                 "descripcion": (
                     "Vista ejecutiva para analizar materiales: recurrencia, SolPed, pedidos, "
                     "centros, grupos de compra, vencimientos, TAT y foco de gestión."
+                ),
+            },
+            {
+                "nombre": "16_VISTA_PROVEEDORES",
+                "archivo": "16_VISTA_PROVEEDORES.py",
+                "titulo": "16 Vista Proveedores",
+                "icono": "🏢",
+                "descripcion": (
+                    "Vista ejecutiva para analizar proveedores: cumplimiento, incumplimiento, "
+                    "donuts porcentuales, rankings por cantidad de registros y performance proveedor."
                 ),
             },
         ],
