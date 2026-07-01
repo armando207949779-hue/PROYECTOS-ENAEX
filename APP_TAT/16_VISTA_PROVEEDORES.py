@@ -1,5 +1,5 @@
 # ============================================================
-# 16_VISTA_PROVEEDORES_VERSION_3
+# 16_VISTA_PROVEEDORES_VERSION_4
 # Vista ejecutiva de Performance Proveedor
 # Usa df_tat cargado desde 06_CARGAR_ARCHIVO
 #
@@ -9,7 +9,8 @@
 # - Resumen global proveedor
 # - Tendencia mensual proveedor
 # - Proveedores por cantidad de registros evaluables
-# - Tabla ejecutiva de proveedores con descarga debajo
+# - Tabla ejecutiva de proveedores con buscador, filtro y umbral
+# - Priorización de proveedores críticos: % no cumplimiento > 65% y más de un registro evaluable
 # ============================================================
 
 import io
@@ -42,6 +43,7 @@ META_CUMPLIMIENTO = 65
 COL_PROVEEDOR = "Proveedor ERP - ARIBA"
 COL_PERFORMANCE_PROVEEDOR = "performance_proveedor"
 COL_DIAS_PROVEEDOR = "dias_proveedor"
+COL_UMBRAL_PROVEEDOR = "umbral_proveedor"
 COL_FECHA_PROVEEDOR = "Fecha facturación proveedor - ME80FN"
 
 COL_FECHA_RECEPCION_FINAL = "fecha_recepcion_final"
@@ -362,6 +364,7 @@ def preparar_tabla_ejecutiva_display(tabla_proveedores: pd.DataFrame) -> pd.Data
         "Cumple",
         "No cumple",
         "Evaluables",
+        "Umbral proveedor",
         "% Cumple",
         "% No cumple",
         "Promedio días proveedor",
@@ -415,6 +418,12 @@ def preparar_base_proveedores(df_original: pd.DataFrame) -> pd.DataFrame:
     if COL_DIAS_PROVEEDOR in df.columns:
         df[COL_DIAS_PROVEEDOR] = pd.to_numeric(
             df[COL_DIAS_PROVEEDOR],
+            errors="coerce",
+        )
+
+    if COL_UMBRAL_PROVEEDOR in df.columns:
+        df[COL_UMBRAL_PROVEEDOR] = pd.to_numeric(
+            df[COL_UMBRAL_PROVEEDOR],
             errors="coerce",
         )
 
@@ -489,6 +498,94 @@ def aplicar_filtros_proveedores(
 # ============================================================
 # Resúmenes
 # ============================================================
+
+
+def resumir_umbral_proveedor(serie: pd.Series) -> str:
+    valores = (
+        pd.to_numeric(serie, errors="coerce")
+        .dropna()
+        .round(0)
+        .astype(int)
+        .drop_duplicates()
+        .sort_values()
+        .tolist()
+    )
+
+    if not valores:
+        return "—"
+
+    return " / ".join(str(v) for v in valores)
+
+
+def filtrar_tabla_ejecutiva_proveedores(
+    tabla: pd.DataFrame,
+    texto_busqueda: str,
+    proveedores_sel: list,
+) -> pd.DataFrame:
+    salida = tabla.copy()
+
+    if texto_busqueda:
+        texto = str(texto_busqueda).strip().lower()
+        if texto:
+            salida = salida[
+                salida["proveedor_grafico"]
+                .astype(str)
+                .str.lower()
+                .str.contains(texto, na=False)
+            ].copy()
+
+    if proveedores_sel:
+        salida = salida[
+            salida["proveedor_grafico"].astype(str).isin(proveedores_sel)
+        ].copy()
+
+    return salida.reset_index(drop=True)
+
+
+def crear_tabla_prioridad_proveedores(
+    tabla: pd.DataFrame,
+    umbral_no_cumplimiento: float = 65,
+    min_evaluables: int = 2,
+) -> pd.DataFrame:
+    if tabla.empty:
+        return pd.DataFrame()
+
+    salida = tabla.copy()
+    salida["Evaluables"] = pd.to_numeric(salida["Evaluables"], errors="coerce").fillna(0)
+    salida["% No cumple"] = pd.to_numeric(salida["% No cumple"], errors="coerce").fillna(0)
+    salida["No cumple"] = pd.to_numeric(salida["No cumple"], errors="coerce").fillna(0)
+
+    salida = salida[
+        salida["Evaluables"].gt(min_evaluables - 1)
+        & salida["% No cumple"].gt(umbral_no_cumplimiento)
+    ].copy()
+
+    if salida.empty:
+        return salida
+
+    salida["Score prioridad"] = (
+        salida["% No cumple"] / 100
+        * salida["Evaluables"]
+    )
+
+    salida["Nivel prioridad"] = np.select(
+        [
+            salida["Evaluables"].ge(20) & salida["% No cumple"].ge(80),
+            salida["Evaluables"].ge(10) & salida["% No cumple"].ge(70),
+        ],
+        [
+            "Alta",
+            "Media",
+        ],
+        default="Seguimiento",
+    )
+
+    return salida.sort_values(
+        ["Score prioridad", "No cumple", "Evaluables", "% No cumple"],
+        ascending=[False, False, False, False],
+    ).reset_index(drop=True)
+
+
 
 def calcular_kpis_proveedores(df_base: pd.DataFrame, df_dashboard: pd.DataFrame) -> dict:
     total_base = int(len(df_base))
@@ -585,6 +682,18 @@ def crear_resumen_proveedores(df: pd.DataFrame) -> pd.DataFrame:
         tabla = tabla.merge(dias, on="proveedor_grafico", how="left")
     else:
         tabla["Promedio días proveedor"] = np.nan
+
+    if COL_UMBRAL_PROVEEDOR in df.columns:
+        umbral = (
+            df
+            .groupby("proveedor_grafico")[COL_UMBRAL_PROVEEDOR]
+            .agg(resumir_umbral_proveedor)
+            .reset_index()
+            .rename(columns={COL_UMBRAL_PROVEEDOR: "Umbral proveedor"})
+        )
+        tabla = tabla.merge(umbral, on="proveedor_grafico", how="left")
+    else:
+        tabla["Umbral proveedor"] = "—"
 
     return tabla.sort_values("Evaluables", ascending=False).reset_index(drop=True)
 
@@ -1043,6 +1152,76 @@ def mostrar_evolucion_por_anio_proveedor(tabla_mensual: pd.DataFrame):
                 )
 
 
+def grafico_prioridad_no_cumplimiento(
+    data: pd.DataFrame,
+    top_n: int,
+    umbral_no_cumplimiento: float = 65,
+):
+    if data.empty:
+        st.info(
+            f"No hay proveedores con más de {umbral_no_cumplimiento:.0f}% de no cumplimiento "
+            "y más de un registro evaluable."
+        )
+        return
+
+    plot_data = (
+        data
+        .head(top_n)
+        .sort_values("Evaluables", ascending=True)
+        .copy()
+    )
+
+    fig_height = max(4.8, len(plot_data) * 0.42)
+    fig, ax = plt.subplots(figsize=(11.8, fig_height), dpi=160)
+
+    y = np.arange(len(plot_data))
+    evaluables = pd.to_numeric(plot_data["Evaluables"], errors="coerce").fillna(0)
+    pct_no_cumple = pd.to_numeric(plot_data["% No cumple"], errors="coerce").fillna(0)
+
+    ax.barh(
+        y,
+        evaluables,
+        color=COLOR_NO_CUMPLE,
+        alpha=0.92,
+    )
+
+    ax.set_yticks(y)
+    ax.set_yticklabels(plot_data["proveedor_grafico"].astype(str), fontsize=8)
+
+    for i, (total, pct) in enumerate(zip(evaluables, pct_no_cumple)):
+        ax.text(
+            total + max(evaluables.max() * 0.01, 0.5),
+            i,
+            f"{int(total):,} eval. · {pct:.1f}% no cumple",
+            va="center",
+            ha="left",
+            fontsize=7.8,
+            color=COLOR_TEXTO,
+        )
+
+    ax.set_title(
+        f"Proveedores críticos: % no cumplimiento > {umbral_no_cumplimiento:.0f}% y más de 1 registro evaluable",
+        loc="left",
+        fontsize=13,
+        fontweight="bold",
+        color=COLOR_TEXTO,
+        pad=10,
+    )
+
+    ax.set_xlabel("Cantidad de registros evaluables", color=COLOR_MUTED)
+    ax.grid(False)
+    ax.tick_params(axis="x", colors=COLOR_MUTED)
+    ax.tick_params(axis="y", colors=COLOR_TEXTO)
+
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+    fig.tight_layout()
+
+    st.pyplot(fig, clear_figure=True, use_container_width=True)
+    plt.close(fig)
+
+
 # ============================================================
 # Exportación
 # ============================================================
@@ -1226,6 +1405,11 @@ if df_dashboard.empty:
 tabla_proveedores = crear_resumen_proveedores(df_dashboard)
 tabla_mensual = crear_resumen_mensual_proveedores(df_dashboard)
 kpis = calcular_kpis_proveedores(df_final, df_dashboard)
+tabla_prioridad = crear_tabla_prioridad_proveedores(
+    tabla=tabla_proveedores,
+    umbral_no_cumplimiento=META_CUMPLIMIENTO,
+    min_evaluables=2,
+)
 
 st.markdown(
     f"""
@@ -1344,7 +1528,99 @@ grafico_barras_apiladas_top_proveedores(
 
 
 # ============================================================
-# Visual 4: Tabla ejecutiva de proveedores
+# Visual 4: Priorización proveedores críticos
+# ============================================================
+
+st.markdown(
+    "<div class='exec-section-title'>Proveedores críticos por no cumplimiento</div>",
+    unsafe_allow_html=True,
+)
+
+st.caption(
+    f"Objetivo: detectar proveedores con más de {META_CUMPLIMIENTO}% de no cumplimiento "
+    "y más de un registro evaluable para definir plan de ataque y prioridad."
+)
+
+col_p1, col_p2, col_p3 = st.columns(3)
+
+with col_p1:
+    mostrar_kpi_ejecutivo(
+        "Proveedores críticos",
+        formatear_entero(len(tabla_prioridad)),
+        f"> {META_CUMPLIMIENTO}% no cumplimiento y más de 1 evaluable.",
+    )
+
+with col_p2:
+    mostrar_kpi_ejecutivo(
+        "Evaluables críticos",
+        formatear_entero(tabla_prioridad["Evaluables"].sum() if not tabla_prioridad.empty else 0),
+        "Volumen total dentro del grupo priorizado.",
+    )
+
+with col_p3:
+    mostrar_kpi_ejecutivo(
+        "Incumplimientos críticos",
+        formatear_entero(tabla_prioridad["No cumple"].sum() if not tabla_prioridad.empty else 0),
+        "Casos no cumplidos dentro del grupo priorizado.",
+    )
+
+grafico_prioridad_no_cumplimiento(
+    data=tabla_prioridad,
+    top_n=int(top_n),
+    umbral_no_cumplimiento=META_CUMPLIMIENTO,
+)
+
+with st.expander("Tabla de priorización proveedores críticos", expanded=False):
+    if tabla_prioridad.empty:
+        st.info("No hay proveedores críticos con los criterios actuales.")
+    else:
+        columnas_prioridad = [
+            "proveedor_grafico",
+            "Nivel prioridad",
+            "Cumple",
+            "No cumple",
+            "Evaluables",
+            "Umbral proveedor",
+            "% Cumple",
+            "% No cumple",
+            "Promedio días proveedor",
+            "Score prioridad",
+        ]
+        columnas_prioridad = [c for c in columnas_prioridad if c in tabla_prioridad.columns]
+
+        st.dataframe(
+            tabla_prioridad[columnas_prioridad],
+            use_container_width=True,
+            hide_index=True,
+            height=360,
+            column_config={
+                "proveedor_grafico": st.column_config.TextColumn("Proveedor", width="large"),
+                "% Cumple": st.column_config.ProgressColumn(
+                    "% Cumple",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+                "% No cumple": st.column_config.ProgressColumn(
+                    "% No cumple",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+                "Promedio días proveedor": st.column_config.NumberColumn(
+                    "Promedio días proveedor",
+                    format="%.1f",
+                ),
+                "Score prioridad": st.column_config.NumberColumn(
+                    "Score prioridad",
+                    format="%.1f",
+                ),
+            },
+        )
+
+
+# ============================================================
+# Visual 5: Tabla ejecutiva de proveedores
 # ============================================================
 
 st.markdown(
@@ -1358,8 +1634,38 @@ st.caption(
 
 tabla_ejecutiva_display = preparar_tabla_ejecutiva_display(tabla_proveedores)
 
+col_busq_1, col_busq_2 = st.columns([1, 1.4])
+
+with col_busq_1:
+    texto_busqueda_proveedor = st.text_input(
+        "Buscar proveedor en tabla",
+        value="",
+        placeholder="Escribe parte del nombre del proveedor",
+        key="vista_proveedores_buscar_tabla",
+    )
+
+with col_busq_2:
+    proveedores_tabla_sel = st.multiselect(
+        "Filtrar proveedor en tabla",
+        options=tabla_ejecutiva_display["proveedor_grafico"].astype(str).tolist(),
+        default=[],
+        key="vista_proveedores_filtrar_tabla",
+        help="Filtro específico solo para la tabla ejecutiva. No cambia los gráficos superiores.",
+    )
+
+tabla_ejecutiva_filtrada = filtrar_tabla_ejecutiva_proveedores(
+    tabla=tabla_ejecutiva_display,
+    texto_busqueda=texto_busqueda_proveedor,
+    proveedores_sel=proveedores_tabla_sel,
+)
+
+st.caption(
+    f"Mostrando {formatear_entero(len(tabla_ejecutiva_filtrada))} de "
+    f"{formatear_entero(len(tabla_ejecutiva_display))} proveedores en la tabla."
+)
+
 st.dataframe(
-    tabla_ejecutiva_display,
+    tabla_ejecutiva_filtrada,
     use_container_width=True,
     hide_index=True,
     height=620,
@@ -1380,6 +1686,10 @@ st.dataframe(
             "Evaluables",
             format="%d",
         ),
+        "Umbral proveedor": st.column_config.TextColumn(
+            "Umbral proveedor",
+            help="Umbral o umbrales detectados para el proveedor según la base filtrada.",
+        ),
         "% Cumple": st.column_config.ProgressColumn(
             "% Cumple",
             format="%.1f%%",
@@ -1399,12 +1709,12 @@ st.dataframe(
     },
 )
 
-excel_resumen_principal = convertir_a_excel_cache(tabla_ejecutiva_display)
+excel_resumen_principal = convertir_a_excel_cache(tabla_ejecutiva_filtrada)
 
 st.download_button(
-    label="Descargar resumen proveedores",
+    label="Descargar resumen proveedores filtrado",
     data=excel_resumen_principal,
-    file_name="16_VISTA_PROVEEDORES_VERSION_3_resumen_proveedores.xlsx",
+    file_name="16_VISTA_PROVEEDORES_VERSION_4_resumen_proveedores_filtrado.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     use_container_width=True,
     type="primary",
@@ -1471,6 +1781,7 @@ with st.expander("Vista previa de registros evaluables filtrados", expanded=Fals
         COL_FECHA_PROVEEDOR,
         "fecha_proveedor_grafico",
         COL_DIAS_PROVEEDOR,
+        COL_UMBRAL_PROVEEDOR,
         COL_PERFORMANCE_PROVEEDOR,
         "performance_proveedor_norm",
         "origen",
