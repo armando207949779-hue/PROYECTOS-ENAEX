@@ -6,11 +6,10 @@
 # Enfoque:
 # - Vista ejecutiva inspirada en 13_VISTA_EJECUTIVA_PERFORMANCE_PLANTAS
 # - Base de análisis: registros evaluables Cumple + No cumple
-# - Proveedores que más incumplen
-# - Proveedores que más cumplen
-# - Donuts porcentuales por proveedor
-# - Proveedores por cantidad de registros
-# - Ranking por tasa y volumen
+# - Donut global porcentual Cumple / No cumple
+# - Proveedores por cantidad de registros evaluables
+# - Tendencia mensual de performance proveedor
+# - Tablas ejecutivas y descarga de información
 # ============================================================
 
 import io
@@ -37,14 +36,12 @@ COLOR_META = "#00593A"
 COLOR_TEXTO = "#1F2937"
 COLOR_MUTED = "#6B7280"
 COLOR_GRID = "#D1D5DB"
-COLOR_CARD = "#FFFFFF"
 
 META_CUMPLIMIENTO = 65
 
 COL_PROVEEDOR = "Proveedor ERP - ARIBA"
 COL_PERFORMANCE_PROVEEDOR = "performance_proveedor"
 COL_DIAS_PROVEEDOR = "dias_proveedor"
-COL_UMBRAL_PROVEEDOR = "umbral_proveedor"
 COL_FECHA_PROVEEDOR = "Fecha facturación proveedor - ME80FN"
 
 COL_FECHA_RECEPCION_FINAL = "fecha_recepcion_final"
@@ -53,7 +50,6 @@ COL_PEDIDO = "Pedido - ME5A"
 COL_DOCUMENTO_COMPRAS = "Documento de compras - ME80FN"
 
 TOP_N_DEFAULT = 20
-MIN_CASOS_DEFAULT = 5
 
 MESES_NOMBRE = {
     1: "enero",
@@ -185,8 +181,8 @@ def mostrar_logo():
                 margin-top: 5px;
                 margin-bottom: 10px;
             ">
-                <img 
-                    src="data:image/svg+xml;base64,{logo_base64}" 
+                <img
+                    src="data:image/svg+xml;base64,{logo_base64}"
                     style="width: 220px; display: block;"
                 >
             </div>
@@ -254,18 +250,6 @@ def formatear_entero(valor) -> str:
         return "—"
 
     return f"{int(round(numero)):,}"
-
-
-def formatear_decimal(valor) -> str:
-    if pd.isna(valor):
-        return "—"
-
-    numero = pd.to_numeric(valor, errors="coerce")
-
-    if pd.isna(numero):
-        return "—"
-
-    return f"{numero:.1f}"
 
 
 def formatear_porcentaje(valor) -> str:
@@ -395,12 +379,6 @@ def preparar_base_proveedores(df_original: pd.DataFrame) -> pd.DataFrame:
     if COL_DIAS_PROVEEDOR in df.columns:
         df[COL_DIAS_PROVEEDOR] = pd.to_numeric(
             df[COL_DIAS_PROVEEDOR],
-            errors="coerce",
-        )
-
-    if COL_UMBRAL_PROVEEDOR in df.columns:
-        df[COL_UMBRAL_PROVEEDOR] = pd.to_numeric(
-            df[COL_UMBRAL_PROVEEDOR],
             errors="coerce",
         )
 
@@ -700,112 +678,6 @@ def grafico_donut_global(cumple: int, no_cumple: int):
     plt.close(fig)
 
 
-def grafico_donut_proveedor(nombre: str, cumple: int, no_cumple: int):
-    evaluables = cumple + no_cumple
-
-    if evaluables <= 0:
-        st.info("Sin evaluables")
-        return
-
-    pct_cumple = cumple / evaluables * 100
-    pct_no_cumple = no_cumple / evaluables * 100
-
-    fig, ax = plt.subplots(figsize=(3.15, 2.55), dpi=180)
-
-    ax.pie(
-        [cumple, no_cumple],
-        startangle=90,
-        counterclock=False,
-        colors=[COLOR_CUMPLE, COLOR_NO_CUMPLE],
-        wedgeprops={
-            "width": 0.42,
-            "edgecolor": "white",
-            "linewidth": 1.4,
-        },
-    )
-
-    ax.text(
-        0,
-        0.06,
-        f"{pct_cumple:.0f}%",
-        ha="center",
-        va="center",
-        fontsize=17,
-        fontweight="bold",
-        color=COLOR_TEXTO,
-    )
-
-    ax.text(
-        0,
-        -0.14,
-        "Cumple",
-        ha="center",
-        va="center",
-        fontsize=8,
-        color=COLOR_MUTED,
-    )
-
-    ax.axis("equal")
-    fig.patch.set_alpha(0)
-    fig.tight_layout(pad=0.2)
-
-    st.pyplot(fig, clear_figure=True, use_container_width=True)
-    plt.close(fig)
-
-    st.caption(
-        f"Cumple: {cumple:,} ({pct_cumple:.1f}%) · "
-        f"No cumple: {no_cumple:,} ({pct_no_cumple:.1f}%)"
-    )
-
-
-def grafico_barras_horizontales(
-    data: pd.DataFrame,
-    columna_valor: str,
-    columna_nombre: str,
-    titulo: str,
-    xlabel: str,
-):
-    if data.empty:
-        st.info("No hay datos para graficar.")
-        return
-
-    plot_data = data.sort_values(columna_valor, ascending=True)
-
-    fig_height = max(4.5, len(plot_data) * 0.38)
-    fig, ax = plt.subplots(figsize=(11.5, fig_height), dpi=160)
-
-    ax.barh(
-        plot_data[columna_nombre].astype(str),
-        pd.to_numeric(plot_data[columna_valor], errors="coerce").fillna(0),
-        color=COLOR_NO_CUMPLE if "incumpl" in titulo.lower() else COLOR_CUMPLE,
-    )
-
-    ax.set_title(
-        titulo,
-        loc="left",
-        fontsize=13,
-        fontweight="bold",
-        color=COLOR_TEXTO,
-        pad=10,
-    )
-
-    ax.set_xlabel(xlabel, color=COLOR_MUTED)
-    ax.set_ylabel("")
-    ax.grid(axis="x", linestyle=":", linewidth=0.7, color=COLOR_GRID)
-    ax.tick_params(axis="x", colors=COLOR_MUTED)
-    ax.tick_params(axis="y", colors=COLOR_TEXTO, labelsize=8)
-
-    for spine in ax.spines.values():
-        spine.set_visible(False)
-
-    fig.patch.set_facecolor("white")
-    ax.set_facecolor("white")
-    fig.tight_layout()
-
-    st.pyplot(fig, clear_figure=True, use_container_width=True)
-    plt.close(fig)
-
-
 def grafico_barras_apiladas_top_proveedores(data: pd.DataFrame, top_n: int):
     if data.empty:
         st.info("No hay datos para graficar.")
@@ -852,8 +724,11 @@ def grafico_barras_apiladas_top_proveedores(data: pd.DataFrame, top_n: int):
         pad=10,
     )
     ax.set_xlabel("Cantidad de registros evaluables", color=COLOR_MUTED)
-    ax.grid(axis="x", linestyle=":", linewidth=0.7, color=COLOR_GRID)
     ax.legend(frameon=False, loc="lower right")
+
+    ax.grid(False)
+    ax.tick_params(axis="x", colors=COLOR_MUTED)
+    ax.tick_params(axis="y", colors=COLOR_TEXTO)
 
     for spine in ax.spines.values():
         spine.set_visible(False)
@@ -935,118 +810,6 @@ def grafico_tendencia_mensual(tabla_mensual: pd.DataFrame):
 
     st.pyplot(fig, clear_figure=True, use_container_width=True)
     plt.close(fig)
-
-
-def grafico_dias_vs_umbral(df: pd.DataFrame):
-    if COL_DIAS_PROVEEDOR not in df.columns or COL_UMBRAL_PROVEEDOR not in df.columns:
-        st.info("No existen columnas de días proveedor y umbral proveedor.")
-        return
-
-    data = df[[COL_DIAS_PROVEEDOR, COL_UMBRAL_PROVEEDOR, "performance_proveedor_norm"]].dropna().copy()
-
-    if data.empty:
-        st.info("No hay datos válidos para días vs umbral.")
-        return
-
-    max_val = max(
-        data[COL_DIAS_PROVEEDOR].max(),
-        data[COL_UMBRAL_PROVEEDOR].max(),
-    )
-
-    fig, ax = plt.subplots(figsize=(7.5, 6.2), dpi=160)
-
-    for estado, color in [
-        ("Cumple", COLOR_CUMPLE),
-        ("No cumple", COLOR_NO_CUMPLE),
-    ]:
-        sub = data[data["performance_proveedor_norm"].eq(estado)]
-        ax.scatter(
-            sub[COL_UMBRAL_PROVEEDOR],
-            sub[COL_DIAS_PROVEEDOR],
-            alpha=0.35,
-            s=18,
-            color=color,
-            label=estado,
-        )
-
-    ax.plot(
-        [0, max_val],
-        [0, max_val],
-        linestyle="--",
-        color=COLOR_META,
-        linewidth=1.5,
-        label="Línea umbral",
-    )
-
-    ax.set_title(
-        "Días proveedor vs umbral proveedor",
-        loc="left",
-        fontsize=13,
-        fontweight="bold",
-        color=COLOR_TEXTO,
-        pad=10,
-    )
-
-    ax.set_xlabel("Umbral proveedor")
-    ax.set_ylabel("Días proveedor")
-    ax.grid(True, linestyle=":", linewidth=0.7, color=COLOR_GRID)
-    ax.legend(frameon=False)
-
-    for spine in ax.spines.values():
-        spine.set_visible(False)
-
-    fig.tight_layout()
-
-    st.pyplot(fig, clear_figure=True, use_container_width=True)
-    plt.close(fig)
-
-
-def mostrar_donuts_top_proveedores(tabla: pd.DataFrame, modo: str, top_n: int):
-    if tabla.empty:
-        st.info("No hay datos para donuts de proveedores.")
-        return
-
-    if modo == "incumplen":
-        data = (
-            tabla
-            .sort_values(["% No cumple", "No cumple", "Evaluables"], ascending=False)
-            .head(top_n)
-        )
-        titulo = f"Donuts · Top {top_n} proveedores que más incumplen"
-    else:
-        data = (
-            tabla
-            .sort_values(["% Cumple", "Cumple", "Evaluables"], ascending=False)
-            .head(top_n)
-        )
-        titulo = f"Donuts · Top {top_n} proveedores que más cumplen"
-
-    st.markdown(
-        f"<div class='exec-section-title'>{titulo}</div>",
-        unsafe_allow_html=True,
-    )
-
-    cols_por_fila = 4
-
-    for inicio in range(0, len(data), cols_por_fila):
-        cols = st.columns(cols_por_fila)
-        bloque = data.iloc[inicio:inicio + cols_por_fila]
-
-        for col, (_, fila) in zip(cols, bloque.iterrows()):
-            with col:
-                proveedor = str(fila["proveedor_grafico"])
-
-                proveedor_corto = proveedor
-                if len(proveedor_corto) > 38:
-                    proveedor_corto = proveedor_corto[:35] + "..."
-
-                st.markdown(f"##### {proveedor_corto}")
-
-                grafico_donut_proveedor(
-                    proveedor,
-                    int(fila["Cumple"]),
-                    int(fila["No cumple"]),
-                )
 
 
 # ============================================================
@@ -1193,19 +956,6 @@ with st.form("form_filtros_vista_proveedores"):
             key="vista_proveedores_top_n",
         )
 
-    col_f6, col_f7 = st.columns([1, 4])
-
-    with col_f6:
-        min_casos = st.number_input(
-            "Mínimo casos",
-            min_value=1,
-            max_value=100,
-            value=MIN_CASOS_DEFAULT,
-            step=1,
-            key="vista_proveedores_min_casos",
-            help="Evita rankings engañosos con proveedores de muy pocos registros.",
-        )
-
     st.form_submit_button(
         "Actualizar vista proveedores",
         use_container_width=True,
@@ -1243,17 +993,8 @@ if df_dashboard.empty:
     st.stop()
 
 tabla_proveedores = crear_resumen_proveedores(df_dashboard)
-
-tabla_proveedores_ranking = (
-    tabla_proveedores
-    .query("Evaluables >= @min_casos")
-    .copy()
-)
-
 tabla_mensual = crear_resumen_mensual_proveedores(df_dashboard)
-
 kpis = calcular_kpis_proveedores(df_final, df_dashboard)
-
 
 st.markdown(
     f"""
@@ -1350,53 +1091,7 @@ with col_g2:
 
 
 # ============================================================
-# Visual 2: Ranking incumplen / cumplen
-# ============================================================
-
-st.markdown(
-    "<div class='exec-section-title'>Ranking ejecutivo de proveedores</div>",
-    unsafe_allow_html=True,
-)
-
-st.caption(
-    f"Rankings calculados con mínimo {min_casos} registros evaluables por proveedor."
-)
-
-col_r1, col_r2 = st.columns(2)
-
-with col_r1:
-    top_incumplen = (
-        tabla_proveedores_ranking
-        .sort_values(["% No cumple", "No cumple", "Evaluables"], ascending=False)
-        .head(int(top_n))
-    )
-
-    grafico_barras_horizontales(
-        data=top_incumplen,
-        columna_valor="% No cumple",
-        columna_nombre="proveedor_grafico",
-        titulo=f"Top {top_n} proveedores que más incumplen",
-        xlabel="% No cumple",
-    )
-
-with col_r2:
-    top_cumplen = (
-        tabla_proveedores_ranking
-        .sort_values(["% Cumple", "Cumple", "Evaluables"], ascending=False)
-        .head(int(top_n))
-    )
-
-    grafico_barras_horizontales(
-        data=top_cumplen,
-        columna_valor="% Cumple",
-        columna_nombre="proveedor_grafico",
-        titulo=f"Top {top_n} proveedores que más cumplen",
-        xlabel="% Cumple",
-    )
-
-
-# ============================================================
-# Visual 3: Volumen de registros por proveedor
+# Visual 2: Volumen de registros por proveedor
 # ============================================================
 
 st.markdown(
@@ -1411,49 +1106,7 @@ grafico_barras_apiladas_top_proveedores(
 
 
 # ============================================================
-# Visual 4: Donuts top incumplen y cumplen
-# ============================================================
-
-tab_d1, tab_d2 = st.tabs(
-    [
-        "Donuts proveedores que más incumplen",
-        "Donuts proveedores que más cumplen",
-    ]
-)
-
-with tab_d1:
-    mostrar_donuts_top_proveedores(
-        tabla=tabla_proveedores_ranking,
-        modo="incumplen",
-        top_n=min(8, int(top_n)),
-    )
-
-with tab_d2:
-    mostrar_donuts_top_proveedores(
-        tabla=tabla_proveedores_ranking,
-        modo="cumplen",
-        top_n=min(8, int(top_n)),
-    )
-
-
-# ============================================================
-# Visual 5: Días vs umbral
-# ============================================================
-
-st.markdown(
-    "<div class='exec-section-title'>Días proveedor vs umbral</div>",
-    unsafe_allow_html=True,
-)
-
-st.caption(
-    "Los puntos sobre la línea de referencia tienden a representar casos fuera de umbral."
-)
-
-grafico_dias_vs_umbral(df_dashboard)
-
-
-# ============================================================
-# Visual 6: Tendencia mensual
+# Visual 3: Tendencia mensual
 # ============================================================
 
 st.markdown(
@@ -1563,7 +1216,6 @@ with st.expander("Vista previa de registros evaluables filtrados", expanded=Fals
         COL_FECHA_PROVEEDOR,
         "fecha_proveedor_grafico",
         COL_DIAS_PROVEEDOR,
-        COL_UMBRAL_PROVEEDOR,
         COL_PERFORMANCE_PROVEEDOR,
         "performance_proveedor_norm",
         "origen",
