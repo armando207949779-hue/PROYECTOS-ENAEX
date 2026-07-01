@@ -1,5 +1,5 @@
 # ============================================================
-# 16_VISTA_PROVEEDORES_VERSION_4
+# 16_VISTA_PROVEEDORES_VERSION_5
 # Vista ejecutiva de Performance Proveedor
 # Usa df_tat cargado desde 06_CARGAR_ARCHIVO
 #
@@ -10,7 +10,7 @@
 # - Tendencia mensual proveedor
 # - Proveedores por cantidad de registros evaluables
 # - Tabla ejecutiva de proveedores con buscador, filtro y umbral
-# - Priorización de proveedores críticos: % no cumplimiento > 65% y más de un registro evaluable
+# - Priorización de proveedores críticos por volumen y % de incumplimiento con umbral editable
 # ============================================================
 
 import io
@@ -1200,7 +1200,7 @@ def grafico_prioridad_no_cumplimiento(
         )
 
     ax.set_title(
-        f"Proveedores críticos: % no cumplimiento > {umbral_no_cumplimiento:.0f}% y más de 1 registro evaluable",
+        f"Críticos por volumen y % de incumplimiento > {umbral_no_cumplimiento:.0f}%",
         loc="left",
         fontsize=13,
         fontweight="bold",
@@ -1244,6 +1244,71 @@ def convertir_a_excel(df: pd.DataFrame) -> bytes:
             writer,
             index=False,
             sheet_name="Registros",
+        )
+
+    return output.getvalue()
+
+
+def convertir_a_excel_criticos(
+    tabla_prioridad: pd.DataFrame,
+    df_dashboard: pd.DataFrame,
+) -> bytes:
+    output = io.BytesIO()
+
+    proveedores_criticos = (
+        tabla_prioridad["proveedor_grafico"]
+        .dropna()
+        .astype(str)
+        .unique()
+        .tolist()
+        if not tabla_prioridad.empty and "proveedor_grafico" in tabla_prioridad.columns
+        else []
+    )
+
+    detalle = df_dashboard[
+        df_dashboard["proveedor_grafico"].astype(str).isin(proveedores_criticos)
+    ].copy()
+
+    columnas_preferidas = [
+        "Solicitud de pedido - ME5A",
+        COL_PEDIDO,
+        COL_DOCUMENTO_COMPRAS,
+        COL_PROVEEDOR,
+        "proveedor_grafico",
+        COL_FECHA_PROVEEDOR,
+        "fecha_proveedor_grafico",
+        COL_DIAS_PROVEEDOR,
+        COL_UMBRAL_PROVEEDOR,
+        COL_PERFORMANCE_PROVEEDOR,
+        "performance_proveedor_norm",
+        "origen",
+        "sistema",
+        "tipo_oc",
+        "monto",
+    ]
+
+    columnas_detalle = [
+        col for col in columnas_preferidas
+        if col in detalle.columns
+    ]
+
+    if columnas_detalle:
+        detalle = detalle[columnas_detalle].copy()
+
+    with pd.ExcelWriter(
+        output,
+        engine="openpyxl",
+    ) as writer:
+        tabla_prioridad.to_excel(
+            writer,
+            index=False,
+            sheet_name="Resumen criticos",
+        )
+
+        detalle.to_excel(
+            writer,
+            index=False,
+            sheet_name="Detalle registros",
         )
 
     return output.getvalue()
@@ -1405,12 +1470,6 @@ if df_dashboard.empty:
 tabla_proveedores = crear_resumen_proveedores(df_dashboard)
 tabla_mensual = crear_resumen_mensual_proveedores(df_dashboard)
 kpis = calcular_kpis_proveedores(df_final, df_dashboard)
-tabla_prioridad = crear_tabla_prioridad_proveedores(
-    tabla=tabla_proveedores,
-    umbral_no_cumplimiento=META_CUMPLIMIENTO,
-    min_evaluables=2,
-)
-
 st.markdown(
     f"""
     <div class='exec-small'>
@@ -1537,8 +1596,58 @@ st.markdown(
 )
 
 st.caption(
-    f"Objetivo: detectar proveedores con más de {META_CUMPLIMIENTO}% de no cumplimiento "
-    "y más de un registro evaluable para definir plan de ataque y prioridad."
+    "Objetivo: detectar proveedores críticos por volumen y % de incumplimiento "
+    "para definir un plan de ataque y priorización."
+)
+
+col_cfg_1, col_cfg_2 = st.columns([1, 1])
+
+with col_cfg_1:
+    umbral_critico_no_cumplimiento = st.number_input(
+        "Umbral crítico % No cumple",
+        min_value=0,
+        max_value=100,
+        value=int(META_CUMPLIMIENTO),
+        step=5,
+        key="vista_proveedores_umbral_critico_no_cumplimiento",
+        help="Permite modificar el umbral usado para detectar proveedores críticos.",
+    )
+
+with col_cfg_2:
+    min_evaluables_criticos = st.number_input(
+        "Mínimo registros evaluables",
+        min_value=2,
+        max_value=1000,
+        value=2,
+        step=1,
+        key="vista_proveedores_min_evaluables_criticos",
+        help="Por defecto exige más de un registro evaluable para evitar falsos positivos.",
+    )
+
+tabla_prioridad = crear_tabla_prioridad_proveedores(
+    tabla=tabla_proveedores,
+    umbral_no_cumplimiento=float(umbral_critico_no_cumplimiento),
+    min_evaluables=int(min_evaluables_criticos),
+)
+
+total_proveedores_evaluables = int(
+    pd.to_numeric(tabla_proveedores["Evaluables"], errors="coerce")
+    .fillna(0)
+    .gt(0)
+    .sum()
+    if not tabla_proveedores.empty and "Evaluables" in tabla_proveedores.columns
+    else 0
+)
+
+proveedores_criticos_total = len(tabla_prioridad)
+proveedores_criticos_mostrados = min(int(top_n), proveedores_criticos_total)
+
+st.caption(
+    f"Mostrando {formatear_entero(proveedores_criticos_mostrados)} de "
+    f"{formatear_entero(proveedores_criticos_total)} proveedores críticos detectados. "
+    f"Base total: {formatear_entero(total_proveedores_evaluables)} proveedores evaluables. "
+    f"Criterio: % No cumple > {umbral_critico_no_cumplimiento}% y "
+    f"Evaluables >= {min_evaluables_criticos}."
 )
 
 col_p1, col_p2, col_p3 = st.columns(3)
@@ -1546,8 +1655,8 @@ col_p1, col_p2, col_p3 = st.columns(3)
 with col_p1:
     mostrar_kpi_ejecutivo(
         "Proveedores críticos",
-        formatear_entero(len(tabla_prioridad)),
-        f"> {META_CUMPLIMIENTO}% no cumplimiento y más de 1 evaluable.",
+        formatear_entero(proveedores_criticos_total),
+        f"> {umbral_critico_no_cumplimiento}% no cumplimiento y mínimo {min_evaluables_criticos} evaluables.",
     )
 
 with col_p2:
@@ -1567,8 +1676,23 @@ with col_p3:
 grafico_prioridad_no_cumplimiento(
     data=tabla_prioridad,
     top_n=int(top_n),
-    umbral_no_cumplimiento=META_CUMPLIMIENTO,
+    umbral_no_cumplimiento=float(umbral_critico_no_cumplimiento),
 )
+
+if not tabla_prioridad.empty:
+    excel_criticos = convertir_a_excel_criticos(
+        tabla_prioridad=tabla_prioridad,
+        df_dashboard=df_dashboard,
+    )
+
+    st.download_button(
+        label="Descargar Excel detalle proveedores críticos",
+        data=excel_criticos,
+        file_name="16_VISTA_PROVEEDORES_VERSION_5_detalle_proveedores_criticos.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+        type="primary",
+    )
 
 with st.expander("Tabla de priorización proveedores críticos", expanded=False):
     if tabla_prioridad.empty:
@@ -1634,23 +1758,30 @@ st.caption(
 
 tabla_ejecutiva_display = preparar_tabla_ejecutiva_display(tabla_proveedores)
 
-col_busq_1, col_busq_2 = st.columns([1, 1.4])
+with st.form("form_filtros_tabla_ejecutiva_proveedores"):
+    col_busq_1, col_busq_2 = st.columns([1, 1.4])
 
-with col_busq_1:
-    texto_busqueda_proveedor = st.text_input(
-        "Buscar proveedor en tabla",
-        value="",
-        placeholder="Escribe parte del nombre del proveedor",
-        key="vista_proveedores_buscar_tabla",
-    )
+    with col_busq_1:
+        texto_busqueda_proveedor = st.text_input(
+            "Buscar proveedor en tabla",
+            value="",
+            placeholder="Escribe parte del nombre del proveedor",
+            key="vista_proveedores_buscar_tabla",
+        )
 
-with col_busq_2:
-    proveedores_tabla_sel = st.multiselect(
-        "Filtrar proveedor en tabla",
-        options=tabla_ejecutiva_display["proveedor_grafico"].astype(str).tolist(),
-        default=[],
-        key="vista_proveedores_filtrar_tabla",
-        help="Filtro específico solo para la tabla ejecutiva. No cambia los gráficos superiores.",
+    with col_busq_2:
+        proveedores_tabla_sel = st.multiselect(
+            "Filtrar proveedor en tabla",
+            options=tabla_ejecutiva_display["proveedor_grafico"].astype(str).tolist(),
+            default=[],
+            key="vista_proveedores_filtrar_tabla",
+            help="Filtro específico solo para la tabla ejecutiva. No cambia los gráficos superiores.",
+        )
+
+    st.form_submit_button(
+        "Filtrar tabla ejecutiva",
+        use_container_width=True,
+        type="primary",
     )
 
 tabla_ejecutiva_filtrada = filtrar_tabla_ejecutiva_proveedores(
@@ -1714,7 +1845,7 @@ excel_resumen_principal = convertir_a_excel_cache(tabla_ejecutiva_filtrada)
 st.download_button(
     label="Descargar resumen proveedores filtrado",
     data=excel_resumen_principal,
-    file_name="16_VISTA_PROVEEDORES_VERSION_4_resumen_proveedores_filtrado.xlsx",
+    file_name="16_VISTA_PROVEEDORES_VERSION_5_resumen_proveedores_filtrado.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     use_container_width=True,
     type="primary",
