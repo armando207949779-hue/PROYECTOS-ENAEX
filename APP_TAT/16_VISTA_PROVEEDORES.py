@@ -1080,7 +1080,7 @@ def grafico_ranking_volumen_proveedores(data: pd.DataFrame, top_n: int):
         )
 
     ax.set_title(
-        f"Respuesta 1 · Proveedores con mayor cantidad de registros evaluables (Top {top_n})",
+        f"Concentración de registros evaluables por proveedor (Top {top_n})",
         loc="left",
         fontsize=13,
         fontweight="bold",
@@ -1132,7 +1132,7 @@ def grafico_ranking_riesgo_proveedores(data: pd.DataFrame, top_n: int):
         )
 
     ax.set_title(
-        f"Respuesta 2 · Proveedores con mayor volumen y peor performance (Top {top_n})",
+        f"Volumen e incumplimiento combinado por proveedor (Top {top_n})",
         loc="left",
         fontsize=13,
         fontweight="bold",
@@ -1184,18 +1184,57 @@ def grafico_matriz_riesgo_proveedores(data: pd.DataFrame, top_n_labels: int = 8)
 
     etiquetas = plot_data.sort_values("Score riesgo", ascending=False).head(int(top_n_labels))
 
-    for _, fila in etiquetas.iterrows():
-        ax.text(
-            float(fila["Evaluables"]),
-            float(fila["% No cumple"]) + 1.2,
-            str(fila["proveedor_grafico"])[:28],
-            fontsize=7.2,
+    # Etiquetas con desplazamientos alternados para evitar solapamientos.
+    # Se rotulan solo los proveedores con mayor score de riesgo.
+    offsets = [
+        (14, 14),
+        (14, -16),
+        (-14, 14),
+        (-14, -16),
+        (28, 0),
+        (-28, 0),
+        (0, 22),
+        (0, -24),
+        (34, 16),
+        (-34, 16),
+        (34, -18),
+        (-34, -18),
+    ]
+
+    for i, (_, fila) in enumerate(etiquetas.iterrows()):
+        xv = float(fila["Evaluables"])
+        yv = float(fila["% No cumple"])
+        dx, dy = offsets[i % len(offsets)]
+        ha = "left" if dx >= 0 else "right"
+        va = "bottom" if dy >= 0 else "top"
+
+        ax.annotate(
+            str(fila["proveedor_grafico"])[:24],
+            xy=(xv, yv),
+            xytext=(dx, dy),
+            textcoords="offset points",
+            fontsize=7.0,
             color=COLOR_TEXTO,
-            ha="center",
+            ha=ha,
+            va=va,
+            bbox={
+                "boxstyle": "round,pad=0.22",
+                "facecolor": "white",
+                "edgecolor": "#E5E7EB",
+                "alpha": 0.86,
+                "linewidth": 0.6,
+            },
+            arrowprops={
+                "arrowstyle": "-",
+                "color": COLOR_MUTED,
+                "lw": 0.55,
+                "alpha": 0.65,
+            },
+            clip_on=True,
         )
 
     ax.set_title(
-        "Respuesta 3 · Matriz de criticidad: volumen versus % de incumplimiento",
+        "Matriz de criticidad: % de incumplimiento vs volumen",
         loc="left",
         fontsize=13,
         fontweight="bold",
@@ -1204,7 +1243,10 @@ def grafico_matriz_riesgo_proveedores(data: pd.DataFrame, top_n_labels: int = 8)
     )
     ax.set_xlabel("Cantidad de registros evaluables", color=COLOR_MUTED)
     ax.set_ylabel("% No cumple", color=COLOR_MUTED)
-    ax.set_ylim(0, min(105, max(100, y.max() + 8)))
+
+    x_max = float(x.max()) if len(x) else 0
+    ax.set_xlim(left=0, right=x_max * 1.18 if x_max > 0 else 1)
+    ax.set_ylim(0, min(108, max(100, float(y.max()) + 10)))
     ax.grid(True, linestyle=":", linewidth=0.7, color=COLOR_GRID)
     ax.tick_params(axis="x", colors=COLOR_MUTED)
     ax.tick_params(axis="y", colors=COLOR_MUTED)
@@ -2088,7 +2130,7 @@ mostrar_evolucion_por_anio_proveedor(tabla_mensual)
 
 
 # ============================================================
-# Visual 3: Respuestas ejecutivas de proveedores
+# Visual 3: Análisis ejecutivo de proveedores
 # ============================================================
 
 st.markdown(
@@ -2097,15 +2139,15 @@ st.markdown(
 )
 
 st.caption(
-    "Desde aquí la vista responde tres preguntas: quién concentra más registros, "
-    "quién combina volumen con peor performance y por qué volumen alto no siempre significa criticidad alta."
+    "La lectura inferior se organiza desde la criticidad hacia el detalle: primero cruza volumen e incumplimiento, "
+    "luego muestra concentración operativa y finalmente prioriza los proveedores con mayor impacto combinado."
 )
 
 col_cfg_1, col_cfg_2 = st.columns([1, 1])
 
 with col_cfg_1:
     min_evaluables_riesgo = st.number_input(
-        "Mínimo registros para ranking de riesgo",
+        "Mínimo registros para riesgo",
         min_value=2,
         max_value=1000,
         value=2,
@@ -2116,7 +2158,7 @@ with col_cfg_1:
 
 with col_cfg_2:
     etiquetas_matriz_riesgo = st.number_input(
-        "Etiquetas en matriz de riesgo",
+        "Etiquetas visibles en matriz",
         min_value=3,
         max_value=20,
         value=8,
@@ -2152,7 +2194,7 @@ with col_resp_1:
         else 0
     )
     mostrar_kpi_ejecutivo(
-        "Mayor cantidad de registros",
+        "Mayor concentración operativa",
         proveedor_mayor_volumen[:34],
         f"{formatear_entero(evaluables_mayor_volumen)} registros evaluables.",
     )
@@ -2169,7 +2211,7 @@ with col_resp_2:
         else 0
     )
     mostrar_kpi_ejecutivo(
-        "Mayor criticidad combinada",
+        "Mayor impacto combinado",
         proveedor_mayor_riesgo[:34],
         f"Score riesgo: {score_mayor_riesgo:.1f}.",
     )
@@ -2184,137 +2226,23 @@ with col_resp_3:
         else 0
     )
     mostrar_kpi_ejecutivo(
-        "Proveedores evaluables",
+        "Base de comparación",
         formatear_entero(total_proveedores_evaluables),
-        "La criticidad cruza volumen y % de incumplimiento.",
+        "Proveedores con registros evaluables en la vista filtrada.",
     )
 
+# ============================================================
+# Visual 3.1: Matriz de criticidad
+# ============================================================
+
 st.markdown(
-    "<div class='exec-section-title'>1. ¿Cuáles son los proveedores con mayor cantidad de registros?</div>",
+    "<div class='exec-section-title'>Matriz de criticidad: % de incumplimiento vs volumen</div>",
     unsafe_allow_html=True,
 )
 
 st.caption(
-    "Ranking por volumen: muestra dónde está concentrada la operación. "
-    "La barra separa Cumple y No cumple para no perder contexto de performance."
-)
-
-grafico_ranking_volumen_proveedores(
-    data=tabla_top_volumen,
-    top_n=int(top_n),
-)
-
-with st.expander("Tabla respuesta 1 · Proveedores con mayor cantidad de registros", expanded=False):
-    if tabla_top_volumen.empty:
-        st.info("No hay proveedores con registros evaluables.")
-    else:
-        st.dataframe(
-            tabla_top_volumen,
-            use_container_width=True,
-            hide_index=True,
-            height=360,
-            column_config={
-                "proveedor_grafico": st.column_config.TextColumn("Proveedor", width="large"),
-                "Evaluables": st.column_config.NumberColumn("Evaluables", format="%d"),
-                "Cumple": st.column_config.NumberColumn("Cumple", format="%d"),
-                "No cumple": st.column_config.NumberColumn("No cumple", format="%d"),
-                "% Cumple": st.column_config.ProgressColumn(
-                    "% Cumple",
-                    format="%.1f%%",
-                    min_value=0,
-                    max_value=100,
-                ),
-                "% No cumple": st.column_config.ProgressColumn(
-                    "% No cumple",
-                    format="%.1f%%",
-                    min_value=0,
-                    max_value=100,
-                ),
-                "Promedio días proveedor": st.column_config.NumberColumn(
-                    "Promedio días proveedor",
-                    format="%.1f",
-                ),
-            },
-        )
-
-st.markdown(
-    "<div class='exec-section-title'>2. ¿Cuáles tienen más registros y menor performance?</div>",
-    unsafe_allow_html=True,
-)
-
-st.caption(
-    "Ranking de riesgo: combina volumen e incumplimiento. "
-    "Score riesgo = registros evaluables × % No cumple. Así suben los proveedores que impactan más casos reales."
-)
-
-grafico_ranking_riesgo_proveedores(
-    data=tabla_top_riesgo,
-    top_n=int(top_n),
-)
-
-if not tabla_top_riesgo.empty:
-    excel_criticos = convertir_a_excel_criticos(
-        tabla_prioridad=tabla_top_riesgo.rename(columns={"Score riesgo": "Score prioridad"}),
-        df_dashboard=df_dashboard,
-    )
-
-    st.download_button(
-        label="Descargar Excel detalle proveedores con mayor riesgo",
-        data=excel_criticos,
-        file_name="16_VISTA_PROVEEDORES_detalle_mayor_riesgo.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True,
-        type="primary",
-    )
-
-with st.expander("Tabla respuesta 2 · Proveedores con mayor volumen y menor performance", expanded=False):
-    if tabla_top_riesgo.empty:
-        st.info("No hay proveedores con los criterios actuales.")
-    else:
-        st.dataframe(
-            tabla_top_riesgo,
-            use_container_width=True,
-            hide_index=True,
-            height=420,
-            column_config={
-                "proveedor_grafico": st.column_config.TextColumn("Proveedor", width="large"),
-                "Nivel prioridad": st.column_config.TextColumn("Nivel prioridad"),
-                "Evaluables": st.column_config.NumberColumn("Evaluables", format="%d"),
-                "Cumple": st.column_config.NumberColumn("Cumple", format="%d"),
-                "No cumple": st.column_config.NumberColumn("No cumple", format="%d"),
-                "% Cumple": st.column_config.ProgressColumn(
-                    "% Cumple",
-                    format="%.1f%%",
-                    min_value=0,
-                    max_value=100,
-                ),
-                "% No cumple": st.column_config.ProgressColumn(
-                    "% No cumple",
-                    format="%.1f%%",
-                    min_value=0,
-                    max_value=100,
-                ),
-                "Score riesgo": st.column_config.NumberColumn(
-                    "Score riesgo",
-                    format="%.1f",
-                    help="Evaluables × % No cumple.",
-                ),
-                "Lectura ejecutiva": st.column_config.TextColumn(
-                    "Lectura ejecutiva",
-                    width="large",
-                ),
-            },
-        )
-
-st.markdown(
-    "<div class='exec-section-title'>3. ¿Por qué volumen alto no siempre significa proveedor crítico?</div>",
-    unsafe_allow_html=True,
-)
-
-st.info(
-    "Un proveedor con muchos registros puede tener buen cumplimiento y, por lo tanto, bajo riesgo relativo. "
-    "En cambio, un proveedor con menos volumen puede ser crítico si concentra un alto porcentaje de incumplimiento. "
-    "Por eso esta vista separa volumen operativo, performance y score de riesgo."
+    "Cada punto representa un proveedor. El eje horizontal muestra volumen evaluable y el eje vertical muestra % de incumplimiento. "
+    "El foco ejecutivo está en el cuadrante de alto volumen y alto incumplimiento."
 )
 
 grafico_matriz_riesgo_proveedores(
@@ -2322,7 +2250,12 @@ grafico_matriz_riesgo_proveedores(
     top_n_labels=int(etiquetas_matriz_riesgo),
 )
 
-with st.expander("Tabla respuesta 3 · Matriz de criticidad por cuadrante", expanded=False):
+st.info(
+    "La criticidad no depende solo del volumen: un proveedor puede mover muchos registros y cumplir bien. "
+    "El riesgo aumenta cuando el volumen se combina con una proporción alta de incumplimientos."
+)
+
+with st.expander("Tabla de cuadrantes de criticidad", expanded=False):
     if tabla_matriz_riesgo.empty:
         st.info("No hay datos para matriz de criticidad.")
     else:
@@ -2365,6 +2298,130 @@ with st.expander("Tabla respuesta 3 · Matriz de criticidad por cuadrante", expa
             },
         )
 
+# ============================================================
+# Visual 3.2: Mayor cantidad de registros evaluables
+# ============================================================
+
+st.markdown(
+    "<div class='exec-section-title'>Proveedores con mayor cantidad de registros evaluables</div>",
+    unsafe_allow_html=True,
+)
+
+st.caption(
+    "Ranking por concentración operativa. Permite identificar dónde está el mayor volumen de transacciones evaluables, "
+    "manteniendo visible la separación entre cumple y no cumple."
+)
+
+grafico_ranking_volumen_proveedores(
+    data=tabla_top_volumen,
+    top_n=int(top_n),
+)
+
+with st.expander("Tabla de proveedores por volumen evaluable", expanded=False):
+    if tabla_top_volumen.empty:
+        st.info("No hay proveedores con registros evaluables.")
+    else:
+        st.dataframe(
+            tabla_top_volumen,
+            use_container_width=True,
+            hide_index=True,
+            height=360,
+            column_config={
+                "proveedor_grafico": st.column_config.TextColumn("Proveedor", width="large"),
+                "Evaluables": st.column_config.NumberColumn("Evaluables", format="%d"),
+                "Cumple": st.column_config.NumberColumn("Cumple", format="%d"),
+                "No cumple": st.column_config.NumberColumn("No cumple", format="%d"),
+                "% Cumple": st.column_config.ProgressColumn(
+                    "% Cumple",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+                "% No cumple": st.column_config.ProgressColumn(
+                    "% No cumple",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+                "Promedio días proveedor": st.column_config.NumberColumn(
+                    "Promedio días proveedor",
+                    format="%.1f",
+                ),
+            },
+        )
+
+# ============================================================
+# Visual 3.3: Mayor volumen y peor performance
+# ============================================================
+
+st.markdown(
+    "<div class='exec-section-title'>Proveedores con mayor volumen y peor performance</div>",
+    unsafe_allow_html=True,
+)
+
+st.caption(
+    "Priorización por impacto: combina registros evaluables y porcentaje de incumplimiento. "
+    "Score riesgo = registros evaluables × % No cumple."
+)
+
+grafico_ranking_riesgo_proveedores(
+    data=tabla_top_riesgo,
+    top_n=int(top_n),
+)
+
+if not tabla_top_riesgo.empty:
+    excel_criticos = convertir_a_excel_criticos(
+        tabla_prioridad=tabla_top_riesgo.rename(columns={"Score riesgo": "Score prioridad"}),
+        df_dashboard=df_dashboard,
+    )
+
+    st.download_button(
+        label="Descargar Excel detalle proveedores priorizados",
+        data=excel_criticos,
+        file_name="16_VISTA_PROVEEDORES_detalle_proveedores_priorizados.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+        type="primary",
+    )
+
+with st.expander("Tabla de proveedores priorizados por impacto", expanded=False):
+    if tabla_top_riesgo.empty:
+        st.info("No hay proveedores con los criterios actuales.")
+    else:
+        st.dataframe(
+            tabla_top_riesgo,
+            use_container_width=True,
+            hide_index=True,
+            height=420,
+            column_config={
+                "proveedor_grafico": st.column_config.TextColumn("Proveedor", width="large"),
+                "Nivel prioridad": st.column_config.TextColumn("Nivel prioridad"),
+                "Evaluables": st.column_config.NumberColumn("Evaluables", format="%d"),
+                "Cumple": st.column_config.NumberColumn("Cumple", format="%d"),
+                "No cumple": st.column_config.NumberColumn("No cumple", format="%d"),
+                "% Cumple": st.column_config.ProgressColumn(
+                    "% Cumple",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+                "% No cumple": st.column_config.ProgressColumn(
+                    "% No cumple",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+                "Score riesgo": st.column_config.NumberColumn(
+                    "Score riesgo",
+                    format="%.1f",
+                    help="Evaluables × % No cumple.",
+                ),
+                "Lectura ejecutiva": st.column_config.TextColumn(
+                    "Lectura ejecutiva",
+                    width="large",
+                ),
+            },
+        )
 
 # ============================================================
 # Visual 5: Tabla ejecutiva de proveedores
