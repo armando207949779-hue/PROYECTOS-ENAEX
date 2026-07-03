@@ -983,8 +983,7 @@ def preparar_ranking_riesgo_proveedores(
         salida["Evaluables"].round(0).astype(int).astype(str)
         + " evaluables · "
         + salida["% No cumple"].round(1).astype(str)
-        + "% no cumple · score "
-        + salida["Score riesgo"].round(1).astype(str)
+        + "% no cumple"
     )
 
     salida = salida.sort_values(
@@ -1089,7 +1088,7 @@ def grafico_ranking_volumen_proveedores(data: pd.DataFrame, top_n: int):
     )
     ax.set_xlabel("Cantidad de registros evaluables", color=COLOR_MUTED)
     ax.legend(frameon=False, loc="lower right")
-    ax.grid(axis="x", linestyle=":", linewidth=0.7, color=COLOR_GRID)
+    ax.grid(False)
     ax.tick_params(axis="x", colors=COLOR_MUTED)
     ax.tick_params(axis="y", colors=COLOR_TEXTO)
 
@@ -1103,7 +1102,7 @@ def grafico_ranking_volumen_proveedores(data: pd.DataFrame, top_n: int):
 
 def grafico_ranking_riesgo_proveedores(data: pd.DataFrame, top_n: int):
     if data.empty:
-        st.info("No hay proveedores suficientes para calcular ranking de riesgo con los criterios actuales.")
+        st.info("No hay proveedores suficientes para calcular ranking de impacto con los criterios actuales.")
         return
 
     plot_data = data.sort_values("Score riesgo", ascending=True).copy()
@@ -1112,19 +1111,21 @@ def grafico_ranking_riesgo_proveedores(data: pd.DataFrame, top_n: int):
     fig, ax = plt.subplots(figsize=(12, fig_height), dpi=160)
 
     y = np.arange(len(plot_data))
-    score = pd.to_numeric(plot_data["Score riesgo"], errors="coerce").fillna(0)
     evaluables = pd.to_numeric(plot_data["Evaluables"], errors="coerce").fillna(0)
     pct_no_cumple = pd.to_numeric(plot_data["% No cumple"], errors="coerce").fillna(0)
+    no_cumple = pd.to_numeric(plot_data["No cumple"], errors="coerce").fillna(0)
 
-    ax.barh(y, score, color=COLOR_NO_CUMPLE, alpha=0.92)
+    ax.barh(y, evaluables, color=COLOR_NO_CUMPLE, alpha=0.92)
     ax.set_yticks(y)
     ax.set_yticklabels(plot_data["proveedor_grafico"].astype(str), fontsize=8)
 
-    for i, (score_val, total, pct) in enumerate(zip(score, evaluables, pct_no_cumple)):
+    max_eval = float(evaluables.max()) if len(evaluables) else 0
+
+    for i, (total, incumplidos, pct) in enumerate(zip(evaluables, no_cumple, pct_no_cumple)):
         ax.text(
-            score_val + max(score.max() * 0.01, 0.3),
+            total + max(max_eval * 0.01, 0.5),
             i,
-            f"score {score_val:.1f} · {int(total):,} eval. · {pct:.1f}% no cumple",
+            f"{int(total):,} eval. · {int(incumplidos):,} no cumple · {pct:.1f}% no cumple",
             va="center",
             ha="left",
             fontsize=7.7,
@@ -1132,15 +1133,15 @@ def grafico_ranking_riesgo_proveedores(data: pd.DataFrame, top_n: int):
         )
 
     ax.set_title(
-        f"Volumen e incumplimiento combinado por proveedor (Top {top_n})",
+        f"Mayor volumen con peor performance proveedor (Top {top_n})",
         loc="left",
         fontsize=13,
         fontweight="bold",
         color=COLOR_TEXTO,
         pad=10,
     )
-    ax.set_xlabel("Score de riesgo = Evaluables × % No cumple", color=COLOR_MUTED)
-    ax.grid(axis="x", linestyle=":", linewidth=0.7, color=COLOR_GRID)
+    ax.set_xlabel("Cantidad de registros evaluables", color=COLOR_MUTED)
+    ax.grid(False)
     ax.tick_params(axis="x", colors=COLOR_MUTED)
     ax.tick_params(axis="y", colors=COLOR_TEXTO)
 
@@ -1150,7 +1151,6 @@ def grafico_ranking_riesgo_proveedores(data: pd.DataFrame, top_n: int):
     fig.tight_layout()
     st.pyplot(fig, clear_figure=True, use_container_width=True)
     plt.close(fig)
-
 
 def grafico_matriz_riesgo_proveedores(data: pd.DataFrame, top_n_labels: int = 8):
     if data.empty:
@@ -1185,7 +1185,7 @@ def grafico_matriz_riesgo_proveedores(data: pd.DataFrame, top_n_labels: int = 8)
     etiquetas = plot_data.sort_values("Score riesgo", ascending=False).head(int(top_n_labels))
 
     # Etiquetas con desplazamientos alternados para evitar solapamientos.
-    # Se rotulan solo los proveedores con mayor score de riesgo.
+    # Se rotulan solo los proveedores de mayor impacto combinado.
     offsets = [
         (14, 14),
         (14, -16),
@@ -1247,7 +1247,7 @@ def grafico_matriz_riesgo_proveedores(data: pd.DataFrame, top_n_labels: int = 8)
     x_max = float(x.max()) if len(x) else 0
     ax.set_xlim(left=0, right=x_max * 1.18 if x_max > 0 else 1)
     ax.set_ylim(0, min(108, max(100, float(y.max()) + 10)))
-    ax.grid(True, linestyle=":", linewidth=0.7, color=COLOR_GRID)
+    ax.grid(False)
     ax.tick_params(axis="x", colors=COLOR_MUTED)
     ax.tick_params(axis="y", colors=COLOR_MUTED)
 
@@ -1395,7 +1395,6 @@ def grafico_barras_apiladas_top_proveedores(data: pd.DataFrame, top_n: int):
     )
     ax.set_xlabel("Cantidad de registros evaluables", color=COLOR_MUTED)
     ax.legend(frameon=False, loc="lower right")
-
     ax.grid(False)
     ax.tick_params(axis="x", colors=COLOR_MUTED)
     ax.tick_params(axis="y", colors=COLOR_TEXTO)
@@ -1529,9 +1528,8 @@ def grafico_performance_proveedor_matplotlib(
         color=COLOR_TEXTO,
         pad=10,
     )
-
-    ax.grid(axis="y", linestyle=":", linewidth=0.7, color=COLOR_GRID)
-    ax.grid(axis="x", visible=False)
+    ax.grid(False)
+    ax.grid(False)
     ax.tick_params(axis="both", length=0)
 
     for spine in ax.spines.values():
@@ -2164,7 +2162,7 @@ with col_cfg_2:
         value=8,
         step=1,
         key="vista_proveedores_etiquetas_matriz_riesgo",
-        help="Cantidad de proveedores con mayor score que se rotulan en la matriz.",
+        help="Cantidad de proveedores de mayor impacto que se rotulan en la matriz.",
     )
 
 tabla_top_volumen = preparar_ranking_volumen_proveedores(
@@ -2205,15 +2203,20 @@ with col_resp_2:
         if not tabla_top_riesgo.empty
         else "—"
     )
-    score_mayor_riesgo = (
-        tabla_top_riesgo.iloc[0]["Score riesgo"]
+    no_cumple_mayor_riesgo = (
+        tabla_top_riesgo.iloc[0]["No cumple"]
+        if not tabla_top_riesgo.empty
+        else 0
+    )
+    pct_no_cumple_mayor_riesgo = (
+        tabla_top_riesgo.iloc[0]["% No cumple"]
         if not tabla_top_riesgo.empty
         else 0
     )
     mostrar_kpi_ejecutivo(
         "Mayor impacto combinado",
         proveedor_mayor_riesgo[:34],
-        f"Score riesgo: {score_mayor_riesgo:.1f}.",
+        f"{formatear_entero(no_cumple_mayor_riesgo)} no cumplen · {formatear_porcentaje(pct_no_cumple_mayor_riesgo)} no cumplimiento.",
     )
 
 with col_resp_3:
@@ -2267,12 +2270,11 @@ with st.expander("Tabla de cuadrantes de criticidad", expanded=False):
             "Evaluables",
             "% Cumple",
             "% No cumple",
-            "Score riesgo",
         ]
         columnas_matriz = [c for c in columnas_matriz if c in tabla_matriz_riesgo.columns]
 
         st.dataframe(
-            tabla_matriz_riesgo[columnas_matriz],
+            tabla_matriz_riesgo[columnas_matriz].drop(columns=["Score riesgo"], errors="ignore"),
             use_container_width=True,
             hide_index=True,
             height=420,
@@ -2294,7 +2296,6 @@ with st.expander("Tabla de cuadrantes de criticidad", expanded=False):
                     min_value=0,
                     max_value=100,
                 ),
-                "Score riesgo": st.column_config.NumberColumn("Score riesgo", format="%.1f"),
             },
         )
 
@@ -2360,8 +2361,8 @@ st.markdown(
 )
 
 st.caption(
-    "Priorización por impacto: combina registros evaluables y porcentaje de incumplimiento. "
-    "Score riesgo = registros evaluables × % No cumple."
+    "Priorización por impacto: combina registros evaluables y porcentaje de incumplimiento, "
+    "sin confundir volumen alto con criticidad automática."
 )
 
 grafico_ranking_riesgo_proveedores(
@@ -2370,8 +2371,10 @@ grafico_ranking_riesgo_proveedores(
 )
 
 if not tabla_top_riesgo.empty:
+    tabla_top_riesgo_export = tabla_top_riesgo.drop(columns=["Score riesgo"], errors="ignore")
+
     excel_criticos = convertir_a_excel_criticos(
-        tabla_prioridad=tabla_top_riesgo.rename(columns={"Score riesgo": "Score prioridad"}),
+        tabla_prioridad=tabla_top_riesgo_export,
         df_dashboard=df_dashboard,
     )
 
@@ -2389,7 +2392,7 @@ with st.expander("Tabla de proveedores priorizados por impacto", expanded=False)
         st.info("No hay proveedores con los criterios actuales.")
     else:
         st.dataframe(
-            tabla_top_riesgo,
+            tabla_top_riesgo.drop(columns=["Score riesgo"], errors="ignore"),
             use_container_width=True,
             hide_index=True,
             height=420,
@@ -2410,11 +2413,6 @@ with st.expander("Tabla de proveedores priorizados por impacto", expanded=False)
                     format="%.1f%%",
                     min_value=0,
                     max_value=100,
-                ),
-                "Score riesgo": st.column_config.NumberColumn(
-                    "Score riesgo",
-                    format="%.1f",
-                    help="Evaluables × % No cumple.",
                 ),
                 "Lectura ejecutiva": st.column_config.TextColumn(
                     "Lectura ejecutiva",
