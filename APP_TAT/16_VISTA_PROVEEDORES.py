@@ -6,7 +6,7 @@
 # Enfoque:
 # - Vista ejecutiva inspirada en 13_VISTA_EJECUTIVA_PERFORMANCE_PLANTAS
 # - Base de análisis: registros evaluables Cumple + No cumple
-# - Resumen global proveedor
+# - Resumen global proveedor con desglose por centro
 # - Tendencia mensual proveedor
 # - Proveedores por cantidad de registros evaluables
 # - Tabla ejecutiva de proveedores con buscador, filtro y umbral
@@ -767,6 +767,89 @@ def crear_resumen_proveedores(df: pd.DataFrame) -> pd.DataFrame:
         tabla["Umbral proveedor"] = "—"
 
     return tabla.sort_values("Evaluables", ascending=False).reset_index(drop=True)
+
+
+def crear_desglose_cumplimiento_centros(df: pd.DataFrame) -> pd.DataFrame:
+    columnas = [
+        "Centro",
+        "Cumple",
+        "No cumple",
+        "Evaluables",
+        "% Cumple",
+        "% No cumple",
+    ]
+
+    base_centros = pd.DataFrame({"Centro": CENTROS_DEFAULT})
+
+    if df.empty or "centro_grupo" not in df.columns:
+        salida = base_centros.copy()
+        salida["Cumple"] = 0
+        salida["No cumple"] = 0
+        salida["Evaluables"] = 0
+        salida["% Cumple"] = 0.0
+        salida["% No cumple"] = 0.0
+        return salida[columnas]
+
+    base = df[
+        df["centro_grupo"].isin(CENTROS_DEFAULT)
+        & df["performance_proveedor_norm"].isin(["Cumple", "No cumple"])
+    ].copy()
+
+    if base.empty:
+        salida = base_centros.copy()
+        salida["Cumple"] = 0
+        salida["No cumple"] = 0
+        salida["Evaluables"] = 0
+        salida["% Cumple"] = 0.0
+        salida["% No cumple"] = 0.0
+        return salida[columnas]
+
+    resumen = (
+        base
+        .groupby(["centro_grupo", "performance_proveedor_norm"])
+        .size()
+        .reset_index(name="cantidad")
+    )
+
+    tabla = resumen.pivot_table(
+        index="centro_grupo",
+        columns="performance_proveedor_norm",
+        values="cantidad",
+        aggfunc="sum",
+        fill_value=0,
+    ).reset_index()
+
+    for col in ["Cumple", "No cumple"]:
+        if col not in tabla.columns:
+            tabla[col] = 0
+
+    tabla["Evaluables"] = tabla["Cumple"] + tabla["No cumple"]
+
+    tabla["% Cumple"] = np.where(
+        tabla["Evaluables"] > 0,
+        tabla["Cumple"] / tabla["Evaluables"] * 100,
+        0,
+    )
+
+    tabla["% No cumple"] = np.where(
+        tabla["Evaluables"] > 0,
+        tabla["No cumple"] / tabla["Evaluables"] * 100,
+        0,
+    )
+
+    tabla = tabla.rename(columns={"centro_grupo": "Centro"})
+    tabla = base_centros.merge(tabla, on="Centro", how="left")
+
+    for col in ["Cumple", "No cumple", "Evaluables"]:
+        tabla[col] = pd.to_numeric(tabla[col], errors="coerce").fillna(0).astype(int)
+
+    for col in ["% Cumple", "% No cumple"]:
+        tabla[col] = pd.to_numeric(tabla[col], errors="coerce").fillna(0.0)
+
+    tabla["_orden"] = tabla["Centro"].map({centro: i for i, centro in enumerate(CENTROS_DEFAULT)})
+    tabla = tabla.sort_values("_orden").drop(columns="_orden").reset_index(drop=True)
+
+    return tabla[columnas]
 
 
 def crear_resumen_mensual_proveedores(df: pd.DataFrame) -> pd.DataFrame:
@@ -1629,30 +1712,41 @@ with col_g1:
     )
 
 with col_g2:
+    tabla_centros = crear_desglose_cumplimiento_centros(df_dashboard)
+
     st.dataframe(
-        pd.DataFrame(
-            [
-                {
-                    "Estado": "Cumple",
-                    "Registros": kpis["cumple"],
-                    "%": kpis["pct_cumple"],
-                },
-                {
-                    "Estado": "No cumple",
-                    "Registros": kpis["no_cumple"],
-                    "%": kpis["pct_no_cumple"],
-                },
-            ]
-        ),
+        tabla_centros,
         use_container_width=True,
         hide_index=True,
         column_config={
-            "%": st.column_config.ProgressColumn(
-                "%",
+            "Centro": st.column_config.TextColumn(
+                "Centro",
+                width="medium",
+            ),
+            "Cumple": st.column_config.NumberColumn(
+                "Cumple",
+                format="%d",
+            ),
+            "No cumple": st.column_config.NumberColumn(
+                "No cumple",
+                format="%d",
+            ),
+            "Evaluables": st.column_config.NumberColumn(
+                "Evaluables",
+                format="%d",
+            ),
+            "% Cumple": st.column_config.ProgressColumn(
+                "% Cumple",
                 format="%.1f%%",
                 min_value=0,
                 max_value=100,
-            )
+            ),
+            "% No cumple": st.column_config.ProgressColumn(
+                "% No cumple",
+                format="%.1f%%",
+                min_value=0,
+                max_value=100,
+            ),
         },
     )
 
