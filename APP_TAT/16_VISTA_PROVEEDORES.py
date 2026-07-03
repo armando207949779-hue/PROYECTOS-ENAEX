@@ -10,6 +10,7 @@
 # - Tendencia mensual proveedor
 # - Proveedores por cantidad de registros evaluables
 # - Tabla ejecutiva de proveedores con buscador, filtro y umbral
+# - Filtro ejecutivo por centro: Prillex, Rio Loa, Teatinos y Servicios
 # - Priorización de proveedores críticos por volumen y % de incumplimiento con umbral editable
 # ============================================================
 
@@ -50,6 +51,25 @@ COL_FECHA_RECEPCION_FINAL = "fecha_recepcion_final"
 COL_FECHA_FACTURACION_FINAL = "fecha_facturacion_final"
 COL_PEDIDO = "Pedido - ME5A"
 COL_DOCUMENTO_COMPRAS = "Documento de compras - ME80FN"
+
+CENTROS_DEFAULT = [
+    "Prillex",
+    "Rio Loa",
+    "Teatinos",
+    "Servicios",
+]
+
+MAPA_CENTROS_PRINCIPALES = {
+    "E002": "Prillex",
+    "E024": "Rio Loa",
+    "E026": "Teatinos",
+}
+
+CENTROS_EXCLUIR_SERVICIOS = [
+    "E001",
+    "E009",
+    "E021",
+]
 
 TOP_N_DEFAULT = 20
 
@@ -311,6 +331,36 @@ def obtener_columna_fecha(df: pd.DataFrame) -> str | None:
     return None
 
 
+def buscar_columna_centro(df: pd.DataFrame) -> str | None:
+    candidatos = [
+        "Centro - ME5A",
+        "Centro",
+        "Centro - ME80FN",
+        "me80fn_centro",
+    ]
+
+    for col in candidatos:
+        if col in df.columns:
+            return col
+
+    return None
+
+
+def obtener_grupo_centro(centro) -> str:
+    if pd.isna(centro):
+        return "Servicios"
+
+    centro_txt = str(centro).strip().upper()
+
+    if centro_txt in MAPA_CENTROS_PRINCIPALES:
+        return MAPA_CENTROS_PRINCIPALES[centro_txt]
+
+    if centro_txt in CENTROS_EXCLUIR_SERVICIOS:
+        return "Excluir"
+
+    return "Servicios"
+
+
 def mostrar_kpi_ejecutivo(titulo: str, valor: str, subtitulo: str):
     st.markdown(
         f"""
@@ -410,6 +460,21 @@ def preparar_base_proveedores(df_original: pd.DataFrame) -> pd.DataFrame:
     df["proveedor_grafico"] = df[COL_PROVEEDOR].fillna("Sin proveedor ARIBA")
     df["proveedor_grafico"] = df["proveedor_grafico"].replace("", "Sin proveedor ARIBA")
 
+    col_centro = buscar_columna_centro(df)
+
+    if col_centro is not None:
+        df["centro_grafico"] = (
+            df[col_centro]
+            .astype("string")
+            .str.strip()
+            .str.upper()
+        )
+    else:
+        df["centro_grafico"] = pd.NA
+
+    df["centro_grafico"] = df["centro_grafico"].fillna("Sin centro")
+    df["centro_grupo"] = df["centro_grafico"].apply(obtener_grupo_centro)
+
     df["performance_proveedor_norm"] = (
         df[COL_PERFORMANCE_PROVEEDOR]
         .apply(normalizar_estado_performance)
@@ -465,6 +530,7 @@ def aplicar_filtros_proveedores(
     df_base: pd.DataFrame,
     fecha_inicio,
     fecha_fin,
+    centros_sel: list,
     proveedores_sel: list,
     perf_sel: list,
     incluir_sin_proveedor: bool,
@@ -474,6 +540,11 @@ def aplicar_filtros_proveedores(
 
     if not incluir_sin_proveedor:
         df = df[df["proveedor_grafico"].ne("Sin proveedor ARIBA")].copy()
+
+    if centros_sel:
+        df = df[df["centro_grupo"].isin(centros_sel)].copy()
+
+    df = df[df["centro_grupo"].ne("Excluir")].copy()
 
     if fecha_inicio is not None and fecha_fin is not None:
         fecha_inicio_ts = pd.Timestamp(fecha_inicio)
@@ -1273,6 +1344,8 @@ def convertir_a_excel_criticos(
         "Solicitud de pedido - ME5A",
         COL_PEDIDO,
         COL_DOCUMENTO_COMPRAS,
+        "centro_grafico",
+        "centro_grupo",
         COL_PROVEEDOR,
         "proveedor_grafico",
         COL_FECHA_PROVEEDOR,
@@ -1369,6 +1442,15 @@ proveedores_disponibles = (
     .tolist()
 )
 
+centros_disponibles = [
+    centro
+    for centro in CENTROS_DEFAULT
+    if centro in df_pre_filtro["centro_grupo"].dropna().astype(str).unique()
+]
+
+if not centros_disponibles:
+    centros_disponibles = CENTROS_DEFAULT.copy()
+
 perf_options = ["Cumple", "No cumple"]
 
 st.markdown(
@@ -1378,11 +1460,11 @@ st.markdown(
 
 st.caption(
     "La vista se calcula solo sobre registros evaluables: Cumple + No cumple. "
-    "Puedes incluir o excluir registros sin proveedor ARIBA."
+    "Puedes filtrar por centro y también incluir o excluir registros sin proveedor ARIBA."
 )
 
 with st.form("form_filtros_vista_proveedores"):
-    col_f1, col_f2, col_f3, col_f4, col_f5 = st.columns([1.2, 1, 1.2, 0.8, 0.8])
+    col_f1, col_f2, col_f3, col_f4, col_f5, col_f6 = st.columns([1.15, 1.05, 1, 1.25, 0.8, 0.75])
 
     with col_f1:
         if fecha_min is not None and fecha_max is not None:
@@ -1398,6 +1480,15 @@ with st.form("form_filtros_vista_proveedores"):
             st.warning("No hay fechas válidas para filtrar.")
 
     with col_f2:
+        centros_sel = st.multiselect(
+            "Centro",
+            options=centros_disponibles,
+            default=centros_disponibles,
+            key="vista_proveedores_centros",
+            help="Por defecto considera Prillex, Rio Loa, Teatinos y Servicios.",
+        )
+
+    with col_f3:
         perf_sel = st.multiselect(
             "Performance proveedor",
             options=perf_options,
@@ -1405,7 +1496,7 @@ with st.form("form_filtros_vista_proveedores"):
             key="vista_proveedores_performance",
         )
 
-    with col_f3:
+    with col_f4:
         proveedores_sel = st.multiselect(
             "Proveedor",
             options=proveedores_disponibles,
@@ -1414,14 +1505,14 @@ with st.form("form_filtros_vista_proveedores"):
             help="Opcional. Si no seleccionas proveedor, se consideran todos.",
         )
 
-    with col_f4:
+    with col_f5:
         incluir_sin_proveedor = st.checkbox(
             "Incluir sin proveedor",
             value=False,
             key="vista_proveedores_incluir_sin_proveedor",
         )
 
-    with col_f5:
+    with col_f6:
         top_n = st.number_input(
             "Top N",
             min_value=5,
@@ -1458,6 +1549,7 @@ df_dashboard = aplicar_filtros_proveedores(
     df_base=df_final,
     fecha_inicio=fecha_inicio,
     fecha_fin=fecha_fin,
+    centros_sel=centros_sel,
     proveedores_sel=proveedores_sel,
     perf_sel=perf_sel,
     incluir_sin_proveedor=incluir_sin_proveedor,
@@ -1474,6 +1566,7 @@ st.markdown(
     f"""
     <div class='exec-small'>
         Fechas: {fecha_inicio if fecha_inicio else "Todas"} a {fecha_fin if fecha_fin else "Todas"} ·
+        Centro: {", ".join(centros_sel) if centros_sel else "Todos"} ·
         Performance: {", ".join(perf_sel) if perf_sel else "Todas"} ·
         Proveedor: {", ".join(proveedores_sel) if proveedores_sel else "Todos"} ·
         Sin proveedor ARIBA: {"Incluido" if incluir_sin_proveedor else "Excluido"}
@@ -1907,6 +2000,8 @@ with st.expander("Vista previa de registros evaluables filtrados", expanded=Fals
         "Solicitud de pedido - ME5A",
         COL_PEDIDO,
         COL_DOCUMENTO_COMPRAS,
+        "centro_grafico",
+        "centro_grupo",
         COL_PROVEEDOR,
         "proveedor_grafico",
         COL_FECHA_PROVEEDOR,
@@ -1949,6 +2044,7 @@ with st.expander("Descargar base proveedores filtrada", expanded=False):
         f"{len(df_dashboard)}_"
         f"{fecha_inicio}_"
         f"{fecha_fin}_"
+        f"{','.join(centros_sel)}_"
         f"{','.join(proveedores_sel)}_"
         f"{','.join(perf_sel)}_"
         f"{incluir_sin_proveedor}"
@@ -2011,7 +2107,7 @@ with st.expander("Descargar base proveedores filtrada", expanded=False):
         st.download_button(
             label="Descargar resumen proveedores",
             data=excel_resumen,
-            file_name="16_VISTA_PROVEEDORES_VERSION_3_resumen.xlsx",
+            file_name="16_VISTA_PROVEEDORES_VERSION_5_resumen.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
         )
