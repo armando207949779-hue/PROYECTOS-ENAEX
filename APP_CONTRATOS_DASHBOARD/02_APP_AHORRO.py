@@ -281,6 +281,22 @@ def limpiar_texto_columna(serie):
     )
 
 
+def preparar_tabla_visualizacion(df):
+    """
+    Devuelve una copia del DataFrame con las columnas de fecha visibles
+    en formato DD-MM-YYYY, sin modificar los datos usados en cálculos.
+    """
+    df_visual = df.copy()
+
+    for columna in df_visual.columns:
+        if "fecha" in columna.lower():
+            serie_fecha = pd.to_datetime(df_visual[columna], errors="coerce")
+            if serie_fecha.notna().any():
+                df_visual[columna] = serie_fecha.dt.strftime("%d-%m-%Y").fillna("")
+
+    return df_visual
+
+
 def validar_columnas(df, columnas, nombre_df):
     faltantes = [col for col in columnas if col not in df.columns]
 
@@ -614,147 +630,10 @@ with col_info2:
 
 st.markdown("---")
 
-
-# ============================================================
-# Tablas agregadas
-# ============================================================
-
-df_plan_gestor = (
-    df_plan
-    .groupby("Gestor", as_index=False)["Ahorro_Planificado_kUSD_num"]
-    .sum()
-    .rename(columns={"Ahorro_Planificado_kUSD_num": "Ahorro_Planificado_Total_kUSD"})
+st.caption(
+    "Lectura sugerida: evolución global → distribución por proceso → "
+    "cumplimiento por gestor → detalle de contratos."
 )
-
-df_real_gestor = (
-    df_real_filtrado
-    .groupby("Gestor", as_index=False)["Ahorro_Real_kUSD_num"]
-    .sum()
-    .rename(columns={"Ahorro_Real_kUSD_num": "Ahorro_Real_Total_kUSD"})
-)
-
-df_progreso_gestor = (
-    df_dim_gestor
-    .merge(df_plan_gestor, on="Gestor", how="left")
-    .merge(df_real_gestor, on="Gestor", how="left")
-)
-
-df_progreso_gestor[
-    ["Ahorro_Planificado_Total_kUSD", "Ahorro_Real_Total_kUSD"]
-] = (
-    df_progreso_gestor[
-        ["Ahorro_Planificado_Total_kUSD", "Ahorro_Real_Total_kUSD"]
-    ]
-    .fillna(0)
-)
-
-df_progreso_gestor["Cumplimiento"] = df_progreso_gestor.apply(
-    lambda row: row["Ahorro_Real_Total_kUSD"] / row["Ahorro_Planificado_Total_kUSD"]
-    if row["Ahorro_Planificado_Total_kUSD"] > 0 else 0,
-    axis=1
-)
-
-df_progreso_gestor["Cumplimiento_%"] = df_progreso_gestor["Cumplimiento"] * 100
-df_progreso_gestor["Cumplimiento_Grafico_%"] = df_progreso_gestor["Cumplimiento_%"].clip(upper=100)
-
-df_progreso_gestor = df_progreso_gestor.sort_values(
-    "Cumplimiento_%",
-    ascending=True
-).reset_index(drop=True)
-
-
-# ============================================================
-# Gráfico: Cumplimiento por gestor
-# ============================================================
-
-st.markdown("### Cumplimiento por gestor")
-
-if df_progreso_gestor.empty:
-    st.info("No hay datos para graficar.")
-else:
-    fig, ax = plt.subplots(figsize=(13, max(5, len(df_progreso_gestor) * 0.55)))
-
-    ax.barh(
-        df_progreso_gestor["Gestor"],
-        [100] * len(df_progreso_gestor),
-        color="#E5E7EB",
-        edgecolor="#D1D5DB",
-        linewidth=0.8,
-        label="Meta 100%"
-    )
-
-    colores_cumplimiento = [
-        "#16A34A" if valor >= 100 else "#DC2626"
-        for valor in df_progreso_gestor["Cumplimiento_%"]
-    ]
-
-    ax.barh(
-        df_progreso_gestor["Gestor"],
-        df_progreso_gestor["Cumplimiento_Grafico_%"],
-        color=colores_cumplimiento,
-        edgecolor=colores_cumplimiento,
-        linewidth=0.8,
-        label="Cumplimiento"
-    )
-
-    ax.axvline(
-        100,
-        linestyle="--",
-        linewidth=1.1,
-        color="#111827",
-        alpha=0.8
-    )
-
-    max_cumplimiento = df_progreso_gestor["Cumplimiento_%"].max()
-    limite_x = max(150, min(max_cumplimiento + 35, 240))
-
-    ax.set_xlim(0, limite_x)
-    ax.set_xlabel("Cumplimiento [%]")
-    ax.set_title("Cumplimiento por gestor", fontsize=14, fontweight="bold", pad=14)
-
-    limpiar_estilo_grafico(ax)
-
-    for i, row in df_progreso_gestor.iterrows():
-        texto = (
-            f"{row['Cumplimiento_%']:.1f}% | "
-            f"{row['Ahorro_Real_Total_kUSD']:,.0f} / "
-            f"{row['Ahorro_Planificado_Total_kUSD']:,.0f} kUSD"
-        )
-
-        posicion_texto = min(
-            max(row["Cumplimiento_Grafico_%"], 100) + 3,
-            limite_x - 5
-        )
-
-        ax.text(
-            posicion_texto,
-            i,
-            texto,
-            va="center",
-            ha="left",
-            fontsize=9,
-            fontweight="bold",
-            color="#111827"
-        )
-
-    from matplotlib.patches import Patch
-
-    leyenda_cumplimiento = [
-        Patch(facecolor="#16A34A", edgecolor="#16A34A", label="Cumple o supera meta"),
-        Patch(facecolor="#DC2626", edgecolor="#DC2626", label="Bajo la meta"),
-        Patch(facecolor="#E5E7EB", edgecolor="#D1D5DB", label="Meta 100%"),
-    ]
-
-    ax.legend(
-        handles=leyenda_cumplimiento,
-        loc="lower right",
-        frameon=False
-    )
-
-    fig.tight_layout()
-    st.pyplot(fig, clear_figure=True)
-
-st.markdown("---")
 
 
 # ============================================================
@@ -856,6 +735,347 @@ else:
     handles1, labels1 = ax1.get_legend_handles_labels()
     handles2, labels2 = ax2.get_legend_handles_labels()
     ax1.legend(handles1 + handles2, labels1 + labels2, loc="upper left", frameon=False)
+
+    fig.tight_layout()
+    st.pyplot(fig, clear_figure=True)
+
+st.markdown("---")
+
+
+# ============================================================
+# Tipo de proceso
+# ============================================================
+
+df_proc = df_real_filtrado.copy()
+
+df_dim_proceso["Tipo_Proceso"] = limpiar_texto_columna(df_dim_proceso["Tipo_Proceso"])
+
+df_ahorro_proceso = (
+    df_proc
+    .groupby("Tipo_Proceso", as_index=False)["Ahorro_Real_kUSD_num"]
+    .sum()
+    .rename(columns={"Ahorro_Real_kUSD_num": "Ahorro_Real_Total_kUSD"})
+)
+
+df_ahorro_proceso = (
+    df_dim_proceso
+    .merge(df_ahorro_proceso, on="Tipo_Proceso", how="left")
+)
+
+df_ahorro_proceso["Ahorro_Real_Total_kUSD"] = (
+    df_ahorro_proceso["Ahorro_Real_Total_kUSD"]
+    .fillna(0)
+)
+
+
+# ============================================================
+# Gráfico: Donut proceso compacto
+# ============================================================
+
+st.markdown("### Participación del ahorro por tipo de proceso")
+
+df_donut = df_ahorro_proceso[
+    df_ahorro_proceso["Ahorro_Real_Total_kUSD"] > 0
+].copy()
+
+if df_donut.empty:
+    st.info("No hay datos positivos para el gráfico.")
+else:
+    total_ahorro = df_donut["Ahorro_Real_Total_kUSD"].sum()
+
+    df_donut["Participacion_%"] = (
+        df_donut["Ahorro_Real_Total_kUSD"] / total_ahorro * 100
+    )
+
+    df_donut = df_donut.sort_values(
+        "Ahorro_Real_Total_kUSD",
+        ascending=False
+    ).reset_index(drop=True)
+
+    col_donut, col_tabla_donut = st.columns([1.15, 0.85])
+
+    with col_donut:
+        fig, ax = plt.subplots(figsize=(7.8, 6.2))
+
+        wedges, texts, autotexts = ax.pie(
+            df_donut["Ahorro_Real_Total_kUSD"],
+            labels=None,
+            autopct=lambda p: f"{p:.1f}%" if p >= 3 else "",
+            startangle=90,
+            pctdistance=0.78,
+            wedgeprops={
+                "width": 0.36,
+                "edgecolor": "white"
+            },
+            textprops={
+                "fontsize": 8,
+                "fontweight": "bold",
+                "color": "#111827",
+            }
+        )
+
+        ax.text(
+            0,
+            0.05,
+            f"{total_ahorro:,.0f}",
+            ha="center",
+            va="center",
+            fontsize=14,
+            fontweight="bold"
+        )
+
+        ax.text(
+            0,
+            -0.12,
+            "kUSD total",
+            ha="center",
+            va="center",
+            fontsize=8
+        )
+
+        ax.set_aspect("equal")
+
+        leyenda_labels = [
+            f"{row['Tipo_Proceso']} | {row['Ahorro_Real_Total_kUSD']:,.1f} kUSD | {row['Participacion_%']:.1f}%"
+            for _, row in df_donut.iterrows()
+        ]
+
+        ax.legend(
+            wedges,
+            leyenda_labels,
+            title="Tipo de proceso",
+            loc="center left",
+            bbox_to_anchor=(1.02, 0.5),
+            fontsize=8,
+            title_fontsize=9,
+            frameon=False,
+        )
+
+        plt.tight_layout(pad=1.0)
+        st.pyplot(fig, clear_figure=True)
+
+    with col_tabla_donut:
+        st.markdown("#### Detalle por proceso")
+
+        df_donut_resumen = df_donut[
+            [
+                "Tipo_Proceso",
+                "Ahorro_Real_Total_kUSD",
+                "Participacion_%"
+            ]
+        ].copy()
+
+        df_donut_resumen["Ahorro_Real_Total_kUSD"] = (
+            df_donut_resumen["Ahorro_Real_Total_kUSD"]
+            .map(lambda x: f"{x:,.1f} kUSD")
+        )
+
+        df_donut_resumen["Participacion_%"] = (
+            df_donut_resumen["Participacion_%"]
+            .map(lambda x: f"{x:.1f}%")
+        )
+
+        st.dataframe(
+            df_donut_resumen,
+            use_container_width=True,
+            hide_index=True
+        )
+
+st.markdown("---")
+
+
+# ============================================================
+# Gráfico: Barras proceso
+# ============================================================
+
+st.markdown("### Ahorro real por tipo de proceso")
+
+df_ahorro_proceso_bar = df_ahorro_proceso.sort_values(
+    "Ahorro_Real_Total_kUSD",
+    ascending=True
+).reset_index(drop=True)
+
+if df_ahorro_proceso_bar.empty:
+    st.info("No hay datos para graficar ahorro por tipo de proceso.")
+else:
+    fig, ax = plt.subplots(figsize=(13, 5.5))
+
+    bars = ax.barh(
+        df_ahorro_proceso_bar["Tipo_Proceso"],
+        df_ahorro_proceso_bar["Ahorro_Real_Total_kUSD"],
+        color="#2563EB",
+        edgecolor="#1D4ED8",
+        linewidth=0.8
+    )
+
+    ax.set_title("Ahorro real por tipo de proceso", fontsize=14, fontweight="bold", pad=14)
+    ax.set_xlabel("Ahorro Real Total [kUSD]")
+    ax.xaxis.set_major_formatter(mticker.StrMethodFormatter("{x:,.0f}"))
+
+    limpiar_estilo_grafico(ax)
+
+    max_valor = df_ahorro_proceso_bar["Ahorro_Real_Total_kUSD"].max()
+    margen_derecho = max(max_valor * 0.22, 1)
+
+    ax.set_xlim(0, max_valor + margen_derecho)
+
+    if max_valor > 0:
+        for bar in bars:
+            valor = bar.get_width()
+            y_pos = bar.get_y() + bar.get_height() / 2
+
+            ax.text(
+                valor + margen_derecho * 0.08,
+                y_pos,
+                f"{valor:,.1f} kUSD",
+                va="center",
+                ha="left",
+                fontsize=9,
+                fontweight="bold",
+                color="#111827"
+            )
+
+    fig.tight_layout()
+    st.pyplot(fig, clear_figure=True)
+
+st.markdown("---")
+
+
+# ============================================================
+# Tablas agregadas
+# ============================================================
+
+df_plan_gestor = (
+    df_plan
+    .groupby("Gestor", as_index=False)["Ahorro_Planificado_kUSD_num"]
+    .sum()
+    .rename(columns={"Ahorro_Planificado_kUSD_num": "Ahorro_Planificado_Total_kUSD"})
+)
+
+df_real_gestor = (
+    df_real_filtrado
+    .groupby("Gestor", as_index=False)["Ahorro_Real_kUSD_num"]
+    .sum()
+    .rename(columns={"Ahorro_Real_kUSD_num": "Ahorro_Real_Total_kUSD"})
+)
+
+df_progreso_gestor = (
+    df_dim_gestor
+    .merge(df_plan_gestor, on="Gestor", how="left")
+    .merge(df_real_gestor, on="Gestor", how="left")
+)
+
+df_progreso_gestor[
+    ["Ahorro_Planificado_Total_kUSD", "Ahorro_Real_Total_kUSD"]
+] = (
+    df_progreso_gestor[
+        ["Ahorro_Planificado_Total_kUSD", "Ahorro_Real_Total_kUSD"]
+    ]
+    .fillna(0)
+)
+
+df_progreso_gestor["Cumplimiento"] = df_progreso_gestor.apply(
+    lambda row: row["Ahorro_Real_Total_kUSD"] / row["Ahorro_Planificado_Total_kUSD"]
+    if row["Ahorro_Planificado_Total_kUSD"] > 0 else 0,
+    axis=1
+)
+
+df_progreso_gestor["Cumplimiento_%"] = df_progreso_gestor["Cumplimiento"] * 100
+df_progreso_gestor["Cumplimiento_Grafico_%"] = df_progreso_gestor["Cumplimiento_%"].clip(upper=100)
+
+df_progreso_gestor = df_progreso_gestor.sort_values(
+    "Cumplimiento_%",
+    ascending=True
+).reset_index(drop=True)
+
+
+# ============================================================
+# Gráfico: Cumplimiento por gestor
+# ============================================================
+
+st.markdown("### Cumplimiento por gestor")
+
+if df_progreso_gestor.empty:
+    st.info("No hay datos para graficar.")
+else:
+    fig, ax = plt.subplots(figsize=(13, max(5, len(df_progreso_gestor) * 0.55)))
+
+    ax.barh(
+        df_progreso_gestor["Gestor"],
+        [100] * len(df_progreso_gestor),
+        color="#E5E7EB",
+        edgecolor="#D1D5DB",
+        linewidth=0.8,
+        label="Meta 100%"
+    )
+
+    colores_cumplimiento = [
+        "#4ADE80" if valor >= 100 else "#DC2626"
+        for valor in df_progreso_gestor["Cumplimiento_%"]
+    ]
+
+    ax.barh(
+        df_progreso_gestor["Gestor"],
+        df_progreso_gestor["Cumplimiento_Grafico_%"],
+        color=colores_cumplimiento,
+        edgecolor=colores_cumplimiento,
+        linewidth=0.8,
+        label="Cumplimiento"
+    )
+
+    ax.axvline(
+        100,
+        linestyle="--",
+        linewidth=1.1,
+        color="#111827",
+        alpha=0.8
+    )
+
+    max_cumplimiento = df_progreso_gestor["Cumplimiento_%"].max()
+    limite_x = max(150, min(max_cumplimiento + 35, 240))
+
+    ax.set_xlim(0, limite_x)
+    ax.set_xlabel("Cumplimiento [%]")
+    ax.set_title("Cumplimiento por gestor", fontsize=14, fontweight="bold", pad=14)
+
+    limpiar_estilo_grafico(ax)
+
+    for i, row in df_progreso_gestor.iterrows():
+        texto = (
+            f"{row['Cumplimiento_%']:.1f}% | "
+            f"{row['Ahorro_Real_Total_kUSD']:,.0f} / "
+            f"{row['Ahorro_Planificado_Total_kUSD']:,.0f} kUSD"
+        )
+
+        posicion_texto = min(
+            max(row["Cumplimiento_Grafico_%"], 100) + 3,
+            limite_x - 5
+        )
+
+        ax.text(
+            posicion_texto,
+            i,
+            texto,
+            va="center",
+            ha="left",
+            fontsize=9,
+            fontweight="bold",
+            color="#111827"
+        )
+
+    from matplotlib.patches import Patch
+
+    leyenda_cumplimiento = [
+        Patch(facecolor="#4ADE80", edgecolor="#4ADE80", label="Cumple o supera meta"),
+        Patch(facecolor="#DC2626", edgecolor="#DC2626", label="Bajo la meta"),
+        Patch(facecolor="#E5E7EB", edgecolor="#D1D5DB", label="Meta 100%"),
+    ]
+
+    ax.legend(
+        handles=leyenda_cumplimiento,
+        loc="lower right",
+        frameon=False
+    )
 
     fig.tight_layout()
     st.pyplot(fig, clear_figure=True)
@@ -969,209 +1189,10 @@ else:
     )
 
     st.dataframe(
-        df_detalle_top_contratos,
+        preparar_tabla_visualizacion(df_detalle_top_contratos),
         use_container_width=True,
         hide_index=True
     )
-
-st.markdown("---")
-
-
-# ============================================================
-# Tipo de proceso
-# ============================================================
-
-df_proc = df_real_filtrado.copy()
-
-df_dim_proceso["Tipo_Proceso"] = limpiar_texto_columna(df_dim_proceso["Tipo_Proceso"])
-
-df_ahorro_proceso = (
-    df_proc
-    .groupby("Tipo_Proceso", as_index=False)["Ahorro_Real_kUSD_num"]
-    .sum()
-    .rename(columns={"Ahorro_Real_kUSD_num": "Ahorro_Real_Total_kUSD"})
-)
-
-df_ahorro_proceso = (
-    df_dim_proceso
-    .merge(df_ahorro_proceso, on="Tipo_Proceso", how="left")
-)
-
-df_ahorro_proceso["Ahorro_Real_Total_kUSD"] = (
-    df_ahorro_proceso["Ahorro_Real_Total_kUSD"]
-    .fillna(0)
-)
-
-
-# ============================================================
-# Gráfico: Donut proceso compacto
-# ============================================================
-
-st.markdown("### Participación del ahorro por tipo de proceso")
-
-df_donut = df_ahorro_proceso[
-    df_ahorro_proceso["Ahorro_Real_Total_kUSD"] > 0
-].copy()
-
-if df_donut.empty:
-    st.info("No hay datos positivos para el gráfico.")
-else:
-    total_ahorro = df_donut["Ahorro_Real_Total_kUSD"].sum()
-
-    df_donut["Participacion_%"] = (
-        df_donut["Ahorro_Real_Total_kUSD"] / total_ahorro * 100
-    )
-
-    df_donut = df_donut.sort_values(
-        "Ahorro_Real_Total_kUSD",
-        ascending=False
-    ).reset_index(drop=True)
-
-    col_donut, col_tabla_donut = st.columns([0.85, 1.15])
-
-    with col_donut:
-        fig, ax = plt.subplots(figsize=(5.8, 4.5))
-
-        wedges, texts, autotexts = ax.pie(
-            df_donut["Ahorro_Real_Total_kUSD"],
-            labels=None,
-            autopct=lambda p: f"{p:.1f}%" if p >= 3 else "",
-            startangle=90,
-            pctdistance=0.78,
-            wedgeprops={
-                "width": 0.36,
-                "edgecolor": "white"
-            },
-            textprops={
-                "fontsize": 8,
-                "fontweight": "bold",
-                "color": "#111827",
-            }
-        )
-
-        ax.text(
-            0,
-            0.05,
-            f"{total_ahorro:,.0f}",
-            ha="center",
-            va="center",
-            fontsize=14,
-            fontweight="bold"
-        )
-
-        ax.text(
-            0,
-            -0.12,
-            "kUSD total",
-            ha="center",
-            va="center",
-            fontsize=8
-        )
-
-        ax.set_aspect("equal")
-
-        leyenda_labels = [
-            f"{row['Tipo_Proceso']} | {row['Ahorro_Real_Total_kUSD']:,.1f} kUSD | {row['Participacion_%']:.1f}%"
-            for _, row in df_donut.iterrows()
-        ]
-
-        ax.legend(
-            wedges,
-            leyenda_labels,
-            title="Tipo de proceso",
-            loc="center left",
-            bbox_to_anchor=(1.02, 0.5),
-            fontsize=8,
-            title_fontsize=9,
-            frameon=False,
-        )
-
-        plt.tight_layout(pad=0.5)
-        st.pyplot(fig, clear_figure=True)
-
-    with col_tabla_donut:
-        st.markdown("#### Detalle por proceso")
-
-        df_donut_resumen = df_donut[
-            [
-                "Tipo_Proceso",
-                "Ahorro_Real_Total_kUSD",
-                "Participacion_%"
-            ]
-        ].copy()
-
-        df_donut_resumen["Ahorro_Real_Total_kUSD"] = (
-            df_donut_resumen["Ahorro_Real_Total_kUSD"]
-            .map(lambda x: f"{x:,.1f} kUSD")
-        )
-
-        df_donut_resumen["Participacion_%"] = (
-            df_donut_resumen["Participacion_%"]
-            .map(lambda x: f"{x:.1f}%")
-        )
-
-        st.dataframe(
-            df_donut_resumen,
-            use_container_width=True,
-            hide_index=True
-        )
-
-st.markdown("---")
-
-
-# ============================================================
-# Gráfico: Barras proceso
-# ============================================================
-
-st.markdown("### Ahorro real por tipo de proceso")
-
-df_ahorro_proceso_bar = df_ahorro_proceso.sort_values(
-    "Ahorro_Real_Total_kUSD",
-    ascending=True
-).reset_index(drop=True)
-
-if df_ahorro_proceso_bar.empty:
-    st.info("No hay datos para graficar ahorro por tipo de proceso.")
-else:
-    fig, ax = plt.subplots(figsize=(13, 5.5))
-
-    bars = ax.barh(
-        df_ahorro_proceso_bar["Tipo_Proceso"],
-        df_ahorro_proceso_bar["Ahorro_Real_Total_kUSD"],
-        color="#2563EB",
-        edgecolor="#1D4ED8",
-        linewidth=0.8
-    )
-
-    ax.set_title("Ahorro real por tipo de proceso", fontsize=14, fontweight="bold", pad=14)
-    ax.set_xlabel("Ahorro Real Total [kUSD]")
-    ax.xaxis.set_major_formatter(mticker.StrMethodFormatter("{x:,.0f}"))
-
-    limpiar_estilo_grafico(ax)
-
-    max_valor = df_ahorro_proceso_bar["Ahorro_Real_Total_kUSD"].max()
-    margen_derecho = max(max_valor * 0.22, 1)
-
-    ax.set_xlim(0, max_valor + margen_derecho)
-
-    if max_valor > 0:
-        for bar in bars:
-            valor = bar.get_width()
-            y_pos = bar.get_y() + bar.get_height() / 2
-
-            ax.text(
-                valor + margen_derecho * 0.08,
-                y_pos,
-                f"{valor:,.1f} kUSD",
-                va="center",
-                ha="left",
-                fontsize=9,
-                fontweight="bold",
-                color="#111827"
-            )
-
-    fig.tight_layout()
-    st.pyplot(fig, clear_figure=True)
 
 st.markdown("---")
 
@@ -1182,14 +1203,14 @@ st.markdown("---")
 
 st.markdown("### Tablas de apoyo")
 
-with st.expander("Ver tabla de cumplimiento por gestor", expanded=False):
-    st.dataframe(df_progreso_gestor, use_container_width=True)
+with st.expander("Ver tabla de cumplimiento por gestor", expanded=True):
+    st.dataframe(preparar_tabla_visualizacion(df_progreso_gestor), use_container_width=True)
 
-with st.expander("Ver tabla de ahorro por tipo de proceso", expanded=False):
-    st.dataframe(df_ahorro_proceso_bar, use_container_width=True)
+with st.expander("Ver tabla de ahorro por tipo de proceso", expanded=True):
+    st.dataframe(preparar_tabla_visualizacion(df_ahorro_proceso_bar), use_container_width=True)
 
-with st.expander("Ver registro de contratos filtrado", expanded=False):
-    st.dataframe(df_real_filtrado, use_container_width=True)
+with st.expander("Ver registro de contratos filtrado", expanded=True):
+    st.dataframe(preparar_tabla_visualizacion(df_real_filtrado), use_container_width=True)
 
-with st.expander("Ver plan ahorro gestores", expanded=False):
-    st.dataframe(df_plan, use_container_width=True)
+with st.expander("Ver plan ahorro gestores", expanded=True):
+    st.dataframe(preparar_tabla_visualizacion(df_plan), use_container_width=True)
