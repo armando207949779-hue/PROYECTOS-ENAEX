@@ -2052,7 +2052,7 @@ try:
     # -----------------------------------------------------
     tab_dashboard, tab_auditoria, tab_datos, tab_descarga = st.tabs(
         [
-            "Dashboard",
+            "Panel",
             "Auditoría",
             "Datos",
             "Descarga",

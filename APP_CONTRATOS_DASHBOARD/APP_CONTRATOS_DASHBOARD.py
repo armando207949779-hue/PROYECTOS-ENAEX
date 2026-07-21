@@ -4,6 +4,7 @@
 # Dashboard modular por pestañas
 # ============================================================
 
+import sys
 import base64
 from pathlib import Path
 
@@ -28,16 +29,23 @@ APP_SALUD_CONTRATOS = BASE_DIR / "04_APP_SALUD_CONTRATOS.py"
 # PROYECTOS-ENAEX/assets/logo.svg
 LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
 
+if str(PROJECT_DIR) not in sys.path:
+    sys.path.insert(0, str(PROJECT_DIR))
+
+from assets.configurar_espanol import configurar_espanol
+
 
 # ============================================================
 # Configuración general
 # ============================================================
 
 st.set_page_config(
-    page_title="Dashboard Contratos ENAEX",
+    page_title="Panel Contratos ENAEX",
     page_icon="🏢",
     layout="wide",
 )
+
+configurar_espanol()
 
 
 # ============================================================
@@ -84,7 +92,7 @@ def pagina_inicio() -> None:
     mostrar_logo_centrado()
 
     st.markdown(
-        "<h1 style='text-align: center;'>Dashboard Contratos ENAEX</h1>",
+        "<h1 style='text-align: center;'>Panel Contratos ENAEX</h1>",
         unsafe_allow_html=True,
     )
 
@@ -206,7 +214,7 @@ pagina = st.navigation(
             )
         ],
 
-        "Dashboard": [
+        "Panel": [
             st.Page(
                 APP_CARGAR_ARCHIVO,
                 title="01_CARGA_ARCHIVOS",
