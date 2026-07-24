@@ -114,6 +114,25 @@ def aplicar_estilo():
                 padding: 8px 10px;
             }
 
+            [data-testid="stDataFrame"] {
+                border: 1px solid #E5E7EB;
+                border-radius: 14px;
+                overflow: hidden;
+                box-shadow: 0 1px 4px rgba(0,0,0,0.035);
+            }
+
+            [data-testid="stExpander"] {
+                border: 1px solid #E5E7EB;
+                border-radius: 14px;
+                background: #FFFFFF;
+                overflow: hidden;
+            }
+
+            [data-testid="stExpander"] summary {
+                font-weight: 700;
+                color: #111827;
+            }
+
             h1, h2, h3 {
                 letter-spacing: -0.02em;
             }
@@ -295,6 +314,59 @@ def preparar_tabla_visualizacion(df):
                 df_visual[columna] = serie_fecha.dt.strftime("%d-%m-%Y").fillna("")
 
     return df_visual
+
+
+def construir_tabla_profesional(
+    df,
+    columnas,
+    nombres=None,
+    orden_por=None,
+    ascendente=True
+):
+    """
+    Prepara una tabla de presentación:
+    - conserva únicamente columnas útiles;
+    - elimina duplicidades visuales;
+    - aplica nombres legibles;
+    - ordena y reinicia el índice.
+    """
+    columnas_disponibles = [col for col in columnas if col in df.columns]
+    tabla = df[columnas_disponibles].copy()
+
+    if orden_por and orden_por in tabla.columns:
+        tabla = tabla.sort_values(orden_por, ascending=ascendente)
+
+    if nombres:
+        tabla = tabla.rename(columns=nombres)
+
+    return preparar_tabla_visualizacion(tabla.reset_index(drop=True))
+
+
+def mostrar_tabla_profesional(
+    df,
+    columnas,
+    nombres=None,
+    orden_por=None,
+    ascendente=True,
+    column_config=None,
+    altura=None
+):
+    """Renderiza una tabla uniforme, compacta y sin índice técnico."""
+    tabla = construir_tabla_profesional(
+        df=df,
+        columnas=columnas,
+        nombres=nombres,
+        orden_por=orden_por,
+        ascendente=ascendente
+    )
+
+    st.dataframe(
+        tabla,
+        use_container_width=True,
+        hide_index=True,
+        column_config=column_config or {},
+        height=altura
+    )
 
 
 def validar_columnas(df, columnas, nombre_df):
@@ -857,28 +929,28 @@ else:
     with col_tabla_donut:
         st.markdown("#### Detalle por proceso")
 
-        df_donut_resumen = df_donut[
-            [
+        mostrar_tabla_profesional(
+            df_donut,
+            columnas=[
                 "Tipo_Proceso",
                 "Ahorro_Real_Total_kUSD",
                 "Participacion_%"
-            ]
-        ].copy()
-
-        df_donut_resumen["Ahorro_Real_Total_kUSD"] = (
-            df_donut_resumen["Ahorro_Real_Total_kUSD"]
-            .map(lambda x: f"{x:,.1f} kUSD")
-        )
-
-        df_donut_resumen["Participacion_%"] = (
-            df_donut_resumen["Participacion_%"]
-            .map(lambda x: f"{x:.1f}%")
-        )
-
-        st.dataframe(
-            df_donut_resumen,
-            use_container_width=True,
-            hide_index=True
+            ],
+            nombres={
+                "Tipo_Proceso": "Tipo de proceso",
+                "Ahorro_Real_Total_kUSD": "Ahorro real",
+                "Participacion_%": "Participación"
+            },
+            orden_por="Ahorro_Real_Total_kUSD",
+            ascendente=False,
+            column_config={
+                "Ahorro real": st.column_config.NumberColumn(
+                    format="%.1f kUSD"
+                ),
+                "Participación": st.column_config.NumberColumn(
+                    format="%.1f%%"
+                )
+            }
         )
 
 st.markdown("---")
@@ -1167,31 +1239,36 @@ else:
         df_top_contratos["Contrato_Label"].isin(contratos_top_labels)
     ].copy()
 
-    columnas_detalle_top = [
-        col for col in [
+    mostrar_tabla_profesional(
+        df_detalle_top_contratos,
+        columnas=[
             "Fecha_Registro",
-            "Gestor",
-            "Categoria",
             "Contratista",
+            "Categoria",
+            "Gestor",
             "Tipo_Proceso",
-            "LineaBase_kUSD",
-            "Ahorro_Real_kUSD",
             "LineaBase_kUSD_num",
-            "Ahorro_Real_kUSD_num",
-            "Contrato_Label",
-        ] if col in df_detalle_top_contratos.columns
-    ]
-
-    df_detalle_top_contratos = (
-        df_detalle_top_contratos[columnas_detalle_top]
-        .sort_values("Ahorro_Real_kUSD_num", ascending=False)
-        .reset_index(drop=True)
-    )
-
-    st.dataframe(
-        preparar_tabla_visualizacion(df_detalle_top_contratos),
-        use_container_width=True,
-        hide_index=True
+            "Ahorro_Real_kUSD_num"
+        ],
+        nombres={
+            "Fecha_Registro": "Fecha",
+            "Contratista": "Contratista",
+            "Categoria": "Categoría",
+            "Gestor": "Gestor",
+            "Tipo_Proceso": "Tipo de proceso",
+            "LineaBase_kUSD_num": "Línea base",
+            "Ahorro_Real_kUSD_num": "Ahorro real"
+        },
+        orden_por="Ahorro_Real_kUSD_num",
+        ascendente=False,
+        column_config={
+            "Línea base": st.column_config.NumberColumn(
+                format="%.1f kUSD"
+            ),
+            "Ahorro real": st.column_config.NumberColumn(
+                format="%.1f kUSD"
+            )
+        }
     )
 
 st.markdown("---")
@@ -1202,15 +1279,118 @@ st.markdown("---")
 # ============================================================
 
 st.markdown("### Tablas de apoyo")
+st.caption(
+    "Vistas depuradas para consulta. Se muestran únicamente columnas de negocio, "
+    "sin campos técnicos ni métricas duplicadas."
+)
 
-with st.expander("Ver tabla de cumplimiento por gestor", expanded=True):
-    st.dataframe(preparar_tabla_visualizacion(df_progreso_gestor), use_container_width=True)
+with st.expander("Cumplimiento por gestor", expanded=True):
+    mostrar_tabla_profesional(
+        df_progreso_gestor,
+        columnas=[
+            "Gestor",
+            "Ahorro_Planificado_Total_kUSD",
+            "Ahorro_Real_Total_kUSD",
+            "Cumplimiento_%"
+        ],
+        nombres={
+            "Gestor": "Gestor",
+            "Ahorro_Planificado_Total_kUSD": "Planificado",
+            "Ahorro_Real_Total_kUSD": "Ahorro real",
+            "Cumplimiento_%": "Cumplimiento"
+        },
+        orden_por="Cumplimiento_%",
+        ascendente=False,
+        column_config={
+            "Planificado": st.column_config.NumberColumn(format="%.1f kUSD"),
+            "Ahorro real": st.column_config.NumberColumn(format="%.1f kUSD"),
+            "Cumplimiento": st.column_config.ProgressColumn(
+                format="%.1f%%",
+                min_value=0,
+                max_value=max(
+                    100.0,
+                    float(df_progreso_gestor["Cumplimiento_%"].max())
+                    if not df_progreso_gestor.empty else 100.0
+                )
+            )
+        }
+    )
 
-with st.expander("Ver tabla de ahorro por tipo de proceso", expanded=True):
-    st.dataframe(preparar_tabla_visualizacion(df_ahorro_proceso_bar), use_container_width=True)
+with st.expander("Ahorro por tipo de proceso", expanded=False):
+    tabla_proceso = df_ahorro_proceso.copy()
+    total_proceso = tabla_proceso["Ahorro_Real_Total_kUSD"].sum()
+    tabla_proceso["Participacion_%"] = (
+        tabla_proceso["Ahorro_Real_Total_kUSD"] / total_proceso * 100
+        if total_proceso > 0
+        else 0
+    )
 
-with st.expander("Ver registro de contratos filtrado", expanded=True):
-    st.dataframe(preparar_tabla_visualizacion(df_real_filtrado), use_container_width=True)
+    mostrar_tabla_profesional(
+        tabla_proceso,
+        columnas=[
+            "Tipo_Proceso",
+            "Ahorro_Real_Total_kUSD",
+            "Participacion_%"
+        ],
+        nombres={
+            "Tipo_Proceso": "Tipo de proceso",
+            "Ahorro_Real_Total_kUSD": "Ahorro real",
+            "Participacion_%": "Participación"
+        },
+        orden_por="Ahorro_Real_Total_kUSD",
+        ascendente=False,
+        column_config={
+            "Ahorro real": st.column_config.NumberColumn(format="%.1f kUSD"),
+            "Participación": st.column_config.NumberColumn(format="%.1f%%")
+        }
+    )
 
-with st.expander("Ver plan ahorro gestores", expanded=True):
-    st.dataframe(preparar_tabla_visualizacion(df_plan), use_container_width=True)
+with st.expander("Registro de contratos filtrado", expanded=False):
+    mostrar_tabla_profesional(
+        df_real_filtrado,
+        columnas=[
+            "Fecha_Registro",
+            "Contratista",
+            "Categoria",
+            "Gestor",
+            "Tipo_Proceso",
+            "LineaBase_kUSD_num",
+            "Ahorro_Real_kUSD_num"
+        ],
+        nombres={
+            "Fecha_Registro": "Fecha",
+            "Contratista": "Contratista",
+            "Categoria": "Categoría",
+            "Gestor": "Gestor",
+            "Tipo_Proceso": "Tipo de proceso",
+            "LineaBase_kUSD_num": "Línea base",
+            "Ahorro_Real_kUSD_num": "Ahorro real"
+        },
+        orden_por="Fecha_Registro",
+        ascendente=False,
+        column_config={
+            "Línea base": st.column_config.NumberColumn(format="%.1f kUSD"),
+            "Ahorro real": st.column_config.NumberColumn(format="%.1f kUSD")
+        }
+    )
+
+with st.expander("Plan de ahorro por gestor", expanded=False):
+    mostrar_tabla_profesional(
+        df_plan,
+        columnas=[
+            "Gestor",
+            "Ahorro_Planificado_kUSD_num"
+        ],
+        nombres={
+            "Gestor": "Gestor",
+            "Ahorro_Planificado_kUSD_num": "Ahorro planificado"
+        },
+        orden_por="Ahorro_Planificado_kUSD_num",
+        ascendente=False,
+        column_config={
+            "Ahorro planificado": st.column_config.NumberColumn(
+                format="%.1f kUSD"
+            )
+        }
+    )
+
