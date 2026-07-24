@@ -85,20 +85,7 @@ def aplicar_estilo() -> None:
                 margin-top: 0.35rem;
                 margin-bottom: 1.5rem;
             }
-
-            .info-box {
-                background: #F8FAFC;
-                border: 1px solid #E5E7EB;
-                border-radius: 14px;
-                padding: 16px 18px;
-                margin-bottom: 16px;
-            }
-
-            .info-box strong {
-                color: #111827;
-            }
-
-            div[data-testid="stFileUploader"] {
+div[data-testid="stFileUploader"] {
                 border: 1px dashed #CBD5E1;
                 border-radius: 14px;
                 padding: 10px;
@@ -306,7 +293,6 @@ def validar_archivos(
 def construir_zip(
     archivos_subidos,
     fecha_seleccionada: date,
-    incluir_no_reconocidos: bool,
 ) -> tuple[bytes, str, pd.DataFrame, list[str]]:
     mapa = construir_mapa_subidos(archivos_subidos)
     fecha_nombre = fecha_compacta(fecha_seleccionada)
@@ -354,38 +340,6 @@ def construir_zip(
                 )
             except Exception as exc:
                 errores.append(f"{archivo.name}: {exc}")
-
-        if incluir_no_reconocidos:
-            for archivo in archivos_subidos or []:
-                clave = normalizar_nombre(archivo.name)
-
-                if clave in procesados_normalizados:
-                    continue
-
-                if clave in {normalizar_nombre(nombre) for nombre in ARCHIVOS_ESPERADOS}:
-                    continue
-
-                try:
-                    contenido = archivo.getvalue()
-                    nombre_versionado = construir_nombre_versionado(
-                        archivo.name,
-                        fecha_seleccionada,
-                    )
-                    ruta_interna = f"{nombre_carpeta}/OTROS/{nombre_versionado}"
-
-                    archivo_zip.writestr(ruta_interna, contenido)
-
-                    resumen.append(
-                        {
-                            "Orden": None,
-                            "Archivo original": archivo.name,
-                            "Archivo ZIP": f"OTROS/{nombre_versionado}",
-                            "Estado": "Incluido como adicional",
-                            "Peso (KB)": round(len(contenido) / 1024, 2),
-                        }
-                    )
-                except Exception as exc:
-                    errores.append(f"{archivo.name}: {exc}")
 
         # Archivo informativo dentro del ZIP.
         contenido_manifest = [
@@ -479,79 +433,52 @@ def mostrar_tabla_validacion(df_validacion: pd.DataFrame) -> None:
 aplicar_estilo()
 mostrar_encabezado()
 
-st.markdown(
-    """
-    <div class="info-box">
-        <strong>Funcionamiento:</strong> sube los archivos del dashboard, selecciona
-        la fecha de versión y genera un ZIP. Cada archivo conservará su nombre base
-        y recibirá la fecha al final en formato <code>YYYYMMDD</code>.
-    </div>
-    """,
-    unsafe_allow_html=True,
+col_fecha, col_nombre = st.columns([1, 2])
+
+with col_fecha:
+    fecha_version = st.date_input(
+        "Fecha de versión",
+        value=date.today(),
+        format="DD/MM/YYYY",
+    )
+
+with col_nombre:
+    ejemplo_zip = (
+        f"BBDD_ARCHIVOS_DASHBOARD_CONTRATOS_"
+        f"{fecha_compacta(fecha_version)}.zip"
+    )
+    st.text_input(
+        "Archivo de salida",
+        value=ejemplo_zip,
+        disabled=True,
+    )
+
+archivos_subidos = st.file_uploader(
+    "Subir archivos del dashboard",
+    type=EXTENSIONES_PERMITIDAS,
+    accept_multiple_files=True,
+    help="Selecciona los archivos CSV, Excel o Parquet que deseas versionar.",
 )
 
-with st.container(border=True):
-    st.subheader("1. Configuración de la versión")
+col_generar, col_limpiar = st.columns([3, 1])
 
-    col_fecha, col_formato = st.columns([1, 2])
-
-    with col_fecha:
-        fecha_version = st.date_input(
-            "Fecha de la versión",
-            value=date.today(),
-            format="DD/MM/YYYY",
-        )
-
-    with col_formato:
-        ejemplo_zip = (
-            f"BBDD_ARCHIVOS_DASHBOARD_CONTRATOS_"
-            f"{fecha_compacta(fecha_version)}.zip"
-        )
-        st.text_input(
-            "Nombre del ZIP",
-            value=ejemplo_zip,
-            disabled=True,
-        )
-
-    incluir_no_reconocidos = st.checkbox(
-        "Incluir archivos adicionales no reconocidos dentro de la carpeta OTROS",
-        value=False,
+with col_generar:
+    generar_zip = st.button(
+        "Generar paquete ZIP",
+        type="primary",
+        use_container_width=True,
+        disabled=not archivos_subidos,
     )
 
-with st.container(border=True):
-    st.subheader("2. Carga de archivos")
-
-    st.caption(
-        "Puedes seleccionar los 11 archivos al mismo tiempo. "
-        "La aplicación identifica cada archivo por su nombre."
+with col_limpiar:
+    limpiar = st.button(
+        "Limpiar",
+        use_container_width=True,
     )
 
-    archivos_subidos = st.file_uploader(
-        "Archivos del dashboard",
-        type=EXTENSIONES_PERMITIDAS,
-        accept_multiple_files=True,
-        label_visibility="collapsed",
-    )
-
-    col_generar, col_limpiar = st.columns([3, 1])
-
-    with col_generar:
-        generar_zip = st.button(
-            "Generar paquete ZIP",
-            type="primary",
-            use_container_width=True,
-            disabled=not archivos_subidos,
-        )
-
-    with col_limpiar:
-        limpiar = st.button(
-            "Limpiar",
-            use_container_width=True,
-        )
-
-    if limpiar:
-        limpiar_estado()
-        st.rerun()
+if limpiar:
+    limpiar_estado()
+    st.rerun()
 
 
 if archivos_subidos:
@@ -561,7 +488,7 @@ if archivos_subidos:
     )
 
     st.divider()
-    st.subheader("3. Validación de archivos")
+    st.subheader("Validación")
 
     mostrar_metricas_validacion(df_validacion)
 
@@ -577,16 +504,10 @@ if archivos_subidos:
         )
 
     if not adicionales.empty:
-        if incluir_no_reconocidos:
-            st.info(
-                f"Se detectaron {len(adicionales)} archivo(s) adicional(es). "
-                "Se incluirán dentro de la carpeta OTROS."
-            )
-        else:
-            st.info(
-                f"Se detectaron {len(adicionales)} archivo(s) adicional(es). "
-                "No se incluirán mientras la opción correspondiente esté desactivada."
-            )
+        st.info(
+            f"Se detectaron {len(adicionales)} archivo(s) no reconocido(s). "
+            "No serán incluidos en el ZIP."
+        )
 
     with st.expander("Ver validación archivo por archivo", expanded=True):
         mostrar_tabla_validacion(df_validacion)
@@ -597,7 +518,6 @@ if generar_zip and archivos_subidos:
         zip_bytes, zip_nombre, df_resumen, errores = construir_zip(
             archivos_subidos=archivos_subidos,
             fecha_seleccionada=fecha_version,
-            incluir_no_reconocidos=incluir_no_reconocidos,
         )
 
         if df_resumen.empty:
@@ -622,7 +542,7 @@ if generar_zip and archivos_subidos:
 
 if st.session_state["limpieza_completada"]:
     st.divider()
-    st.subheader("4. Descargar paquete")
+    st.subheader("Descarga")
 
     zip_bytes = st.session_state["limpieza_zip_bytes"]
     zip_nombre = st.session_state["limpieza_zip_nombre"]
