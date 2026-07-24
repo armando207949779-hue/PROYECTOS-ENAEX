@@ -360,13 +360,21 @@ def mostrar_tabla_profesional(
         ascendente=ascendente
     )
 
-    st.dataframe(
-        tabla,
-        use_container_width=True,
-        hide_index=True,
-        column_config=column_config or {},
-        height=altura
-    )
+    dataframe_kwargs = {
+        "use_container_width": True,
+        "hide_index": True,
+        "column_config": column_config or {},
+    }
+
+    # Streamlit no acepta ``None`` como altura. Solo enviamos el
+    # argumento cuando existe un valor válido. También se admiten
+    # las opciones de altura reconocidas por versiones recientes.
+    if isinstance(altura, int) and altura > 0:
+        dataframe_kwargs["height"] = altura
+    elif altura in {"auto", "content", "stretch"}:
+        dataframe_kwargs["height"] = altura
+
+    st.dataframe(tabla, **dataframe_kwargs)
 
 
 def validar_columnas(df, columnas, nombre_df):
