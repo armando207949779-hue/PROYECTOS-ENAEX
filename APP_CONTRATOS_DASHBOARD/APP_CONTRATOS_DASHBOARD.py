@@ -23,6 +23,7 @@ APP_CARGAR_ARCHIVO = BASE_DIR / "01_APP_CARGAR_ARCHIVO.py"
 APP_AHORRO = BASE_DIR / "02_APP_AHORRO.py"
 APP_GASTOS = BASE_DIR / "03_APP_GASTOS.py"
 APP_SALUD_CONTRATOS = BASE_DIR / "04_APP_SALUD_CONTRATOS.py"
+APP_LIMPIEZA_ARCHIVOS = BASE_DIR / "05_APP_LIMPIEZA_ARCHIVOS.py"
 
 # Logo ubicado en:
 # PROYECTOS-ENAEX/assets/logo.svg
@@ -91,8 +92,8 @@ def pagina_inicio() -> None:
     st.markdown(
         """
         <p style='text-align: center; font-size: 18px;'>
-            Portal modular para cargar bases, validar información y construir análisis
-            de contratos, órdenes de compra, ahorros, hitos y vencimientos.
+            Portal modular para cargar bases, validar información, construir análisis
+            de contratos y preparar respaldos versionados de los archivos del dashboard.
         </p>
         """,
         unsafe_allow_html=True,
@@ -153,6 +154,34 @@ def pagina_inicio() -> None:
             """
         )
 
+    col5, col6 = st.columns(2)
+
+    with col5:
+        st.info(
+            """
+            **05_LIMPIEZA_ARCHIVOS**
+
+            Preparación y respaldo de las bases del dashboard.
+
+            Permite:
+            - Subir los archivos requeridos
+            - Validar archivos encontrados y faltantes
+            - Agregar fecha de versión al nombre
+            - Descargar todos los archivos en una carpeta ZIP
+            """
+        )
+
+    with col6:
+        st.info(
+            """
+            **Flujo recomendado**
+
+            1. Cargar y validar las bases.
+            2. Revisar ahorro, gastos y salud contractual.
+            3. Generar el respaldo versionado de los archivos.
+            """
+        )
+
     st.markdown("---")
 
     st.success(
@@ -161,6 +190,9 @@ def pagina_inicio() -> None:
 
         Luego revisa los módulos **02_AHORRO**, **03_GASTOS**
         y **04_SALUD_CONTRATOS**.
+
+        Para generar una copia versionada, utiliza
+        **05_LIMPIEZA_ARCHIVOS**.
         """
     )
 
@@ -174,6 +206,7 @@ apps_requeridas = {
     "02_AHORRO": APP_AHORRO,
     "03_GASTOS": APP_GASTOS,
     "04_SALUD_CONTRATOS": APP_SALUD_CONTRATOS,
+    "05_LIMPIEZA_ARCHIVOS": APP_LIMPIEZA_ARCHIVOS,
 }
 
 apps_faltantes = {
@@ -230,6 +263,12 @@ pagina = st.navigation(
                 title="04_SALUD_CONTRATOS",
                 icon="🩺",
                 url_path="salud_contratos",
+            ),
+            st.Page(
+                APP_LIMPIEZA_ARCHIVOS,
+                title="05_LIMPIEZA_ARCHIVOS",
+                icon="🗂️",
+                url_path="limpieza_archivos",
             ),
         ],
     }
