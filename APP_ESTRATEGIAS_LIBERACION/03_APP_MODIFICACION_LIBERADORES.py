@@ -814,7 +814,7 @@ def occurrences_of_person(
 def download_name(original_name: str) -> str:
     stem = Path(original_name or "BBDD_FLUJO_LIBERACION.xlsx").stem
     timestamp = datetime.now(CHILE_TZ).strftime("%Y-%m-%d_%H-%M-%S")
-    return f"{stem}_MODIFICADO_SANTIAGO_{timestamp}.xlsx"
+    return f"{stem}_VERSION_{timestamp}.xlsx"
 
 
 def build_excel(
