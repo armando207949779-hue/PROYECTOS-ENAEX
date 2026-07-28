@@ -79,6 +79,7 @@ SESSION_EDITOR_CECO = "sim_editor_ceco_v03"
 SESSION_EDITOR_DOC = "sim_editor_doc_v03"
 SESSION_EDITOR_AMOUNT = "sim_editor_amount_v03"
 SESSION_PENDING_EDITOR = "sim_pending_editor_v03"
+SESSION_HISTORY_KEY = "sim_case_history_v04"
 
 
 # ============================================================
@@ -779,6 +780,31 @@ def save_case(
         queue_editor_from_case(case)
 
 
+def remember_current_case() -> None:
+    """Guarda el resultado actual para permitir retroceder."""
+    current = st.session_state.get(SESSION_CASE_KEY)
+    if not current:
+        return
+
+    history = st.session_state.setdefault(SESSION_HISTORY_KEY, [])
+    if not history or history[-1] != current:
+        history.append(current)
+        del history[:-20]
+
+
+def restore_previous_case() -> bool:
+    """Restaura el último caso guardado y sincroniza los editores."""
+    history = st.session_state.get(SESSION_HISTORY_KEY, [])
+    if not history:
+        return False
+
+    previous = history.pop()
+    st.session_state[SESSION_HISTORY_KEY] = history
+    st.session_state[SESSION_CASE_KEY] = previous
+    queue_editor_from_case(previous["case"])
+    return True
+
+
 def clear_case() -> None:
     st.session_state.pop(SESSION_CASE_KEY, None)
     st.session_state.pop(SESSION_EDITOR_CECO, None)
@@ -863,6 +889,7 @@ def render_random_generator(data: dict[str, pd.DataFrame]) -> None:
 
             ceco, doc_type = random.choice(pairs)
             case = build_case(data, ceco, doc_type, amount=None)
+            remember_current_case()
             save_case(
                 case,
                 f"Caso aleatorio · {DOC_LABEL[doc_type]}",
@@ -875,14 +902,14 @@ def render_random_generator(data: dict[str, pd.DataFrame]) -> None:
 
 
 def render_editable_case(data: dict[str, pd.DataFrame]) -> None:
-    # Debe ejecutarse antes de crear los widgets asociados a estas claves.
+    # Los cambios pendientes deben aplicarse antes de crear los widgets.
     apply_pending_editor()
 
     result = st.session_state.get(SESSION_CASE_KEY)
 
     st.markdown("---")
     st.markdown(
-        '<div class="fl-section-title">2. Editar y recalcular caso</div>',
+        '<div class="fl-section-title">2. Ajustar caso</div>',
         unsafe_allow_html=True,
     )
 
@@ -892,7 +919,6 @@ def render_editable_case(data: dict[str, pd.DataFrame]) -> None:
 
     current_case = result["case"]
 
-    # Inicializa las variables de edición solo cuando aún no existen.
     if SESSION_EDITOR_CECO not in st.session_state:
         set_editor_from_case(current_case)
 
@@ -902,69 +928,79 @@ def render_editable_case(data: dict[str, pd.DataFrame]) -> None:
         current_ceco = current_case["ceco"]
         st.session_state[SESSION_EDITOR_CECO] = current_ceco
 
-    with st.form("editable_case_form_v03", clear_on_submit=False):
-        ceco_col, doc_col, amount_col = st.columns([1.5, 1.1, 1.1], gap="medium")
+    ceco_col, doc_col, amount_col = st.columns([1.5, 1.1, 1.1], gap="medium")
 
-        with ceco_col:
-            selected_ceco = st.selectbox(
-                "CECO",
-                all_cecos,
-                index=all_cecos.index(current_ceco),
-                format_func=lambda value: ceco_label(data, value),
-                key=SESSION_EDITOR_CECO,
-                help="Puedes seleccionar cualquier CECO de la base cargada.",
-            )
+    with ceco_col:
+        selected_ceco = st.selectbox(
+            "CECO",
+            all_cecos,
+            index=all_cecos.index(current_ceco),
+            format_func=lambda value: ceco_label(data, value),
+            key=SESSION_EDITOR_CECO,
+            help="Al cambiar el CECO, el resultado se recalcula automáticamente.",
+        )
 
-        available_docs = docs_for_ceco(data, selected_ceco)
-        if not available_docs:
-            available_docs = ["AZNB", "AZSR"]
+    available_docs = docs_for_ceco(data, selected_ceco)
+    if not available_docs:
+        available_docs = ["AZNB", "AZSR"]
 
-        current_doc = st.session_state.get(SESSION_EDITOR_DOC, current_case["doc"])
-        if current_doc not in available_docs:
-            current_doc = available_docs[0]
-            st.session_state[SESSION_EDITOR_DOC] = current_doc
+    current_doc = st.session_state.get(SESSION_EDITOR_DOC, current_case["doc"])
+    if current_doc not in available_docs:
+        current_doc = available_docs[0]
+        st.session_state[SESSION_EDITOR_DOC] = current_doc
 
-        with doc_col:
-            selected_doc = st.selectbox(
-                "Tipo de documento",
-                available_docs,
-                index=available_docs.index(current_doc),
-                format_func=lambda value: DOC_LABEL[value],
-                key=SESSION_EDITOR_DOC,
-                help="Material usa AZNB y Servicio usa AZSR.",
-            )
+    with doc_col:
+        selected_doc = st.selectbox(
+            "Tipo de documento",
+            available_docs,
+            index=available_docs.index(current_doc),
+            format_func=lambda value: DOC_LABEL[value],
+            key=SESSION_EDITOR_DOC,
+            help="Material usa AZNB y Servicio usa AZSR.",
+        )
 
-        with amount_col:
-            selected_amount_text = st.text_input(
-                "Monto",
-                key=SESSION_EDITOR_AMOUNT,
-                help="Acepta 1000000, 1.000.000 o 1,000,000.",
-            )
+    with amount_col:
+        selected_amount_text = st.text_input(
+            "Monto",
+            key=SESSION_EDITOR_AMOUNT,
+            help="Presiona Enter o sal del campo para recalcular.",
+        )
 
-        button_apply, button_random_amount, button_clear = st.columns([1.4, 1.2, .9])
+    # Recalcula automáticamente cuando cambian CECO, tipo o monto.
+    try:
+        selected_amount = parse_amount(selected_amount_text)
+        editor_changed = (
+            selected_ceco != current_case["ceco"]
+            or selected_doc != current_case["doc"]
+            or (selected_amount is not None and float(selected_amount) != float(current_case["monto"]))
+        )
 
-        with button_apply:
-            apply_button = st.form_submit_button(
-                "✅ Aplicar cambios y recalcular",
-                type="primary",
-                use_container_width=True,
-            )
+        if editor_changed and selected_amount is not None:
+            updated_case = build_case(data, selected_ceco, selected_doc, selected_amount)
+            remember_current_case()
+            save_case(updated_case, "Caso modificado por el usuario")
+            result = st.session_state[SESSION_CASE_KEY]
+            current_case = result["case"]
+    except ValueError as exc:
+        st.warning(str(exc))
 
-        with button_random_amount:
-            random_amount_button = st.form_submit_button(
-                "🎯 Nuevo monto del tramo",
-                use_container_width=True,
-            )
+    button_amount, button_back = st.columns([1.25, 1.0])
 
-        with button_clear:
-            clear_button = st.form_submit_button(
-                "🧹 Limpiar",
-                use_container_width=True,
-            )
+    with button_amount:
+        random_amount_button = st.button(
+            "🎯 Nuevo monto del tramo",
+            use_container_width=True,
+            key="sim_random_amount_v04",
+        )
 
-    if clear_button:
-        clear_case()
-        st.rerun()
+    with button_back:
+        back_button = st.button(
+            "↩️ Retroceder",
+            use_container_width=True,
+            key="sim_back_v04",
+            disabled=not bool(st.session_state.get(SESSION_HISTORY_KEY)),
+            help="Vuelve al caso anterior.",
+        )
 
     if random_amount_button:
         try:
@@ -980,6 +1016,7 @@ def render_editable_case(data: dict[str, pd.DataFrame]) -> None:
             selected_row = rows.sample(n=1).iloc[0]
             new_amount = random_amount_for_row(selected_row)
             case = build_case(data, selected_ceco, selected_doc, new_amount)
+            remember_current_case()
             save_case(
                 case,
                 "Caso modificado · monto aleatorio",
@@ -990,20 +1027,12 @@ def render_editable_case(data: dict[str, pd.DataFrame]) -> None:
         except ValueError as exc:
             st.error(str(exc))
 
-    if apply_button:
-        try:
-            amount = parse_amount(selected_amount_text)
-            if amount is None:
-                raise ValueError("Ingresa un monto para recalcular el flujo.")
-
-            case = build_case(data, selected_ceco, selected_doc, amount)
-            save_case(case, "Caso modificado por el usuario")
+    if back_button:
+        if restore_previous_case():
             st.rerun()
+        else:
+            st.info("No hay un caso anterior disponible.")
 
-        except ValueError as exc:
-            st.error(str(exc))
-
-    # Resultado actual
     result = st.session_state.get(SESSION_CASE_KEY)
     if result:
         case = result["case"]
