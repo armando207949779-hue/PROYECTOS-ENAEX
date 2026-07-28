@@ -14,6 +14,7 @@ import base64
 import hashlib
 import re
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from html import escape
 from io import BytesIO
 from pathlib import Path
@@ -76,6 +77,10 @@ ACTION_LABEL = {
 }
 
 LS_LABEL = "Liberador Servicios"
+
+# Zona horaria oficial de Santiago de Chile. ZoneInfo aplica
+# automáticamente los cambios de horario de verano/invierno.
+CHILE_TZ = ZoneInfo("America/Santiago")
 
 
 # ============================================================
@@ -808,8 +813,8 @@ def occurrences_of_person(
 
 def download_name(original_name: str) -> str:
     stem = Path(original_name or "BBDD_FLUJO_LIBERACION.xlsx").stem
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    return f"{stem}_MODIFICADO_{timestamp}.xlsx"
+    timestamp = datetime.now(CHILE_TZ).strftime("%Y-%m-%d_%H-%M-%S")
+    return f"{stem}_MODIFICADO_SANTIAGO_{timestamp}.xlsx"
 
 
 def build_excel(
@@ -1124,7 +1129,7 @@ def render_global_replacement(
             return
 
         updated = flow.copy(deep=True)
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = datetime.now(CHILE_TZ).strftime("%Y-%m-%d %H:%M:%S")
         changes: list[dict[str, Any]] = []
 
         for row_index, row in updated.iterrows():
@@ -1744,7 +1749,7 @@ def render_wizard(
 
         before_padded = libs_padded(libs_before)
         after_padded = libs_padded(libs_after)
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = datetime.now(CHILE_TZ).strftime("%Y-%m-%d %H:%M:%S")
         changes: list[dict[str, Any]] = []
 
         for column, old_value, new_value in zip(
