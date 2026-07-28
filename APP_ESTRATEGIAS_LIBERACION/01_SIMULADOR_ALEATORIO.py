@@ -1,5 +1,5 @@
 # ============================================================
-# 01_APP_SIMULADOR_ALEATORIO
+# 01_APP_SIMULADOR_ALEATORIO_CORREGIDO
 # APP_FLUJO_LIBERACION_SERVICIOS
 #
 # Funciones incluidas:
@@ -23,6 +23,7 @@ import re
 from html import escape
 from io import BytesIO
 from pathlib import Path
+from textwrap import dedent
 from typing import Any
 
 import pandas as pd
@@ -88,9 +89,30 @@ def aplicar_estilos() -> None:
     st.markdown(
         """
         <style>
+            /* Reserva espacio para el encabezado fijo de Streamlit. */
+            .stMainBlockContainer,
             .block-container {
-                padding-top: 1.2rem;
+                padding-top: 7rem !important;
                 padding-bottom: 2.5rem;
+            }
+
+            .fl-logo-wrap {
+                width: 100%;
+                min-height: 92px;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                margin: 0.75rem 0 12px 0;
+                overflow: visible;
+            }
+
+            .fl-logo-wrap img {
+                width: 220px;
+                max-width: min(60vw, 220px);
+                max-height: 90px;
+                object-fit: contain;
+                object-position: center;
+                display: block;
             }
 
             .fl-title {
@@ -184,28 +206,36 @@ def mostrar_logo() -> None:
             logo_svg = logo_path.read_text(encoding="utf-8")
             logo_base64 = base64.b64encode(logo_svg.encode("utf-8")).decode("utf-8")
             st.markdown(
-                f"""
-                <div style="
-                    width: 100%;
-                    display: flex;
-                    justify-content: center;
-                    align-items: center;
-                    margin-top: 4px;
-                    margin-bottom: 10px;
-                ">
-                    <img
-                        src="data:image/svg+xml;base64,{logo_base64}"
-                        style="width: 220px; max-width: 60%; display: block;"
-                        alt="Logo"
-                    >
-                </div>
-                """,
+                dedent(
+                    f"""
+                    <div class="fl-logo-wrap">
+                        <img
+                            src="data:image/svg+xml;base64,{logo_base64}"
+                            alt="Logo"
+                        >
+                    </div>
+                    """
+                ).strip(),
                 unsafe_allow_html=True,
             )
         except (OSError, UnicodeError):
             st.warning(f"No fue posible leer el logo: {logo_path.name}")
     else:
-        st.image(str(logo_path), width=220)
+        try:
+            mime = "image/png" if logo_path.suffix.lower() == ".png" else "image/jpeg"
+            logo_base64 = base64.b64encode(logo_path.read_bytes()).decode("utf-8")
+            st.markdown(
+                compact_html(
+                    f"""
+                    <div class="fl-logo-wrap">
+                        <img src="data:{mime};base64,{logo_base64}" alt="Logo">
+                    </div>
+                    """
+                ),
+                unsafe_allow_html=True,
+            )
+        except OSError:
+            st.warning(f"No fue posible leer el logo: {logo_path.name}")
 
 
 # ============================================================
@@ -592,6 +622,13 @@ def available_pairs(
 # HTML DE RESULTADOS
 # ============================================================
 
+def compact_html(value: str) -> str:
+    """Evita que Markdown interprete HTML indentado como bloque de código."""
+    value = dedent(value).strip()
+    value = re.sub(r">\s+<", "><", value)
+    return value
+
+
 def html_flow(
     case: dict[str, Any],
     data: dict[str, pd.DataFrame],
@@ -622,7 +659,8 @@ def html_flow(
             group_label = "CD"
 
         parts.append(
-            f"""
+            dedent(
+                f"""
             <div style="
                 min-width: 170px;
                 max-width: 225px;
@@ -649,6 +687,7 @@ def html_flow(
                 </div>
             </div>
             """
+            ).strip()
         )
 
         if index < len(users):
@@ -656,7 +695,7 @@ def html_flow(
                 "<div style='font-size:21px;color:#94A3B8;font-weight:700;'>→</div>"
             )
 
-    return (
+    return compact_html(
         "<div style='font-family:Arial,sans-serif;margin-top:14px;'>"
         "<div style='font-weight:800;color:#17365D;margin-bottom:8px;'>Flujo final</div>"
         "<div style='display:flex;flex-wrap:wrap;align-items:center;gap:7px;'>"
@@ -693,7 +732,8 @@ def html_case(
     ]
 
     metric_html = "".join(
-        f"""
+        dedent(
+            f"""
         <div class="fl-metric">
             <div class="fl-metric-label">{escape(label)}</div>
             <div class="fl-metric-value" style="{'color:' + doc_color + ';' if label == 'Tipo' else ''}">
@@ -701,10 +741,12 @@ def html_case(
             </div>
         </div>
         """
+        ).strip()
         for label, value in metrics
     )
 
-    return f"""
+    return compact_html(
+        f"""
         <div class="fl-card">
             <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
                 <div style="color:#17365D;font-size:17px;font-weight:800;">
@@ -712,19 +754,13 @@ def html_case(
                 </div>
                 {badge}
             </div>
-
-            <div style="
-                display:grid;
-                grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
-                gap:9px;
-                margin-top:13px;
-            ">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:9px;margin-top:13px;">
                 {metric_html}
             </div>
-
             {html_flow(case, data)}
         </div>
-    """
+        """
+    )
 
 
 # ============================================================
@@ -977,10 +1013,10 @@ def render_simulator(data: dict[str, pd.DataFrame]) -> None:
             '<div class="fl-section-title">3. Resultado</div>',
             unsafe_allow_html=True,
         )
-        st.markdown(
-            html_case(result["case"], data, result["title"]),
-            unsafe_allow_html=True,
+        result_html = compact_html(
+            html_case(result["case"], data, result["title"])
         )
+        st.markdown(result_html, unsafe_allow_html=True)
     else:
         st.info(
             "Genera un caso aleatorio o realiza una búsqueda para visualizar el flujo."
