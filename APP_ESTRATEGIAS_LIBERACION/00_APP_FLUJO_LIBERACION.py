@@ -1,19 +1,25 @@
 # ============================================================
 # 00_APP_FLUJO_LIBERACION
-# Portal principal de Flujo de Liberación de Servicios
+# Portal principal de Flujo de Liberación ENAEX
 #
-# Orden de módulos:
-# 01 Cargar Archivo
-# 03 Simulador Aleatorio
+# Páginas del portal:
+# 01 Cargar archivo
+# 02 Simulador aleatorio
 # ============================================================
 
 from __future__ import annotations
 
 import base64
+import inspect
 from pathlib import Path
 from textwrap import dedent
 
 import streamlit as st
+
+
+# ============================================================
+# CONFIGURACIÓN GENERAL
+# ============================================================
 
 st.set_page_config(
     page_title="Flujo de Liberación ENAEX",
@@ -21,153 +27,167 @@ st.set_page_config(
     layout="wide",
 )
 
+
+# ============================================================
+# RUTAS DEL PROYECTO
+# ============================================================
+
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
+
 LOGO_CANDIDATES = [
-    PROJECT_DIR / "assets" / "logo.svg", BASE_DIR / "assets" / "logo.svg",
-    PROJECT_DIR / "assets" / "logo.png", BASE_DIR / "assets" / "logo.png",
-    PROJECT_DIR / "assets" / "logo.jpg", BASE_DIR / "assets" / "logo.jpg",
+    PROJECT_DIR / "assets" / "logo.svg",
+    BASE_DIR / "assets" / "logo.svg",
+    PROJECT_DIR / "assets" / "logo.png",
+    BASE_DIR / "assets" / "logo.png",
+    PROJECT_DIR / "assets" / "logo.jpg",
+    BASE_DIR / "assets" / "logo.jpg",
+    PROJECT_DIR / "assets" / "logo.jpeg",
+    BASE_DIR / "assets" / "logo.jpeg",
 ]
 
-SESSION_DATA_KEY = "flujo_liberacion_data"
-SESSION_FILE_KEY = "flujo_liberacion_file_name"
 
-APP_SECTIONS = [
+# ============================================================
+# APLICACIONES DEL PORTAL
+# ============================================================
+
+APPS = [
     {
-        "grupo": "01 Carga de datos",
-        "descripcion": "Carga, validación y activación del archivo Excel de flujo de liberación.",
-        "apps": [
-            {
-                "nombre": "01_CARGAR_ARCHIVO_FLUJO",
-                "archivo": "01_CARGAR_ARCHIVO_FLUJO.py",
-                "titulo": "01 Cargar Archivo",
-                "icono": "📤",
-                "descripcion": "Carga el Excel y lo deja disponible para los demás módulos.",
-            }
-        ],
+        "nombre": "01_CARGAR_ARCHIVO_FLUJO",
+        "archivo": "01_CARGAR_ARCHIVO_FLUJO.py",
+        "titulo": "01 Cargar archivo",
+        "icono": "📤",
+        "descripcion": (
+            "Carga y valida el archivo Excel de flujo de liberación, "
+            "dejándolo activo para la simulación."
+        ),
     },
     {
-        "grupo": "03 Simulación",
-        "descripcion": "Consulta y simulación de rutas de liberación usando el archivo activo.",
-        "apps": [
-            {
-                "nombre": "03_APP_SIMULADOR_ALEATORIO",
-                "archivo": "03_APP_SIMULADOR_ALEATORIO.py",
-                "titulo": "03 Simulador Aleatorio",
-                "icono": "🎲",
-                "descripcion": "Genera casos aleatorios o busca un flujo por CECO, tipo y monto.",
-            }
-        ],
+        "nombre": "02_APP_SIMULADOR_ALEATORIO",
+        "archivo": "02_APP_SIMULADOR_ALEATORIO.py",
+        "titulo": "02 Simulación",
+        "icono": "🎲",
+        "descripcion": (
+            "Genera casos aleatorios o consulta un flujo por CECO, "
+            "tipo de documento y monto."
+        ),
     },
 ]
-APPS = [app for section in APP_SECTIONS for app in section["apps"]]
 
 
-def obtener_ruta_app(nombre_archivo: str) -> Path:
-    nombre = str(nombre_archivo).strip()
-    candidatos = [BASE_DIR / nombre]
-    if not nombre.endswith(".py"):
-        candidatos.append(BASE_DIR / f"{nombre}.py")
-    for ruta in candidatos:
-        if ruta.exists():
-            return ruta
-    return candidatos[0]
-
-
-def validar_apps_disponibles() -> dict[str, Path]:
-    return {
-        app["nombre"]: obtener_ruta_app(app["archivo"])
-        for app in APPS
-        if not obtener_ruta_app(app["archivo"]).exists()
-    }
-
+# ============================================================
+# ESTILOS
+# ============================================================
 
 def aplicar_estilos() -> None:
     st.markdown(
         """
         <style>
-            .stMainBlockContainer, .block-container {
-                padding-top: 6.5rem !important; padding-bottom: 2.5rem;
+            .stMainBlockContainer,
+            .block-container {
+                padding-top: 6.75rem !important;
+                padding-bottom: 2.5rem !important;
             }
-            .portal-logo { width:100%; min-height:90px; display:flex; justify-content:center;
-                align-items:center; margin:.6rem 0 12px; overflow:visible; }
-            .portal-logo img { width:220px; max-width:min(60vw,220px); max-height:88px;
-                object-fit:contain; display:block; }
-            .portal-title { text-align:center; color:#17365D; font-size:2.15rem;
-                font-weight:800; margin:.2rem 0; }
-            .portal-subtitle { text-align:center; color:#64748B; font-size:1rem;
-                margin-bottom:1.25rem; }
+
+            .portal-logo {
+                width: 100%;
+                min-height: 92px;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                margin: 0.75rem 0 0.8rem 0;
+                overflow: visible;
+            }
+
+            .portal-logo img {
+                width: 220px;
+                max-width: min(60vw, 220px);
+                max-height: 90px;
+                object-fit: contain;
+                display: block;
+            }
         </style>
         """,
         unsafe_allow_html=True,
     )
 
 
+# ============================================================
+# UTILIDADES DE RUTAS
+# ============================================================
+
+def obtener_ruta_app(nombre_archivo: str) -> Path:
+    """Obtiene la ruta de una aplicación ubicada junto al portal 00."""
+    nombre = str(nombre_archivo).strip()
+
+    candidatos = [BASE_DIR / nombre]
+
+    if not nombre.lower().endswith(".py"):
+        candidatos.append(BASE_DIR / f"{nombre}.py")
+
+    for ruta in candidatos:
+        if ruta.exists() and ruta.is_file():
+            return ruta
+
+    return candidatos[0]
+
+
+def validar_apps_disponibles() -> dict[str, Path]:
+    """Devuelve las aplicaciones requeridas que no existen."""
+    faltantes: dict[str, Path] = {}
+
+    for app in APPS:
+        ruta = obtener_ruta_app(app["archivo"])
+        if not ruta.exists():
+            faltantes[app["nombre"]] = ruta
+
+    return faltantes
+
+
+# ============================================================
+# LOGO PARA MENSAJES DE ERROR
+# ============================================================
+
 def mostrar_logo() -> None:
-    path = next((p for p in LOGO_CANDIDATES if p.exists() and p.is_file()), None)
-    if path is None:
+    logo_path = next(
+        (ruta for ruta in LOGO_CANDIDATES if ruta.exists() and ruta.is_file()),
+        None,
+    )
+
+    if logo_path is None:
         return
+
     try:
-        if path.suffix.lower() == ".svg":
-            raw, mime = path.read_text(encoding="utf-8").encode("utf-8"), "image/svg+xml"
+        extension = logo_path.suffix.lower()
+
+        if extension == ".svg":
+            contenido = logo_path.read_text(encoding="utf-8").encode("utf-8")
+            mime = "image/svg+xml"
         else:
-            raw = path.read_bytes()
-            mime = "image/png" if path.suffix.lower() == ".png" else "image/jpeg"
-        encoded = base64.b64encode(raw).decode("utf-8")
-        st.markdown(
-            dedent(f'<div class="portal-logo"><img src="data:{mime};base64,{encoded}" alt="Logo"></div>').strip(),
-            unsafe_allow_html=True,
-        )
-    except (OSError, UnicodeError):
-        st.warning(f"No fue posible leer el logo: {path.name}")
+            contenido = logo_path.read_bytes()
+            mime = "image/png" if extension == ".png" else "image/jpeg"
+
+        logo_base64 = base64.b64encode(contenido).decode("utf-8")
+
+        html_logo = dedent(
+            f"""
+            <div class="portal-logo">
+                <img src="data:{mime};base64,{logo_base64}" alt="Logo ENAEX">
+            </div>
+            """
+        ).strip()
+
+        st.markdown(html_logo, unsafe_allow_html=True)
+
+    except (OSError, UnicodeError) as error:
+        st.warning(f"No fue posible leer el logo: {error}")
 
 
-def mostrar_estado_archivo_activo() -> None:
-    data = st.session_state.get(SESSION_DATA_KEY)
-    if data is None:
-        st.info("No hay archivo activo. Comienza en **01 Cargar Archivo**.")
-        return
-    flow = data["flujo"]
-    name = st.session_state.get(SESSION_FILE_KEY, "Archivo activo")
-    st.success(
-        f"Archivo activo: **{name}** · **{len(flow):,} filas** · "
-        f"**{flow['CECO'].nunique():,} CECO**".replace(",", ".")
-    )
+# ============================================================
+# CONSTRUCCIÓN DE LAS DOS PÁGINAS
+# ============================================================
 
-
-def mostrar_apps_disponibles() -> None:
-    st.subheader("Módulos disponibles")
-    for section in APP_SECTIONS:
-        st.markdown(f"#### {section['grupo']}")
-        st.caption(section["descripcion"])
-        columns = st.columns(2)
-        for index, app in enumerate(section["apps"]):
-            exists = obtener_ruta_app(app["archivo"]).exists()
-            with columns[index % 2]:
-                st.info(
-                    f"**{app['icono']} {app['titulo']}**\n\n"
-                    f"{app['descripcion']}\n\n"
-                    f"Estado: **{'Disponible' if exists else 'No encontrado'}**"
-                )
-
-
-def pagina_inicio() -> None:
-    aplicar_estilos()
-    mostrar_logo()
-    st.markdown('<div class="portal-title">Flujo de Liberación ENAEX</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="portal-subtitle">Portal modular para cargar la base y simular flujos de liberación.</div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown("---")
-    mostrar_estado_archivo_activo()
-    st.markdown("---")
-    mostrar_apps_disponibles()
-    st.markdown("---")
-    st.success("Selecciona un módulo desde el menú de navegación.")
-
-
-def crear_pagina_app(app: dict):
+def crear_pagina(app: dict) -> st.Page:
     return st.Page(
         obtener_ruta_app(app["archivo"]),
         title=app["titulo"],
@@ -176,25 +196,53 @@ def crear_pagina_app(app: dict):
     )
 
 
-def construir_paginas_por_seccion() -> dict:
-    pages = {
-        "Inicio": [
-            st.Page(pagina_inicio, title="Inicio", icon="🏠", url_path="inicio")
-        ]
-    }
-    for section in APP_SECTIONS:
-        pages[section["grupo"]] = [crear_pagina_app(app) for app in section["apps"]]
-    return pages
+def construir_paginas() -> list[st.Page]:
+    """Construye exactamente las dos páginas del dashboard."""
+    return [crear_pagina(app) for app in APPS]
 
 
-missing = validar_apps_disponibles()
-if missing:
-    aplicar_estilos()
+# ============================================================
+# VALIDACIÓN DE ARCHIVOS
+# ============================================================
+
+aplicar_estilos()
+
+apps_faltantes = validar_apps_disponibles()
+
+if apps_faltantes:
     mostrar_logo()
     st.error("No se encontraron una o más aplicaciones requeridas.")
-    for name, path in missing.items():
-        st.write(f"**{name}:** `{path}`")
+
+    for nombre, ruta in apps_faltantes.items():
+        st.write(f"**{nombre}:** `{ruta}`")
+
+    st.info(
+        "Los tres archivos deben estar dentro de la misma carpeta: "
+        "`00_APP_FLUJO_LIBERACION.py`, `01_CARGAR_ARCHIVO_FLUJO.py` y "
+        "`02_APP_SIMULADOR_ALEATORIO.py`."
+    )
     st.stop()
 
-pagina = st.navigation(construir_paginas_por_seccion())
-pagina.run()
+
+# ============================================================
+# NAVEGACIÓN
+# ============================================================
+
+paginas = construir_paginas()
+
+# En versiones recientes de Streamlit, position="top" muestra ambas páginas
+# como pestañas superiores. En versiones anteriores se usa automáticamente
+# la navegación lateral para mantener compatibilidad.
+parametros_navegacion = inspect.signature(st.navigation).parameters
+
+if "position" in parametros_navegacion:
+    pagina_seleccionada = st.navigation(paginas, position="top")
+else:
+    pagina_seleccionada = st.navigation(paginas)
+
+
+# ============================================================
+# EJECUTAR PÁGINA SELECCIONADA
+# ============================================================
+
+pagina_seleccionada.run()
