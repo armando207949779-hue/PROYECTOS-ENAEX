@@ -905,6 +905,305 @@ def refresh_download(
     st.session_state[SESSION_DOWNLOAD_NAME_KEY] = download_name(file_name)
 
 
+
+# ============================================================
+# REEMPLAZO GLOBAL DE PERSONA
+# ============================================================
+
+def render_global_replacement(
+    data: dict[str, pd.DataFrame],
+    file_name: str,
+    file_bytes: bytes,
+    actor: str,
+    reason: str,
+) -> None:
+    """Reemplaza una persona en todas sus apariciones de la base."""
+    flow = get_working_flow()
+    users = unique_users(flow)
+
+    question(
+        2,
+        "¿Qué persona se va de la empresa?",
+        (
+            "Selecciona la persona que debe ser reemplazada. "
+            "Antes de guardar podrás revisar todos los CECO afectados."
+        ),
+    )
+
+    if not users:
+        st.warning("No se encontraron correos de liberadores en la base activa.")
+        return
+
+    old_user = st.selectbox(
+        "Persona que sale",
+        options=users,
+        format_func=lambda value: display_user(value, data),
+        key="global_old_user_v05",
+    )
+
+    occurrences = occurrences_of_person(flow, old_user)
+
+    if occurrences.empty:
+        st.warning("La persona seleccionada no tiene apariciones en la base.")
+        return
+
+    affected_cecos = int(occurrences["CECO"].nunique())
+    affected_rows = int(occurrences["_ID_FILA"].nunique())
+    affected_positions = int(len(occurrences))
+
+    metric_cols = st.columns(3)
+    metrics = [
+        ("CECO donde participa", affected_cecos),
+        ("Filas afectadas", affected_rows),
+        ("Apariciones", affected_positions),
+    ]
+
+    for column, (label, value) in zip(metric_cols, metrics):
+        with column:
+            st.markdown(
+                compact_html(
+                    f"""
+                    <div class="metric-card">
+                        <div class="metric-label">{escape(label)}</div>
+                        <div class="metric-value">{value}</div>
+                    </div>
+                    """
+                ),
+                unsafe_allow_html=True,
+            )
+
+    question(
+        3,
+        "¿Dónde participa actualmente?",
+        (
+            "Revisa todos los CECO, tramos, tipos y posiciones "
+            "antes de seleccionar a la nueva persona."
+        ),
+    )
+
+    occurrence_view = occurrences[
+        [
+            "CECO",
+            "Planta",
+            "Desde",
+            "Hasta",
+            "TipoDoc",
+            "Campo",
+            "ValorAntes",
+        ]
+    ].rename(
+        columns={
+            "Campo": "Posición",
+            "ValorAntes": "Persona actual",
+        }
+    )
+
+    def style_occurrence_row(row: pd.Series) -> list[str]:
+        doc = clean_text(row.get("TipoDoc")).upper()
+        if doc == "AZNB":
+            style = "background-color:#FFF1F0;color:#7A271A;"
+        elif doc == "AZSR":
+            style = "background-color:#EFF8FF;color:#1849A9;"
+        else:
+            style = ""
+        return [style] * len(row)
+
+    styled_occurrences = (
+        occurrence_view.style
+        .apply(style_occurrence_row, axis=1)
+        .format(
+            {
+                "Desde": lambda value: fmt_bound(value),
+                "Hasta": lambda value: fmt_bound(value),
+            }
+        )
+    )
+
+    st.dataframe(
+        styled_occurrences,
+        use_container_width=True,
+        hide_index=True,
+        height=min(600, max(260, 36 * (len(occurrence_view) + 2))),
+    )
+
+    question(
+        4,
+        "¿Quién será la nueva persona?",
+        (
+            "Selecciona un usuario existente o escribe un correo nuevo. "
+            "El reemplazo se aplicará en todas las apariciones mostradas."
+        ),
+    )
+
+    replacement_source = st.radio(
+        "Origen de la nueva persona",
+        options=["existing", "new"],
+        format_func=lambda value: (
+            "Seleccionar usuario existente"
+            if value == "existing"
+            else "Escribir correo nuevo"
+        ),
+        horizontal=True,
+        key="global_replacement_source_v05",
+    )
+
+    new_user = ""
+
+    if replacement_source == "existing":
+        candidates = [
+            user
+            for user in users
+            if email_key(user) != email_key(old_user)
+        ]
+
+        if candidates:
+            new_user = st.selectbox(
+                "Nueva persona",
+                options=candidates,
+                format_func=lambda value: display_user(value, data),
+                key="global_new_existing_user_v05",
+            )
+        else:
+            st.warning(
+                "No hay otra persona disponible. "
+                "Selecciona Escribir correo nuevo."
+            )
+    else:
+        new_user = strip_user(
+            st.text_input(
+                "Correo de la nueva persona",
+                placeholder="nombre.apellido@enaex.com",
+                key="global_new_email_v05",
+            )
+        )
+
+    question(
+        5,
+        "¿Confirmas el reemplazo global?",
+        (
+            "Se reemplazará únicamente a la persona seleccionada; "
+            "los demás liberadores y el orden del flujo permanecerán sin cambios."
+        ),
+    )
+
+    if new_user:
+        st.info(
+            f"Se reemplazará **{display_user(old_user, data)}** por "
+            f"**{display_user(new_user, data)}** en "
+            f"**{affected_cecos} CECO**, **{affected_rows} filas** "
+            f"y **{affected_positions} posiciones**."
+        )
+
+    confirmation = st.checkbox(
+        (
+            "Confirmo que la persona seleccionada debe ser reemplazada "
+            "en toda la base."
+        ),
+        value=False,
+        key="global_confirm_v05",
+    )
+
+    apply_clicked = st.button(
+        "🔁 Aplicar reemplazo global",
+        type="primary",
+        use_container_width=True,
+        disabled=not (new_user and confirmation),
+        key="global_apply_v05",
+    )
+
+    if apply_clicked:
+        old_key = email_key(old_user)
+        replacement = strip_user(new_user)
+
+        if not replacement:
+            st.error("Indica la nueva persona.")
+            return
+
+        if email_key(replacement) == old_key:
+            st.error("La nueva persona debe ser distinta de la persona que sale.")
+            return
+
+        updated = flow.copy(deep=True)
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        changes: list[dict[str, Any]] = []
+
+        for row_index, row in updated.iterrows():
+            for column in LIB_COLS:
+                current = strip_user(row[column])
+
+                if email_key(current) != old_key:
+                    continue
+
+                updated.at[row_index, column] = replacement
+
+                changes.append(
+                    {
+                        "FechaHora": timestamp,
+                        "Usuario": actor or "anonimo",
+                        "CECO": row["CECO"],
+                        "Desde": row["Desde"],
+                        "Hasta": row["Hasta"],
+                        "TipoDoc": row["TipoDoc"],
+                        "Campo": column,
+                        "ValorAntes": current,
+                        "ValorDespues": replacement,
+                        "Nota": (
+                            reason
+                            or "Reemplazo global por salida de la empresa"
+                        ),
+                    }
+                )
+
+        set_working_flow(updated)
+
+        history = list(st.session_state.get(SESSION_HISTORY_KEY, []))
+        history.extend(changes)
+        st.session_state[SESSION_HISTORY_KEY] = history
+
+        try:
+            refresh_download(file_name, file_bytes)
+            st.success(
+                f"Reemplazo global completado: "
+                f"**{len(changes)} apariciones** actualizadas "
+                f"en **{affected_cecos} CECO**."
+            )
+            st.toast("Reemplazo global guardado.", icon="✅")
+        except ValueError as error:
+            st.error(str(error))
+
+    generated = st.session_state.get(SESSION_DOWNLOAD_KEY)
+    generated_name = st.session_state.get(SESSION_DOWNLOAD_NAME_KEY)
+
+    if generated and generated_name:
+        st.markdown("---")
+        st.subheader("Descargar Excel actualizado")
+        st.download_button(
+            "⬇️ Descargar archivo modificado",
+            data=generated,
+            file_name=generated_name,
+            mime=(
+                "application/vnd.openxmlformats-officedocument."
+                "spreadsheetml.sheet"
+            ),
+            type="primary",
+            use_container_width=True,
+            key="global_download_v05",
+        )
+        st.caption(f"Archivo preparado: `{generated_name}`")
+
+    history = st.session_state.get(SESSION_HISTORY_KEY, [])
+    if history:
+        with st.expander(
+            f"Historial de esta sesión ({len(history)} cambios)",
+            expanded=False,
+        ):
+            st.dataframe(
+                pd.DataFrame(history),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+
 # ============================================================
 # INTERFAZ PASO A PASO
 # ============================================================
@@ -946,10 +1245,45 @@ def render_wizard(
             )
 
     # --------------------------------------------------------
-    # 1. CECO
+    # 1. Tipo de modificación
     # --------------------------------------------------------
     question(
         1,
+        "¿Qué quieres modificar?",
+        (
+            "Puedes trabajar sobre un CECO específico o reemplazar "
+            "a una persona en toda la base cuando deja la empresa."
+        ),
+    )
+
+    modification_scope = st.radio(
+        "Alcance de la modificación",
+        options=["ceco", "global"],
+        format_func=lambda value: (
+            "📍 Modificar un CECO específico"
+            if value == "ceco"
+            else "🌐 Reemplazar una persona de manera global"
+        ),
+        horizontal=True,
+        label_visibility="collapsed",
+        key="mod_scope_v05",
+    )
+
+    if modification_scope == "global":
+        render_global_replacement(
+            data=data,
+            file_name=file_name,
+            file_bytes=file_bytes,
+            actor=actor,
+            reason=reason,
+        )
+        return
+
+    # --------------------------------------------------------
+    # 2. CECO
+    # --------------------------------------------------------
+    question(
+        2,
         "¿Qué CECO quieres modificar?",
         "Selecciona el CECO y revisa su tabla completa.",
     )
@@ -987,7 +1321,7 @@ def render_wizard(
     # 2. Tipo
     # --------------------------------------------------------
     question(
-        2,
+        3,
         "¿Qué tipo quieres modificar?",
         "Selecciona Material o Servicio.",
     )
@@ -1026,7 +1360,7 @@ def render_wizard(
     # 3. Rango
     # --------------------------------------------------------
     question(
-        3,
+        4,
         "¿Qué rango quieres abrir?",
         "Selecciona el tramo cuyo flujo deseas modificar.",
     )
@@ -1093,7 +1427,7 @@ def render_wizard(
     # 4. Pieza
     # --------------------------------------------------------
     question(
-        4,
+        5,
         "¿Qué pieza quieres modificar?",
         "Para Agregar no es necesario seleccionar una pieza.",
     )
@@ -1120,7 +1454,7 @@ def render_wizard(
     # 5. Acción
     # --------------------------------------------------------
     question(
-        5,
+        6,
         "¿Qué quieres hacer?",
         "La subpregunta cambia según la acción seleccionada.",
     )
@@ -1285,7 +1619,7 @@ def render_wizard(
 
     if draft.get("replaced_from") and draft.get("replaced_to"):
         question(
-            6,
+            7,
             "¿Quieres reemplazar también en otros CECO?",
             (
                 "Utiliza esta opción si la persona salió de la empresa "
@@ -1379,7 +1713,7 @@ def render_wizard(
     # Guardado
     # --------------------------------------------------------
     question(
-        7,
+        8,
         "¿Guardar los cambios?",
         (
             "Los cambios se aplicarán a la base activa y quedarán "
