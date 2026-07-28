@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 from io import BytesIO, StringIO
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from urllib.parse import urlparse, unquote
 import base64
@@ -718,16 +719,107 @@ def extraer_nombre_content_disposition(
 
 
 def detectar_nombre_desde_url(url: str) -> str | None:
+    """Busca un nombre de archivo tanto en la ruta como en la URL decodificada."""
     try:
-        path = urlparse(url).path
-        nombre = unquote(Path(path).name)
+        url_decodificada = unquote(str(url))
+        parsed = urlparse(url_decodificada)
 
-        if "." in nombre:
-            return nombre
+        candidatos = [Path(parsed.path).name]
+
+        # Algunos enlaces de SharePoint llevan el nombre dentro de parámetros
+        # o dentro de una ruta codificada.
+        candidatos.extend(
+            re.findall(
+                r"([^/?&=]+\.(?:xlsx|xls|csv|parquet))",
+                url_decodificada,
+                flags=re.IGNORECASE,
+            )
+        )
+
+        for candidato in candidatos:
+            nombre = unquote(str(candidato)).strip().strip('\"')
+            if re.search(r"\.(xlsx|xls|csv|parquet)$", nombre, re.IGNORECASE):
+                return Path(nombre).name
     except Exception:
         return None
 
     return None
+
+
+def extraer_fecha_desde_textos(*textos: object) -> pd.Timestamp | None:
+    """Busca una fecha YYYYMMDD válida en nombres, cabeceras o URLs."""
+    for valor in textos:
+        if not valor:
+            continue
+
+        texto = unquote(str(valor))
+        coincidencias = re.findall(r"(?<!\d)(20\d{6})(?!\d)", texto)
+
+        for fecha_texto in reversed(coincidencias):
+            fecha = pd.to_datetime(
+                fecha_texto,
+                format="%Y%m%d",
+                errors="coerce",
+            )
+            if not pd.isna(fecha):
+                return pd.Timestamp(fecha)
+
+    return None
+
+
+def extraer_fecha_last_modified(valor: str) -> pd.Timestamp | None:
+    """Convierte la cabecera HTTP Last-Modified a una fecha sin hora."""
+    if not valor:
+        return None
+
+    try:
+        fecha = parsedate_to_datetime(valor)
+        if fecha is None:
+            return None
+        return pd.Timestamp(fecha).tz_localize(None).normalize()
+    except Exception:
+        return None
+
+
+def construir_info_fecha_sharepoint(
+    nombre_detectado: str,
+    metadata: dict[str, str],
+    url_original: str,
+) -> dict[str, str | None]:
+    """Obtiene la fecha desde el nombre, la URL o Last-Modified."""
+    info_nombre = analizar_nombre_archivo(nombre_detectado)
+    fecha = info_nombre["fecha_archivo"]
+    fuente = "Nombre del archivo"
+
+    if pd.isna(fecha):
+        fecha = extraer_fecha_desde_textos(
+            nombre_detectado,
+            metadata.get("content_disposition"),
+            metadata.get("url_final"),
+            metadata.get("url_original"),
+            url_original,
+        )
+        fuente = "URL o cabecera SharePoint"
+
+    if fecha is None or pd.isna(fecha):
+        fecha = extraer_fecha_last_modified(
+            metadata.get("last_modified", "")
+        )
+        fuente = "Última modificación HTTP"
+
+    if fecha is None or pd.isna(fecha):
+        return {
+            "fecha_archivo": "Sin fecha",
+            "fecha_archivo_iso": None,
+            "fuente_fecha": "No disponible",
+        }
+
+    fecha = pd.Timestamp(fecha)
+    return {
+        "fecha_archivo": fecha.strftime("%d/%m/%Y"),
+        "fecha_archivo_iso": fecha.strftime("%Y-%m-%d"),
+        "fuente_fecha": fuente,
+    }
 
 
 @st.cache_data(show_spinner=False, ttl=300)
@@ -762,12 +854,15 @@ def descargar_archivo_sharepoint_cache(
     )
 
     metadata = {
+        "url_original": url,
         "url_final": response.url,
         "content_type": content_type,
         "content_disposition": content_disposition,
+        "last_modified": response.headers.get("Last-Modified", ""),
         "nombre_detectado": (
             extraer_nombre_content_disposition(content_disposition)
             or detectar_nombre_desde_url(response.url)
+            or detectar_nombre_desde_url(url)
             or ""
         ),
     }
@@ -878,6 +973,7 @@ def cargar_archivos_manual(
                 "archivo": nombre_real,
                 "fecha_archivo": info_nombre["fecha_archivo_texto"],
                 "fecha_archivo_iso": info_nombre["fecha_archivo_iso"],
+                "fuente_fecha": "Nombre del archivo",
                 "filas": df.shape[0],
                 "columnas": df.shape[1],
                 "peso_kb": round(archivo.size / 1024, 2),
@@ -931,6 +1027,7 @@ def validar_archivos_sharepoint() -> pd.DataFrame:
                 "archivo": None,
                 "fecha_archivo": None,
                 "fecha_archivo_iso": None,
+                "fuente_fecha": None,
                 "estado": "Configurado",
                 "existe": True,
                 "peso_kb": None,
@@ -976,7 +1073,11 @@ def cargar_archivos_sharepoint() -> tuple[
                 or nombre_esperado
             )
             content_type = metadata.get("content_type") or ""
-            info_nombre = analizar_nombre_archivo(nombre_detectado)
+            info_fecha = construir_info_fecha_sharepoint(
+                nombre_detectado=nombre_detectado,
+                metadata=metadata,
+                url_original=url,
+            )
 
             df, config = cargar_archivo_desde_bytes(
                 contenido=contenido,
@@ -990,8 +1091,9 @@ def cargar_archivos_sharepoint() -> tuple[
             config_carga[nombre_df] = {
                 "archivo_esperado": nombre_esperado,
                 "archivo": nombre_detectado,
-                "fecha_archivo": info_nombre["fecha_archivo_texto"],
-                "fecha_archivo_iso": info_nombre["fecha_archivo_iso"],
+                "fecha_archivo": info_fecha["fecha_archivo"],
+                "fecha_archivo_iso": info_fecha["fecha_archivo_iso"],
+                "fuente_fecha": info_fecha["fuente_fecha"],
                 "filas": df.shape[0],
                 "columnas": df.shape[1],
                 "peso_kb": peso_kb,
@@ -1010,13 +1112,15 @@ def cargar_archivos_sharepoint() -> tuple[
                     "archivo",
                     "fecha_archivo",
                     "fecha_archivo_iso",
+                    "fuente_fecha",
                     "estado",
                     "peso_kb",
                 ],
             ] = [
                 nombre_detectado,
-                info_nombre["fecha_archivo_texto"],
-                info_nombre["fecha_archivo_iso"],
+                info_fecha["fecha_archivo"],
+                info_fecha["fecha_archivo_iso"],
+                info_fecha["fuente_fecha"],
                 "Cargado",
                 peso_kb,
             ]
@@ -1145,6 +1249,7 @@ def mostrar_resumen_carga(
         "orden",
         "archivo",
         "fecha_archivo",
+        "fuente_fecha",
         "archivo_esperado",
         "filas",
         "columnas",
@@ -1473,6 +1578,7 @@ if st.session_state["carga_completada"]:
                 "dataframe",
                 "archivo",
                 "fecha_archivo",
+                "fuente_fecha",
                 "archivo_esperado",
                 "estado",
                 "peso_kb",
