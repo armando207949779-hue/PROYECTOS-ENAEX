@@ -1039,7 +1039,6 @@ else:
             autopct=lambda p: f"{p:.1f}%" if p >= 3 else "",
             startangle=90,
             pctdistance=0.78,
-            colors=["#1D4ED8", "#2563EB", "#60A5FA", "#A3A3A3"][:len(df_donut)],
             wedgeprops={
                 "width": 0.36,
                 "edgecolor": "white"
@@ -1148,13 +1147,10 @@ else:
     fig.patch.set_facecolor("#FFFFFF")
     ax.set_facecolor("#FFFFFF")
 
-    colores = ["#DBEAFE", "#93C5FD", "#60A5FA", "#2563EB"]
-    colores_barras = colores[-len(df_ahorro_proceso_bar):]
-
     bars = ax.barh(
         df_ahorro_proceso_bar["Tipo_Proceso"],
         df_ahorro_proceso_bar["Ahorro_Real_Total_kUSD"],
-        color=colores_barras,
+        color="#2563EB",
         edgecolor="#1D4ED8",
         linewidth=0.8,
         height=0.62
@@ -1183,7 +1179,7 @@ else:
             valor + margen_derecho * 0.05,
             y_pos,
             f"{valor:,.1f} kUSD  ·  {row['Participacion_%']:.1f}%",
-            va="center", ha="left", fontsize=9, fontweight="bold", color="#78350F"
+            va="center", ha="left", fontsize=9, fontweight="bold", color="#111827"
         )
 
     fig.tight_layout()
