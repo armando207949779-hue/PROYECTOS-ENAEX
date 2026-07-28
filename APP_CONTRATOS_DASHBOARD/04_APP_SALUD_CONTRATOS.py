@@ -121,7 +121,31 @@ st.markdown(
         }
 
         div[data-testid="stDataFrame"] {
-            border-radius: 12px;
+            border: 1px solid #e5e7eb;
+            border-radius: 14px;
+            overflow: hidden;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+        }
+
+        div[data-testid="stExpander"] {
+            border: 1px solid #e5e7eb;
+            border-radius: 14px;
+            background: #ffffff;
+            overflow: hidden;
+        }
+
+        div[data-testid="stExpander"] summary {
+            font-weight: 750;
+            color: #111827;
+        }
+
+        .kpi-card {
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .kpi-card:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.07);
         }
     </style>
     """,
@@ -178,17 +202,27 @@ def section_title(title: str, caption: str | None = None) -> None:
         )
 
 
-def limpiar_estilo_grafico(ax) -> None:
-    """Aplica formato visual limpio al gráfico."""
-    ax.grid(False)
+def limpiar_estilo_grafico(ax, eje_grilla: str | None = None) -> None:
+    """Aplica un formato visual limpio y consistente a los gráficos."""
+    ax.set_axisbelow(True)
+
+    if eje_grilla in {"x", "y"}:
+        ax.grid(
+            axis=eje_grilla,
+            color="#E5E7EB",
+            linewidth=0.8,
+            alpha=0.75,
+        )
+    else:
+        ax.grid(False)
 
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
-    ax.spines["left"].set_color("#d1d5db")
-    ax.spines["bottom"].set_color("#d1d5db")
+    ax.spines["left"].set_color("#D1D5DB")
+    ax.spines["bottom"].set_color("#D1D5DB")
 
-    ax.tick_params(axis="x", colors="#374151")
-    ax.tick_params(axis="y", colors="#374151")
+    ax.tick_params(axis="x", colors="#374151", labelsize=9)
+    ax.tick_params(axis="y", colors="#374151", labelsize=9)
 
 
 # ============================================================
@@ -729,7 +763,7 @@ else:
 
     with st.expander(
         "Ver detalle de contratos no encontrados en ME3N",
-        expanded=False,
+        expanded=True,
     ):
         st.caption(
             "Estos contratos existen en df_bbdd_x_categoria, "
@@ -901,18 +935,18 @@ else:
             for estado in df_estado_global["Estado"]
         ]
 
-        fig, ax = plt.subplots(figsize=(6.3, 5.1))
+        fig, ax = plt.subplots(figsize=(7.2, 5.8))
 
         wedges, _, _ = ax.pie(
             df_estado_global["Recuento_Contratos"],
             labels=None,
-            autopct=lambda porcentaje: f"{porcentaje:.1f}%" if porcentaje >= 3 else "",
+            autopct=lambda porcentaje: f"{porcentaje:.1f}%" if porcentaje >= 2.5 else "",
             startangle=90,
             counterclock=False,
             pctdistance=0.79,
             colors=colores_grafico,
             wedgeprops={
-                "width": 0.38,
+                "width": 0.40,
                 "edgecolor": "white",
                 "linewidth": 1.2,
             },
@@ -929,7 +963,7 @@ else:
             f"{int(total_estado_global):,}",
             ha="center",
             va="center",
-            fontsize=21,
+            fontsize=23,
             fontweight="bold",
             color="#111827",
         )
@@ -965,7 +999,7 @@ else:
             leyenda_labels,
             title="Estado",
             loc="center left",
-            bbox_to_anchor=(1.00, 0.5),
+            bbox_to_anchor=(1.02, 0.5),
             fontsize=8.5,
             title_fontsize=9.5,
             frameon=False,
@@ -979,14 +1013,14 @@ else:
     with col_tabla:
         df_estado_global_tabla = df_estado_global.copy()
 
-        df_estado_global_tabla["Participación"] = (
-            df_estado_global_tabla["Participacion_%"]
-            .map(lambda valor: f"{valor:.1f}%")
-        )
-
         df_estado_global_tabla = (
             df_estado_global_tabla
-            .rename(columns={"Recuento_Contratos": "Contratos"})
+            .rename(
+                columns={
+                    "Recuento_Contratos": "Contratos",
+                    "Participacion_%": "Participación",
+                }
+            )
             [["Estado", "Contratos", "Participación"]]
         )
 
@@ -996,6 +1030,19 @@ else:
             df_estado_global_tabla,
             use_container_width=True,
             hide_index=True,
+            column_config={
+                "Estado": st.column_config.TextColumn("Estado"),
+                "Contratos": st.column_config.NumberColumn(
+                    "Contratos",
+                    format="%d",
+                ),
+                "Participación": st.column_config.ProgressColumn(
+                    "Participación",
+                    format="%.1f%%",
+                    min_value=0.0,
+                    max_value=100.0,
+                ),
+            },
         )
 
 
@@ -1077,7 +1124,21 @@ else:
         mticker.MaxNLocator(integer=True)
     )
 
-    limpiar_estilo_grafico(ax)
+    limpiar_estilo_grafico(ax, eje_grilla="x")
+
+    for contenedor in ax.containers:
+        etiquetas = [
+            f"{int(valor)}" if valor >= 1 else ""
+            for valor in contenedor.datavalues
+        ]
+        ax.bar_label(
+            contenedor,
+            labels=etiquetas,
+            label_type="center",
+            fontsize=8,
+            fontweight="bold",
+            color="#111827",
+        )
 
     max_total_contratos = df_pivot_estado["Total_Contratos"].max()
     margen_derecho = max(1, max_total_contratos * 0.22)
@@ -1105,12 +1166,23 @@ else:
 
     with st.expander(
         "Ver tabla de contratos por gestor y estado",
-        expanded=False,
+        expanded=True,
     ):
+        tabla_estado_gestor = df_pivot_estado.reset_index()
+
         st.dataframe(
-            df_pivot_estado.reset_index(),
+            tabla_estado_gestor,
             use_container_width=True,
             hide_index=True,
+            column_config={
+                "Gestor_Contrato": st.column_config.TextColumn(
+                    "Gestor de contrato"
+                ),
+                "Total_Contratos": st.column_config.NumberColumn(
+                    "Total",
+                    format="%d",
+                ),
+            },
         )
 
 
@@ -1530,7 +1602,19 @@ else:
             matriz,
             aspect="auto",
             cmap="YlGnBu",
+            interpolation="nearest",
         )
+
+        ax.set_xticks(
+            np.arange(-0.5, len(df_heatmap_plot.columns), 1),
+            minor=True,
+        )
+        ax.set_yticks(
+            np.arange(-0.5, len(df_heatmap_plot.index), 1),
+            minor=True,
+        )
+        ax.grid(which="minor", color="white", linestyle="-", linewidth=1.4)
+        ax.tick_params(which="minor", bottom=False, left=False)
 
         ax.set_xticks(np.arange(len(df_heatmap_plot.columns)))
         ax.set_xticklabels(
@@ -1558,23 +1642,22 @@ else:
             for columna in range(matriz.shape[1]):
                 valor = matriz[fila, columna]
 
-                if valor > 0:
-                    color_texto = (
-                        "white"
-                        if valor_maximo > 0 and valor >= valor_maximo * 0.65
-                        else "#111827"
-                    )
+                color_texto = (
+                    "white"
+                    if valor_maximo > 0 and valor >= valor_maximo * 0.65
+                    else "#111827"
+                )
 
-                    ax.text(
-                        columna,
-                        fila,
-                        str(int(valor)),
-                        ha="center",
-                        va="center",
-                        fontsize=9,
-                        fontweight="bold",
-                        color=color_texto,
-                    )
+                ax.text(
+                    columna,
+                    fila,
+                    str(int(valor)) if valor > 0 else "–",
+                    ha="center",
+                    va="center",
+                    fontsize=9,
+                    fontweight="bold" if valor > 0 else "normal",
+                    color=color_texto if valor > 0 else "#9CA3AF",
+                )
 
         cbar = fig.colorbar(im, ax=ax)
         cbar.set_label("Recuento de contratos")
@@ -1585,12 +1668,17 @@ else:
 
         with st.expander(
             "Ver tabla del mapa de calor",
-            expanded=False,
+            expanded=True,
         ):
             st.dataframe(
                 df_heatmap_plot.reset_index(),
                 use_container_width=True,
                 hide_index=True,
+                column_config={
+                    "Gestor_Contrato": st.column_config.TextColumn(
+                        "Gestor de contrato"
+                    ),
+                },
             )
 
 
@@ -1631,8 +1719,8 @@ else:
     bars = ax.barh(
         df_top_por_vencer["Gestor_Contrato"],
         df_top_por_vencer["Contratos_Por_Vencer"],
-        color="#f59e0b",
-        edgecolor="#d97706",
+        color="#F59E0B",
+        edgecolor="#B45309",
         linewidth=0.8,
     )
 
@@ -1650,7 +1738,7 @@ else:
         mticker.MaxNLocator(integer=True)
     )
 
-    limpiar_estilo_grafico(ax)
+    limpiar_estilo_grafico(ax, eje_grilla="x")
 
     max_por_vencer = df_top_por_vencer["Contratos_Por_Vencer"].max()
     margen_por_vencer = max(1, max_por_vencer * 0.22)
@@ -1681,7 +1769,7 @@ else:
 
     with st.expander(
         "Ver resumen de contratos por vencer",
-        expanded=False,
+        expanded=True,
     ):
         st.dataframe(
             df_top_por_vencer
@@ -1692,7 +1780,7 @@ else:
 
     with st.expander(
         "Ver detalle individual de contratos por vencer",
-        expanded=False,
+        expanded=True,
     ):
         columnas_detalle_vencimiento = [
             columna
@@ -1720,6 +1808,12 @@ else:
             .reset_index(drop=True)
         )
 
+        if "Fin_período_validez" in df_detalle_por_vencer.columns:
+            df_detalle_por_vencer["Días para vencer"] = (
+                df_detalle_por_vencer["Fin_período_validez"]
+                - pd.Timestamp.today().normalize()
+            ).dt.days.clip(lower=0)
+
         st.dataframe(
             df_detalle_por_vencer,
             use_container_width=True,
@@ -1734,6 +1828,12 @@ else:
                 ),
                 "Estado": st.column_config.TextColumn("Estado"),
                 "Validacion_Cobertura_ME3N": st.column_config.TextColumn("Validación ME3N"),
+                "Días para vencer": st.column_config.ProgressColumn(
+                    "Días para vencer",
+                    format="%d días",
+                    min_value=0,
+                    max_value=92,
+                ),
             },
         )
 
@@ -1752,7 +1852,7 @@ section_title(
 
 with st.expander(
     "Contratos con estado de vigencia y validaciones",
-    expanded=False,
+    expanded=True,
 ):
     columnas_preview = [
         columna
@@ -1826,7 +1926,7 @@ with st.expander(
 
 with st.expander(
     "Resumen de validación",
-    expanded=False,
+    expanded=True,
 ):
     total_base = df_contratos_estado["Contrato"].nunique()
 
