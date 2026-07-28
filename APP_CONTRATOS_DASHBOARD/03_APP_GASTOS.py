@@ -2,6 +2,7 @@
 # 03_APP_GASTOS.py
 # Dashboard de Monitoreo de Contratos ENAEX
 # Pestaña: Gastos
+# Actualizado: filtro "Tipo de posición"
 # ============================================================
 
 from pathlib import Path
@@ -29,7 +30,7 @@ BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
 LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
 
-VERSION_NORMALIZACION_IDS = "v_2026_07_21_gastos_me2n_oc_ordenes"
+VERSION_NORMALIZACION_IDS = "v_2026_07_28_gastos_tipo_posicion"
 
 
 # ============================================================
@@ -228,6 +229,60 @@ def limpiar_id_documento(valor):
     return solo_digitos if solo_digitos else s
 
 
+def normalizar_tipo_posicion(serie: pd.Series) -> pd.Series:
+    """
+    Limpia el tipo de posición.
+
+    Los valores nulos o vacíos se muestran como "Sin tipo de posición",
+    para que puedan seleccionarse explícitamente en el filtro.
+    """
+    serie_limpia = serie.astype("string").str.strip()
+
+    return serie_limpia.replace(
+        {
+            "": pd.NA,
+            "nan": pd.NA,
+            "NaN": pd.NA,
+            "None": pd.NA,
+            "<NA>": pd.NA,
+        }
+    ).fillna("Sin tipo de posición")
+
+
+def estandarizar_columna_tipo_posicion(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Busca nombres habituales de la columna y los renombra a Tipo_Posicion.
+
+    Se soportan, entre otros:
+    - Tipo_Posicion
+    - Tipo_de_posicion
+    - Tipo_de_posición
+    - Tipo de posición
+    - Tipo de posicion
+    - Tipo_posicion
+    """
+    df_resultado = df.copy()
+
+    if "Tipo_Posicion" in df_resultado.columns:
+        return df_resultado
+
+    aliases = [
+        "Tipo_de_posicion",
+        "Tipo_de_posición",
+        "Tipo de posición",
+        "Tipo de posicion",
+        "Tipo_posicion",
+        "Tipo posición",
+        "Tipo posicion",
+    ]
+
+    for alias in aliases:
+        if alias in df_resultado.columns:
+            return df_resultado.rename(columns={alias: "Tipo_Posicion"})
+
+    return df_resultado
+
+
 def formato_usd_compacto(x, pos=None) -> str:
     if pd.isna(x):
         return "$0"
@@ -344,9 +399,23 @@ if faltantes_df:
 _df_moneda_cambio = dataframes["df_moneda_cambio"].copy()
 _df_me2n_oc_ordenes = dataframes["df_me2n_oc_ordenes"].copy()
 
+# Estandariza el nuevo campo antes de validar las columnas.
+_df_me2n_oc_ordenes = estandarizar_columna_tipo_posicion(_df_me2n_oc_ordenes)
+
 columnas_requeridas = {
-    "df_me2n_oc_ordenes": ["Documento_compras", "Fecha_documento", "Moneda", "Precio_neto"],
-    "df_moneda_cambio": ["Moneda", "Factor_USD_por_Unidad", "Valor_CLP_por_Unidad", "Fecha_Conversion"],
+    "df_me2n_oc_ordenes": [
+        "Documento_compras",
+        "Fecha_documento",
+        "Moneda",
+        "Precio_neto",
+        "Tipo_Posicion",
+    ],
+    "df_moneda_cambio": [
+        "Moneda",
+        "Factor_USD_por_Unidad",
+        "Valor_CLP_por_Unidad",
+        "Fecha_Conversion",
+    ],
 }
 
 validaciones = {
@@ -370,6 +439,10 @@ if errores_columnas:
     st.error("Hay columnas faltantes en los archivos cargados:")
     for error in errores_columnas:
         st.write(f"- {error}")
+    st.caption(
+        "Para el filtro nuevo, la base ME2N debe contener una columna como "
+        "`Tipo_Posicion`, `Tipo_de_posicion` o `Tipo de posición`."
+    )
     st.stop()
 
 
@@ -388,12 +461,26 @@ def preparar_ordenes_usd(
     df_ordenes_usd = df_me2n_oc_ordenes.copy()
     df_cambio = df_moneda_cambio.copy()
 
-    df_ordenes_usd["Moneda"] = df_ordenes_usd["Moneda"].astype(str).str.strip().str.upper()
-    df_cambio["Moneda"] = df_cambio["Moneda"].astype(str).str.strip().str.upper()
+    df_ordenes_usd["Moneda"] = (
+        df_ordenes_usd["Moneda"].astype(str).str.strip().str.upper()
+    )
+    df_cambio["Moneda"] = (
+        df_cambio["Moneda"].astype(str).str.strip().str.upper()
+    )
 
-    df_ordenes_usd["Precio_neto_num"] = df_ordenes_usd["Precio_neto"].apply(convertir_numero)
-    df_cambio["Factor_USD_por_Unidad"] = df_cambio["Factor_USD_por_Unidad"].apply(convertir_numero)
-    df_cambio["Valor_CLP_por_Unidad"] = df_cambio["Valor_CLP_por_Unidad"].apply(convertir_numero)
+    df_ordenes_usd["Tipo_Posicion"] = normalizar_tipo_posicion(
+        df_ordenes_usd["Tipo_Posicion"]
+    )
+
+    df_ordenes_usd["Precio_neto_num"] = (
+        df_ordenes_usd["Precio_neto"].apply(convertir_numero)
+    )
+    df_cambio["Factor_USD_por_Unidad"] = (
+        df_cambio["Factor_USD_por_Unidad"].apply(convertir_numero)
+    )
+    df_cambio["Valor_CLP_por_Unidad"] = (
+        df_cambio["Valor_CLP_por_Unidad"].apply(convertir_numero)
+    )
 
     monedas_registros = set(df_ordenes_usd["Moneda"].dropna().unique())
     monedas_tabla = set(df_cambio["Moneda"].dropna().unique())
@@ -472,14 +559,14 @@ if df_ordenes_usd.empty:
 
 section_title(
     "Filtros",
-    "Selecciona la fecha inicial, fecha final, tipo de OC y moneda.",
+    "Selecciona la fecha inicial, fecha final, tipo de OC, moneda y tipo de posición.",
 )
 
 min_fecha = df_ordenes_usd["Fecha_documento"].min().date()
 max_fecha = df_ordenes_usd["Fecha_documento"].max().date()
 
 with st.container(border=True):
-    col_f1, col_f2, col_f3, col_f4 = st.columns(4)
+    col_f1, col_f2, col_f3, col_f4, col_f5 = st.columns(5)
 
     with col_f1:
         fecha_inicio = st.date_input(
@@ -518,6 +605,16 @@ with st.container(border=True):
             default=monedas_disponibles,
         )
 
+    with col_f5:
+        tipos_posicion_disponibles = sorted(
+            df_ordenes_usd["Tipo_Posicion"].dropna().unique().tolist()
+        )
+        tipos_posicion_sel = st.multiselect(
+            "Tipo de posición",
+            options=tipos_posicion_disponibles,
+            default=tipos_posicion_disponibles,
+        )
+
 if fecha_inicio > fecha_fin:
     st.error("La fecha inicial no puede ser posterior a la fecha final.")
     st.stop()
@@ -535,7 +632,16 @@ mask_ordenes &= (
     if tipos_oc_sel
     else False
 )
-mask_ordenes &= df_ordenes_usd["Moneda"].isin(monedas_sel) if monedas_sel else False
+mask_ordenes &= (
+    df_ordenes_usd["Moneda"].isin(monedas_sel)
+    if monedas_sel
+    else False
+)
+mask_ordenes &= (
+    df_ordenes_usd["Tipo_Posicion"].isin(tipos_posicion_sel)
+    if tipos_posicion_sel
+    else False
+)
 
 df_ordenes_filtrado = df_ordenes_usd[mask_ordenes].copy()
 
@@ -815,6 +921,7 @@ else:
                 "Documento_Compras_Texto",
                 "Fecha_documento",
                 "Texto_breve",
+                "Tipo_Posicion",
                 "Moneda",
                 "Precio_neto",
                 "Precio_neto_num",
@@ -836,7 +943,9 @@ else:
         )
 
         if "Precio_neto" in df_detalle_mes_tabla.columns:
-            df_detalle_mes_tabla["Precio_neto"] = df_detalle_mes_tabla["Precio_neto"].apply(convertir_numero)
+            df_detalle_mes_tabla["Precio_neto"] = (
+                df_detalle_mes_tabla["Precio_neto"].apply(convertir_numero)
+            )
 
         df_detalle_mes_visual = formatear_fechas_dataframe(
             df_detalle_mes_tabla,
@@ -946,10 +1055,28 @@ st.markdown("---")
 
 section_title(
     "4. Tablas de apoyo y validaciones",
-    "Vistas para revisar conversiones, monedas y consistencia del gasto.",
+    "Vistas para revisar conversiones, monedas, tipos de posición y consistencia del gasto.",
 )
 
-with st.expander("Monedas únicas en órdenes", expanded=True):
+with st.expander("Tipos de posición únicos", expanded=True):
+    df_tipos_posicion = (
+        df_ordenes_usd.groupby("Tipo_Posicion", dropna=False)
+        .size()
+        .reset_index(name="Registros")
+        .sort_values("Registros", ascending=False)
+        .reset_index(drop=True)
+    )
+
+    st.dataframe(
+        estilizar_dataframe(
+            df_tipos_posicion,
+            columnas_entero=["Registros"],
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+with st.expander("Monedas únicas en órdenes", expanded=False):
     df_monedas_unicas = pd.DataFrame(
         {"Moneda": sorted(df_ordenes_usd["Moneda"].dropna().unique())}
     ).reset_index(drop=True)
@@ -968,6 +1095,7 @@ with st.expander("Órdenes ME2N convertidas a USD", expanded=True):
             "Documento_Compras_Texto",
             "Fecha_documento",
             "Texto_breve",
+            "Tipo_Posicion",
             "Moneda",
             "Precio_neto",
             "Precio_neto_num",
@@ -1022,3 +1150,7 @@ with st.expander("Resumen de validación", expanded=True):
 
     st.write(f"- Órdenes únicas filtradas: {ordenes_unicas:,.0f}")
     st.write(f"- Gasto total filtrado: {formato_usd_millones(monto_total_oc_usd)}")
+    st.write(
+        "- Tipos de posición seleccionados: "
+        + (", ".join(map(str, tipos_posicion_sel)) if tipos_posicion_sel else "Ninguno")
+    )
