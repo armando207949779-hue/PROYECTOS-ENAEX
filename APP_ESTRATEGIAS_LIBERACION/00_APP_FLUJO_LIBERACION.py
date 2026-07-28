@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import base64
-import inspect
 from pathlib import Path
 from textwrap import dedent
 
@@ -196,9 +195,14 @@ def crear_pagina(app: dict) -> st.Page:
     )
 
 
-def construir_paginas() -> list[st.Page]:
-    """Construye exactamente las dos páginas del dashboard."""
-    return [crear_pagina(app) for app in APPS]
+def construir_paginas() -> dict[str, list[st.Page]]:
+    """Construye las dos páginas en la barra lateral, sin página de inicio."""
+    return {
+        "Flujo de liberación": [
+            crear_pagina(app)
+            for app in APPS
+        ]
+    }
 
 
 # ============================================================
@@ -230,15 +234,9 @@ if apps_faltantes:
 
 paginas = construir_paginas()
 
-# En versiones recientes de Streamlit, position="top" muestra ambas páginas
-# como pestañas superiores. En versiones anteriores se usa automáticamente
-# la navegación lateral para mantener compatibilidad.
-parametros_navegacion = inspect.signature(st.navigation).parameters
-
-if "position" in parametros_navegacion:
-    pagina_seleccionada = st.navigation(paginas, position="top")
-else:
-    pagina_seleccionada = st.navigation(paginas)
+# Navegación lateral, igual que en el portal TAT original.
+# No se agrega una página de Inicio: solo aparecen Carga y Simulación.
+pagina_seleccionada = st.navigation(paginas, position="sidebar")
 
 
 # ============================================================
