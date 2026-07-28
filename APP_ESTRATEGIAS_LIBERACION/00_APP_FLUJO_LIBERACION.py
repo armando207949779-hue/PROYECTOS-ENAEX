@@ -5,6 +5,7 @@
 # Páginas del portal:
 # 01 Cargar archivo
 # 02 Simulador aleatorio
+# 03 Modificación de liberadores
 # ============================================================
 
 from __future__ import annotations
@@ -58,7 +59,7 @@ APPS = [
         "icono": "📤",
         "descripcion": (
             "Carga y valida el archivo Excel de flujo de liberación, "
-            "dejándolo activo para la simulación."
+            "dejándolo activo para la simulación y modificación."
         ),
     },
     {
@@ -69,6 +70,16 @@ APPS = [
         "descripcion": (
             "Genera casos aleatorios o consulta un flujo por CECO, "
             "tipo de documento y monto."
+        ),
+    },
+    {
+        "nombre": "03_APP_MODIFICACION_LIBERADORES",
+        "archivo": "03_APP_MODIFICACION_LIBERADORES.py",
+        "titulo": "03 Modificación de Liberadores",
+        "icono": "✏️",
+        "descripcion": (
+            "Permite modificar liberadores, actualizar la base activa "
+            "y descargar una nueva versión del Excel."
         ),
     },
 ]
@@ -183,7 +194,7 @@ def mostrar_logo() -> None:
 
 
 # ============================================================
-# CONSTRUCCIÓN DE LAS DOS PÁGINAS
+# CONSTRUCCIÓN DE LAS TRES PÁGINAS
 # ============================================================
 
 def crear_pagina(app: dict) -> st.Page:
@@ -196,7 +207,7 @@ def crear_pagina(app: dict) -> st.Page:
 
 
 def construir_paginas() -> dict[str, list[st.Page]]:
-    """Construye las dos páginas en la barra lateral, sin página de inicio."""
+    """Construye las tres páginas en la barra lateral, sin página de inicio."""
     return {
         "Flujo de liberación": [
             crear_pagina(app)
@@ -221,9 +232,10 @@ if apps_faltantes:
         st.write(f"**{nombre}:** `{ruta}`")
 
     st.info(
-        "Los tres archivos deben estar dentro de la misma carpeta: "
-        "`00_APP_FLUJO_LIBERACION.py`, `01_CARGAR_ARCHIVO_FLUJO.py` y "
-        "`02_APP_SIMULADOR_ALEATORIO.py`."
+        "Los cuatro archivos deben estar dentro de la misma carpeta: "
+        "`00_APP_FLUJO_LIBERACION.py`, `01_CARGAR_ARCHIVO_FLUJO.py`, "
+        "`02_APP_SIMULADOR_ALEATORIO.py` y "
+        "`03_APP_MODIFICACION_LIBERADORES.py`."
     )
     st.stop()
 
@@ -235,8 +247,11 @@ if apps_faltantes:
 paginas = construir_paginas()
 
 # Navegación lateral, igual que en el portal TAT original.
-# No se agrega una página de Inicio: solo aparecen Carga y Simulación.
-pagina_seleccionada = st.navigation(paginas, position="sidebar")
+# No se agrega una página de Inicio.
+pagina_seleccionada = st.navigation(
+    paginas,
+    position="sidebar",
+)
 
 
 # ============================================================
