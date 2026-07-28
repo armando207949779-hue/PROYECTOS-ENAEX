@@ -721,6 +721,10 @@ st.caption(
 # ============================================================
 
 st.markdown("### Ahorro real mensual y acumulado")
+st.caption(
+    "Las barras muestran el ahorro logrado en cada mes y la línea muestra "
+    "el avance acumulado durante el período filtrado."
+)
 
 df_acum = df_real_filtrado.copy()
 
@@ -737,6 +741,7 @@ df_ahorro_acumulado = (
     .sum()
     .rename(columns={"Ahorro_Real_kUSD_num": "Ahorro_Real_Mensual_kUSD"})
     .sort_values("Mes_Registro")
+    .reset_index(drop=True)
 )
 
 if df_ahorro_acumulado.empty:
@@ -750,74 +755,225 @@ else:
         df_ahorro_acumulado["Mes_Registro"].dt.strftime("%Y-%m")
     )
 
-    fig, ax1 = plt.subplots(figsize=(13, 5.8))
+    ahorro_promedio_mensual = df_ahorro_acumulado["Ahorro_Real_Mensual_kUSD"].mean()
+    mejor_mes_idx = df_ahorro_acumulado["Ahorro_Real_Mensual_kUSD"].idxmax()
+    mejor_mes = df_ahorro_acumulado.loc[mejor_mes_idx, "AñoMes"]
+    mejor_mes_valor = df_ahorro_acumulado.loc[
+        mejor_mes_idx,
+        "Ahorro_Real_Mensual_kUSD"
+    ]
+    ahorro_acumulado_final = df_ahorro_acumulado[
+        "Ahorro_Real_Acumulado_kUSD"
+    ].iloc[-1]
+
+    resumen_col1, resumen_col2, resumen_col3 = st.columns(3)
+
+    with resumen_col1:
+        kpi_card(
+            "Promedio mensual",
+            formato_kusd(ahorro_promedio_mensual),
+            "Promedio del ahorro real mensual en el período."
+        )
+
+    with resumen_col2:
+        kpi_card(
+            "Mejor mes",
+            mejor_mes,
+            f"{mejor_mes_valor:,.1f} kUSD de ahorro real."
+        )
+
+    with resumen_col3:
+        kpi_card(
+            "Acumulado del período",
+            formato_kusd(ahorro_acumulado_final),
+            "Ahorro real acumulado al último mes visible."
+        )
+
+    fig, ax1 = plt.subplots(figsize=(14, 6.4))
+    fig.patch.set_facecolor("#FFFFFF")
+    ax1.set_facecolor("#FFFFFF")
+
+    posiciones = range(len(df_ahorro_acumulado))
 
     bars = ax1.bar(
-        df_ahorro_acumulado["Mes_Registro"],
+        posiciones,
         df_ahorro_acumulado["Ahorro_Real_Mensual_kUSD"],
-        width=18,
-        alpha=0.35,
-        color="#93C5FD",
+        width=0.64,
+        color="#BFDBFE",
         edgecolor="#60A5FA",
-        linewidth=0.8,
-        label="Mensual"
+        linewidth=1.0,
+        label="Ahorro mensual",
+        zorder=2
     )
 
-    ax1.set_ylabel("Mensual [kUSD]")
+    ax1.set_ylabel("Ahorro mensual [kUSD]", fontweight="bold")
+    ax1.set_xlabel("Mes", fontweight="bold")
+    ax1.set_xticks(list(posiciones))
+    ax1.set_xticklabels(
+        df_ahorro_acumulado["AñoMes"],
+        rotation=45,
+        ha="right"
+    )
+    ax1.yaxis.set_major_formatter(mticker.StrMethodFormatter("{x:,.0f}"))
 
     ax2 = ax1.twinx()
 
     ax2.plot(
-        df_ahorro_acumulado["Mes_Registro"],
+        posiciones,
         df_ahorro_acumulado["Ahorro_Real_Acumulado_kUSD"],
         marker="o",
-        linewidth=2.5,
+        markersize=6,
+        markerfacecolor="#FFFFFF",
+        markeredgewidth=2,
+        linewidth=2.8,
         color="#1D4ED8",
-        label="Acumulado"
+        label="Ahorro acumulado",
+        zorder=4
     )
 
-    ax2.set_ylabel("Acumulado [kUSD]")
+    ax2.fill_between(
+        posiciones,
+        df_ahorro_acumulado["Ahorro_Real_Acumulado_kUSD"],
+        alpha=0.06,
+        color="#1D4ED8",
+        zorder=1
+    )
 
-    ultimo_mes = df_ahorro_acumulado["Mes_Registro"].iloc[-1]
-    ultimo_valor = df_ahorro_acumulado["Ahorro_Real_Acumulado_kUSD"].iloc[-1]
+    ax2.set_ylabel("Ahorro acumulado [kUSD]", fontweight="bold")
+    ax2.yaxis.set_major_formatter(mticker.StrMethodFormatter("{x:,.0f}"))
 
-    max_mensual = df_ahorro_acumulado["Ahorro_Real_Mensual_kUSD"].max()
-    max_acumulado = df_ahorro_acumulado["Ahorro_Real_Acumulado_kUSD"].max()
+    max_mensual = max(
+        float(df_ahorro_acumulado["Ahorro_Real_Mensual_kUSD"].max()),
+        0
+    )
+    max_acumulado = max(
+        float(df_ahorro_acumulado["Ahorro_Real_Acumulado_kUSD"].max()),
+        0
+    )
 
-    margen_mensual = max_mensual * 0.20 if max_mensual > 0 else 1
-    margen_acumulado = max_acumulado * 0.22 if max_acumulado > 0 else 1
+    margen_mensual = max(max_mensual * 0.25, 1)
+    margen_acumulado = max(max_acumulado * 0.20, 1)
 
     ax1.set_ylim(0, max_mensual + margen_mensual)
     ax2.set_ylim(0, max_acumulado + margen_acumulado)
 
+    # Etiquetas solo en los tres meses con mayor ahorro para evitar saturación.
+    top_meses_indices = (
+        df_ahorro_acumulado["Ahorro_Real_Mensual_kUSD"]
+        .nlargest(min(3, len(df_ahorro_acumulado)))
+        .index
+    )
+
+    for i in top_meses_indices:
+        bar = bars[i]
+        valor = df_ahorro_acumulado.loc[i, "Ahorro_Real_Mensual_kUSD"]
+
+        ax1.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() + margen_mensual * 0.06,
+            f"{valor:,.1f}",
+            ha="center",
+            va="bottom",
+            fontsize=9,
+            fontweight="bold",
+            color="#1E3A8A"
+        )
+
+    ultimo_indice = len(df_ahorro_acumulado) - 1
+    ultimo_valor = df_ahorro_acumulado[
+        "Ahorro_Real_Acumulado_kUSD"
+    ].iloc[-1]
+
     ax2.annotate(
-        f"{ultimo_valor:,.1f} kUSD",
-        xy=(ultimo_mes, ultimo_valor),
-        xytext=(-10, 22),
+        f"Acumulado: {ultimo_valor:,.1f} kUSD",
+        xy=(ultimo_indice, ultimo_valor),
+        xytext=(-18, 24),
         textcoords="offset points",
         fontsize=10,
         fontweight="bold",
-        color="#111827",
+        color="#1D4ED8",
         ha="right",
-        arrowprops=dict(arrowstyle="->", lw=1.0, color="#111827")
+        bbox={
+            "boxstyle": "round,pad=0.35",
+            "facecolor": "#EFF6FF",
+            "edgecolor": "#93C5FD"
+        },
+        arrowprops={
+            "arrowstyle": "->",
+            "lw": 1.2,
+            "color": "#1D4ED8"
+        }
     )
 
-    ax1.set_title("Ahorro real mensual y acumulado", fontsize=14, fontweight="bold", pad=14)
-    ax1.set_xlabel("Mes")
-    ax1.set_xticks(df_ahorro_acumulado["Mes_Registro"])
-    ax1.set_xticklabels(df_ahorro_acumulado["AñoMes"], rotation=45, ha="right")
+    ax1.set_title(
+        "Evolución del ahorro real",
+        fontsize=15,
+        fontweight="bold",
+        pad=16,
+        loc="left"
+    )
 
-    ax1.yaxis.set_major_formatter(mticker.StrMethodFormatter("{x:,.0f}"))
-    ax2.yaxis.set_major_formatter(mticker.StrMethodFormatter("{x:,.0f}"))
+    ax1.grid(
+        axis="y",
+        linestyle="--",
+        linewidth=0.7,
+        alpha=0.25,
+        color="#9CA3AF"
+    )
 
-    limpiar_estilo_grafico_doble_eje(ax1, ax2)
+    ax1.spines["top"].set_visible(False)
+    ax1.spines["right"].set_visible(False)
+    ax1.spines["left"].set_color("#D1D5DB")
+    ax1.spines["bottom"].set_color("#D1D5DB")
+
+    ax2.spines["top"].set_visible(False)
+    ax2.spines["left"].set_visible(False)
+    ax2.spines["right"].set_color("#D1D5DB")
+    ax2.spines["bottom"].set_visible(False)
+
+    ax1.tick_params(axis="x", colors="#374151")
+    ax1.tick_params(axis="y", colors="#374151")
+    ax2.tick_params(axis="y", colors="#374151")
 
     handles1, labels1 = ax1.get_legend_handles_labels()
     handles2, labels2 = ax2.get_legend_handles_labels()
-    ax1.legend(handles1 + handles2, labels1 + labels2, loc="upper left", frameon=False)
+
+    ax1.legend(
+        handles1 + handles2,
+        labels1 + labels2,
+        loc="upper left",
+        frameon=False,
+        ncol=2,
+        bbox_to_anchor=(0, 1.01)
+    )
 
     fig.tight_layout()
     st.pyplot(fig, clear_figure=True)
+
+    with st.expander("Ver detalle mensual y acumulado", expanded=True):
+        mostrar_tabla_profesional(
+            df_ahorro_acumulado,
+            columnas=[
+                "Mes_Registro",
+                "Ahorro_Real_Mensual_kUSD",
+                "Ahorro_Real_Acumulado_kUSD"
+            ],
+            nombres={
+                "Mes_Registro": "Mes",
+                "Ahorro_Real_Mensual_kUSD": "Ahorro mensual",
+                "Ahorro_Real_Acumulado_kUSD": "Ahorro acumulado"
+            },
+            orden_por="Mes_Registro",
+            ascendente=True,
+            column_config={
+                "Ahorro mensual": st.column_config.NumberColumn(
+                    format="%.1f kUSD"
+                ),
+                "Ahorro acumulado": st.column_config.NumberColumn(
+                    format="%.1f kUSD"
+                )
+            }
+        )
 
 st.markdown("---")
 
@@ -1060,11 +1216,25 @@ df_progreso_gestor["Cumplimiento"] = df_progreso_gestor.apply(
     axis=1
 )
 
-df_progreso_gestor["Cumplimiento_%"] = df_progreso_gestor["Cumplimiento"] * 100
-df_progreso_gestor["Cumplimiento_Grafico_%"] = df_progreso_gestor["Cumplimiento_%"].clip(upper=100)
+df_progreso_gestor["Cumplimiento_Total_%"] = (
+    df_progreso_gestor["Cumplimiento"] * 100
+)
+
+df_progreso_gestor["Cumplimiento_%"] = (
+    df_progreso_gestor["Cumplimiento_Total_%"]
+    .clip(lower=0, upper=100)
+)
+
+df_progreso_gestor["Sobrecumplimiento_%"] = (
+    df_progreso_gestor["Cumplimiento_Total_%"] - 100
+).clip(lower=0)
+
+df_progreso_gestor["Cumplimiento_Grafico_%"] = (
+    df_progreso_gestor["Cumplimiento_%"]
+)
 
 df_progreso_gestor = df_progreso_gestor.sort_values(
-    "Cumplimiento_%",
+    "Cumplimiento_Total_%",
     ascending=True
 ).reset_index(drop=True)
 
@@ -1091,7 +1261,7 @@ else:
 
     colores_cumplimiento = [
         "#4ADE80" if valor >= 100 else "#DC2626"
-        for valor in df_progreso_gestor["Cumplimiento_%"]
+        for valor in df_progreso_gestor["Cumplimiento_Total_%"]
     ]
 
     ax.barh(
@@ -1111,7 +1281,7 @@ else:
         alpha=0.8
     )
 
-    max_cumplimiento = df_progreso_gestor["Cumplimiento_%"].max()
+    max_cumplimiento = df_progreso_gestor["Cumplimiento_Total_%"].max()
     limite_x = max(150, min(max_cumplimiento + 35, 240))
 
     ax.set_xlim(0, limite_x)
@@ -1122,7 +1292,7 @@ else:
 
     for i, row in df_progreso_gestor.iterrows():
         texto = (
-            f"{row['Cumplimiento_%']:.1f}% | "
+            f"{row['Cumplimiento_Total_%']:.1f}% | "
             f"{row['Ahorro_Real_Total_kUSD']:,.0f} / "
             f"{row['Ahorro_Planificado_Total_kUSD']:,.0f} kUSD"
         )
@@ -1293,38 +1463,68 @@ st.caption(
 )
 
 with st.expander("Cumplimiento por gestor", expanded=True):
-    mostrar_tabla_profesional(
-        df_progreso_gestor,
-        columnas=[
-            "Gestor",
-            "Ahorro_Planificado_Total_kUSD",
-            "Ahorro_Real_Total_kUSD",
-            "Cumplimiento_%"
-        ],
-        nombres={
-            "Gestor": "Gestor",
-            "Ahorro_Planificado_Total_kUSD": "Planificado",
-            "Ahorro_Real_Total_kUSD": "Ahorro real",
-            "Cumplimiento_%": "Cumplimiento"
-        },
-        orden_por="Cumplimiento_%",
-        ascendente=False,
-        column_config={
-            "Planificado": st.column_config.NumberColumn(format="%.1f kUSD"),
-            "Ahorro real": st.column_config.NumberColumn(format="%.1f kUSD"),
-            "Cumplimiento": st.column_config.ProgressColumn(
-                format="%.1f%%",
-                min_value=0,
-                max_value=max(
-                    100.0,
-                    float(df_progreso_gestor["Cumplimiento_%"].max())
-                    if not df_progreso_gestor.empty else 100.0
-                )
-            )
-        }
+    tabla_cumplimiento = (
+        df_progreso_gestor[
+            [
+                "Gestor",
+                "Ahorro_Planificado_Total_kUSD",
+                "Ahorro_Real_Total_kUSD",
+                "Cumplimiento_%",
+                "Sobrecumplimiento_%",
+                "Cumplimiento_Total_%"
+            ]
+        ]
+        .sort_values("Cumplimiento_Total_%", ascending=False)
+        .drop(columns=["Cumplimiento_Total_%"])
+        .rename(
+            columns={
+                "Ahorro_Planificado_Total_kUSD": "Planificado",
+                "Ahorro_Real_Total_kUSD": "Ahorro real",
+                "Cumplimiento_%": "Cumplimiento",
+                "Sobrecumplimiento_%": "Sobrecumplimiento"
+            }
+        )
+        .reset_index(drop=True)
     )
 
-with st.expander("Ahorro por tipo de proceso", expanded=False):
+    max_sobrecumplimiento = max(
+        10.0,
+        float(tabla_cumplimiento["Sobrecumplimiento"].max())
+        if not tabla_cumplimiento.empty else 10.0
+    )
+
+    tabla_cumplimiento_estilizada = (
+        tabla_cumplimiento.style
+        .format(
+            {
+                "Planificado": "{:,.1f} kUSD",
+                "Ahorro real": "{:,.1f} kUSD",
+                "Cumplimiento": "{:.1f}%",
+                "Sobrecumplimiento": "{:.1f}%"
+            },
+            na_rep=""
+        )
+        .bar(
+            subset=["Cumplimiento"],
+            color="#93C5FD",
+            vmin=0,
+            vmax=100
+        )
+        .bar(
+            subset=["Sobrecumplimiento"],
+            color="#86EFAC",
+            vmin=0,
+            vmax=max_sobrecumplimiento
+        )
+    )
+
+    st.dataframe(
+        tabla_cumplimiento_estilizada,
+        use_container_width=True,
+        hide_index=True
+    )
+
+with st.expander("Ahorro por tipo de proceso", expanded=True):
     tabla_proceso = df_ahorro_proceso.copy()
     total_proceso = tabla_proceso["Ahorro_Real_Total_kUSD"].sum()
     tabla_proceso["Participacion_%"] = (
@@ -1348,41 +1548,16 @@ with st.expander("Ahorro por tipo de proceso", expanded=False):
         orden_por="Ahorro_Real_Total_kUSD",
         ascendente=False,
         column_config={
-            "Ahorro real": st.column_config.NumberColumn(format="%.1f kUSD"),
-            "Participación": st.column_config.NumberColumn(format="%.1f%%")
+            "Ahorro real": st.column_config.NumberColumn(
+                format="%.1f kUSD"
+            ),
+            "Participación": st.column_config.NumberColumn(
+                format="%.1f%%"
+            )
         }
     )
 
-with st.expander("Registro de contratos filtrado", expanded=False):
-    mostrar_tabla_profesional(
-        df_real_filtrado,
-        columnas=[
-            "Fecha_Registro",
-            "Contratista",
-            "Categoria",
-            "Gestor",
-            "Tipo_Proceso",
-            "LineaBase_kUSD_num",
-            "Ahorro_Real_kUSD_num"
-        ],
-        nombres={
-            "Fecha_Registro": "Fecha",
-            "Contratista": "Contratista",
-            "Categoria": "Categoría",
-            "Gestor": "Gestor",
-            "Tipo_Proceso": "Tipo de proceso",
-            "LineaBase_kUSD_num": "Línea base",
-            "Ahorro_Real_kUSD_num": "Ahorro real"
-        },
-        orden_por="Fecha_Registro",
-        ascendente=False,
-        column_config={
-            "Línea base": st.column_config.NumberColumn(format="%.1f kUSD"),
-            "Ahorro real": st.column_config.NumberColumn(format="%.1f kUSD")
-        }
-    )
-
-with st.expander("Plan de ahorro por gestor", expanded=False):
+with st.expander("Plan de ahorro por gestor", expanded=True):
     mostrar_tabla_profesional(
         df_plan,
         columnas=[
@@ -1401,4 +1576,3 @@ with st.expander("Plan de ahorro por gestor", expanded=False):
             )
         }
     )
-
