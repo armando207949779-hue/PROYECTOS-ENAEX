@@ -1,10 +1,10 @@
 # ============================================================
-# 00_APP_FLUJO_LIBERACION_SERVICIOS
+# 00_APP_FLUJO_LIBERACION
 # Portal principal de Flujo de Liberación de Servicios
 #
 # Orden de módulos:
 # 01 Cargar Archivo
-# 02 Simulador Aleatorio
+# 03 Simulador Aleatorio
 # ============================================================
 
 from __future__ import annotations
@@ -47,13 +47,13 @@ APP_SECTIONS = [
         ],
     },
     {
-        "grupo": "02 Simulación",
+        "grupo": "03 Simulación",
         "descripcion": "Consulta y simulación de rutas de liberación usando el archivo activo.",
         "apps": [
             {
-                "nombre": "02_APP_SIMULADOR_ALEATORIO",
-                "archivo": "02_APP_SIMULADOR_ALEATORIO.py",
-                "titulo": "02 Simulador Aleatorio",
+                "nombre": "03_APP_SIMULADOR_ALEATORIO",
+                "archivo": "03_APP_SIMULADOR_ALEATORIO.py",
+                "titulo": "03 Simulador Aleatorio",
                 "icono": "🎲",
                 "descripcion": "Genera casos aleatorios o busca un flujo por CECO, tipo y monto.",
             }
