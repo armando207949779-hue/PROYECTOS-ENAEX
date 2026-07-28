@@ -799,8 +799,8 @@ else:
         posiciones,
         df_ahorro_acumulado["Ahorro_Real_Mensual_kUSD"],
         width=0.64,
-        color="#FDE68A",
-        edgecolor="#F59E0B",
+        color="#93C5FD",
+        edgecolor="#2563EB",
         linewidth=1.0,
         label="Ahorro mensual",
         zorder=2
@@ -826,7 +826,7 @@ else:
         markerfacecolor="#FFFFFF",
         markeredgewidth=2,
         linewidth=2.8,
-        color="#B45309",
+        color="#1D4ED8",
         label="Ahorro acumulado",
         zorder=4
     )
@@ -835,7 +835,7 @@ else:
         posiciones,
         df_ahorro_acumulado["Ahorro_Real_Acumulado_kUSD"],
         alpha=0.06,
-        color="#B45309",
+        color="#1D4ED8",
         zorder=1
     )
 
@@ -891,17 +891,17 @@ else:
         textcoords="offset points",
         fontsize=10,
         fontweight="bold",
-        color="#B45309",
+        color="#1D4ED8",
         ha="right",
         bbox={
             "boxstyle": "round,pad=0.35",
             "facecolor": "#FFFBEB",
-            "edgecolor": "#FCD34D"
+            "edgecolor": "#60A5FA"
         },
         arrowprops={
             "arrowstyle": "->",
             "lw": 1.2,
-            "color": "#B45309"
+            "color": "#1D4ED8"
         }
     )
 
@@ -1039,7 +1039,7 @@ else:
             autopct=lambda p: f"{p:.1f}%" if p >= 3 else "",
             startangle=90,
             pctdistance=0.78,
-            colors=["#D97706", "#F59E0B", "#FCD34D", "#A3A3A3"][:len(df_donut)],
+            colors=["#1D4ED8", "#2563EB", "#60A5FA", "#A3A3A3"][:len(df_donut)],
             wedgeprops={
                 "width": 0.36,
                 "edgecolor": "white"
@@ -1148,14 +1148,14 @@ else:
     fig.patch.set_facecolor("#FFFFFF")
     ax.set_facecolor("#FFFFFF")
 
-    colores = ["#FDE68A", "#FCD34D", "#F59E0B", "#D97706"]
+    colores = ["#DBEAFE", "#93C5FD", "#60A5FA", "#2563EB"]
     colores_barras = colores[-len(df_ahorro_proceso_bar):]
 
     bars = ax.barh(
         df_ahorro_proceso_bar["Tipo_Proceso"],
         df_ahorro_proceso_bar["Ahorro_Real_Total_kUSD"],
         color=colores_barras,
-        edgecolor="#B45309",
+        edgecolor="#1D4ED8",
         linewidth=0.8,
         height=0.62
     )
@@ -1277,7 +1277,7 @@ else:
     )
 
     colores_base = [
-        "#F59E0B" if valor >= 100 else "#F97316"
+        "#2563EB" if valor >= 100 else "#DC2626"
         for valor in df_progreso_gestor["Cumplimiento_Total_%"]
     ]
 
@@ -1292,7 +1292,7 @@ else:
         df_progreso_gestor["Gestor"],
         df_progreso_gestor["Sobrecumplimiento_%"],
         left=100,
-        color="#65A30D", edgecolor="#4D7C0F", linewidth=0.8, height=0.62,
+        color="#4ADE80", edgecolor="#22C55E", linewidth=0.8, height=0.62,
         label="Sobrecumplimiento"
     )
 
@@ -1318,9 +1318,9 @@ else:
     from matplotlib.patches import Patch
     ax.legend(
         handles=[
-            Patch(facecolor="#F59E0B", edgecolor="#F59E0B", label="Meta alcanzada"),
-            Patch(facecolor="#F97316", edgecolor="#F97316", label="Bajo la meta"),
-            Patch(facecolor="#65A30D", edgecolor="#4D7C0F", label="Sobrecumplimiento"),
+            Patch(facecolor="#2563EB", edgecolor="#2563EB", label="Meta alcanzada"),
+            Patch(facecolor="#DC2626", edgecolor="#DC2626", label="Bajo la meta"),
+            Patch(facecolor="#4ADE80", edgecolor="#22C55E", label="Sobrecumplimiento"),
             Patch(facecolor="#F3F4F6", edgecolor="#E5E7EB", label="Meta 100%"),
         ],
         loc="lower right", frameon=False, ncol=2
@@ -1374,8 +1374,8 @@ else:
     bars = ax.barh(
         df_top_contratos_plot["Contrato_Label"],
         df_top_contratos_plot["Ahorro_Real_kUSD_num"],
-        color="#D97706",
-        edgecolor="#B45309",
+        color="#2563EB",
+        edgecolor="#1D4ED8",
         linewidth=0.8
     )
 
@@ -1506,13 +1506,13 @@ with st.expander("Cumplimiento por gestor", expanded=True):
         )
         .bar(
             subset=["Cumplimiento"],
-            color="#F59E0B",
+            color="#2563EB",
             vmin=0,
             vmax=100
         )
         .bar(
             subset=["Sobrecumplimiento"],
-            color="#65A30D",
+            color="#4ADE80",
             vmin=0,
             vmax=max_sobrecumplimiento
         )
@@ -1547,7 +1547,7 @@ with st.expander("Ahorro por tipo de proceso", expanded=True):
     tabla_proceso_estilizada = (
         tabla_proceso_visual.style
         .format({"Ahorro real": "{:,.1f} kUSD", "Participación": "{:.1f}%"}, na_rep="")
-        .bar(subset=["Participación"], color="#FCD34D", vmin=0, vmax=100)
+        .bar(subset=["Participación"], color="#60A5FA", vmin=0, vmax=100)
     )
 
     st.dataframe(
