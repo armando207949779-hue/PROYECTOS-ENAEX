@@ -2,12 +2,12 @@
 # APP_CARGAR_ARCHIVO_MEJORADO_SHAREPOINT.py
 # 01_CARGA_ARCHIVOS
 # Carga manual o desde SharePoint con clave
-# Carga, validación y visualización compacta de archivos
+# Admite nombres con fecha final: _YYYYMMDD
+# Ejemplo: 01_BD_Moneda_Cambio_20260728.xlsx
 # ============================================================
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from io import BytesIO, StringIO
 from pathlib import Path
 from urllib.parse import urlparse, unquote
@@ -40,9 +40,16 @@ LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
 
 # ============================================================
 # Archivos esperados
+#
+# Los archivos reales pueden incorporar una fecha al final:
+#   01_BD_Moneda_Cambio_20260728.xlsx
+#   02_ME2N_Ordenes_20260728.csv
+#
+# También se acepta el nombre sin fecha.
+#
 # IMPORTANTE:
-# El orden de este diccionario se usa para asociar las URLs
-# de SharePoint configuradas en secrets.toml.
+# El orden del diccionario se utiliza para asociar las URLs de
+# SharePoint configuradas en secrets.toml.
 # ============================================================
 
 ARCHIVOS_ESPERADOS: dict[str, str] = {
@@ -60,20 +67,7 @@ ARCHIVOS_ESPERADOS: dict[str, str] = {
 }
 
 EXTENSIONES_PERMITIDAS = ["csv", "xlsx", "xls", "parquet"]
-
-
-@dataclass
-class ResultadoCarga:
-    dataframe: str
-    archivo: str
-    filas: int | None = None
-    columnas: int | None = None
-    peso_kb: float | None = None
-    encoding: str | None = None
-    separador: str | None = None
-    origen: str | None = None
-    estado: str = "Pendiente"
-    error: str | None = None
+PATRON_FECHA_ARCHIVO = re.compile(r"_(\d{8})$", flags=re.IGNORECASE)
 
 
 # ============================================================
@@ -95,7 +89,7 @@ for key, value in DEFAULT_SESSION_STATE.items():
 
 
 def limpiar_estado_carga() -> None:
-    """Limpia solo la información generada por la carga."""
+    """Limpia únicamente la información generada por la carga."""
     st.session_state["dataframes_cargados"] = {}
     st.session_state["config_carga"] = {}
     st.session_state["df_validacion_archivos"] = pd.DataFrame()
@@ -103,8 +97,7 @@ def limpiar_estado_carga() -> None:
     st.session_state["carga_completada"] = False
     st.session_state["metodo_carga_activo"] = None
 
-    # También elimina accesos directos tipo st.session_state["df_me3n"]
-    for nombre_df in ARCHIVOS_ESPERADOS.keys():
+    for nombre_df in ARCHIVOS_ESPERADOS:
         st.session_state.pop(nombre_df, None)
 
 
@@ -122,10 +115,141 @@ def guardar_dataframes_en_sesion(
     st.session_state["carga_completada"] = True
     st.session_state["metodo_carga_activo"] = metodo
 
-    # Accesos directos para otros módulos:
-    # st.session_state["df_moneda_cambio"], st.session_state["df_me3n"], etc.
     for nombre_df, df in dataframes.items():
         st.session_state[nombre_df] = df
+
+
+# ============================================================
+# Nombres y fechas de archivos
+# ============================================================
+
+def analizar_nombre_archivo(nombre_archivo: str) -> dict[str, object]:
+    """
+    Separa nombre base, extensión y fecha final YYYYMMDD.
+
+    Ejemplo:
+        01_BD_Moneda_Cambio_20260728.xlsx
+
+    Devuelve:
+        nombre_base: 01_BD_Moneda_Cambio
+        extension: .xlsx
+        fecha_archivo: Timestamp('2026-07-28')
+        fecha_archivo_iso: 2026-07-28
+        fecha_archivo_texto: 28/07/2026
+    """
+    nombre_limpio = unquote(Path(str(nombre_archivo)).name).strip()
+    ruta = Path(nombre_limpio)
+    extension = ruta.suffix.lower()
+    stem = ruta.stem.strip()
+
+    coincidencia = PATRON_FECHA_ARCHIVO.search(stem)
+    fecha = pd.NaT
+    nombre_base = stem
+
+    if coincidencia:
+        texto_fecha = coincidencia.group(1)
+        fecha_convertida = pd.to_datetime(
+            texto_fecha,
+            format="%Y%m%d",
+            errors="coerce",
+        )
+
+        if not pd.isna(fecha_convertida):
+            fecha = fecha_convertida
+            nombre_base = stem[:coincidencia.start()].rstrip("_- ")
+
+    return {
+        "nombre_original": nombre_limpio,
+        "nombre_base": nombre_base,
+        "nombre_base_normalizado": nombre_base.casefold(),
+        "extension": extension,
+        "fecha_archivo": fecha,
+        "fecha_archivo_iso": (
+            fecha.strftime("%Y-%m-%d") if not pd.isna(fecha) else None
+        ),
+        "fecha_archivo_texto": (
+            fecha.strftime("%d/%m/%Y") if not pd.isna(fecha) else "Sin fecha"
+        ),
+    }
+
+
+def nombre_corresponde(
+    nombre_real: str,
+    nombre_esperado: str,
+) -> bool:
+    """
+    Compara nombres ignorando una fecha final _YYYYMMDD.
+
+    La extensión debe coincidir, excepto que ambos formatos pertenezcan
+    al grupo Excel (.xlsx/.xls).
+    """
+    real = analizar_nombre_archivo(nombre_real)
+    esperado = analizar_nombre_archivo(nombre_esperado)
+
+    if real["nombre_base_normalizado"] != esperado["nombre_base_normalizado"]:
+        return False
+
+    ext_real = str(real["extension"])
+    ext_esperada = str(esperado["extension"])
+
+    grupo_excel = {".xlsx", ".xls"}
+
+    if ext_real == ext_esperada:
+        return True
+
+    if ext_real in grupo_excel and ext_esperada in grupo_excel:
+        return True
+
+    return False
+
+
+def seleccionar_version_mas_reciente(archivos: list[object]) -> object:
+    """
+    Si se suben varias versiones del mismo archivo, selecciona:
+    1. La de fecha YYYYMMDD más reciente.
+    2. Si ninguna tiene fecha, la última de la lista.
+    """
+    if not archivos:
+        raise ValueError("No hay archivos para seleccionar.")
+
+    def clave(archivo: object) -> tuple[int, pd.Timestamp]:
+        info = analizar_nombre_archivo(getattr(archivo, "name", ""))
+        fecha = info["fecha_archivo"]
+
+        if pd.isna(fecha):
+            return (0, pd.Timestamp.min)
+
+        return (1, pd.Timestamp(fecha))
+
+    return max(archivos, key=clave)
+
+
+def construir_mapa_archivos(
+    archivos_seleccionados,
+) -> dict[str, object]:
+    """
+    Asocia cada nombre esperado con el archivo real correspondiente.
+
+    Acepta:
+        01_BD_Moneda_Cambio.xlsx
+        01_BD_Moneda_Cambio_20260728.xlsx
+
+    Si hay varias fechas del mismo archivo, conserva la más reciente.
+    """
+    archivos = list(archivos_seleccionados or [])
+    mapa: dict[str, object] = {}
+
+    for nombre_esperado in ARCHIVOS_ESPERADOS.values():
+        candidatos = [
+            archivo
+            for archivo in archivos
+            if nombre_corresponde(archivo.name, nombre_esperado)
+        ]
+
+        if candidatos:
+            mapa[nombre_esperado] = seleccionar_version_mas_reciente(candidatos)
+
+    return mapa
 
 
 # ============================================================
@@ -137,7 +261,9 @@ def mostrar_logo_centrado() -> None:
         return
 
     logo_svg = LOGO_PATH.read_text(encoding="utf-8")
-    logo_base64 = base64.b64encode(logo_svg.encode("utf-8")).decode("utf-8")
+    logo_base64 = base64.b64encode(
+        logo_svg.encode("utf-8")
+    ).decode("utf-8")
 
     st.markdown(
         f"""
@@ -174,10 +300,10 @@ def calcular_sha256(texto: str) -> str:
 def obtener_hash_clave_sharepoint() -> str:
     try:
         clave_hash = st.secrets["sharepoint_archivos"]["access_key_sha256"]
-    except Exception:
+    except Exception as exc:
         raise ValueError(
             "No se encontró sharepoint_archivos.access_key_sha256 en Secrets."
-        )
+        ) from exc
 
     clave_hash = str(clave_hash).strip()
 
@@ -200,8 +326,10 @@ def validar_clave_sharepoint(clave_ingresada: str) -> bool:
 def obtener_urls_sharepoint() -> list[str]:
     try:
         urls = st.secrets["sharepoint_archivos"]["urls"]
-    except Exception:
-        raise ValueError("No se encontró sharepoint_archivos.urls en Secrets.")
+    except Exception as exc:
+        raise ValueError(
+            "No se encontró sharepoint_archivos.urls en Secrets."
+        ) from exc
 
     urls = [str(url).strip() for url in urls if str(url).strip()]
 
@@ -243,8 +371,6 @@ def limpiar_valor_csv(valor: object) -> object:
 
     texto = valor.strip()
 
-    # Algunos CSV descargados desde Excel/SharePoint quedan con apóstrofes
-    # como envoltorio de campos: 'valor';'valor2'
     if len(texto) >= 2 and texto[0] == "'" and texto[-1] == "'":
         texto = texto[1:-1].strip()
 
@@ -258,22 +384,17 @@ def construir_df_desde_texto_csv(
 ) -> tuple[pd.DataFrame, dict[str, str]]:
     texto = texto.replace("\ufeff", "").replace("\x00", "")
 
-    lineas = [
-        linea
-        for linea in texto.splitlines()
-        if linea.strip()
-    ]
+    lineas = [linea for linea in texto.splitlines() if linea.strip()]
 
     if not lineas:
         raise ValueError("El archivo no contiene líneas legibles.")
 
     candidatos_sep = [";", ",", "\t", "|"]
-
-    puntajes = {}
     muestra = lineas[:50]
-
-    for sep in candidatos_sep:
-        puntajes[sep] = sum(linea.count(sep) for linea in muestra)
+    puntajes = {
+        sep: sum(linea.count(sep) for linea in muestra)
+        for sep in candidatos_sep
+    }
 
     mejor_sep = max(puntajes, key=puntajes.get)
 
@@ -282,7 +403,7 @@ def construir_df_desde_texto_csv(
             "No se detectó separador CSV válido en las primeras líneas."
         )
 
-    filas = []
+    filas: list[list[object]] = []
 
     lector = csv.reader(
         StringIO("\n".join(lineas)),
@@ -294,10 +415,7 @@ def construir_df_desde_texto_csv(
     )
 
     for fila in lector:
-        fila_limpia = [
-            limpiar_valor_csv(celda)
-            for celda in fila
-        ]
+        fila_limpia = [limpiar_valor_csv(celda) for celda in fila]
 
         if any(str(celda).strip() for celda in fila_limpia):
             filas.append(fila_limpia)
@@ -323,8 +441,8 @@ def construir_df_desde_texto_csv(
         for col in filas_normalizadas[0]
     ]
 
-    encabezados_limpios = []
-    usados = {}
+    encabezados_limpios: list[str] = []
+    usados: dict[str, int] = {}
 
     for i, col in enumerate(encabezados, start=1):
         nombre_col = col if col else f"columna_{i}"
@@ -338,7 +456,6 @@ def construir_df_desde_texto_csv(
         encabezados_limpios.append(nombre_col)
 
     datos = filas_normalizadas[1:]
-
     df = pd.DataFrame(datos, columns=encabezados_limpios)
     df = df.dropna(axis=1, how="all")
 
@@ -368,10 +485,8 @@ def leer_csv_robusto_bytes(
     ]
 
     separadores = [";", ",", "\t", "|", None]
-
     errores: list[str] = []
 
-    # 1) Primero intenta pandas con combinaciones normales.
     mejor_df: pd.DataFrame | None = None
     mejor_config: dict[str, str] | None = None
     mejor_score = -1
@@ -404,33 +519,30 @@ def leer_csv_robusto_bytes(
                 errores.append(
                     f"pandas encoding={encoding} sep={sep}: {exc}"
                 )
-                continue
 
     if mejor_df is not None and mejor_config is not None:
         return limpiar_columnas(mejor_df), mejor_config
 
-    # 2) Si pandas no logra separar, decodifica texto y usa csv.reader.
     for encoding in encodings:
         try:
             texto = contenido.decode(encoding, errors="replace")
-            df, config = construir_df_desde_texto_csv(
+            return construir_df_desde_texto_csv(
                 texto=texto,
                 nombre_archivo=nombre_archivo,
                 encoding=encoding,
             )
-            return df, config
-
         except Exception as exc:
             errores.append(f"csv.reader encoding={encoding}: {exc}")
-            continue
 
-    # 3) Diagnóstico compacto para saber qué está llegando desde SharePoint.
     inicio_hex = contenido[:40].hex(" ")
     inicio_texto = ""
 
     for encoding in encodings:
         try:
-            inicio_texto = contenido[:300].decode(encoding, errors="replace")
+            inicio_texto = contenido[:300].decode(
+                encoding,
+                errors="replace",
+            )
             break
         except Exception:
             continue
@@ -441,7 +553,10 @@ def leer_csv_robusto_bytes(
         f"Inicio texto detectado: {inicio_texto[:200]}"
     )
 
-def leer_excel_bytes(contenido: bytes) -> tuple[pd.DataFrame, dict[str, str]]:
+
+def leer_excel_bytes(
+    contenido: bytes,
+) -> tuple[pd.DataFrame, dict[str, str]]:
     df = pd.read_excel(BytesIO(contenido))
     df = df.dropna(axis=1, how="all")
 
@@ -451,7 +566,9 @@ def leer_excel_bytes(contenido: bytes) -> tuple[pd.DataFrame, dict[str, str]]:
     }
 
 
-def leer_parquet_bytes(contenido: bytes) -> tuple[pd.DataFrame, dict[str, str]]:
+def leer_parquet_bytes(
+    contenido: bytes,
+) -> tuple[pd.DataFrame, dict[str, str]]:
     df = pd.read_parquet(BytesIO(contenido))
     df = df.dropna(axis=1, how="all")
 
@@ -469,15 +586,16 @@ def detectar_formato_archivo(
     extension = Path(nombre_archivo).suffix.lower()
     content_type = content_type.lower()
 
-    # Parquet: magic bytes al inicio y final.
-    if len(contenido) >= 8 and contenido[:4] == b"PAR1" and contenido[-4:] == b"PAR1":
+    if (
+        len(contenido) >= 8
+        and contenido[:4] == b"PAR1"
+        and contenido[-4:] == b"PAR1"
+    ):
         return "parquet"
 
-    # XLSX normalmente es ZIP y comienza con PK.
     if contenido[:4] == b"PK\x03\x04":
         return "excel"
 
-    # XLS antiguo normalmente usa formato OLE Compound File.
     if contenido[:8] == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":
         return "excel"
 
@@ -496,10 +614,6 @@ def detectar_formato_archivo(
     if extension == ".parquet":
         return "parquet"
 
-    if extension == ".csv":
-        return "csv"
-
-    # Último intento: tratarlo como CSV.
     return "csv"
 
 
@@ -517,11 +631,8 @@ def cargar_archivo_desde_bytes(
     )
 
     errores_intentos: list[str] = []
-
     orden_intentos = [formato]
 
-    # Algunos enlaces de SharePoint con ícono de Excel (:x:) pueden descargar
-    # un archivo Excel aunque el nombre esperado sea .csv, o viceversa.
     for candidato in ["excel", "csv", "parquet"]:
         if candidato not in orden_intentos:
             orden_intentos.append(candidato)
@@ -529,7 +640,10 @@ def cargar_archivo_desde_bytes(
     for intento in orden_intentos:
         try:
             if intento == "csv":
-                df, config = leer_csv_robusto_bytes(contenido, nombre_archivo)
+                df, config = leer_csv_robusto_bytes(
+                    contenido,
+                    nombre_archivo,
+                )
             elif intento == "excel":
                 df, config = leer_excel_bytes(contenido)
             elif intento == "parquet":
@@ -551,7 +665,9 @@ def cargar_archivo_desde_bytes(
     )
 
 
-def cargar_archivo_manual(uploaded_file) -> tuple[pd.DataFrame, dict[str, str]]:
+def cargar_archivo_manual(
+    uploaded_file,
+) -> tuple[pd.DataFrame, dict[str, str]]:
     return cargar_archivo_desde_bytes(
         contenido=uploaded_file.getvalue(),
         nombre_archivo=uploaded_file.name,
@@ -573,15 +689,15 @@ def preparar_url_descarga_sharepoint(url: str) -> str:
         return url
 
     separador = "&" if "?" in url else "?"
-
     return f"{url}{separador}download=1"
 
 
-def extraer_nombre_content_disposition(content_disposition: str) -> str | None:
+def extraer_nombre_content_disposition(
+    content_disposition: str,
+) -> str | None:
     if not content_disposition:
         return None
 
-    # filename*=UTF-8''archivo.xlsx
     match_utf = re.search(
         r"filename\*=UTF-8''([^;]+)",
         content_disposition,
@@ -590,7 +706,6 @@ def extraer_nombre_content_disposition(content_disposition: str) -> str | None:
     if match_utf:
         return unquote(match_utf.group(1).strip().strip('"'))
 
-    # filename="archivo.xlsx"
     match = re.search(
         r'filename="?([^";]+)"?',
         content_disposition,
@@ -606,6 +721,7 @@ def detectar_nombre_desde_url(url: str) -> str | None:
     try:
         path = urlparse(url).path
         nombre = unquote(Path(path).name)
+
         if "." in nombre:
             return nombre
     except Exception:
@@ -615,7 +731,9 @@ def detectar_nombre_desde_url(url: str) -> str | None:
 
 
 @st.cache_data(show_spinner=False, ttl=300)
-def descargar_archivo_sharepoint_cache(url: str) -> tuple[bytes, dict[str, str]]:
+def descargar_archivo_sharepoint_cache(
+    url: str,
+) -> tuple[bytes, dict[str, str]]:
     url_descarga = preparar_url_descarga_sharepoint(url)
 
     response = requests.get(
@@ -623,10 +741,13 @@ def descargar_archivo_sharepoint_cache(url: str) -> tuple[bytes, dict[str, str]]
         allow_redirects=True,
         timeout=90,
     )
-
     response.raise_for_status()
 
-    content_type = response.headers.get("Content-Type", "").lower()
+    content_type = response.headers.get(
+        "Content-Type",
+        "",
+    ).lower()
+
     contenido_inicio = response.content[:500].lower()
 
     if "text/html" in content_type or b"<html" in contenido_inicio:
@@ -635,7 +756,10 @@ def descargar_archivo_sharepoint_cache(url: str) -> tuple[bytes, dict[str, str]]
             "Verifica que el enlace permita descarga directa."
         )
 
-    content_disposition = response.headers.get("Content-Disposition", "")
+    content_disposition = response.headers.get(
+        "Content-Disposition",
+        "",
+    )
 
     metadata = {
         "url_final": response.url,
@@ -653,8 +777,7 @@ def descargar_archivo_sharepoint_cache(url: str) -> tuple[bytes, dict[str, str]]
 
 def construir_archivos_sharepoint() -> list[dict[str, str]]:
     urls = obtener_urls_sharepoint()
-
-    archivos = []
+    archivos: list[dict[str, str]] = []
 
     for indice, ((nombre_df, nombre_archivo_esperado), url) in enumerate(
         zip(ARCHIVOS_ESPERADOS.items(), urls),
@@ -676,28 +799,35 @@ def construir_archivos_sharepoint() -> list[dict[str, str]]:
 # Validación y carga manual
 # ============================================================
 
-def construir_mapa_archivos(archivos_seleccionados) -> dict[str, object]:
-    """Convierte la lista de archivos subidos en un diccionario por nombre."""
-    return {
-        archivo.name: archivo
-        for archivo in archivos_seleccionados or []
-    }
-
-
-def validar_archivos_manual(archivos_dict: dict[str, object]) -> pd.DataFrame:
+def validar_archivos_manual(
+    archivos_dict: dict[str, object],
+) -> pd.DataFrame:
     registros: list[dict[str, object]] = []
 
-    for nombre_df, nombre_archivo in ARCHIVOS_ESPERADOS.items():
-        archivo = archivos_dict.get(nombre_archivo)
+    for nombre_df, nombre_esperado in ARCHIVOS_ESPERADOS.items():
+        archivo = archivos_dict.get(nombre_esperado)
         existe = archivo is not None
+
+        info = (
+            analizar_nombre_archivo(archivo.name)
+            if existe
+            else {}
+        )
 
         registros.append(
             {
                 "dataframe": nombre_df,
-                "archivo": nombre_archivo,
+                "archivo_esperado": nombre_esperado,
+                "archivo": archivo.name if existe else None,
+                "fecha_archivo": info.get("fecha_archivo_texto"),
+                "fecha_archivo_iso": info.get("fecha_archivo_iso"),
                 "estado": "Encontrado" if existe else "Faltante",
                 "existe": existe,
-                "peso_kb": round(archivo.size / 1024, 2) if existe else None,
+                "peso_kb": (
+                    round(archivo.size / 1024, 2)
+                    if existe
+                    else None
+                ),
                 "origen": "Carga manual",
             }
         )
@@ -707,7 +837,12 @@ def validar_archivos_manual(archivos_dict: dict[str, object]) -> pd.DataFrame:
 
 def cargar_archivos_manual(
     archivos_dict: dict[str, object],
-) -> tuple[dict[str, pd.DataFrame], dict[str, dict], pd.DataFrame, list[dict]]:
+) -> tuple[
+    dict[str, pd.DataFrame],
+    dict[str, dict],
+    pd.DataFrame,
+    list[dict],
+]:
     dataframes_cargados: dict[str, pd.DataFrame] = {}
     config_carga: dict[str, dict] = {}
     errores_carga: list[dict] = []
@@ -716,7 +851,10 @@ def cargar_archivos_manual(
     disponibles = df_validacion[df_validacion["existe"]]
 
     if disponibles.empty:
-        raise ValueError("No hay archivos esperados disponibles para cargar.")
+        raise ValueError(
+            "No hay archivos esperados disponibles para cargar. "
+            "Se acepta el nombre normal o con fecha final _YYYYMMDD."
+        )
 
     progress_bar = st.progress(0)
     estado = st.empty()
@@ -724,18 +862,22 @@ def cargar_archivos_manual(
 
     for i, row in enumerate(disponibles.itertuples(index=False), start=1):
         nombre_df = row.dataframe
-        nombre_archivo = row.archivo
-        archivo = archivos_dict[nombre_archivo]
+        nombre_esperado = row.archivo_esperado
+        archivo = archivos_dict[nombre_esperado]
+        nombre_real = archivo.name
+        info_nombre = analizar_nombre_archivo(nombre_real)
 
-        estado.info(f"Cargando {nombre_archivo} ({i}/{total})...")
+        estado.info(f"Cargando {nombre_real} ({i}/{total})...")
 
         try:
             df, config = cargar_archivo_manual(archivo)
 
             dataframes_cargados[nombre_df] = df
-
             config_carga[nombre_df] = {
-                "archivo": nombre_archivo,
+                "archivo_esperado": nombre_esperado,
+                "archivo": nombre_real,
+                "fecha_archivo": info_nombre["fecha_archivo_texto"],
+                "fecha_archivo_iso": info_nombre["fecha_archivo_iso"],
                 "filas": df.shape[0],
                 "columnas": df.shape[1],
                 "peso_kb": round(archivo.size / 1024, 2),
@@ -749,18 +891,29 @@ def cargar_archivos_manual(
             errores_carga.append(
                 {
                     "dataframe": nombre_df,
-                    "archivo": nombre_archivo,
+                    "archivo": nombre_real,
+                    "fecha_archivo": info_nombre["fecha_archivo_texto"],
                     "origen": "Carga manual",
                     "error": str(exc),
                 }
             )
+
+            df_validacion.loc[
+                df_validacion["dataframe"] == nombre_df,
+                "estado",
+            ] = "Error"
 
         progress_bar.progress(i / total)
 
     estado.empty()
     progress_bar.empty()
 
-    return dataframes_cargados, config_carga, df_validacion, errores_carga
+    return (
+        dataframes_cargados,
+        config_carga,
+        df_validacion,
+        errores_carga,
+    )
 
 
 # ============================================================
@@ -774,7 +927,10 @@ def validar_archivos_sharepoint() -> pd.DataFrame:
         registros.append(
             {
                 "dataframe": archivo["dataframe"],
-                "archivo": archivo["archivo"],
+                "archivo_esperado": archivo["archivo"],
+                "archivo": None,
+                "fecha_archivo": None,
+                "fecha_archivo_iso": None,
                 "estado": "Configurado",
                 "existe": True,
                 "peso_kb": None,
@@ -805,30 +961,37 @@ def cargar_archivos_sharepoint() -> tuple[
 
     for i, archivo in enumerate(archivos_sharepoint, start=1):
         nombre_df = archivo["dataframe"]
-        nombre_archivo = archivo["archivo"]
+        nombre_esperado = archivo["archivo"]
         url = archivo["url"]
 
-        estado.info(f"Descargando y cargando {nombre_archivo} ({i}/{total})...")
+        estado.info(
+            f"Descargando y cargando {nombre_esperado} ({i}/{total})..."
+        )
 
         try:
             contenido, metadata = descargar_archivo_sharepoint_cache(url)
 
-            nombre_detectado = metadata.get("nombre_detectado") or nombre_archivo
+            nombre_detectado = (
+                metadata.get("nombre_detectado")
+                or nombre_esperado
+            )
             content_type = metadata.get("content_type") or ""
+            info_nombre = analizar_nombre_archivo(nombre_detectado)
 
             df, config = cargar_archivo_desde_bytes(
                 contenido=contenido,
-                nombre_archivo=nombre_detectado or nombre_archivo,
+                nombre_archivo=nombre_detectado,
                 content_type=content_type,
             )
 
             dataframes_cargados[nombre_df] = df
-
             peso_kb = round(len(contenido) / 1024, 2)
 
             config_carga[nombre_df] = {
-                "archivo": nombre_archivo,
-                "archivo_detectado": nombre_detectado,
+                "archivo_esperado": nombre_esperado,
+                "archivo": nombre_detectado,
+                "fecha_archivo": info_nombre["fecha_archivo_texto"],
+                "fecha_archivo_iso": info_nombre["fecha_archivo_iso"],
                 "filas": df.shape[0],
                 "columnas": df.shape[1],
                 "peso_kb": peso_kb,
@@ -839,16 +1002,30 @@ def cargar_archivos_sharepoint() -> tuple[
                 "orden": archivo["orden"],
             }
 
+            mascara = df_validacion["dataframe"] == nombre_df
+
             df_validacion.loc[
-                df_validacion["dataframe"] == nombre_df,
-                ["estado", "peso_kb"],
-            ] = ["Cargado", peso_kb]
+                mascara,
+                [
+                    "archivo",
+                    "fecha_archivo",
+                    "fecha_archivo_iso",
+                    "estado",
+                    "peso_kb",
+                ],
+            ] = [
+                nombre_detectado,
+                info_nombre["fecha_archivo_texto"],
+                info_nombre["fecha_archivo_iso"],
+                "Cargado",
+                peso_kb,
+            ]
 
         except Exception as exc:
             errores_carga.append(
                 {
                     "dataframe": nombre_df,
-                    "archivo": nombre_archivo,
+                    "archivo": nombre_esperado,
                     "origen": "SharePoint",
                     "orden": archivo["orden"],
                     "error": str(exc),
@@ -871,33 +1048,78 @@ def cargar_archivos_sharepoint() -> tuple[
             "Revisa los enlaces, permisos y configuración en Secrets."
         )
 
-    return dataframes_cargados, config_carga, df_validacion, errores_carga
+    return (
+        dataframes_cargados,
+        config_carga,
+        df_validacion,
+        errores_carga,
+    )
 
 
 # ============================================================
 # Visualizaciones compactas
 # ============================================================
 
-def mostrar_metricas_validacion(df_validacion: pd.DataFrame) -> None:
+def obtener_ultima_fecha(
+    df_validacion: pd.DataFrame,
+) -> pd.Timestamp | None:
+    if (
+        df_validacion.empty
+        or "fecha_archivo_iso" not in df_validacion.columns
+    ):
+        return None
+
+    fechas = pd.to_datetime(
+        df_validacion["fecha_archivo_iso"],
+        errors="coerce",
+    ).dropna()
+
+    if fechas.empty:
+        return None
+
+    return fechas.max()
+
+
+def mostrar_metricas_validacion(
+    df_validacion: pd.DataFrame,
+) -> None:
     total = len(df_validacion)
-    encontrados = int(df_validacion["existe"].sum()) if not df_validacion.empty else 0
+    encontrados = (
+        int(df_validacion["existe"].sum())
+        if not df_validacion.empty
+        else 0
+    )
     faltantes = total - encontrados
 
     peso_total_mb = (
         df_validacion["peso_kb"].fillna(0).sum() / 1024
-        if not df_validacion.empty and "peso_kb" in df_validacion.columns
+        if (
+            not df_validacion.empty
+            and "peso_kb" in df_validacion.columns
+        )
         else 0
     )
 
-    col1, col2, col3, col4 = st.columns(4)
+    ultima_fecha = obtener_ultima_fecha(df_validacion)
+    ultima_fecha_texto = (
+        ultima_fecha.strftime("%d/%m/%Y")
+        if ultima_fecha is not None
+        else "Sin fecha"
+    )
+
+    col1, col2, col3, col4, col5 = st.columns(5)
 
     col1.metric("Esperados", total)
     col2.metric("Disponibles", encontrados)
     col3.metric("Faltantes", faltantes)
     col4.metric("Peso cargado", f"{peso_total_mb:.2f} MB")
+    col5.metric("Última fecha archivos", ultima_fecha_texto)
 
     if faltantes:
-        st.warning(f"Hay {faltantes} archivo(s) faltante(s). Se cargaron solo los disponibles.")
+        st.warning(
+            f"Hay {faltantes} archivo(s) faltante(s). "
+            "Se cargaron solo los disponibles."
+        )
     else:
         st.success("Todos los archivos esperados están disponibles.")
 
@@ -914,7 +1136,41 @@ def mostrar_resumen_carga(
         orient="index",
     ).reset_index()
 
-    df_resumen = df_resumen.rename(columns={"index": "dataframe"})
+    df_resumen = df_resumen.rename(
+        columns={"index": "dataframe"}
+    )
+
+    columnas_prioritarias = [
+        "dataframe",
+        "orden",
+        "archivo",
+        "fecha_archivo",
+        "archivo_esperado",
+        "filas",
+        "columnas",
+        "peso_kb",
+        "formato_detectado",
+        "encoding",
+        "separador",
+        "origen",
+    ]
+
+    columnas_existentes = [
+        columna
+        for columna in columnas_prioritarias
+        if columna in df_resumen.columns
+    ]
+
+    otras_columnas = [
+        columna
+        for columna in df_resumen.columns
+        if columna not in columnas_existentes
+        and columna != "fecha_archivo_iso"
+    ]
+
+    df_resumen = df_resumen[
+        columnas_existentes + otras_columnas
+    ]
 
     total_filas = sum(df.shape[0] for df in dataframes.values())
     total_columnas = sum(df.shape[1] for df in dataframes.values())
@@ -930,15 +1186,27 @@ def mostrar_resumen_carga(
     col2.metric("Total columnas", f"{total_columnas:,}")
     col3.metric("Memoria estimada", f"{total_memoria:.2f} MB")
 
-    with st.expander("Ver resumen técnico de carga", expanded=False):
-        st.dataframe(df_resumen, use_container_width=True, hide_index=True)
+    with st.expander(
+        "Ver resumen técnico de carga",
+        expanded=False,
+    ):
+        st.dataframe(
+            df_resumen,
+            use_container_width=True,
+            hide_index=True,
+        )
 
 
-def mostrar_vista_previa(dataframes: dict[str, pd.DataFrame]) -> None:
+def mostrar_vista_previa(
+    dataframes: dict[str, pd.DataFrame],
+) -> None:
     if not dataframes:
         return
 
-    with st.expander("Ver vista previa de DataFrames", expanded=False):
+    with st.expander(
+        "Ver vista previa de DataFrames",
+        expanded=False,
+    ):
         nombre_df = st.selectbox(
             "Selecciona un DataFrame",
             options=list(dataframes.keys()),
@@ -947,7 +1215,8 @@ def mostrar_vista_previa(dataframes: dict[str, pd.DataFrame]) -> None:
         df = dataframes[nombre_df]
 
         st.caption(
-            f"{nombre_df}: {df.shape[0]:,} filas x {df.shape[1]:,} columnas"
+            f"{nombre_df}: "
+            f"{df.shape[0]:,} filas x {df.shape[1]:,} columnas"
         )
 
         st.dataframe(
@@ -955,22 +1224,34 @@ def mostrar_vista_previa(dataframes: dict[str, pd.DataFrame]) -> None:
             use_container_width=True,
         )
 
-        with st.expander("Columnas, tipos y nulos", expanded=False):
+        with st.expander(
+            "Columnas, tipos y nulos",
+            expanded=False,
+        ):
             df_tipos = pd.DataFrame(
                 {
                     "columna": df.columns,
                     "tipo": df.dtypes.astype(str).values,
                     "nulos": df.isna().sum().values,
-                    "nulos_%": (df.isna().mean().values * 100).round(2),
+                    "nulos_%": (
+                        df.isna().mean().values * 100
+                    ).round(2),
                 }
             )
 
-            st.dataframe(df_tipos, use_container_width=True, hide_index=True)
+            st.dataframe(
+                df_tipos,
+                use_container_width=True,
+                hide_index=True,
+            )
 
 
 def mostrar_errores(errores: list[dict]) -> None:
     if errores:
-        with st.expander("Ver errores de carga", expanded=True):
+        with st.expander(
+            "Ver errores de carga",
+            expanded=True,
+        ):
             st.dataframe(
                 pd.DataFrame(errores),
                 use_container_width=True,
@@ -979,14 +1260,21 @@ def mostrar_errores(errores: list[dict]) -> None:
 
 
 def mostrar_uso_modulos() -> None:
-    with st.expander("Uso en otros módulos", expanded=False):
+    with st.expander(
+        "Uso en otros módulos",
+        expanded=False,
+    ):
         st.code(
             'dataframes = st.session_state["dataframes_cargados"]\n'
             'df_me3n = dataframes["df_me3n"]\n'
             '\n'
             '# También quedan disponibles directamente:\n'
             'df_me3n = st.session_state["df_me3n"]\n'
-            'df_moneda = st.session_state["df_moneda_cambio"]',
+            'df_moneda = st.session_state["df_moneda_cambio"]\n'
+            '\n'
+            '# Metadatos de carga y fecha del archivo:\n'
+            'config = st.session_state["config_carga"]\n'
+            'fecha_me3n = config["df_me3n"]["fecha_archivo"]',
             language="python",
         )
 
@@ -1012,7 +1300,10 @@ with st.container(border=True):
         st.subheader("Subir y cargar archivos")
 
         st.caption(
-            "Selecciona todos los CSV/XLSX requeridos. Luego presiona el botón de carga una sola vez."
+            "Selecciona los CSV/XLSX requeridos. "
+            "Los nombres pueden terminar en _YYYYMMDD, por ejemplo: "
+            "01_BD_Moneda_Cambio_20260728.xlsx. "
+            "Si subes varias versiones del mismo archivo, se utilizará la más reciente."
         )
 
         archivos_seleccionados = st.file_uploader(
@@ -1045,13 +1336,17 @@ with st.container(border=True):
 
         if boton_cargar_manual:
             limpiar_estado_carga()
-
-            archivos_dict = construir_mapa_archivos(archivos_seleccionados)
+            archivos_dict = construir_mapa_archivos(
+                archivos_seleccionados
+            )
 
             try:
-                dataframes, config, df_validacion, errores = cargar_archivos_manual(
-                    archivos_dict
-                )
+                (
+                    dataframes,
+                    config,
+                    df_validacion,
+                    errores,
+                ) = cargar_archivos_manual(archivos_dict)
 
                 guardar_dataframes_en_sesion(
                     dataframes=dataframes,
@@ -1062,7 +1357,8 @@ with st.container(border=True):
                 )
 
                 st.success(
-                    f"Carga finalizada. Se cargaron {len(dataframes)} DataFrame(s)."
+                    f"Carga finalizada. "
+                    f"Se cargaron {len(dataframes)} DataFrame(s)."
                 )
 
             except Exception as exc:
@@ -1072,7 +1368,9 @@ with st.container(border=True):
         st.subheader("Conexión SharePoint")
 
         st.caption(
-            "Carga los 11 archivos configurados en Secrets, respetando el orden de las URLs."
+            "Carga los 11 archivos configurados en Secrets, "
+            "respetando el orden de las URLs. "
+            "La fecha _YYYYMMDD se obtiene del nombre descargado."
         )
 
         with st.form("form_sharepoint_archivos"):
@@ -1108,7 +1406,12 @@ with st.container(border=True):
                 if not validar_clave_sharepoint(clave_sharepoint):
                     st.error("Clave incorrecta.")
                 else:
-                    dataframes, config, df_validacion, errores = cargar_archivos_sharepoint()
+                    (
+                        dataframes,
+                        config,
+                        df_validacion,
+                        errores,
+                    ) = cargar_archivos_sharepoint()
 
                     guardar_dataframes_en_sesion(
                         dataframes=dataframes,
@@ -1119,17 +1422,21 @@ with st.container(border=True):
                     )
 
                     st.success(
-                        f"Conexión realizada correctamente. "
+                        "Conexión realizada correctamente. "
                         f"Se cargaron {len(dataframes)} DataFrame(s)."
                     )
 
             except Exception as exc:
                 st.error(
                     "No se pudo completar la carga desde SharePoint. "
-                    "Revisa la configuración en Secrets, permisos de enlaces y clave."
+                    "Revisa la configuración en Secrets, "
+                    "permisos de enlaces y clave."
                 )
 
-                with st.expander("Detalle técnico", expanded=False):
+                with st.expander(
+                    "Detalle técnico",
+                    expanded=False,
+                ):
                     st.write(str(exc))
 
 
@@ -1142,19 +1449,31 @@ if st.session_state["carga_completada"]:
     st.divider()
     st.subheader("Resultado de la carga")
 
-    metodo_activo = st.session_state.get("metodo_carga_activo")
+    metodo_activo = st.session_state.get(
+        "metodo_carga_activo"
+    )
+
     if metodo_activo:
         st.caption(f"Método usado: **{metodo_activo}**")
 
     mostrar_metricas_validacion(df_validacion)
-    mostrar_resumen_carga(config_carga, dataframes_cargados)
+    mostrar_resumen_carga(
+        config_carga,
+        dataframes_cargados,
+    )
 
-    with st.expander("Ver validación archivo por archivo", expanded=False):
+    with st.expander(
+        "Ver validación archivo por archivo",
+        expanded=False,
+    ):
         columnas_mostrar = [
-            col for col in [
+            col
+            for col in [
                 "orden",
                 "dataframe",
                 "archivo",
+                "fecha_archivo",
+                "archivo_esperado",
                 "estado",
                 "peso_kb",
                 "origen",
@@ -1174,5 +1493,6 @@ if st.session_state["carga_completada"]:
 
 else:
     st.info(
-        "La vista de validación, resumen y previews aparecerá después de cargar los archivos."
+        "La vista de validación, resumen y previews aparecerá "
+        "después de cargar los archivos."
     )
