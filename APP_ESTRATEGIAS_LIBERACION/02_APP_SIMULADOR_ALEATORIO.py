@@ -78,6 +78,7 @@ SESSION_CASE_KEY = "flujo_liberacion_last_case"
 SESSION_EDITOR_CECO = "sim_editor_ceco_v03"
 SESSION_EDITOR_DOC = "sim_editor_doc_v03"
 SESSION_EDITOR_AMOUNT = "sim_editor_amount_v03"
+SESSION_PENDING_EDITOR = "sim_pending_editor_v03"
 
 
 # ============================================================
@@ -737,17 +738,45 @@ def render_ceco_table(data: dict[str, pd.DataFrame], ceco: str) -> None:
 # ============================================================
 
 def set_editor_from_case(case: dict[str, Any]) -> None:
+    """Actualiza los campos antes de que sus widgets sean creados."""
     st.session_state[SESSION_EDITOR_CECO] = case["ceco"]
     st.session_state[SESSION_EDITOR_DOC] = case["doc"]
     st.session_state[SESSION_EDITOR_AMOUNT] = str(case["monto"])
 
 
-def save_case(case: dict[str, Any], title: str) -> None:
+def queue_editor_from_case(case: dict[str, Any]) -> None:
+    """Deja una actualización pendiente para aplicarla en el siguiente rerun."""
+    st.session_state[SESSION_PENDING_EDITOR] = {
+        "ceco": case["ceco"],
+        "doc": case["doc"],
+        "monto": str(case["monto"]),
+    }
+
+
+def apply_pending_editor() -> None:
+    """Aplica cambios pendientes antes de instanciar selectbox/text_input."""
+    pending = st.session_state.pop(SESSION_PENDING_EDITOR, None)
+    if not pending:
+        return
+
+    st.session_state[SESSION_EDITOR_CECO] = pending["ceco"]
+    st.session_state[SESSION_EDITOR_DOC] = pending["doc"]
+    st.session_state[SESSION_EDITOR_AMOUNT] = pending["monto"]
+
+
+def save_case(
+    case: dict[str, Any],
+    title: str,
+    *,
+    update_editor_next_run: bool = False,
+) -> None:
     st.session_state[SESSION_CASE_KEY] = {
         "case": case,
         "title": title,
     }
-    set_editor_from_case(case)
+
+    if update_editor_next_run:
+        queue_editor_from_case(case)
 
 
 def clear_case() -> None:
@@ -755,6 +784,7 @@ def clear_case() -> None:
     st.session_state.pop(SESSION_EDITOR_CECO, None)
     st.session_state.pop(SESSION_EDITOR_DOC, None)
     st.session_state.pop(SESSION_EDITOR_AMOUNT, None)
+    st.session_state.pop(SESSION_PENDING_EDITOR, None)
 
 
 # ============================================================
@@ -836,6 +866,7 @@ def render_random_generator(data: dict[str, pd.DataFrame]) -> None:
             save_case(
                 case,
                 f"Caso aleatorio · {DOC_LABEL[doc_type]}",
+                update_editor_next_run=True,
             )
             st.rerun()
 
@@ -844,6 +875,9 @@ def render_random_generator(data: dict[str, pd.DataFrame]) -> None:
 
 
 def render_editable_case(data: dict[str, pd.DataFrame]) -> None:
+    # Debe ejecutarse antes de crear los widgets asociados a estas claves.
+    apply_pending_editor()
+
     result = st.session_state.get(SESSION_CASE_KEY)
 
     st.markdown("---")
@@ -888,6 +922,7 @@ def render_editable_case(data: dict[str, pd.DataFrame]) -> None:
         current_doc = st.session_state.get(SESSION_EDITOR_DOC, current_case["doc"])
         if current_doc not in available_docs:
             current_doc = available_docs[0]
+            st.session_state[SESSION_EDITOR_DOC] = current_doc
 
         with doc_col:
             selected_doc = st.selectbox(
@@ -945,7 +980,11 @@ def render_editable_case(data: dict[str, pd.DataFrame]) -> None:
             selected_row = rows.sample(n=1).iloc[0]
             new_amount = random_amount_for_row(selected_row)
             case = build_case(data, selected_ceco, selected_doc, new_amount)
-            save_case(case, "Caso modificado · monto aleatorio")
+            save_case(
+                case,
+                "Caso modificado · monto aleatorio",
+                update_editor_next_run=True,
+            )
             st.rerun()
 
         except ValueError as exc:
