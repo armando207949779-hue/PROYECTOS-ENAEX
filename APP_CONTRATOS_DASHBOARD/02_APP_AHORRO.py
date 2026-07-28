@@ -799,8 +799,8 @@ else:
         posiciones,
         df_ahorro_acumulado["Ahorro_Real_Mensual_kUSD"],
         width=0.64,
-        color="#BFDBFE",
-        edgecolor="#60A5FA",
+        color="#FDE68A",
+        edgecolor="#F59E0B",
         linewidth=1.0,
         label="Ahorro mensual",
         zorder=2
@@ -826,7 +826,7 @@ else:
         markerfacecolor="#FFFFFF",
         markeredgewidth=2,
         linewidth=2.8,
-        color="#1D4ED8",
+        color="#B45309",
         label="Ahorro acumulado",
         zorder=4
     )
@@ -835,7 +835,7 @@ else:
         posiciones,
         df_ahorro_acumulado["Ahorro_Real_Acumulado_kUSD"],
         alpha=0.06,
-        color="#1D4ED8",
+        color="#B45309",
         zorder=1
     )
 
@@ -876,7 +876,7 @@ else:
             va="bottom",
             fontsize=9,
             fontweight="bold",
-            color="#1E3A8A"
+            color="#92400E"
         )
 
     ultimo_indice = len(df_ahorro_acumulado) - 1
@@ -891,17 +891,17 @@ else:
         textcoords="offset points",
         fontsize=10,
         fontweight="bold",
-        color="#1D4ED8",
+        color="#B45309",
         ha="right",
         bbox={
             "boxstyle": "round,pad=0.35",
-            "facecolor": "#EFF6FF",
-            "edgecolor": "#93C5FD"
+            "facecolor": "#FFFBEB",
+            "edgecolor": "#FCD34D"
         },
         arrowprops={
             "arrowstyle": "->",
             "lw": 1.2,
-            "color": "#1D4ED8"
+            "color": "#B45309"
         }
     )
 
@@ -1039,6 +1039,7 @@ else:
             autopct=lambda p: f"{p:.1f}%" if p >= 3 else "",
             startangle=90,
             pctdistance=0.78,
+            colors=["#D97706", "#F59E0B", "#FCD34D", "#A3A3A3"][:len(df_donut)],
             wedgeprops={
                 "width": 0.36,
                 "edgecolor": "white"
@@ -1125,6 +1126,9 @@ st.markdown("---")
 # ============================================================
 
 st.markdown("### Ahorro real por tipo de proceso")
+st.caption(
+    "Comparación del ahorro real y su participación dentro del total filtrado."
+)
 
 df_ahorro_proceso_bar = df_ahorro_proceso.sort_values(
     "Ahorro_Real_Total_kUSD",
@@ -1134,42 +1138,53 @@ df_ahorro_proceso_bar = df_ahorro_proceso.sort_values(
 if df_ahorro_proceso_bar.empty:
     st.info("No hay datos para graficar ahorro por tipo de proceso.")
 else:
-    fig, ax = plt.subplots(figsize=(13, 5.5))
+    total_proceso_bar = df_ahorro_proceso_bar["Ahorro_Real_Total_kUSD"].sum()
+    df_ahorro_proceso_bar["Participacion_%"] = (
+        df_ahorro_proceso_bar["Ahorro_Real_Total_kUSD"] / total_proceso_bar * 100
+        if total_proceso_bar > 0 else 0
+    )
+
+    fig, ax = plt.subplots(figsize=(13.5, 6.2))
+    fig.patch.set_facecolor("#FFFFFF")
+    ax.set_facecolor("#FFFFFF")
+
+    colores = ["#FDE68A", "#FCD34D", "#F59E0B", "#D97706"]
+    colores_barras = colores[-len(df_ahorro_proceso_bar):]
 
     bars = ax.barh(
         df_ahorro_proceso_bar["Tipo_Proceso"],
         df_ahorro_proceso_bar["Ahorro_Real_Total_kUSD"],
-        color="#2563EB",
-        edgecolor="#1D4ED8",
-        linewidth=0.8
+        color=colores_barras,
+        edgecolor="#B45309",
+        linewidth=0.8,
+        height=0.62
     )
 
-    ax.set_title("Ahorro real por tipo de proceso", fontsize=14, fontweight="bold", pad=14)
-    ax.set_xlabel("Ahorro Real Total [kUSD]")
+    ax.set_title(
+        "Ahorro real por tipo de proceso",
+        fontsize=15,
+        fontweight="bold",
+        pad=16,
+        loc="left"
+    )
+    ax.set_xlabel("Ahorro real [kUSD]", fontweight="bold")
     ax.xaxis.set_major_formatter(mticker.StrMethodFormatter("{x:,.0f}"))
-
+    ax.grid(axis="x", linestyle="--", linewidth=0.7, alpha=0.22, color="#9CA3AF")
     limpiar_estilo_grafico(ax)
 
-    max_valor = df_ahorro_proceso_bar["Ahorro_Real_Total_kUSD"].max()
-    margen_derecho = max(max_valor * 0.22, 1)
-
+    max_valor = max(float(df_ahorro_proceso_bar["Ahorro_Real_Total_kUSD"].max()), 0)
+    margen_derecho = max(max_valor * 0.30, 1)
     ax.set_xlim(0, max_valor + margen_derecho)
 
-    if max_valor > 0:
-        for bar in bars:
-            valor = bar.get_width()
-            y_pos = bar.get_y() + bar.get_height() / 2
-
-            ax.text(
-                valor + margen_derecho * 0.08,
-                y_pos,
-                f"{valor:,.1f} kUSD",
-                va="center",
-                ha="left",
-                fontsize=9,
-                fontweight="bold",
-                color="#111827"
-            )
+    for bar, (_, row) in zip(bars, df_ahorro_proceso_bar.iterrows()):
+        valor = bar.get_width()
+        y_pos = bar.get_y() + bar.get_height() / 2
+        ax.text(
+            valor + margen_derecho * 0.05,
+            y_pos,
+            f"{valor:,.1f} kUSD  ·  {row['Participacion_%']:.1f}%",
+            va="center", ha="left", fontsize=9, fontweight="bold", color="#78350F"
+        )
 
     fig.tight_layout()
     st.pyplot(fig, clear_figure=True)
@@ -1244,87 +1259,71 @@ df_progreso_gestor = df_progreso_gestor.sort_values(
 # ============================================================
 
 st.markdown("### Cumplimiento por gestor")
+st.caption(
+    "El tramo principal muestra el avance hasta 100%; el tramo verde muestra el sobrecumplimiento."
+)
 
 if df_progreso_gestor.empty:
     st.info("No hay datos para graficar.")
 else:
-    fig, ax = plt.subplots(figsize=(13, max(5, len(df_progreso_gestor) * 0.55)))
+    fig, ax = plt.subplots(figsize=(13.5, max(5.5, len(df_progreso_gestor) * 0.62)))
+    fig.patch.set_facecolor("#FFFFFF")
+    ax.set_facecolor("#FFFFFF")
 
     ax.barh(
         df_progreso_gestor["Gestor"],
         [100] * len(df_progreso_gestor),
-        color="#E5E7EB",
-        edgecolor="#D1D5DB",
-        linewidth=0.8,
-        label="Meta 100%"
+        color="#F3F4F6", edgecolor="#E5E7EB", linewidth=0.8, height=0.62
     )
 
-    colores_cumplimiento = [
-        "#4ADE80" if valor >= 100 else "#DC2626"
+    colores_base = [
+        "#F59E0B" if valor >= 100 else "#F97316"
         for valor in df_progreso_gestor["Cumplimiento_Total_%"]
     ]
 
     ax.barh(
         df_progreso_gestor["Gestor"],
-        df_progreso_gestor["Cumplimiento_Grafico_%"],
-        color=colores_cumplimiento,
-        edgecolor=colores_cumplimiento,
-        linewidth=0.8,
-        label="Cumplimiento"
+        df_progreso_gestor["Cumplimiento_%"],
+        color=colores_base, edgecolor=colores_base, linewidth=0.8, height=0.62,
+        label="Cumplimiento hasta 100%"
     )
 
-    ax.axvline(
-        100,
-        linestyle="--",
-        linewidth=1.1,
-        color="#111827",
-        alpha=0.8
+    ax.barh(
+        df_progreso_gestor["Gestor"],
+        df_progreso_gestor["Sobrecumplimiento_%"],
+        left=100,
+        color="#65A30D", edgecolor="#4D7C0F", linewidth=0.8, height=0.62,
+        label="Sobrecumplimiento"
     )
 
-    max_cumplimiento = df_progreso_gestor["Cumplimiento_Total_%"].max()
-    limite_x = max(150, min(max_cumplimiento + 35, 240))
+    ax.axvline(100, linestyle="--", linewidth=1.2, color="#374151", alpha=0.85)
 
+    max_total = max(float(df_progreso_gestor["Cumplimiento_Total_%"].max()), 100)
+    limite_x = min(max(max_total + 28, 135), 260)
     ax.set_xlim(0, limite_x)
-    ax.set_xlabel("Cumplimiento [%]")
-    ax.set_title("Cumplimiento por gestor", fontsize=14, fontweight="bold", pad=14)
-
+    ax.set_xlabel("Cumplimiento [%]", fontweight="bold")
+    ax.set_title("Cumplimiento y sobrecumplimiento por gestor", fontsize=15, fontweight="bold", pad=16, loc="left")
+    ax.grid(axis="x", linestyle="--", linewidth=0.7, alpha=0.22, color="#9CA3AF")
     limpiar_estilo_grafico(ax)
 
     for i, row in df_progreso_gestor.iterrows():
-        texto = (
-            f"{row['Cumplimiento_Total_%']:.1f}% | "
-            f"{row['Ahorro_Real_Total_kUSD']:,.0f} / "
-            f"{row['Ahorro_Planificado_Total_kUSD']:,.0f} kUSD"
-        )
-
-        posicion_texto = min(
-            max(row["Cumplimiento_Grafico_%"], 100) + 3,
-            limite_x - 5
-        )
-
+        total = row["Cumplimiento_Total_%"]
+        posicion = min(max(total, 100) + 3, limite_x - 3)
         ax.text(
-            posicion_texto,
-            i,
-            texto,
-            va="center",
-            ha="left",
-            fontsize=9,
-            fontweight="bold",
-            color="#111827"
+            posicion, i,
+            f"{total:.1f}%  ·  {row['Ahorro_Real_Total_kUSD']:,.0f}/{row['Ahorro_Planificado_Total_kUSD']:,.0f} kUSD",
+            va="center", ha="left", fontsize=9, fontweight="bold", color="#374151"
         )
 
     from matplotlib.patches import Patch
-
-    leyenda_cumplimiento = [
-        Patch(facecolor="#4ADE80", edgecolor="#4ADE80", label="Cumple o supera meta"),
-        Patch(facecolor="#DC2626", edgecolor="#DC2626", label="Bajo la meta"),
-        Patch(facecolor="#E5E7EB", edgecolor="#D1D5DB", label="Meta 100%"),
-    ]
-
     ax.legend(
-        handles=leyenda_cumplimiento,
-        loc="lower right",
-        frameon=False
+        handles=[
+            Patch(facecolor="#F59E0B", edgecolor="#F59E0B", label="Meta alcanzada"),
+            Patch(facecolor="#F97316", edgecolor="#F97316", label="Bajo la meta"),
+            Patch(facecolor="#65A30D", edgecolor="#4D7C0F", label="Sobrecumplimiento"),
+            Patch(facecolor="#F3F4F6", edgecolor="#E5E7EB", label="Meta 100%"),
+        ],
+        loc="lower right", frameon=False, ncol=2
     )
 
     fig.tight_layout()
@@ -1375,8 +1374,8 @@ else:
     bars = ax.barh(
         df_top_contratos_plot["Contrato_Label"],
         df_top_contratos_plot["Ahorro_Real_kUSD_num"],
-        color="#2563EB",
-        edgecolor="#1D4ED8",
+        color="#D97706",
+        edgecolor="#B45309",
         linewidth=0.8
     )
 
@@ -1385,6 +1384,7 @@ else:
     ax.xaxis.set_major_formatter(mticker.StrMethodFormatter("{x:,.0f}"))
 
     limpiar_estilo_grafico(ax)
+    ax.grid(axis="x", linestyle="--", linewidth=0.7, alpha=0.22, color="#9CA3AF")
 
     max_valor = df_top_contratos_plot["Ahorro_Real_kUSD_num"].max()
     margen_derecho = max(max_valor * 0.22, 1)
@@ -1506,13 +1506,13 @@ with st.expander("Cumplimiento por gestor", expanded=True):
         )
         .bar(
             subset=["Cumplimiento"],
-            color="#93C5FD",
+            color="#F59E0B",
             vmin=0,
             vmax=100
         )
         .bar(
             subset=["Sobrecumplimiento"],
-            color="#86EFAC",
+            color="#65A30D",
             vmin=0,
             vmax=max_sobrecumplimiento
         )
@@ -1533,28 +1533,27 @@ with st.expander("Ahorro por tipo de proceso", expanded=True):
         else 0
     )
 
-    mostrar_tabla_profesional(
-        tabla_proceso,
-        columnas=[
-            "Tipo_Proceso",
-            "Ahorro_Real_Total_kUSD",
-            "Participacion_%"
-        ],
-        nombres={
+    tabla_proceso_visual = (
+        tabla_proceso[["Tipo_Proceso", "Ahorro_Real_Total_kUSD", "Participacion_%"]]
+        .sort_values("Ahorro_Real_Total_kUSD", ascending=False)
+        .rename(columns={
             "Tipo_Proceso": "Tipo de proceso",
             "Ahorro_Real_Total_kUSD": "Ahorro real",
             "Participacion_%": "Participación"
-        },
-        orden_por="Ahorro_Real_Total_kUSD",
-        ascendente=False,
-        column_config={
-            "Ahorro real": st.column_config.NumberColumn(
-                format="%.1f kUSD"
-            ),
-            "Participación": st.column_config.NumberColumn(
-                format="%.1f%%"
-            )
-        }
+        })
+        .reset_index(drop=True)
+    )
+
+    tabla_proceso_estilizada = (
+        tabla_proceso_visual.style
+        .format({"Ahorro real": "{:,.1f} kUSD", "Participación": "{:.1f}%"}, na_rep="")
+        .bar(subset=["Participación"], color="#FCD34D", vmin=0, vmax=100)
+    )
+
+    st.dataframe(
+        tabla_proceso_estilizada,
+        use_container_width=True,
+        hide_index=True
     )
 
 with st.expander("Plan de ahorro por gestor", expanded=True):
