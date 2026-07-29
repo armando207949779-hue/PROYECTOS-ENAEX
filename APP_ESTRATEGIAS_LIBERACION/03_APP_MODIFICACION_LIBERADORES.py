@@ -6,6 +6,10 @@
 # situación → alcance → CECO/tipo/rango → pieza/acción
 # → validación → vista previa → impacto global opcional
 # → auditoría → Excel profesional.
+#
+# Formato vigente:
+# CECO | Planta | Desde | Hasta | TipoDoc |
+# Lib1 | Lib2 | Lib3 | Lib4 | Lib5
 # ============================================================
 
 from __future__ import annotations
@@ -64,7 +68,6 @@ LIB_COLS = ["Lib1", "Lib2", "Lib3", "Lib4", "Lib5"]
 FLOW_COLUMNS = [
     "CECO", "Planta", "Desde", "Hasta", "TipoDoc",
     "Lib1", "Lib2", "Lib3", "Lib4", "Lib5",
-    "N_EO", "N_CD", "Match", "FuenteCD",
 ]
 
 DOC_LABEL = {
@@ -307,7 +310,7 @@ def render_header() -> None:
     st.markdown(
         """
         <div class="app-subtitle">
-            Asistente robusto para cambios puntuales, reemplazos globales y exportación profesional.
+            Asistente robusto para modificar flujos sin distinción EO/CD y exportar una versión profesional.
         </div>
         """,
         unsafe_allow_html=True,
@@ -335,6 +338,30 @@ def question(number: int, title: str, help_text: str) -> None:
 # NORMALIZACIÓN
 # ============================================================
 
+def validate_flow_schema(data: dict[str, pd.DataFrame]) -> pd.DataFrame:
+    """Valida el formato simplificado antes de permitir modificaciones."""
+    flow = data.get("flujo")
+
+    if not isinstance(flow, pd.DataFrame) or flow.empty:
+        raise ValueError("La base activa no contiene registros de flujo.")
+
+    missing = [
+        column
+        for column in FLOW_COLUMNS
+        if column not in flow.columns
+    ]
+
+    if missing:
+        raise ValueError(
+            "La base activa no tiene el formato vigente. "
+            f"Faltan: {', '.join(missing)}. "
+            "Vuelve a cargar el Excel desde 01 Cargar Archivo."
+        )
+
+    return flow
+
+
+
 def clean_text(value: Any) -> str:
     if value is None:
         return ""
@@ -346,7 +373,7 @@ def clean_text(value: Any) -> str:
         pass
 
     text = str(value).strip()
-    return "" if text.lower() in {"", "nan", "none", "null", "—", "-"} else text
+    return "" if text.lower() in {"", "nan", "none", "null", "<na>", "n/a", "no usar", "—", "-"} else text
 
 
 def strip_user(value: Any) -> str:
@@ -409,7 +436,7 @@ def normalize_flow(df: pd.DataFrame) -> pd.DataFrame:
 
     flow = flow.loc[:, FLOW_COLUMNS].copy()
 
-    for column in ["CECO", "Planta", "Match", "FuenteCD"]:
+    for column in ["CECO", "Planta"]:
         flow[column] = flow[column].map(clean_text)
 
     flow["TipoDoc"] = flow["TipoDoc"].map(clean_text).str.upper()
@@ -417,12 +444,6 @@ def normalize_flow(df: pd.DataFrame) -> pd.DataFrame:
     for column in LIB_COLS:
         flow[column] = flow[column].map(strip_user)
 
-    for column in ["N_EO", "N_CD"]:
-        flow[column] = (
-            pd.to_numeric(flow[column], errors="coerce")
-            .fillna(0)
-            .astype(int)
-        )
 
     flow = flow[
         flow["CECO"].ne("")
@@ -559,19 +580,6 @@ def validate_flow_result(
     return errors
 
 
-def adjusted_role_counts(
-    libs: list[str],
-    original_n_eo: int,
-) -> tuple[int, int]:
-    """
-    Mantiene tantos EO como sea posible y recalcula CD según
-    la cantidad final de liberadores.
-    """
-    total = len([value for value in libs if strip_user(value)])
-    n_eo = min(max(0, int(original_n_eo)), total)
-    n_cd = max(0, total - n_eo)
-    return n_eo, n_cd
-
 
 # ============================================================
 # ESTADO
@@ -597,7 +605,6 @@ def default_draft() -> dict[str, Any]:
         "row_id": None,
         "libs_before": [],
         "libs_after": [],
-        "n_eo": 0,
         "replaced_from": "",
         "replaced_to": "",
         "last_message": "",
@@ -609,7 +616,7 @@ def initialize_state(
     file_name: str,
     file_bytes: bytes,
 ) -> None:
-    flow = normalize_flow(data["flujo"])
+    flow = normalize_flow(validate_flow_schema(data))
     signature = source_signature(file_name, file_bytes, len(flow))
 
     if (
@@ -694,7 +701,6 @@ def style_flow_table(df: pd.DataFrame):
 
 def flow_html(
     libs: list[str],
-    n_eo: int,
     data: dict[str, pd.DataFrame],
     title: str,
 ) -> str:
@@ -706,24 +712,19 @@ def flow_html(
         )
 
     parts: list[str] = []
-    for index, user in enumerate(libs):
-        is_eo = index < n_eo
-        background = "#EAF7EE" if is_eo else "#EEF2FF"
-        border = "#22C55E" if is_eo else "#6366F1"
-        color = "#166534" if is_eo else "#1E3A8A"
-        role = "EO" if is_eo else "CD"
 
+    for index, user in enumerate(libs):
         parts.append(
             f"""
             <div class="flow-card"
-                 style="background:{background};border:2px dashed {border};">
+                 style="background:#F8FAFC;border:2px dashed #94A3B8;">
                 <div style="font-size:11px;color:#64748B;font-weight:750;">
-                    Liberador {index + 1} · {role}
+                    Liberador {index + 1}
                 </div>
                 <div style="
                     font-size:12px;
                     font-weight:750;
-                    color:{color};
+                    color:#17365D;
                     margin-top:7px;
                     overflow-wrap:anywhere;
                 ">
@@ -755,7 +756,6 @@ def flow_html(
 def render_comparison(
     before: list[str],
     after: list[str],
-    n_eo: int,
     data: dict[str, pd.DataFrame],
 ) -> None:
     st.markdown(
@@ -763,10 +763,10 @@ def render_comparison(
             f"""
             <div class="comparison-grid">
                 <div class="comparison-before">
-                    {flow_html(before, n_eo, data, "ANTES")}
+                    {flow_html(before, data, "ANTES")}
                 </div>
                 <div class="comparison-after">
-                    {flow_html(after, n_eo, data, "DESPUÉS · BORRADOR")}
+                    {flow_html(after, data, "DESPUÉS · BORRADOR")}
                 </div>
             </div>
             """
@@ -1159,6 +1159,40 @@ def build_excel(
         header_fill="166534",
         tab_color="16A34A",
     )
+
+    # Alinea los diccionarios con el formato simplificado.
+    if "Dic_CECO" in workbook.sheetnames:
+        ceco_sheet = workbook["Dic_CECO"]
+        headers = [clean_text(cell.value) for cell in ceco_sheet[1]]
+        keep = [name for name in ["CECO", "Planta", "Centro"] if name in headers]
+        if keep:
+            values = list(ceco_sheet.iter_rows(values_only=True))
+            source = pd.DataFrame(values[1:], columns=headers)
+            write_dataframe_to_sheet(ceco_sheet, source.loc[:, keep])
+            professional_sheet_format(
+                ceco_sheet,
+                table_name="TablaDicCECO",
+                header_fill="475467",
+                tab_color="64748B",
+            )
+
+    if "Dic_Rangos" in workbook.sheetnames:
+        range_sheet = workbook["Dic_Rangos"]
+        headers = [clean_text(cell.value) for cell in range_sheet[1]]
+        keep = [name for name in ["Orden", "Desde", "Hasta"] if name in headers]
+        if keep:
+            values = list(range_sheet.iter_rows(values_only=True))
+            source = pd.DataFrame(values[1:], columns=headers)
+            write_dataframe_to_sheet(range_sheet, source.loc[:, keep])
+            professional_sheet_format(
+                range_sheet,
+                table_name="TablaDicRangos",
+                header_fill="475467",
+                tab_color="64748B",
+            )
+
+    if "Formato_Flujo" in workbook.sheetnames:
+        del workbook["Formato_Flujo"]
 
     # Las demás hojas se preservan. Se estilizan solo sus encabezados
     # cuando contienen una tabla reconocible, sin alterar sus datos.
@@ -1719,14 +1753,12 @@ def render_wizard(
                 "row_id": int(selected_row_id),
                 "libs_before": list(libs),
                 "libs_after": list(libs),
-                "n_eo": int(selected_row.get("N_EO", 0) or 0),
             }
         )
         set_draft(draft)
 
     libs_before = list(draft["libs_before"])
     libs_after = list(draft["libs_after"])
-    n_eo = int(draft["n_eo"])
 
     st.info(
         f"Tramo activo: **{fmt_bound(selected_row['Desde'])} – "
@@ -1736,7 +1768,6 @@ def render_wizard(
     st.markdown(
         flow_html(
             libs_after,
-            n_eo,
             data,
             "Flujo actual del tramo",
         ),
@@ -1912,7 +1943,6 @@ def render_wizard(
     render_comparison(
         before=libs_before,
         after=libs_after,
-        n_eo=n_eo,
         data=data,
     )
 
@@ -2130,12 +2160,6 @@ def render_wizard(
                 }
             )
 
-        final_n_eo, final_n_cd = adjusted_role_counts(
-            libs_after,
-            n_eo,
-        )
-        updated.loc[selected_mask, "N_EO"] = final_n_eo
-        updated.loc[selected_mask, "N_CD"] = final_n_cd
 
         if (
             propagate
