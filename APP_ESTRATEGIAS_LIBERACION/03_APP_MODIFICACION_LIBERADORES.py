@@ -1609,12 +1609,15 @@ def render_wizard(
         ),
     )
 
-    scenario = st.radio(
-        "Escenario",
+    scenario = st.selectbox(
+        "1. ¿Qué situación necesitas resolver?",
         options=list(SCENARIO_LABEL),
         format_func=lambda value: SCENARIO_LABEL[value],
-        label_visibility="collapsed",
-        key="mod_scenario_v06",
+        key="mod_scenario_v07",
+        help=(
+            "Selecciona el escenario que mejor representa el cambio. "
+            "Las acciones disponibles se ajustarán automáticamente."
+        ),
     )
     st.info(SCENARIO_HELP[scenario])
 
