@@ -1,12 +1,11 @@
 # 02_APP_AHORRO.py
-# Dashboard de ahorro, desempeño por gestor e Índice de Salud contractual
+# Dashboard de ahorro real, planificado, cumplimiento y procesos
 # ============================================================
 
 from pathlib import Path
 import base64
 
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import streamlit as st
@@ -115,84 +114,6 @@ def aplicar_estilo():
             }
 
 
-            .manager-card {
-                background: #FFFFFF;
-                border: 1px solid #CBD5E1;
-                border-radius: 16px;
-                padding: 20px 22px;
-                box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05);
-                min-height: 330px;
-            }
-
-            .manager-name {
-                font-size: 1.05rem;
-                font-weight: 800;
-                color: #111827;
-                padding-bottom: 12px;
-                border-bottom: 1px solid #E5E7EB;
-                margin-bottom: 14px;
-            }
-
-            .manager-metric {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                gap: 18px;
-                margin: 8px 0;
-                font-size: 0.92rem;
-                color: #374151;
-            }
-
-            .manager-metric strong {
-                color: #111827;
-                white-space: nowrap;
-            }
-
-            .capture-title {
-                font-size: 0.86rem;
-                font-weight: 800;
-                color: #334155;
-                margin-top: 18px;
-                margin-bottom: 8px;
-            }
-
-            .capture-row {
-                display: grid;
-                grid-template-columns: minmax(115px, 1fr) 2fr 54px;
-                align-items: center;
-                gap: 10px;
-                margin: 9px 0;
-                font-size: 0.82rem;
-            }
-
-            .capture-track {
-                height: 11px;
-                background: #E5E7EB;
-                border-radius: 999px;
-                overflow: hidden;
-            }
-
-            .capture-fill {
-                height: 100%;
-                border-radius: 999px;
-                background: linear-gradient(90deg, #1D4ED8, #60A5FA);
-            }
-
-            .health-legend {
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-                gap: 10px;
-                margin: 8px 0 18px 0;
-            }
-
-            .health-chip {
-                border: 1px solid #E5E7EB;
-                border-radius: 12px;
-                padding: 10px 12px;
-                background: #FFFFFF;
-                font-size: 0.82rem;
-                line-height: 1.35;
-            }
 
             [data-testid="stDataFrame"] {
                 border: 1px solid #E5E7EB;
@@ -281,144 +202,6 @@ def info_card(titulo, texto, formula=None):
 
 
 
-def escapar_html(valor) -> str:
-    """Escapa texto antes de insertarlo en componentes HTML."""
-    import html
-    return html.escape("" if pd.isna(valor) else str(valor))
-
-
-def formato_kusd_compacto(valor) -> str:
-    if pd.isna(valor):
-        return "--"
-    valor = float(valor)
-    if abs(valor) >= 1000:
-        return f"USD {valor / 1000:,.1f} M".replace(",", "X").replace(".", ",").replace("X", ".")
-    return f"USD {valor:,.0f} K".replace(",", "X").replace(".", ",").replace("X", ".")
-
-
-def tarjeta_gestor(row: pd.Series) -> None:
-    """Muestra una ficha ejecutiva del gestor seleccionado."""
-    procesos = max(int(row.get("Total_Procesos", 0)), 0)
-    ahorro = formato_kusd_compacto(row.get("Ahorro_kUSD", 0))
-    oferentes = row.get("Promedio_Oferentes", np.nan)
-    oferentes_txt = "--" if pd.isna(oferentes) else f"{float(oferentes):.1f}".replace(".", ",")
-
-    barras = [
-        ("Licitación", float(row.get("Licitación_%", 0))),
-        ("Cost Avoidance", float(row.get("Cost_Avoidance_%", 0))),
-        ("Asig. directa", float(row.get("Asignación_Directa_%", 0))),
-    ]
-
-    filas_html = "".join(
-        f"""
-        <div class="capture-row">
-            <div>{escapar_html(nombre)}</div>
-            <div class="capture-track"><div class="capture-fill" style="width:{max(0, min(valor, 100)):.1f}%"></div></div>
-            <strong>{valor:.0f}%</strong>
-        </div>
-        """
-        for nombre, valor in barras
-    )
-
-    st.markdown(
-        f"""
-        <div class="manager-card">
-            <div class="manager-name">👤 {escapar_html(row.get('Gestor', 'Sin gestor'))}</div>
-            <div class="manager-metric"><span>💰 Ahorro generado</span><strong>{ahorro}</strong></div>
-            <div class="manager-metric"><span>🟡 Oferentes promedio</span><strong>{oferentes_txt}</strong></div>
-            <div class="manager-metric"><span>📑 Procesos realizados</span><strong>{procesos:,}</strong></div>
-            <div class="capture-title">Captura de ahorro por mecanismo</div>
-            {filas_html}
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def clasificar_salud(row: pd.Series) -> pd.Series:
-    """Clasifica cada documento con pocos estados, separados del diagnóstico."""
-    inicio = row.get("Fecha_Inicio")
-    fin = row.get("Fecha_Fin")
-    saldo = row.get("Saldo_Restante_%")
-    tiempo = row.get("Tiempo_Restante_%")
-    indice = row.get("Indice_Salud")
-
-    if pd.isna(inicio) or pd.isna(fin):
-        return pd.Series([
-            "Sin datos",
-            "No evaluable",
-            "Faltan fechas de vigencia.",
-            "Completar o corregir las fechas contractuales.",
-        ])
-    if fin < hoy:
-        return pd.Series([
-            "Vencido",
-            "Fuera de vigencia",
-            "El período contractual ya terminó.",
-            "Revisar cierre, renovación o regularización.",
-        ])
-    if inicio > hoy:
-        return pd.Series([
-            "No iniciado",
-            "Pendiente de inicio",
-            "El contrato todavía no entra en vigencia.",
-            "Confirmar necesidad y fecha de inicio.",
-        ])
-    if pd.isna(saldo) or pd.isna(tiempo) or pd.isna(indice):
-        return pd.Series([
-            "Sin datos",
-            "No evaluable",
-            "No fue posible calcular el indicador con datos válidos.",
-            "Revisar valores, moneda y duración contractual.",
-        ])
-    if saldo < 0:
-        return pd.Series([
-            "Crítico",
-            "Saldo negativo",
-            "El valor pendiente informado es menor que cero.",
-            "Validar consumos, ampliaciones y datos de origen.",
-        ])
-    if saldo >= 0.98 and tiempo <= 0.10:
-        return pd.Series([
-            "Crítico",
-            "Sin uso relevante",
-            "El contrato está próximo a vencer y conserva prácticamente todo el saldo.",
-            "Definir continuidad, extensión o cierre.",
-        ])
-    if indice < 0.60:
-        return pd.Series([
-            "Crítico",
-            "Consumo muy acelerado",
-            "El saldo disponible es insuficiente para el plazo que resta.",
-            "Proyectar consumo y evaluar ampliación o reemplazo.",
-        ])
-    if indice < 0.85:
-        return pd.Series([
-            "Revisar",
-            "Consumo acelerado",
-            "El presupuesto se consume más rápido que el plazo contractual.",
-            "Monitorear y actualizar la proyección de consumo.",
-        ])
-    if indice <= 1.30:
-        return pd.Series([
-            "Equilibrado",
-            "Ritmo esperado",
-            "Saldo y tiempo restante evolucionan de forma razonablemente alineada.",
-            "Mantener seguimiento normal.",
-        ])
-    if indice <= 2.00:
-        return pd.Series([
-            "Revisar",
-            "Baja ejecución",
-            "El consumo es menor que el esperado para el plazo transcurrido.",
-            "Revisar demanda, planificación y vigencia.",
-        ])
-    return pd.Series([
-        "Crítico",
-        "Ejecución muy baja",
-        "Existe mucho saldo en relación con el plazo restante.",
-        "Definir plan de uso, extensión o cierre.",
-    ])
 
 
 def limpiar_estilo_grafico(ax) -> None:
@@ -633,8 +416,8 @@ st.markdown(
 st.markdown(
     """
     <p style='text-align: center; font-size: 16px; color: #4B5563;'>
-        Seguimiento de ahorro planificado y real, desempeño por gestor, competencia,
-        mecanismos de contratación e Índice de Salud contractual.
+        Seguimiento de ahorro planificado y real, cumplimiento, eficiencia,
+        evolución temporal y distribución por mecanismo de contratación.
     </p>
     """,
     unsafe_allow_html=True
@@ -654,13 +437,11 @@ if "dataframes_cargados" not in st.session_state or not st.session_state["datafr
 df_plan_ahorro_gestores = obtener_dataframe("df_plan_ahorro_gestores")
 df_catalogo_categorias = obtener_dataframe("df_catalogo_categorias")
 df_registro_contratos = obtener_dataframe("df_registro_contratos")
-df_me3n = obtener_dataframe("df_me3n")
 
 if (
     df_plan_ahorro_gestores is None
     or df_catalogo_categorias is None
     or df_registro_contratos is None
-    or df_me3n is None
 ):
     st.stop()
 
@@ -687,22 +468,10 @@ validaciones = [
             "Categoria",
             "Contratista",
             "Tipo_Proceso",
-            "N_Oferentes",
             "LineaBase_kUSD",
             "Ahorro_Real_kUSD"
         ],
         "df_registro_contratos"
-    ),
-    validar_columnas(
-        df_me3n,
-        [
-            "Documento_compras",
-            "In.período_validez",
-            "Fin_período_validez",
-            "Valor_previsto",
-            "Valor_pendiente_total",
-        ],
-        "df_me3n"
     ),
 ]
 
@@ -769,7 +538,6 @@ df_real["Tipo_Proceso"] = limpiar_texto_columna(df_real["Tipo_Proceso"])
 
 df_real["Ahorro_Real_kUSD_num"] = df_real["Ahorro_Real_kUSD"].apply(convertir_kusd)
 df_real["LineaBase_kUSD_num"] = df_real["LineaBase_kUSD"].apply(convertir_kusd)
-df_real["N_Oferentes_num"] = pd.to_numeric(df_real["N_Oferentes"], errors="coerce")
 
 if "Gestor" not in df_real.columns or df_real["Gestor"].isna().all():
     df_catalogo_aux = (
@@ -790,73 +558,6 @@ else:
 
 df_real["Gestor"] = df_real["Gestor"].fillna("Sin gestor")
 
-# Preparación ME3N para Índice de Salud. El análisis se consolida por
-# Documento_compras para evitar contar varias posiciones como contratos distintos.
-df_salud_posiciones = df_me3n.copy()
-df_salud_posiciones["Documento_compras"] = limpiar_texto_columna(
-    df_salud_posiciones["Documento_compras"]
-)
-df_salud_posiciones["Fecha_Inicio"] = pd.to_datetime(
-    df_salud_posiciones["In.período_validez"], errors="coerce", dayfirst=True
-)
-df_salud_posiciones["Fecha_Fin"] = pd.to_datetime(
-    df_salud_posiciones["Fin_período_validez"], errors="coerce", dayfirst=True
-)
-df_salud_posiciones["Valor_Previsto_num"] = pd.to_numeric(
-    df_salud_posiciones["Valor_previsto"], errors="coerce"
-)
-df_salud_posiciones["Valor_Pendiente_num"] = pd.to_numeric(
-    df_salud_posiciones["Valor_pendiente_total"], errors="coerce"
-)
-
-columnas_agregacion_salud = {
-    "Fecha_Inicio": "min",
-    "Fecha_Fin": "max",
-    # ME3N normalmente repite datos de cabecera por cada posición.
-    # Se usa el primer valor no nulo para no multiplicar los montos.
-    "Valor_Previsto_num": "first",
-    "Valor_Pendiente_num": "first",
-}
-for columna_opcional in ["Texto_breve", "Proveedor/Centro_suministrador", "Moneda"]:
-    if columna_opcional in df_salud_posiciones.columns:
-        columnas_agregacion_salud[columna_opcional] = "first"
-
-df_salud = (
-    df_salud_posiciones
-    .dropna(subset=["Documento_compras"])
-    .groupby("Documento_compras", as_index=False)
-    .agg(columnas_agregacion_salud)
-)
-
-hoy = pd.Timestamp.today().normalize()
-df_salud["Duracion_Total_Dias"] = (
-    df_salud["Fecha_Fin"] - df_salud["Fecha_Inicio"]
-).dt.days
-df_salud["Tiempo_Restante_Dias"] = (df_salud["Fecha_Fin"] - hoy).dt.days
-
-df_salud["Tiempo_Restante_%"] = np.where(
-    df_salud["Duracion_Total_Dias"] > 0,
-    df_salud["Tiempo_Restante_Dias"] / df_salud["Duracion_Total_Dias"],
-    np.nan,
-)
-df_salud["Saldo_Restante_%"] = np.where(
-    df_salud["Valor_Previsto_num"] > 0,
-    df_salud["Valor_Pendiente_num"] / df_salud["Valor_Previsto_num"],
-    np.nan,
-)
-df_salud["Indice_Salud"] = np.where(
-    df_salud["Tiempo_Restante_%"] > 0,
-    df_salud["Saldo_Restante_%"] / df_salud["Tiempo_Restante_%"],
-    np.nan,
-)
-
-df_salud["Tiempo_Restante_pct"] = df_salud["Tiempo_Restante_%"] * 100
-df_salud["Saldo_Restante_pct"] = df_salud["Saldo_Restante_%"] * 100
-
-df_salud[["Estado_Salud", "Tendencia", "Diagnostico", "Accion_Sugerida"]] = df_salud.apply(
-    clasificar_salud,
-    axis=1,
-)
 
 
 # ============================================================
@@ -1015,372 +716,11 @@ with col_info2:
 st.markdown("---")
 
 st.caption(
-    "Lectura sugerida: evolución global → desempeño por gestor → salud contractual → "
-    "distribución por proceso → cumplimiento y detalle."
+    "Lectura sugerida: evolución global → distribución por proceso → "
+    "cumplimiento por gestor → top contratos y tablas de apoyo."
 )
 
 
-# ============================================================
-# Ficha y tabla de indicadores por gestor
-# ============================================================
-
-st.markdown("### Desempeño por gestor")
-st.caption(
-    "Ahorro generado, competencia promedio y distribución de los procesos "
-    "por mecanismo de contratación. Los porcentajes se calculan por cantidad de registros."
-)
-
-df_indicadores_gestor = (
-    df_real_filtrado
-    .groupby("Gestor", as_index=False)
-    .agg(
-        Ahorro_kUSD=("Ahorro_Real_kUSD_num", "sum"),
-        Promedio_Oferentes=("N_Oferentes_num", "mean"),
-        Total_Procesos=("Tipo_Proceso", "size"),
-        Licitaciones=("Tipo_Proceso", lambda s: (s == "Licitación").sum()),
-        Cost_Avoidance=(
-            "Tipo_Proceso",
-            lambda s: (s == "Negociación - Cost Avoidance").sum(),
-        ),
-        Asignaciones_Directas=(
-            "Tipo_Proceso",
-            lambda s: (s == "Asignación Directa").sum(),
-        ),
-    )
-)
-
-for columna_cantidad, columna_pct in [
-    ("Licitaciones", "Licitación_%"),
-    ("Cost_Avoidance", "Cost_Avoidance_%"),
-    ("Asignaciones_Directas", "Asignación_Directa_%"),
-]:
-    df_indicadores_gestor[columna_pct] = np.where(
-        df_indicadores_gestor["Total_Procesos"] > 0,
-        df_indicadores_gestor[columna_cantidad]
-        / df_indicadores_gestor["Total_Procesos"]
-        * 100,
-        0,
-    )
-
-df_indicadores_gestor = df_indicadores_gestor.sort_values(
-    "Ahorro_kUSD", ascending=False
-).reset_index(drop=True)
-
-if df_indicadores_gestor.empty:
-    st.info("No hay datos de gestores para los filtros seleccionados.")
-else:
-    col_ficha, col_ranking = st.columns([0.88, 1.12])
-
-    with col_ficha:
-        gestor_ficha = st.selectbox(
-            "Gestor para ficha ejecutiva",
-            options=df_indicadores_gestor["Gestor"].tolist(),
-            key="gestor_ficha_ejecutiva",
-        )
-        fila_gestor = df_indicadores_gestor.loc[
-            df_indicadores_gestor["Gestor"] == gestor_ficha
-        ].iloc[0]
-        tarjeta_gestor(fila_gestor)
-
-    with col_ranking:
-        st.markdown("#### Comparativo de gestores")
-        mostrar_tabla_profesional(
-            df_indicadores_gestor,
-            columnas=[
-                "Gestor",
-                "Ahorro_kUSD",
-                "Promedio_Oferentes",
-                "Total_Procesos",
-                "Licitación_%",
-                "Cost_Avoidance_%",
-                "Asignación_Directa_%",
-            ],
-            nombres={
-                "Ahorro_kUSD": "Ahorro",
-                "Promedio_Oferentes": "Prom. oferentes",
-                "Total_Procesos": "Procesos",
-                "Licitación_%": "Licitación",
-                "Cost_Avoidance_%": "Cost Avoidance",
-                "Asignación_Directa_%": "Asig. directa",
-            },
-            orden_por="Ahorro_kUSD",
-            ascendente=False,
-            column_config={
-                "Ahorro": st.column_config.NumberColumn(format="%.1f kUSD"),
-                "Prom. oferentes": st.column_config.NumberColumn(format="%.1f"),
-                "Licitación": st.column_config.ProgressColumn(
-                    format="%.1f%%", min_value=0, max_value=100
-                ),
-                "Cost Avoidance": st.column_config.ProgressColumn(
-                    format="%.1f%%", min_value=0, max_value=100
-                ),
-                "Asig. directa": st.column_config.ProgressColumn(
-                    format="%.1f%%", min_value=0, max_value=100
-                ),
-            },
-            altura=390,
-        )
-
-    with st.expander("Cómo se calculan los indicadores por gestor", expanded=False):
-        metodologia_gestor = pd.DataFrame(
-            [
-                ["Ahorro generado", "Suma de Ahorro_Real_kUSD del gestor.", "20 + 35 + 15 + 175 = 245 kUSD"],
-                ["Promedio de oferentes", "Promedio de N_Oferentes del gestor.", "(1 + 3 + 4 + 2 + 4) / 5 = 2,8"],
-                ["% Licitación", "Procesos Licitación / total de procesos del gestor × 100.", "12 / 21 = 57,1%"],
-                ["% Cost Avoidance", "Procesos Negociación - Cost Avoidance / total × 100.", "6 / 21 = 28,6%"],
-                ["% Asignación Directa", "Procesos Asignación Directa / total × 100.", "3 / 21 = 14,3%"],
-            ],
-            columns=["Indicador", "Cómo calcularlo", "Ejemplo referencial"],
-        )
-        st.dataframe(metodologia_gestor, use_container_width=True, hide_index=True)
-        st.caption(
-            "Cada fila del registro se considera un proceso. Si en el futuro existe un ID de proceso único, "
-            "conviene reemplazar el conteo de filas por el conteo de IDs únicos."
-        )
-
-st.markdown("---")
-
-
-# ============================================================
-# Índice de Salud contractual ME3N
-# ============================================================
-
-st.markdown("### Índice de Salud contractual")
-st.caption(
-    "Compara el saldo restante con el tiempo restante. Para facilitar la gestión, "
-    "se utilizan solo tres estados operativos: Equilibrado, Revisar y Crítico. "
-    "Los contratos vencidos, no iniciados o sin datos se muestran aparte."
-)
-
-with st.expander("Cómo se calcula e interpreta", expanded=False):
-    col_formula1, col_formula2, col_formula3 = st.columns(3)
-    with col_formula1:
-        info_card(
-            "1 · Saldo restante",
-            "Porción del valor contractual que todavía está disponible.",
-            "% Saldo = Valor pendiente / Valor previsto",
-        )
-    with col_formula2:
-        info_card(
-            "2 · Tiempo restante",
-            "Porción de la vigencia contractual que queda desde la fecha actual.",
-            "% Tiempo = (Fin − Hoy) / (Fin − Inicio)",
-        )
-    with col_formula3:
-        info_card(
-            "3 · Índice de Salud",
-            "Relaciona el saldo disponible con el plazo pendiente.",
-            "Índice = % Saldo / % Tiempo",
-        )
-
-    tabla_rangos = pd.DataFrame(
-        [
-            ["< 0,60", "Crítico", "Consumo muy acelerado; riesgo de agotar el saldo."],
-            ["0,60 a 0,84", "Revisar", "Consumo más rápido que el plazo."],
-            ["0,85 a 1,30", "Equilibrado", "Ritmo razonablemente alineado."],
-            ["1,31 a 2,00", "Revisar", "Ejecución menor que la esperada."],
-            ["> 2,00", "Crítico", "Ejecución muy baja respecto del plazo restante."],
-        ],
-        columns=["Índice", "Estado", "Lectura"],
-    )
-    st.dataframe(tabla_rangos, use_container_width=True, hide_index=True)
-    st.caption(
-        "Casos especiales: saldo negativo o contrato casi sin uso próximo a vencer se clasifican como Crítico. "
-        "El índice es una señal de gestión y debe revisarse junto con la necesidad real del contrato."
-    )
-
-if df_salud.empty:
-    st.info("No hay documentos de compra disponibles para analizar.")
-else:
-    documentos_vigentes = df_salud[
-        (df_salud["Fecha_Inicio"] <= hoy) & (df_salud["Fecha_Fin"] >= hoy)
-    ].copy()
-
-    equilibrados = int((documentos_vigentes["Estado_Salud"] == "Equilibrado").sum())
-    revisar = int((documentos_vigentes["Estado_Salud"] == "Revisar").sum())
-    criticos = int((documentos_vigentes["Estado_Salud"] == "Crítico").sum())
-    vencidos = int((df_salud["Estado_Salud"] == "Vencido").sum())
-
-    col_s1, col_s2, col_s3, col_s4, col_s5 = st.columns(5)
-    with col_s1:
-        kpi_card("Contratos vigentes", f"{len(documentos_vigentes):,}")
-    with col_s2:
-        kpi_card("Equilibrados", f"{equilibrados:,}", "Seguimiento normal")
-    with col_s3:
-        kpi_card("Por revisar", f"{revisar:,}", "Requieren análisis")
-    with col_s4:
-        kpi_card("Críticos", f"{criticos:,}", "Acción prioritaria")
-    with col_s5:
-        kpi_card("Vencidos", f"{vencidos:,}")
-
-    estados_orden = [
-        "Crítico",
-        "Revisar",
-        "Equilibrado",
-        "No iniciado",
-        "Vencido",
-        "Sin datos",
-    ]
-
-    df_estado_salud = (
-        df_salud.groupby("Estado_Salud", as_index=False)
-        .size()
-        .rename(columns={"size": "Contratos"})
-    )
-    df_estado_salud["orden"] = df_estado_salud["Estado_Salud"].map(
-        {estado: i for i, estado in enumerate(estados_orden)}
-    ).fillna(999)
-    df_estado_salud = df_estado_salud.sort_values("orden", ascending=False)
-
-    col_grafico_salud, col_lectura = st.columns([1.08, 0.92])
-    with col_grafico_salud:
-        fig, ax = plt.subplots(figsize=(10.8, 5.4))
-        bars = ax.barh(df_estado_salud["Estado_Salud"], df_estado_salud["Contratos"])
-        ax.set_title("Distribución por estado contractual", loc="left", fontweight="bold")
-        ax.set_xlabel("Documentos de compra")
-        limpiar_estilo_grafico(ax)
-        max_contratos = float(df_estado_salud["Contratos"].max())
-        margen = max(max_contratos * 0.12, 1)
-        ax.set_xlim(0, max_contratos + margen)
-        for bar in bars:
-            ax.text(
-                bar.get_width() + margen * 0.08,
-                bar.get_y() + bar.get_height() / 2,
-                f"{int(bar.get_width()):,}",
-                va="center",
-                fontweight="bold",
-            )
-        fig.tight_layout()
-        st.pyplot(fig, clear_figure=True)
-
-    with col_lectura:
-        st.markdown("#### Lectura rápida")
-        lectura_salud = pd.DataFrame(
-            [
-                ["Equilibrado", "Saldo y plazo avanzan a un ritmo similar.", "Seguimiento normal."],
-                ["Revisar", "Existe una desviación moderada de consumo.", "Validar proyección y necesidad."],
-                ["Crítico", "La desviación puede afectar continuidad o ejecución.", "Definir acción y responsable."],
-                ["No iniciado", "El contrato aún no entra en vigencia.", "Confirmar planificación."],
-                ["Vencido", "El período contractual terminó.", "Cerrar, renovar o regularizar."],
-                ["Sin datos", "No existen datos suficientes para evaluar.", "Corregir información de origen."],
-            ],
-            columns=["Estado", "Qué significa", "Acción"],
-        )
-        st.dataframe(lectura_salud, use_container_width=True, hide_index=True, height=300)
-
-    st.markdown("#### Detalle y priorización contractual")
-    col_hf1, col_hf2, col_hf3 = st.columns([1.0, 1.45, 0.75])
-    with col_hf1:
-        estados_disponibles = [e for e in estados_orden if e in df_salud["Estado_Salud"].unique()]
-        estados_filtro_salud = st.multiselect(
-            "Estado",
-            options=estados_disponibles,
-            default=estados_disponibles,
-            key="estados_filtro_salud",
-        )
-    with col_hf2:
-        buscar_documento = st.text_input(
-            "Buscar documento, proveedor o texto",
-            key="buscar_salud",
-        ).strip().casefold()
-    with col_hf3:
-        solo_vigentes = st.checkbox("Solo vigentes", value=True)
-
-    df_salud_detalle = df_salud.copy()
-    if estados_filtro_salud:
-        df_salud_detalle = df_salud_detalle[
-            df_salud_detalle["Estado_Salud"].isin(estados_filtro_salud)
-        ]
-    if solo_vigentes:
-        df_salud_detalle = df_salud_detalle[
-            (df_salud_detalle["Fecha_Inicio"] <= hoy)
-            & (df_salud_detalle["Fecha_Fin"] >= hoy)
-        ]
-    if buscar_documento:
-        campos_busqueda = ["Documento_compras", "Texto_breve", "Proveedor/Centro_suministrador"]
-        mascara = pd.Series(False, index=df_salud_detalle.index)
-        for campo in campos_busqueda:
-            if campo in df_salud_detalle.columns:
-                mascara |= (
-                    df_salud_detalle[campo]
-                    .fillna("")
-                    .astype(str)
-                    .str.casefold()
-                    .str.contains(buscar_documento, regex=False)
-                )
-        df_salud_detalle = df_salud_detalle[mascara]
-
-    prioridad = {
-        "Crítico": 0,
-        "Revisar": 1,
-        "Equilibrado": 2,
-        "No iniciado": 3,
-        "Vencido": 4,
-        "Sin datos": 5,
-    }
-    df_salud_detalle["Prioridad"] = df_salud_detalle["Estado_Salud"].map(prioridad).fillna(999)
-    df_salud_detalle = df_salud_detalle.sort_values(
-        ["Prioridad", "Fecha_Fin", "Indice_Salud"], ascending=[True, True, True]
-    )
-
-    # Formato de presentación: separador de miles y sin decimales.
-    # Se crean columnas visuales para garantizar el formato en cualquier versión de Streamlit.
-    df_salud_detalle["Valor_Previsto_fmt"] = df_salud_detalle["Valor_Previsto_num"].apply(
-        lambda valor: "" if pd.isna(valor) else f"{float(valor):,.0f}".replace(",", ".")
-    )
-    df_salud_detalle["Valor_Pendiente_fmt"] = df_salud_detalle["Valor_Pendiente_num"].apply(
-        lambda valor: "" if pd.isna(valor) else f"{float(valor):,.0f}".replace(",", ".")
-    )
-
-    columnas_salud = [
-        "Documento_compras",
-        "Texto_breve",
-        "Proveedor/Centro_suministrador",
-        "Fecha_Fin",
-        "Valor_Previsto_fmt",
-        "Valor_Pendiente_fmt",
-        "Tiempo_Restante_Dias",
-        "Saldo_Restante_pct",
-        "Tiempo_Restante_pct",
-        "Indice_Salud",
-        "Estado_Salud",
-        "Tendencia",
-        "Accion_Sugerida",
-    ]
-
-    mostrar_tabla_profesional(
-        df_salud_detalle,
-        columnas=columnas_salud,
-        nombres={
-            "Documento_compras": "Documento",
-            "Texto_breve": "Descripción",
-            "Proveedor/Centro_suministrador": "Proveedor",
-            "Fecha_Fin": "Fin validez",
-            "Valor_Previsto_fmt": "Valor previsto",
-            "Valor_Pendiente_fmt": "Valor pendiente",
-            "Tiempo_Restante_Dias": "Días restantes",
-            "Saldo_Restante_pct": "% saldo",
-            "Tiempo_Restante_pct": "% tiempo",
-            "Indice_Salud": "Índice",
-            "Estado_Salud": "Estado",
-            "Tendencia": "Lectura",
-            "Accion_Sugerida": "Acción sugerida",
-        },
-        column_config={
-            "Días restantes": st.column_config.NumberColumn(format="%,.0f"),
-            "% saldo": st.column_config.NumberColumn(format="%.0f%%"),
-            "% tiempo": st.column_config.NumberColumn(format="%.0f%%"),
-            "Índice": st.column_config.NumberColumn(format="%.2f"),
-        },
-        altura=560,
-    )
-
-    st.caption(
-        "Los montos se muestran con separador de miles y sin decimales. "
-        "Conservan la moneda original de ME3N, por lo que no deben sumarse entre monedas sin conversión previa."
-    )
-
-st.markdown("---")
 
 
 # ============================================================
