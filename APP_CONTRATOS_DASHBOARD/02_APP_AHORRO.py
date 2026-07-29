@@ -1,11 +1,12 @@
 # 02_APP_AHORRO.py
-# Dashboard de ahorro real, planificado, cumplimiento y procesos
+# Dashboard de ahorro, desempeño por gestor, cumplimiento y procesos
 # ============================================================
 
 from pathlib import Path
 import base64
 
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import streamlit as st
@@ -114,6 +115,69 @@ def aplicar_estilo():
             }
 
 
+            .manager-card {
+                background: #FFFFFF;
+                border: 1px solid #CBD5E1;
+                border-radius: 16px;
+                padding: 20px 22px;
+                box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05);
+                min-height: 330px;
+            }
+
+            .manager-name {
+                font-size: 1.05rem;
+                font-weight: 800;
+                color: #111827;
+                padding-bottom: 12px;
+                border-bottom: 1px solid #E5E7EB;
+                margin-bottom: 14px;
+            }
+
+            .manager-metric {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 18px;
+                margin: 8px 0;
+                font-size: 0.92rem;
+                color: #374151;
+            }
+
+            .manager-metric strong {
+                color: #111827;
+                white-space: nowrap;
+            }
+
+            .capture-title {
+                font-size: 0.86rem;
+                font-weight: 800;
+                color: #334155;
+                margin-top: 18px;
+                margin-bottom: 8px;
+            }
+
+            .capture-row {
+                display: grid;
+                grid-template-columns: minmax(115px, 1fr) 2fr 54px;
+                align-items: center;
+                gap: 10px;
+                margin: 9px 0;
+                font-size: 0.82rem;
+            }
+
+            .capture-track {
+                height: 11px;
+                background: #E5E7EB;
+                border-radius: 999px;
+                overflow: hidden;
+            }
+
+            .capture-fill {
+                height: 100%;
+                border-radius: 999px;
+                background: linear-gradient(90deg, #1D4ED8, #60A5FA);
+            }
+
 
             [data-testid="stDataFrame"] {
                 border: 1px solid #E5E7EB;
@@ -200,6 +264,60 @@ def info_card(titulo, texto, formula=None):
         unsafe_allow_html=True
     )
 
+
+
+def escapar_html(valor) -> str:
+    """Escapa texto antes de insertarlo en componentes HTML."""
+    import html
+    return html.escape("" if pd.isna(valor) else str(valor))
+
+
+def formato_kusd_compacto(valor) -> str:
+    if pd.isna(valor):
+        return "--"
+    valor = float(valor)
+    if abs(valor) >= 1000:
+        return f"USD {valor / 1000:,.1f} M".replace(",", "X").replace(".", ",").replace("X", ".")
+    return f"USD {valor:,.0f} K".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def tarjeta_gestor(row: pd.Series) -> None:
+    """Muestra una ficha ejecutiva del gestor seleccionado."""
+    procesos = max(int(row.get("Total_Procesos", 0)), 0)
+    ahorro = formato_kusd_compacto(row.get("Ahorro_kUSD", 0))
+    oferentes = row.get("Promedio_Oferentes", np.nan)
+    oferentes_txt = "--" if pd.isna(oferentes) else f"{float(oferentes):.1f}".replace(".", ",")
+
+    barras = [
+        ("Licitación", float(row.get("Licitación_%", 0))),
+        ("Cost Avoidance", float(row.get("Cost_Avoidance_%", 0))),
+        ("Asig. directa", float(row.get("Asignación_Directa_%", 0))),
+    ]
+
+    filas_html = "".join(
+        f"""
+        <div class="capture-row">
+            <div>{escapar_html(nombre)}</div>
+            <div class="capture-track"><div class="capture-fill" style="width:{max(0, min(valor, 100)):.1f}%"></div></div>
+            <strong>{valor:.0f}%</strong>
+        </div>
+        """
+        for nombre, valor in barras
+    )
+
+    st.markdown(
+        f"""
+        <div class="manager-card">
+            <div class="manager-name">👤 {escapar_html(row.get('Gestor', 'Sin gestor'))}</div>
+            <div class="manager-metric"><span>💰 Ahorro generado</span><strong>{ahorro}</strong></div>
+            <div class="manager-metric"><span>🟡 Oferentes promedio</span><strong>{oferentes_txt}</strong></div>
+            <div class="manager-metric"><span>📑 Procesos realizados</span><strong>{procesos:,}</strong></div>
+            <div class="capture-title">Captura de ahorro por mecanismo</div>
+            {filas_html}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 
@@ -416,8 +534,8 @@ st.markdown(
 st.markdown(
     """
     <p style='text-align: center; font-size: 16px; color: #4B5563;'>
-        Seguimiento de ahorro planificado y real, cumplimiento, eficiencia,
-        evolución temporal y distribución por mecanismo de contratación.
+        Seguimiento de ahorro planificado y real, desempeño por gestor, competencia,
+        mecanismos de contratación y cumplimiento de metas.
     </p>
     """,
     unsafe_allow_html=True
@@ -468,6 +586,7 @@ validaciones = [
             "Categoria",
             "Contratista",
             "Tipo_Proceso",
+            "N_Oferentes",
             "LineaBase_kUSD",
             "Ahorro_Real_kUSD"
         ],
@@ -538,6 +657,7 @@ df_real["Tipo_Proceso"] = limpiar_texto_columna(df_real["Tipo_Proceso"])
 
 df_real["Ahorro_Real_kUSD_num"] = df_real["Ahorro_Real_kUSD"].apply(convertir_kusd)
 df_real["LineaBase_kUSD_num"] = df_real["LineaBase_kUSD"].apply(convertir_kusd)
+df_real["N_Oferentes_num"] = pd.to_numeric(df_real["N_Oferentes"], errors="coerce")
 
 if "Gestor" not in df_real.columns or df_real["Gestor"].isna().all():
     df_catalogo_aux = (
@@ -716,13 +836,133 @@ with col_info2:
 st.markdown("---")
 
 st.caption(
-    "Lectura sugerida: evolución global → distribución por proceso → "
-    "cumplimiento por gestor → top contratos y tablas de apoyo."
+    "Lectura sugerida: evolución global → desempeño por gestor → "
+    "distribución por proceso → cumplimiento y detalle."
 )
 
 
+# ============================================================
+# Ficha y tabla de indicadores por gestor
+# ============================================================
+
+st.markdown("### Desempeño por gestor")
+st.caption(
+    "Ahorro generado, competencia promedio y distribución de los procesos "
+    "por mecanismo de contratación. Los porcentajes se calculan por cantidad de registros."
+)
+
+df_indicadores_gestor = (
+    df_real_filtrado
+    .groupby("Gestor", as_index=False)
+    .agg(
+        Ahorro_kUSD=("Ahorro_Real_kUSD_num", "sum"),
+        Promedio_Oferentes=("N_Oferentes_num", "mean"),
+        Total_Procesos=("Tipo_Proceso", "size"),
+        Licitaciones=("Tipo_Proceso", lambda s: (s == "Licitación").sum()),
+        Cost_Avoidance=(
+            "Tipo_Proceso",
+            lambda s: (s == "Negociación - Cost Avoidance").sum(),
+        ),
+        Asignaciones_Directas=(
+            "Tipo_Proceso",
+            lambda s: (s == "Asignación Directa").sum(),
+        ),
+    )
+)
+
+for columna_cantidad, columna_pct in [
+    ("Licitaciones", "Licitación_%"),
+    ("Cost_Avoidance", "Cost_Avoidance_%"),
+    ("Asignaciones_Directas", "Asignación_Directa_%"),
+]:
+    df_indicadores_gestor[columna_pct] = np.where(
+        df_indicadores_gestor["Total_Procesos"] > 0,
+        df_indicadores_gestor[columna_cantidad]
+        / df_indicadores_gestor["Total_Procesos"]
+        * 100,
+        0,
+    )
+
+df_indicadores_gestor = df_indicadores_gestor.sort_values(
+    "Ahorro_kUSD", ascending=False
+).reset_index(drop=True)
+
+if df_indicadores_gestor.empty:
+    st.info("No hay datos de gestores para los filtros seleccionados.")
+else:
+    col_ficha, col_ranking = st.columns([0.88, 1.12])
+
+    with col_ficha:
+        gestor_ficha = st.selectbox(
+            "Gestor para ficha ejecutiva",
+            options=df_indicadores_gestor["Gestor"].tolist(),
+            key="gestor_ficha_ejecutiva",
+        )
+        fila_gestor = df_indicadores_gestor.loc[
+            df_indicadores_gestor["Gestor"] == gestor_ficha
+        ].iloc[0]
+        tarjeta_gestor(fila_gestor)
+
+    with col_ranking:
+        st.markdown("#### Comparativo de gestores")
+        mostrar_tabla_profesional(
+            df_indicadores_gestor,
+            columnas=[
+                "Gestor",
+                "Ahorro_kUSD",
+                "Promedio_Oferentes",
+                "Total_Procesos",
+                "Licitación_%",
+                "Cost_Avoidance_%",
+                "Asignación_Directa_%",
+            ],
+            nombres={
+                "Ahorro_kUSD": "Ahorro",
+                "Promedio_Oferentes": "Prom. oferentes",
+                "Total_Procesos": "Procesos",
+                "Licitación_%": "Licitación",
+                "Cost_Avoidance_%": "Cost Avoidance",
+                "Asignación_Directa_%": "Asig. directa",
+            },
+            orden_por="Ahorro_kUSD",
+            ascendente=False,
+            column_config={
+                "Ahorro": st.column_config.NumberColumn(format="%.1f kUSD"),
+                "Prom. oferentes": st.column_config.NumberColumn(format="%.1f"),
+                "Licitación": st.column_config.ProgressColumn(
+                    format="%.1f%%", min_value=0, max_value=100
+                ),
+                "Cost Avoidance": st.column_config.ProgressColumn(
+                    format="%.1f%%", min_value=0, max_value=100
+                ),
+                "Asig. directa": st.column_config.ProgressColumn(
+                    format="%.1f%%", min_value=0, max_value=100
+                ),
+            },
+            altura=390,
+        )
+
+    with st.expander("Cómo se calculan los indicadores por gestor", expanded=False):
+        metodologia_gestor = pd.DataFrame(
+            [
+                ["Ahorro generado", "Suma de Ahorro_Real_kUSD del gestor.", "20 + 35 + 15 + 175 = 245 kUSD"],
+                ["Promedio de oferentes", "Promedio de N_Oferentes del gestor.", "(1 + 3 + 4 + 2 + 4) / 5 = 2,8"],
+                ["% Licitación", "Procesos Licitación / total de procesos del gestor × 100.", "12 / 21 = 57,1%"],
+                ["% Cost Avoidance", "Procesos Negociación - Cost Avoidance / total × 100.", "6 / 21 = 28,6%"],
+                ["% Asignación Directa", "Procesos Asignación Directa / total × 100.", "3 / 21 = 14,3%"],
+            ],
+            columns=["Indicador", "Cómo calcularlo", "Ejemplo referencial"],
+        )
+        st.dataframe(metodologia_gestor, use_container_width=True, hide_index=True)
+        st.caption(
+            "Cada fila del registro se considera un proceso. Si en el futuro existe un ID de proceso único, "
+            "conviene reemplazar el conteo de filas por el conteo de IDs únicos."
+        )
+
+st.markdown("---")
 
 
+# ============================================================
 # ============================================================
 # Gráfico: Evolución mensual y acumulada
 # ============================================================
