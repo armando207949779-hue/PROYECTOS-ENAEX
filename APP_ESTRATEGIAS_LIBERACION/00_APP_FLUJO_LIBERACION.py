@@ -6,6 +6,7 @@
 # 01 Cargar archivo
 # 02 Simulador aleatorio
 # 03 Modificación de liberadores
+# 04 Diccionarios
 # ============================================================
 
 from __future__ import annotations
@@ -59,7 +60,7 @@ APPS = [
         "icono": "📤",
         "descripcion": (
             "Carga y valida el archivo Excel de flujo de liberación, "
-            "dejándolo activo para la simulación y modificación."
+            "dejándolo activo para la simulación, modificación y consulta."
         ),
     },
     {
@@ -80,6 +81,16 @@ APPS = [
         "descripcion": (
             "Permite modificar liberadores, actualizar la base activa "
             "y descargar una nueva versión del Excel."
+        ),
+    },
+    {
+        "nombre": "04_APP_DICCIONARIOS",
+        "archivo": "04_APP_DICCIONARIOS.py",
+        "titulo": "04 Diccionarios",
+        "icono": "📚",
+        "descripcion": (
+            "Permite consultar las hojas de CECOS, USUARIOS y RANGOS "
+            "del archivo Excel activo."
         ),
     },
 ]
@@ -194,7 +205,7 @@ def mostrar_logo() -> None:
 
 
 # ============================================================
-# CONSTRUCCIÓN DE LAS TRES PÁGINAS
+# CONSTRUCCIÓN DE LAS CUATRO PÁGINAS
 # ============================================================
 
 def crear_pagina(app: dict) -> st.Page:
@@ -207,7 +218,7 @@ def crear_pagina(app: dict) -> st.Page:
 
 
 def construir_paginas() -> dict[str, list[st.Page]]:
-    """Construye las tres páginas en la barra lateral, sin página de inicio."""
+    """Construye las cuatro páginas en la barra lateral, sin página de inicio."""
     return {
         "Flujo de liberación": [
             crear_pagina(app)
@@ -232,10 +243,12 @@ if apps_faltantes:
         st.write(f"**{nombre}:** `{ruta}`")
 
     st.info(
-        "Los cuatro archivos deben estar dentro de la misma carpeta: "
-        "`00_APP_FLUJO_LIBERACION.py`, `01_CARGAR_ARCHIVO_FLUJO.py`, "
-        "`02_APP_SIMULADOR_ALEATORIO.py` y "
-        "`03_APP_MODIFICACION_LIBERADORES.py`."
+        "Los cinco archivos deben estar dentro de la misma carpeta: "
+        "`00_APP_FLUJO_LIBERACION.py`, "
+        "`01_CARGAR_ARCHIVO_FLUJO.py`, "
+        "`02_APP_SIMULADOR_ALEATORIO.py`, "
+        "`03_APP_MODIFICACION_LIBERADORES.py` y "
+        "`04_APP_DICCIONARIOS.py`."
     )
     st.stop()
 
