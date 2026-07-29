@@ -520,11 +520,27 @@ def preparar_contratos_estado(
 
         return "Vigente"
 
+    columna_proveedor = "Proveedor/Centro_suministrador"
+
+    if columna_proveedor not in df_m3n.columns:
+        df_m3n[columna_proveedor] = pd.NA
+
+    df_m3n[columna_proveedor] = (
+        df_m3n[columna_proveedor]
+        .astype(str)
+        .str.strip()
+        .replace(
+            ["", "nan", "NaN", "None", "none", "NULL", "null", "<NA>"],
+            pd.NA,
+        )
+    )
+
     df_m3n_contrato = (
         df_m3n
         .groupby("Documento_compras", as_index=False)
         .agg(
             Fin_período_validez=("Fin_período_validez", "max"),
+            Proveedor=("Proveedor/Centro_suministrador", "first"),
             Documento_Compras_Original_ME3N=(
                 "Documento_Compras_Original_ME3N",
                 "first",
@@ -587,37 +603,114 @@ if df_contratos_estado.empty:
 
 
 # ============================================================
-# Filtros de encabezado
+# Filtros globales
 # ============================================================
 
 section_title(
-    "Filtros",
-    "Selecciona uno o más gestores para actualizar el análisis contractual.",
+    "Filtros globales",
+    (
+        "Aplica los mismos criterios a indicadores, gráficos, mapas de calor "
+        "y tablas de detalle."
+    ),
 )
 
 gestores_disponibles = sorted(
     df_contratos_estado["Gestor_Contrato"]
     .dropna()
+    .astype(str)
     .unique()
     .tolist()
 )
 
+proveedores_disponibles = sorted(
+    df_contratos_estado["Proveedor"]
+    .dropna()
+    .astype(str)
+    .unique()
+    .tolist()
+) if "Proveedor" in df_contratos_estado.columns else []
+
+estados_disponibles_globales = [
+    estado
+    for estado in [
+        "Vencido",
+        "Por Vencer",
+        "Vigente",
+        "Sin fecha",
+        "Sin información ME3N",
+    ]
+    if estado in df_contratos_estado["Estado"].dropna().unique()
+]
+
 with st.container(border=True):
-    gestores_sel = st.multiselect(
-        "Gestor contrato",
-        options=gestores_disponibles,
-        default=gestores_disponibles,
-    )
+    col_filtro_1, col_filtro_2 = st.columns(2)
+
+    with col_filtro_1:
+        gestores_sel = st.multiselect(
+            "Gestor de contrato",
+            options=gestores_disponibles,
+            default=gestores_disponibles,
+            key="salud_filtro_gestor_global",
+        )
+
+    with col_filtro_2:
+        proveedores_sel = st.multiselect(
+            "Proveedor",
+            options=proveedores_disponibles,
+            default=proveedores_disponibles,
+            key="salud_filtro_proveedor_global",
+            help="Proveedor consolidado desde ME3N por documento de compra.",
+        )
+
+    col_filtro_3, col_filtro_4 = st.columns([1.25, 0.75])
+
+    with col_filtro_3:
+        estados_sel_globales = st.multiselect(
+            "Estado de vigencia",
+            options=estados_disponibles_globales,
+            default=estados_disponibles_globales,
+            key="salud_filtro_estado_global",
+        )
+
+    with col_filtro_4:
+        cobertura_sel = st.selectbox(
+            "Cobertura ME3N",
+            options=[
+                "Todos",
+                "Con cobertura ME3N",
+                "Sin cobertura ME3N",
+            ],
+            key="salud_filtro_cobertura_global",
+        )
+
+df_contratos_estado_filtrado = df_contratos_estado.copy()
 
 if gestores_sel:
-    df_contratos_estado_filtrado = (
-        df_contratos_estado[
-            df_contratos_estado["Gestor_Contrato"].isin(gestores_sel)
-        ]
-        .copy()
-    )
+    df_contratos_estado_filtrado = df_contratos_estado_filtrado[
+        df_contratos_estado_filtrado["Gestor_Contrato"].isin(gestores_sel)
+    ]
 else:
-    df_contratos_estado_filtrado = df_contratos_estado.iloc[0:0].copy()
+    df_contratos_estado_filtrado = df_contratos_estado_filtrado.iloc[0:0]
+
+if proveedores_disponibles:
+    if proveedores_sel:
+        df_contratos_estado_filtrado = df_contratos_estado_filtrado[
+            df_contratos_estado_filtrado["Proveedor"].isin(proveedores_sel)
+        ]
+    else:
+        df_contratos_estado_filtrado = df_contratos_estado_filtrado.iloc[0:0]
+
+if estados_sel_globales:
+    df_contratos_estado_filtrado = df_contratos_estado_filtrado[
+        df_contratos_estado_filtrado["Estado"].isin(estados_sel_globales)
+    ]
+else:
+    df_contratos_estado_filtrado = df_contratos_estado_filtrado.iloc[0:0]
+
+if cobertura_sel != "Todos":
+    df_contratos_estado_filtrado = df_contratos_estado_filtrado[
+        df_contratos_estado_filtrado["Validacion_Cobertura_ME3N"] == cobertura_sel
+    ]
 
 
 # ============================================================
@@ -665,161 +758,12 @@ sin_cobertura_me3n = (
 
 
 # ============================================================
-# Validación de cobertura ME3N
-# ============================================================
-
-section_title(
-    "Validación de cobertura ME3N",
-    (
-        "ME3N se valida contra la base df_bbdd_x_categoria "
-        "usando el identificador de contrato/documento."
-    ),
-)
-
-col_cobertura_1, col_cobertura_2, col_cobertura_3 = st.columns(3)
-
-with col_cobertura_1:
-    kpi_card(
-        "Contratos analizados",
-        formato_entero(recuento_contratos),
-        "Contratos únicos según filtros",
-    )
-
-with col_cobertura_2:
-    kpi_card(
-        "Cobertura ME3N",
-        formato_porcentaje(cobertura_me3n),
-        f"{formato_entero(contratos_cruzados_me3n)} contratos con coincidencia",
-    )
-
-with col_cobertura_3:
-    kpi_card(
-        "Sin cobertura ME3N",
-        formato_porcentaje(sin_cobertura_me3n),
-        f"{formato_entero(contratos_sin_me3n)} contratos sin coincidencia",
-    )
-
-
-# ============================================================
-# Detalle sin cobertura ME3N
-# ============================================================
-
-df_sin_info_me3n = (
-    df_contratos_estado_filtrado[
-        df_contratos_estado_filtrado["Validacion_Cobertura_ME3N"]
-        == "Sin cobertura ME3N"
-    ]
-    .copy()
-)
-
-if df_sin_info_me3n.empty:
-    st.success("Todos los contratos filtrados tienen información asociada en ME3N.")
-
-else:
-    df_sin_info_me3n["Contrato"] = (
-        df_sin_info_me3n["Contrato"]
-        .apply(limpiar_id_contrato)
-        .astype(str)
-    )
-
-    columnas_sin_me3n = [
-        columna
-        for columna in [
-            "Contrato",
-            "Contrato_Original",
-            "Gestor_Contrato",
-            "Documento_compras_ME3N",
-            "Documento_Compras_Original_ME3N",
-            "Fin_período_validez",
-            "Estado",
-            "Validacion_Cobertura_ME3N",
-            "Fecha_Analisis",
-        ]
-        if columna in df_sin_info_me3n.columns
-    ]
-
-    df_sin_info_me3n_tabla = (
-        df_sin_info_me3n[columnas_sin_me3n]
-        .drop_duplicates()
-        .sort_values(["Gestor_Contrato", "Contrato"])
-        .reset_index(drop=True)
-    )
-
-    df_sin_info_me3n_resumen = (
-        df_sin_info_me3n_tabla
-        .groupby("Gestor_Contrato", as_index=False)["Contrato"]
-        .nunique()
-        .rename(
-            columns={
-                "Contrato": "Contratos_No_Encontrados_ME3N",
-            }
-        )
-        .sort_values(
-            "Contratos_No_Encontrados_ME3N",
-            ascending=False,
-        )
-        .reset_index(drop=True)
-    )
-
-    st.warning(
-        f"Se identificaron {contratos_sin_me3n:,.0f} contratos "
-        "sin coincidencia en ME3N."
-    )
-
-    with st.expander(
-        "Ver detalle de contratos no encontrados en ME3N",
-        expanded=True,
-    ):
-        st.caption(
-            "Estos contratos existen en df_bbdd_x_categoria, "
-            "pero no tuvieron coincidencia en ME3N mediante Documento_compras."
-        )
-
-        col_sin_1, col_sin_2 = st.columns([0.8, 1.2])
-
-        with col_sin_1:
-            st.markdown("##### Resumen por gestor")
-
-            st.dataframe(
-                df_sin_info_me3n_resumen,
-                use_container_width=True,
-                hide_index=True,
-            )
-
-        with col_sin_2:
-            st.markdown("##### Contratos no encontrados en ME3N")
-
-            st.dataframe(
-                df_sin_info_me3n_tabla,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Contrato": st.column_config.TextColumn("Contrato"),
-                    "Contrato_Original": st.column_config.TextColumn("Contrato original"),
-                    "Gestor_Contrato": st.column_config.TextColumn("Gestor de contrato"),
-                    "Documento_compras_ME3N": st.column_config.TextColumn("Documento compras ME3N"),
-                    "Documento_Compras_Original_ME3N": st.column_config.TextColumn("Documento original ME3N"),
-                    "Fin_período_validez": st.column_config.DateColumn(
-                        "Fecha fin",
-                        format="DD/MM/YYYY",
-                    ),
-                    "Estado": st.column_config.TextColumn("Estado"),
-                    "Validacion_Cobertura_ME3N": st.column_config.TextColumn("Validación ME3N"),
-                    "Fecha_Analisis": st.column_config.DateColumn(
-                        "Fecha de análisis",
-                        format="DD/MM/YYYY",
-                    ),
-                },
-            )
-
-
-# ============================================================
 # Indicadores principales
 # ============================================================
 
 section_title(
     "Indicadores principales",
-    "Resumen ejecutivo de cobertura y vigencia contractual.",
+    "Resumen ejecutivo de la cartera contractual filtrada.",
 )
 
 col_kpi1, col_kpi2, col_kpi3, col_kpi4 = st.columns(4)
@@ -1049,6 +993,200 @@ else:
                 ),
             },
         )
+
+
+# ============================================================
+# Mapa de calor único por gestor y estado
+# ============================================================
+
+section_title(
+    "Mapa de calor de contratos por gestor y estado",
+    (
+        "Una única matriz compara Vencido, Por Vencer y Vigente. "
+        "Cada columna utiliza su propia escala: rojo, amarillo y verde."
+    ),
+)
+
+estados_mapa = ["Vencido", "Por Vencer", "Vigente"]
+
+if df_recuento_estado.empty:
+    st.info("No hay datos para construir el mapa de calor.")
+else:
+    df_heatmap = (
+        df_recuento_estado[
+            df_recuento_estado["Estado"].isin(estados_mapa)
+        ]
+        .pivot_table(
+            index="Gestor_Contrato",
+            columns="Estado",
+            values="Recuento_Contratos",
+            aggfunc="sum",
+            fill_value=0,
+        )
+        .reindex(columns=estados_mapa, fill_value=0)
+    )
+
+    df_heatmap["Total"] = df_heatmap[estados_mapa].sum(axis=1)
+    df_heatmap = (
+        df_heatmap
+        .sort_values(
+            ["Vencido", "Por Vencer", "Total"],
+            ascending=[False, False, False],
+        )
+    )
+
+    df_heatmap_plot = df_heatmap[estados_mapa]
+
+    if df_heatmap_plot.empty:
+        st.info("No hay datos para construir el mapa de calor.")
+    else:
+        from matplotlib import colors as mcolors
+        from matplotlib import cm
+
+        altura_figura = max(5.8, 0.42 * len(df_heatmap_plot) + 2.2)
+        fig, ax = plt.subplots(figsize=(10.8, altura_figura))
+
+        mapas_color = {
+            "Vencido": cm.Reds,
+            "Por Vencer": cm.YlOrBr,
+            "Vigente": cm.Greens,
+        }
+
+        matriz_rgba = np.ones(
+            (len(df_heatmap_plot), len(estados_mapa), 4),
+            dtype=float,
+        )
+
+        normalizadores = {}
+
+        for columna_idx, estado in enumerate(estados_mapa):
+            valores = df_heatmap_plot[estado].astype(float).to_numpy()
+            maximo = max(float(valores.max()), 1.0)
+            normalizador = mcolors.Normalize(vmin=0, vmax=maximo)
+            normalizadores[estado] = normalizador
+
+            colores_columna = mapas_color[estado](normalizador(valores))
+            # Los ceros quedan muy claros, sin perder la identidad del estado.
+            colores_columna[valores == 0, 3] = 0.16
+            matriz_rgba[:, columna_idx, :] = colores_columna
+
+        ax.imshow(
+            matriz_rgba,
+            aspect="auto",
+            interpolation="nearest",
+        )
+
+        ax.set_xticks(np.arange(len(estados_mapa)))
+        ax.set_xticklabels(estados_mapa, fontweight="bold")
+        ax.set_yticks(np.arange(len(df_heatmap_plot.index)))
+        ax.set_yticklabels(df_heatmap_plot.index)
+
+        ax.set_xticks(
+            np.arange(-0.5, len(estados_mapa), 1),
+            minor=True,
+        )
+        ax.set_yticks(
+            np.arange(-0.5, len(df_heatmap_plot.index), 1),
+            minor=True,
+        )
+        ax.grid(
+            which="minor",
+            color="white",
+            linestyle="-",
+            linewidth=1.8,
+        )
+        ax.tick_params(which="minor", bottom=False, left=False)
+
+        ax.set_title(
+            "Concentración contractual por gestor",
+            fontsize=14,
+            fontweight="bold",
+            pad=14,
+            loc="left",
+        )
+        ax.set_xlabel("Estado de vigencia")
+        ax.set_ylabel("Gestor de contrato")
+
+        for fila_idx, (_, fila) in enumerate(df_heatmap_plot.iterrows()):
+            for columna_idx, estado in enumerate(estados_mapa):
+                valor = int(fila[estado])
+                maximo = max(float(df_heatmap_plot[estado].max()), 1.0)
+                intensidad = valor / maximo
+
+                color_texto = "white" if intensidad >= 0.58 else "#111827"
+
+                ax.text(
+                    columna_idx,
+                    fila_idx,
+                    f"{valor:,}".replace(",", ".") if valor > 0 else "–",
+                    ha="center",
+                    va="center",
+                    fontsize=9,
+                    fontweight="bold" if valor > 0 else "normal",
+                    color=color_texto if valor > 0 else "#6B7280",
+                )
+
+        # Tres barras de escala independientes dentro de una sola visualización.
+        posiciones_colorbar = [
+            (0.18, "Vencido"),
+            (0.44, "Por Vencer"),
+            (0.70, "Vigente"),
+        ]
+
+        for posicion_x, estado in posiciones_colorbar:
+            eje_color = fig.add_axes([posicion_x, 0.035, 0.18, 0.022])
+            mapeable = cm.ScalarMappable(
+                norm=normalizadores[estado],
+                cmap=mapas_color[estado],
+            )
+            barra = fig.colorbar(
+                mapeable,
+                cax=eje_color,
+                orientation="horizontal",
+            )
+            barra.ax.tick_params(labelsize=8)
+            barra.set_label(
+                estado,
+                fontsize=8,
+                fontweight="bold",
+                labelpad=2,
+            )
+
+        fig.subplots_adjust(
+            left=0.25,
+            right=0.98,
+            top=0.91,
+            bottom=0.14,
+        )
+        st.pyplot(fig, clear_figure=True)
+
+        with st.expander("Ver tabla del mapa de calor", expanded=False):
+            tabla_heatmap = df_heatmap.reset_index()[
+                ["Gestor_Contrato", "Vencido", "Por Vencer", "Vigente", "Total"]
+            ]
+
+            st.dataframe(
+                tabla_heatmap,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Gestor_Contrato": st.column_config.TextColumn(
+                        "Gestor de contrato"
+                    ),
+                    "Vencido": st.column_config.NumberColumn(
+                        "Vencido", format="%d"
+                    ),
+                    "Por Vencer": st.column_config.NumberColumn(
+                        "Por vencer", format="%d"
+                    ),
+                    "Vigente": st.column_config.NumberColumn(
+                        "Vigente", format="%d"
+                    ),
+                    "Total": st.column_config.NumberColumn(
+                        "Total", format="%d"
+                    ),
+                },
+            )
 
 
 # ============================================================
@@ -1553,285 +1691,6 @@ else:
 
 
 # ============================================================
-# Mapa de calor por gestor y estado
-# ============================================================
-
-section_title(
-    "Mapa de calor de contratos por gestor y estado",
-    (
-        "Comparación visual para detectar concentraciones de contratos "
-        "y estados críticos."
-    ),
-)
-
-if df_recuento_estado.empty:
-    st.info("No hay datos para construir el mapa de calor.")
-else:
-    df_heatmap_pivot = (
-        df_recuento_estado
-        .pivot_table(
-            index="Gestor_Contrato",
-            columns="Estado",
-            values="Recuento_Contratos",
-            aggfunc="sum",
-            fill_value=0,
-        )
-    )
-
-    columnas_presentes = [
-        estado
-        for estado in orden_estados
-        if estado in df_heatmap_pivot.columns
-    ]
-
-    df_heatmap_pivot = df_heatmap_pivot[columnas_presentes]
-    df_heatmap_pivot["Total"] = df_heatmap_pivot.sum(axis=1)
-
-    df_heatmap_pivot = (
-        df_heatmap_pivot
-        .sort_values("Total", ascending=False)
-    )
-
-    df_heatmap_plot = df_heatmap_pivot.drop(columns="Total")
-
-    if df_heatmap_plot.empty:
-        st.info("No hay datos para construir el mapa de calor.")
-    else:
-        altura_figura = max(6, 0.38 * len(df_heatmap_plot) + 2)
-
-        fig, ax = plt.subplots(figsize=(10.5, altura_figura))
-
-        matriz = df_heatmap_plot.values
-
-        im = ax.imshow(
-            matriz,
-            aspect="auto",
-            cmap="YlGnBu",
-            interpolation="nearest",
-        )
-
-        ax.set_xticks(
-            np.arange(-0.5, len(df_heatmap_plot.columns), 1),
-            minor=True,
-        )
-        ax.set_yticks(
-            np.arange(-0.5, len(df_heatmap_plot.index), 1),
-            minor=True,
-        )
-        ax.grid(which="minor", color="white", linestyle="-", linewidth=1.4)
-        ax.tick_params(which="minor", bottom=False, left=False)
-
-        ax.set_xticks(np.arange(len(df_heatmap_plot.columns)))
-        ax.set_xticklabels(
-            df_heatmap_plot.columns,
-            rotation=35,
-            ha="right",
-        )
-
-        ax.set_yticks(np.arange(len(df_heatmap_plot.index)))
-        ax.set_yticklabels(df_heatmap_plot.index)
-
-        ax.set_title(
-            "Concentración de contratos por gestor y estado",
-            fontsize=14,
-            fontweight="bold",
-            pad=14,
-        )
-
-        ax.set_xlabel("Estado")
-        ax.set_ylabel("Gestor de contrato")
-
-        valor_maximo = matriz.max() if matriz.size > 0 else 0
-
-        for fila in range(matriz.shape[0]):
-            for columna in range(matriz.shape[1]):
-                valor = matriz[fila, columna]
-
-                color_texto = (
-                    "white"
-                    if valor_maximo > 0 and valor >= valor_maximo * 0.65
-                    else "#111827"
-                )
-
-                ax.text(
-                    columna,
-                    fila,
-                    str(int(valor)) if valor > 0 else "–",
-                    ha="center",
-                    va="center",
-                    fontsize=9,
-                    fontweight="bold" if valor > 0 else "normal",
-                    color=color_texto if valor > 0 else "#9CA3AF",
-                )
-
-        cbar = fig.colorbar(im, ax=ax)
-        cbar.set_label("Recuento de contratos")
-
-        fig.tight_layout()
-
-        st.pyplot(fig, clear_figure=True)
-
-        with st.expander(
-            "Ver tabla del mapa de calor",
-            expanded=True,
-        ):
-            st.dataframe(
-                df_heatmap_plot.reset_index(),
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Gestor_Contrato": st.column_config.TextColumn(
-                        "Gestor de contrato"
-                    ),
-                },
-            )
-
-        section_title(
-            "Mapas de calor individuales por estado",
-            (
-                "Vista separada por gestor para Vencido, Por Vencer y Vigente, "
-                "usando gradientes rojo, naranjo y verde respectivamente."
-            ),
-        )
-
-        configuracion_heatmaps_individuales = [
-            ("Vencido", "Reds", "Contratos vencidos por gestor"),
-            ("Por Vencer", "Oranges", "Contratos por vencer por gestor"),
-            ("Vigente", "Greens", "Contratos vigentes por gestor"),
-        ]
-
-        for estado_individual, cmap_individual, titulo_individual in configuracion_heatmaps_individuales:
-            df_heatmap_individual = (
-                df_heatmap_pivot[[estado_individual]]
-                if estado_individual in df_heatmap_pivot.columns
-                else pd.DataFrame(
-                    0,
-                    index=df_heatmap_pivot.index,
-                    columns=[estado_individual],
-                )
-            )
-
-            df_heatmap_individual = (
-                df_heatmap_individual
-                .sort_values(estado_individual, ascending=False)
-            )
-
-            if df_heatmap_individual.empty:
-                st.info(
-                    f"No hay datos para construir el mapa de calor de {estado_individual}."
-                )
-                continue
-
-            altura_individual = max(5, 0.36 * len(df_heatmap_individual) + 2)
-            fig_individual, ax_individual = plt.subplots(
-                figsize=(8.5, altura_individual)
-            )
-
-            matriz_individual = df_heatmap_individual.values
-
-            im_individual = ax_individual.imshow(
-                matriz_individual,
-                aspect="auto",
-                cmap=cmap_individual,
-                interpolation="nearest",
-            )
-
-            ax_individual.set_xticks([-0.5, 0.5], minor=True)
-            ax_individual.set_yticks(
-                np.arange(-0.5, len(df_heatmap_individual.index), 1),
-                minor=True,
-            )
-            ax_individual.grid(
-                which="minor",
-                color="white",
-                linestyle="-",
-                linewidth=1.4,
-            )
-            ax_individual.tick_params(
-                which="minor",
-                bottom=False,
-                left=False,
-            )
-
-            ax_individual.set_xticks([0])
-            ax_individual.set_xticklabels([estado_individual])
-            ax_individual.set_yticks(
-                np.arange(len(df_heatmap_individual.index))
-            )
-            ax_individual.set_yticklabels(df_heatmap_individual.index)
-
-            ax_individual.set_title(
-                titulo_individual,
-                fontsize=14,
-                fontweight="bold",
-                pad=14,
-            )
-            ax_individual.set_xlabel("Estado")
-            ax_individual.set_ylabel("Gestor de contrato")
-
-            valor_maximo_individual = (
-                matriz_individual.max()
-                if matriz_individual.size > 0
-                else 0
-            )
-
-            for fila_individual in range(matriz_individual.shape[0]):
-                valor_individual = matriz_individual[fila_individual, 0]
-
-                color_texto_individual = (
-                    "white"
-                    if (
-                        valor_maximo_individual > 0
-                        and valor_individual >= valor_maximo_individual * 0.65
-                    )
-                    else "#111827"
-                )
-
-                ax_individual.text(
-                    0,
-                    fila_individual,
-                    str(int(valor_individual)) if valor_individual > 0 else "–",
-                    ha="center",
-                    va="center",
-                    fontsize=9,
-                    fontweight="bold" if valor_individual > 0 else "normal",
-                    color=(
-                        color_texto_individual
-                        if valor_individual > 0
-                        else "#9CA3AF"
-                    ),
-                )
-
-            cbar_individual = fig_individual.colorbar(
-                im_individual,
-                ax=ax_individual,
-            )
-            cbar_individual.set_label("Recuento de contratos")
-
-            fig_individual.tight_layout()
-            st.pyplot(fig_individual, clear_figure=True)
-
-            with st.expander(
-                f"Ver tabla del mapa de calor: {estado_individual}",
-                expanded=False,
-            ):
-                st.dataframe(
-                    df_heatmap_individual.reset_index(),
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "Gestor_Contrato": st.column_config.TextColumn(
-                            "Gestor de contrato"
-                        ),
-                        estado_individual: st.column_config.NumberColumn(
-                            estado_individual,
-                            format="%d",
-                        ),
-                    },
-                )
-
-
-# ============================================================
 # Contratos por vencer por gestor
 # ============================================================
 
@@ -1985,6 +1844,155 @@ else:
                 ),
             },
         )
+
+
+# ============================================================
+# Validación de cobertura ME3N
+# ============================================================
+
+section_title(
+    "Validación de cobertura ME3N",
+    (
+        "ME3N se valida contra la base df_bbdd_x_categoria "
+        "usando el identificador de contrato/documento."
+    ),
+)
+
+col_cobertura_1, col_cobertura_2, col_cobertura_3 = st.columns(3)
+
+with col_cobertura_1:
+    kpi_card(
+        "Contratos analizados",
+        formato_entero(recuento_contratos),
+        "Contratos únicos según filtros",
+    )
+
+with col_cobertura_2:
+    kpi_card(
+        "Cobertura ME3N",
+        formato_porcentaje(cobertura_me3n),
+        f"{formato_entero(contratos_cruzados_me3n)} contratos con coincidencia",
+    )
+
+with col_cobertura_3:
+    kpi_card(
+        "Sin cobertura ME3N",
+        formato_porcentaje(sin_cobertura_me3n),
+        f"{formato_entero(contratos_sin_me3n)} contratos sin coincidencia",
+    )
+
+
+# ============================================================
+# Detalle sin cobertura ME3N
+# ============================================================
+
+df_sin_info_me3n = (
+    df_contratos_estado_filtrado[
+        df_contratos_estado_filtrado["Validacion_Cobertura_ME3N"]
+        == "Sin cobertura ME3N"
+    ]
+    .copy()
+)
+
+if df_sin_info_me3n.empty:
+    st.success("Todos los contratos filtrados tienen información asociada en ME3N.")
+
+else:
+    df_sin_info_me3n["Contrato"] = (
+        df_sin_info_me3n["Contrato"]
+        .apply(limpiar_id_contrato)
+        .astype(str)
+    )
+
+    columnas_sin_me3n = [
+        columna
+        for columna in [
+            "Contrato",
+            "Contrato_Original",
+            "Gestor_Contrato",
+            "Documento_compras_ME3N",
+            "Documento_Compras_Original_ME3N",
+            "Fin_período_validez",
+            "Estado",
+            "Validacion_Cobertura_ME3N",
+            "Fecha_Analisis",
+        ]
+        if columna in df_sin_info_me3n.columns
+    ]
+
+    df_sin_info_me3n_tabla = (
+        df_sin_info_me3n[columnas_sin_me3n]
+        .drop_duplicates()
+        .sort_values(["Gestor_Contrato", "Contrato"])
+        .reset_index(drop=True)
+    )
+
+    df_sin_info_me3n_resumen = (
+        df_sin_info_me3n_tabla
+        .groupby("Gestor_Contrato", as_index=False)["Contrato"]
+        .nunique()
+        .rename(
+            columns={
+                "Contrato": "Contratos_No_Encontrados_ME3N",
+            }
+        )
+        .sort_values(
+            "Contratos_No_Encontrados_ME3N",
+            ascending=False,
+        )
+        .reset_index(drop=True)
+    )
+
+    st.warning(
+        f"Se identificaron {contratos_sin_me3n:,.0f} contratos "
+        "sin coincidencia en ME3N."
+    )
+
+    with st.expander(
+        "Ver detalle de contratos no encontrados en ME3N",
+        expanded=True,
+    ):
+        st.caption(
+            "Estos contratos existen en df_bbdd_x_categoria, "
+            "pero no tuvieron coincidencia en ME3N mediante Documento_compras."
+        )
+
+        col_sin_1, col_sin_2 = st.columns([0.8, 1.2])
+
+        with col_sin_1:
+            st.markdown("##### Resumen por gestor")
+
+            st.dataframe(
+                df_sin_info_me3n_resumen,
+                use_container_width=True,
+                hide_index=True,
+            )
+
+        with col_sin_2:
+            st.markdown("##### Contratos no encontrados en ME3N")
+
+            st.dataframe(
+                df_sin_info_me3n_tabla,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Contrato": st.column_config.TextColumn("Contrato"),
+                    "Contrato_Original": st.column_config.TextColumn("Contrato original"),
+                    "Gestor_Contrato": st.column_config.TextColumn("Gestor de contrato"),
+                    "Documento_compras_ME3N": st.column_config.TextColumn("Documento compras ME3N"),
+                    "Documento_Compras_Original_ME3N": st.column_config.TextColumn("Documento original ME3N"),
+                    "Fin_período_validez": st.column_config.DateColumn(
+                        "Fecha fin",
+                        format="DD/MM/YYYY",
+                    ),
+                    "Estado": st.column_config.TextColumn("Estado"),
+                    "Validacion_Cobertura_ME3N": st.column_config.TextColumn("Validación ME3N"),
+                    "Fecha_Analisis": st.column_config.DateColumn(
+                        "Fecha de análisis",
+                        format="DD/MM/YYYY",
+                    ),
+                },
+            )
 
 
 # ============================================================
