@@ -2,32 +2,33 @@
 # 04_APP_DICCIONARIOS
 # APP_ESTRATEGIAS_LIBERACION
 #
-# Permite consultar las hojas de diccionarios del Excel activo:
-# - CECOS
-# - USUARIOS
-# - RANGOS
+# Consulta los diccionarios normalizados del archivo activo:
+# - Dic_CECO: CECO | Planta | Centro
+# - Dic_Usuarios: Correo | Cargo
+# - Dic_Rangos: Orden | Desde | Hasta
 #
-# Funciones:
-# - Detección flexible del nombre de las hojas
-# - Pestañas independientes
-# - Búsqueda en todas las columnas
-# - Filtros por columnas
-# - Métricas
-# - Descarga individual en Excel y CSV
-# - Vista de todas las hojas disponibles
+# La aplicación prioriza los DataFrame disponibles en
+# st.session_state y utiliza el Excel original como respaldo.
 # ============================================================
 
 from __future__ import annotations
 
 import base64
+import html
 import re
+from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 from textwrap import dedent
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import streamlit as st
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.worksheet.table import Table, TableStyleInfo
+from openpyxl.utils import get_column_letter
 
 
 # ============================================================
@@ -36,6 +37,7 @@ import streamlit as st
 
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
+CHILE_TZ = ZoneInfo("America/Santiago")
 
 LOGO_CANDIDATES = [
     PROJECT_DIR / "assets" / "logo.svg",
@@ -54,31 +56,31 @@ SESSION_FILE_BYTES_KEY = "flujo_liberacion_file_bytes"
 
 DICTIONARY_CONFIG = {
     "cecos": {
-        "titulo": "CECOS",
+        "titulo": "CECO",
         "icono": "🏭",
-        "descripcion": (
-            "Catálogo de centros de costo, plantas y atributos asociados."
-        ),
+        "session_key": "dic_ceco",
+        "columns": ["CECO", "Planta", "Centro"],
+        "description": "Catálogo simplificado de centros de costo.",
         "aliases": [
-            "CECOS",
-            "CECO",
-            "DIC_CECOS",
             "DIC_CECO",
-            "DICCIONARIO_CECOS",
+            "DIC_CECOS",
+            "CECO",
+            "CECOS",
             "DICCIONARIO_CECO",
+            "DICCIONARIO_CECOS",
         ],
     },
     "usuarios": {
         "titulo": "USUARIOS",
         "icono": "👥",
-        "descripcion": (
-            "Catálogo de usuarios, correos, cargos y datos relacionados."
-        ),
+        "session_key": "dic_users",
+        "columns": ["Correo", "Cargo"],
+        "description": "Catálogo de usuarios y cargos asociados.",
         "aliases": [
-            "USUARIOS",
-            "USUARIO",
             "DIC_USUARIOS",
             "DIC_USUARIO",
+            "USUARIOS",
+            "USUARIO",
             "DICCIONARIO_USUARIOS",
             "DICCIONARIO_USUARIO",
         ],
@@ -86,14 +88,14 @@ DICTIONARY_CONFIG = {
     "rangos": {
         "titulo": "RANGOS",
         "icono": "📏",
-        "descripcion": (
-            "Catálogo de rangos de monto y reglas asociadas."
-        ),
+        "session_key": "dic_rangos",
+        "columns": ["Orden", "Desde", "Hasta"],
+        "description": "Catálogo de tramos de monto utilizados por el flujo.",
         "aliases": [
-            "RANGOS",
-            "RANGO",
             "DIC_RANGOS",
             "DIC_RANGO",
+            "RANGOS",
+            "RANGO",
             "DICCIONARIO_RANGOS",
             "DICCIONARIO_RANGO",
         ],
@@ -126,7 +128,6 @@ def aplicar_estilos() -> None:
                 justify-content: center;
                 align-items: center;
                 margin: .6rem 0 .6rem;
-                overflow: visible;
             }
 
             .app-logo img {
@@ -134,7 +135,6 @@ def aplicar_estilos() -> None:
                 max-width: min(60vw, 220px);
                 max-height: 86px;
                 object-fit: contain;
-                display: block;
             }
 
             .app-title {
@@ -194,6 +194,17 @@ def aplicar_estilos() -> None:
                 margin-top: 3px;
             }
 
+            .source-pill {
+                display: inline-block;
+                padding: 4px 9px;
+                border-radius: 999px;
+                background: #EFF6FF;
+                color: #175CD3;
+                border: 1px solid #BFDBFE;
+                font-size: .78rem;
+                font-weight: 750;
+            }
+
             div[data-testid="stDataFrame"] {
                 border: 1px solid #E2E8F0;
                 border-radius: 12px;
@@ -205,15 +216,24 @@ def aplicar_estilos() -> None:
     )
 
 
+# ============================================================
+# LOGO Y ENCABEZADO
+# ============================================================
+
 def buscar_logo() -> Path | None:
     return next(
-        (path for path in LOGO_CANDIDATES if path.exists() and path.is_file()),
+        (
+            path
+            for path in LOGO_CANDIDATES
+            if path.exists() and path.is_file()
+        ),
         None,
     )
 
 
 def mostrar_logo() -> None:
     path = buscar_logo()
+
     if path is None:
         return
 
@@ -223,9 +243,14 @@ def mostrar_logo() -> None:
             mime = "image/svg+xml"
         else:
             raw = path.read_bytes()
-            mime = "image/png" if path.suffix.lower() == ".png" else "image/jpeg"
+            mime = (
+                "image/png"
+                if path.suffix.lower() == ".png"
+                else "image/jpeg"
+            )
 
         encoded = base64.b64encode(raw).decode("utf-8")
+
         st.markdown(
             compact_html(
                 f"""
@@ -236,12 +261,14 @@ def mostrar_logo() -> None:
             ),
             unsafe_allow_html=True,
         )
-    except (OSError, UnicodeError):
-        st.warning(f"No fue posible leer el logo: {path.name}")
+
+    except (OSError, UnicodeError) as error:
+        st.warning(f"No fue posible leer el logo: {error}")
 
 
 def render_header() -> None:
     mostrar_logo()
+
     st.markdown(
         '<div class="app-title">04 Diccionarios</div>',
         unsafe_allow_html=True,
@@ -249,8 +276,8 @@ def render_header() -> None:
     st.markdown(
         """
         <div class="app-subtitle">
-            Consulta los diccionarios de CECOS, USUARIOS y RANGOS
-            contenidos en el Excel activo.
+            Consulta, filtra y descarga los catálogos activos de CECO,
+            usuarios y rangos.
         </div>
         """,
         unsafe_allow_html=True,
@@ -258,7 +285,7 @@ def render_header() -> None:
 
 
 # ============================================================
-# UTILIDADES
+# NORMALIZACIÓN
 # ============================================================
 
 def clean_text(value: Any) -> str:
@@ -272,21 +299,37 @@ def clean_text(value: Any) -> str:
         pass
 
     text = str(value).strip()
-    return "" if text.lower() in {"", "nan", "none", "null"} else text
+
+    if text.lower() in {
+        "",
+        "nan",
+        "none",
+        "null",
+        "<na>",
+        "n/a",
+        "no usar",
+        "—",
+        "-",
+    }:
+        return ""
+
+    return text
 
 
 def normalize_sheet_name(value: str) -> str:
-    """Normaliza un nombre de hoja para compararlo con sus alias."""
-    normalized = str(value).strip().upper()
-    normalized = (
-        normalized.replace("Á", "A")
-        .replace("É", "E")
-        .replace("Í", "I")
-        .replace("Ó", "O")
-        .replace("Ú", "U")
-        .replace("Ü", "U")
-        .replace("Ñ", "N")
+    normalized = clean_text(value).upper()
+    replacements = str.maketrans(
+        {
+            "Á": "A",
+            "É": "E",
+            "Í": "I",
+            "Ó": "O",
+            "Ú": "U",
+            "Ü": "U",
+            "Ñ": "N",
+        }
     )
+    normalized = normalized.translate(replacements)
     return re.sub(r"[^A-Z0-9]+", "_", normalized).strip("_")
 
 
@@ -301,112 +344,190 @@ def find_sheet_name(
 
     for alias in aliases:
         normalized_alias = normalize_sheet_name(alias)
+
         if normalized_alias in normalized_sheets:
             return normalized_sheets[normalized_alias]
-
-    # Segunda búsqueda: contiene el término principal.
-    normalized_aliases = [normalize_sheet_name(alias) for alias in aliases]
-    for normalized_sheet, original_sheet in normalized_sheets.items():
-        if any(
-            normalized_alias in normalized_sheet
-            or normalized_sheet in normalized_alias
-            for normalized_alias in normalized_aliases
-        ):
-            return original_sheet
 
     return None
 
 
-def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    result = df.copy()
+def normalize_dictionary(
+    dataframe: pd.DataFrame | None,
+    expected_columns: list[str],
+) -> pd.DataFrame:
+    if dataframe is None:
+        return pd.DataFrame(columns=expected_columns)
+
+    result = dataframe.copy()
     result.columns = [
         clean_text(column) or f"Columna_{index + 1}"
         for index, column in enumerate(result.columns)
     ]
 
-    # Elimina columnas totalmente vacías.
-    result = result.dropna(axis=1, how="all")
+    for column in expected_columns:
+        if column not in result.columns:
+            result[column] = ""
 
-    # Elimina filas totalmente vacías.
-    result = result.dropna(axis=0, how="all").reset_index(drop=True)
+    result = result.loc[:, expected_columns].copy()
 
-    return result
+    for column in expected_columns:
+        result[column] = result[column].map(
+            lambda value: clean_text(value)
+            if column not in {"Orden", "Desde", "Hasta"}
+            else value
+        )
 
+    if "Orden" in result.columns:
+        result["Orden"] = pd.to_numeric(
+            result["Orden"],
+            errors="coerce",
+        )
+
+    for column in ["Desde", "Hasta"]:
+        if column in result.columns:
+            result[column] = pd.to_numeric(
+                result[column],
+                errors="coerce",
+            )
+
+    result = result.dropna(axis=0, how="all")
+    result = result[
+        result.apply(
+            lambda row: any(clean_text(value) for value in row),
+            axis=1,
+        )
+    ]
+
+    if "CECO" in result.columns:
+        result = result[result["CECO"].map(clean_text).ne("")]
+        result = result.drop_duplicates("CECO", keep="last")
+
+    if "Correo" in result.columns:
+        result = result[result["Correo"].map(clean_text).ne("")]
+        result = result.drop_duplicates("Correo", keep="last")
+
+    if "Orden" in result.columns:
+        result = result.sort_values(
+            ["Orden", "Desde", "Hasta"],
+            na_position="last",
+            kind="stable",
+        )
+
+    return result.reset_index(drop=True)
+
+
+# ============================================================
+# OBTENCIÓN DE DATOS
+# ============================================================
 
 @st.cache_data(show_spinner=False)
-def read_dictionaries(
+def read_excel_metadata(
     file_bytes: bytes,
-) -> tuple[
-    dict[str, pd.DataFrame],
-    dict[str, str | None],
-    list[str],
-]:
+) -> tuple[dict[str, pd.DataFrame], dict[str, str | None], list[str]]:
     if not file_bytes:
-        raise ValueError("El archivo activo no contiene datos binarios.")
+        return {}, {}, []
 
     try:
         excel = pd.ExcelFile(BytesIO(file_bytes))
-    except Exception as error:
-        raise ValueError(
-            "No fue posible abrir el Excel activo."
-        ) from error
+    except Exception:
+        return {}, {}, []
 
-    sheets = list(excel.sheet_names)
+    sheet_names = list(excel.sheet_names)
     dictionaries: dict[str, pd.DataFrame] = {}
     resolved_names: dict[str, str | None] = {}
 
     for key, config in DICTIONARY_CONFIG.items():
         sheet_name = find_sheet_name(
-            sheet_names=sheets,
-            aliases=config["aliases"],
+            sheet_names,
+            config["aliases"],
         )
         resolved_names[key] = sheet_name
 
         if sheet_name is None:
-            dictionaries[key] = pd.DataFrame()
+            dictionaries[key] = pd.DataFrame(
+                columns=config["columns"]
+            )
             continue
 
         try:
-            raw = pd.read_excel(excel, sheet_name=sheet_name)
-            dictionaries[key] = normalize_dataframe(raw)
+            raw = pd.read_excel(
+                excel,
+                sheet_name=sheet_name,
+            )
         except Exception:
-            dictionaries[key] = pd.DataFrame()
+            raw = None
 
-    return dictionaries, resolved_names, sheets
-
-
-def dataframe_to_excel_bytes(
-    df: pd.DataFrame,
-    sheet_name: str,
-) -> bytes:
-    output = BytesIO()
-
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df.to_excel(
-            writer,
-            sheet_name=sheet_name[:31],
-            index=False,
+        dictionaries[key] = normalize_dictionary(
+            raw,
+            config["columns"],
         )
 
-    return output.getvalue()
+    return dictionaries, resolved_names, sheet_names
 
 
-def dataframe_to_csv_bytes(df: pd.DataFrame) -> bytes:
-    # utf-8-sig permite abrir correctamente acentos en Excel.
-    return df.to_csv(index=False).encode("utf-8-sig")
+def get_active_dictionaries() -> tuple[
+    dict[str, pd.DataFrame],
+    dict[str, str],
+    list[str],
+]:
+    data = st.session_state.get(SESSION_DATA_KEY)
+    file_bytes = st.session_state.get(SESSION_FILE_BYTES_KEY, b"")
 
+    fallback, resolved_names, sheet_names = read_excel_metadata(
+        file_bytes
+    )
+
+    dictionaries: dict[str, pd.DataFrame] = {}
+    sources: dict[str, str] = {}
+
+    for key, config in DICTIONARY_CONFIG.items():
+        session_df = (
+            data.get(config["session_key"])
+            if isinstance(data, dict)
+            else None
+        )
+
+        normalized_session = normalize_dictionary(
+            session_df
+            if isinstance(session_df, pd.DataFrame)
+            else None,
+            config["columns"],
+        )
+
+        if not normalized_session.empty:
+            dictionaries[key] = normalized_session
+            sources[key] = "Base activa"
+        else:
+            dictionaries[key] = fallback.get(
+                key,
+                pd.DataFrame(columns=config["columns"]),
+            )
+            sources[key] = (
+                f"Excel · {resolved_names.get(key)}"
+                if resolved_names.get(key)
+                else "No disponible"
+            )
+
+    return dictionaries, sources, sheet_names
+
+
+# ============================================================
+# BÚSQUEDA Y FILTROS
+# ============================================================
 
 def apply_global_search(
-    df: pd.DataFrame,
+    dataframe: pd.DataFrame,
     search_text: str,
 ) -> pd.DataFrame:
-    search = clean_text(search_text).lower()
-    if not search:
-        return df.copy()
+    search = clean_text(search_text).casefold()
 
-    text_df = df.fillna("").astype(str)
+    if not search:
+        return dataframe.copy()
+
+    text_df = dataframe.fillna("").astype(str)
+
     mask = text_df.apply(
-        lambda row: row.str.lower().str.contains(
+        lambda row: row.str.casefold().str.contains(
             re.escape(search),
             regex=True,
             na=False,
@@ -414,55 +535,58 @@ def apply_global_search(
         axis=1,
     )
 
-    return df.loc[mask].copy()
+    return dataframe.loc[mask].copy()
 
 
-def suitable_filter_columns(df: pd.DataFrame) -> list[str]:
-    columns: list[str] = []
+def suitable_filter_columns(
+    dataframe: pd.DataFrame,
+) -> list[str]:
+    result: list[str] = []
 
-    for column in df.columns:
-        unique_count = df[column].nunique(dropna=True)
+    for column in dataframe.columns:
+        unique_count = dataframe[column].nunique(dropna=True)
 
-        # Solo ofrece filtros manejables.
-        if 1 < unique_count <= 100:
-            columns.append(column)
+        if 1 < unique_count <= 150:
+            result.append(column)
 
-    return columns
+    return result
 
 
 def apply_column_filters(
-    df: pd.DataFrame,
+    dataframe: pd.DataFrame,
     dictionary_key: str,
 ) -> pd.DataFrame:
-    result = df.copy()
-    filter_columns = suitable_filter_columns(result)
+    result = dataframe.copy()
+    columns = suitable_filter_columns(result)
 
-    if not filter_columns:
-        st.caption("No se detectaron columnas adecuadas para filtros rápidos.")
+    if not columns:
+        st.caption(
+            "No se detectaron columnas apropiadas para filtros rápidos."
+        )
         return result
 
-    selected_filter_columns = st.multiselect(
+    selected_columns = st.multiselect(
         "Columnas para filtrar",
-        options=filter_columns,
+        options=columns,
         default=[],
-        key=f"{dictionary_key}_filter_columns",
+        key=f"dict_{dictionary_key}_filter_columns_v02",
     )
 
-    for column in selected_filter_columns:
+    for column in selected_columns:
         values = sorted(
             {
                 clean_text(value)
                 for value in result[column].tolist()
                 if clean_text(value)
             },
-            key=str.lower,
+            key=str.casefold,
         )
 
         selected_values = st.multiselect(
-            f"Filtrar {column}",
+            f"Valores de {column}",
             options=values,
             default=[],
-            key=f"{dictionary_key}_filter_{column}",
+            key=f"dict_{dictionary_key}_{column}_values_v02",
         )
 
         if selected_values:
@@ -475,18 +599,176 @@ def apply_column_filters(
     return result
 
 
+# ============================================================
+# EXPORTACIÓN
+# ============================================================
+
+def safe_file_part(value: str) -> str:
+    return re.sub(
+        r"[^A-Za-z0-9_-]+",
+        "_",
+        clean_text(value),
+    ).strip("_") or "DICCIONARIO"
+
+
+def dataframe_to_csv_bytes(dataframe: pd.DataFrame) -> bytes:
+    return dataframe.to_csv(
+        index=False,
+    ).encode("utf-8-sig")
+
+
+def dataframe_to_excel_bytes(
+    dataframe: pd.DataFrame,
+    sheet_name: str,
+) -> bytes:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = sheet_name[:31]
+
+    headers = list(dataframe.columns)
+
+    for column_index, header in enumerate(headers, start=1):
+        sheet.cell(1, column_index, header)
+
+    for row_index, row in enumerate(
+        dataframe.itertuples(index=False, name=None),
+        start=2,
+    ):
+        for column_index, value in enumerate(row, start=1):
+            try:
+                if pd.isna(value):
+                    value = None
+            except (TypeError, ValueError):
+                pass
+
+            sheet.cell(row_index, column_index, value)
+
+    header_fill = PatternFill(
+        fill_type="solid",
+        fgColor="17365D",
+    )
+    header_font = Font(
+        name="Calibri",
+        size=11,
+        bold=True,
+        color="FFFFFF",
+    )
+    thin = Side(style="thin", color="D0D5DD")
+    border = Border(
+        left=thin,
+        right=thin,
+        top=thin,
+        bottom=thin,
+    )
+
+    for cell in sheet[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.border = border
+        cell.alignment = Alignment(
+            horizontal="center",
+            vertical="center",
+        )
+
+    sheet.row_dimensions[1].height = 28
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = sheet.dimensions
+    sheet.sheet_view.showGridLines = False
+
+    for row in sheet.iter_rows(min_row=2):
+        for cell in row:
+            cell.border = border
+            cell.alignment = Alignment(
+                vertical="top",
+                wrap_text=True,
+            )
+
+    header_index = {
+        clean_text(cell.value): cell.column
+        for cell in sheet[1]
+    }
+
+    for column_name in ["Orden", "Desde", "Hasta"]:
+        column_index = header_index.get(column_name)
+
+        if column_index:
+            for row_index in range(2, sheet.max_row + 1):
+                sheet.cell(
+                    row_index,
+                    column_index,
+                ).number_format = "#,##0"
+
+    for column_index in range(1, sheet.max_column + 1):
+        values = [
+            clean_text(
+                sheet.cell(row_index, column_index).value
+            )
+            for row_index in range(
+                1,
+                min(sheet.max_row, 250) + 1,
+            )
+        ]
+        width = min(
+            max(
+                max((len(value) for value in values), default=8) + 2,
+                12,
+            ),
+            42,
+        )
+        sheet.column_dimensions[
+            get_column_letter(column_index)
+        ].width = width
+
+    if sheet.max_row >= 2 and sheet.max_column >= 1:
+        table_name = (
+            "Tabla"
+            + safe_file_part(sheet_name).replace("-", "_")
+        )[:250]
+        reference = (
+            f"A1:{get_column_letter(sheet.max_column)}{sheet.max_row}"
+        )
+        table = Table(
+            displayName=table_name,
+            ref=reference,
+        )
+        table.tableStyleInfo = TableStyleInfo(
+            name="TableStyleMedium2",
+            showFirstColumn=False,
+            showLastColumn=False,
+            showRowStripes=True,
+            showColumnStripes=False,
+        )
+        sheet.add_table(table)
+
+    output = BytesIO()
+    workbook.save(output)
+    return output.getvalue()
+
+
+# ============================================================
+# COMPONENTES DE INTERFAZ
+# ============================================================
+
+def escape_html(value: Any) -> str:
+    return html.escape(clean_text(value))
+
+
 def render_metrics(
-    original_df: pd.DataFrame,
-    filtered_df: pd.DataFrame,
+    original: pd.DataFrame,
+    filtered: pd.DataFrame,
 ) -> None:
-    empty_cells = int(filtered_df.isna().sum().sum())
-    duplicate_rows = int(filtered_df.duplicated().sum())
+    duplicate_rows = int(filtered.duplicated().sum())
+    empty_cells = int(
+        filtered.apply(
+            lambda column: column.map(clean_text).eq("").sum()
+        ).sum()
+    )
 
     columns = st.columns(4)
     metrics = [
-        ("Filas totales", len(original_df)),
-        ("Filas visibles", len(filtered_df)),
-        ("Columnas", len(filtered_df.columns)),
+        ("Registros totales", len(original)),
+        ("Registros visibles", len(filtered)),
+        ("Columnas", len(filtered.columns)),
         ("Duplicados visibles", duplicate_rows),
     ]
 
@@ -496,7 +778,7 @@ def render_metrics(
                 compact_html(
                     f"""
                     <div class="metric-card">
-                        <div class="metric-label">{label}</div>
+                        <div class="metric-label">{escape_html(label)}</div>
                         <div class="metric-value">{value:,}</div>
                     </div>
                     """
@@ -506,19 +788,15 @@ def render_metrics(
 
     if empty_cells:
         st.caption(
-            f"La vista filtrada contiene {empty_cells:,} celdas vacías."
+            f"La vista contiene {empty_cells:,} celdas vacías."
             .replace(",", ".")
         )
 
 
-# ============================================================
-# VISTA DE UN DICCIONARIO
-# ============================================================
-
 def render_dictionary(
     dictionary_key: str,
-    df: pd.DataFrame,
-    real_sheet_name: str | None,
+    dataframe: pd.DataFrame,
+    source_label: str,
     file_name: str,
 ) -> None:
     config = DICTIONARY_CONFIG[dictionary_key]
@@ -531,7 +809,12 @@ def render_dictionary(
                     {config["icono"]} {config["titulo"]}
                 </div>
                 <div class="dictionary-caption">
-                    {config["descripcion"]}
+                    {escape_html(config["description"])}
+                </div>
+                <div style="margin-top:9px;">
+                    <span class="source-pill">
+                        Fuente: {escape_html(source_label)}
+                    </span>
                 </div>
             </div>
             """
@@ -539,114 +822,137 @@ def render_dictionary(
         unsafe_allow_html=True,
     )
 
-    if real_sheet_name is None:
+    if dataframe.empty:
         st.warning(
-            f"No se encontró una hoja compatible con **{config['titulo']}**."
-        )
-        st.caption(
-            "Nombres reconocidos: "
-            + ", ".join(f"`{alias}`" for alias in config["aliases"])
+            f"No hay registros disponibles para {config['titulo']}."
         )
         return
-
-    if df.empty:
-        st.warning(
-            f"La hoja **{real_sheet_name}** existe, pero está vacía "
-            "o no pudo ser interpretada."
-        )
-        return
-
-    st.success(
-        (
-            f"Hoja detectada: **{real_sheet_name}** · "
-            f"**{len(df):,} filas** · **{len(df.columns):,} columnas**"
-        ).replace(",", ".")
-    )
 
     search_text = st.text_input(
         "Buscar en todas las columnas",
-        placeholder="Escribe un CECO, correo, cargo, rango...",
-        key=f"{dictionary_key}_search",
+        placeholder=(
+            "Escribe un CECO, planta, correo, cargo o monto..."
+        ),
+        key=f"dict_{dictionary_key}_search_v02",
     )
 
-    searched = apply_global_search(df, search_text)
+    searched = apply_global_search(
+        dataframe,
+        search_text,
+    )
 
-    with st.expander("Filtros avanzados", expanded=False):
+    with st.expander(
+        "Filtros avanzados",
+        expanded=False,
+    ):
         filtered = apply_column_filters(
             searched,
             dictionary_key,
         )
 
-    render_metrics(
-        original_df=df,
-        filtered_df=filtered,
-    )
+    render_metrics(dataframe, filtered)
 
     st.markdown("#### Resultados")
 
     if filtered.empty:
-        st.warning("No hay registros que coincidan con la búsqueda y filtros.")
+        st.warning(
+            "No hay registros que coincidan con la búsqueda y filtros."
+        )
     else:
+        display = filtered.copy()
+
+        for column in ["Orden", "Desde", "Hasta"]:
+            if column in display.columns:
+                display[column] = display[column].map(
+                    lambda value: (
+                        f"{int(value):,}".replace(",", ".")
+                        if pd.notna(value)
+                        else ""
+                    )
+                )
+
         st.dataframe(
-            filtered,
+            display,
             use_container_width=True,
             hide_index=True,
-            height=min(680, max(280, 35 * (len(filtered) + 2))),
+            height=min(
+                680,
+                max(280, 35 * (len(display) + 2)),
+            ),
         )
 
-    base_name = Path(file_name or "BBDD_FLUJO_LIBERACION.xlsx").stem
-    safe_sheet = re.sub(
-        r"[^A-Za-z0-9_-]+",
-        "_",
-        config["titulo"],
+    base_name = Path(
+        file_name or "BBDD_LIBERACION.xlsx"
+    ).stem
+    timestamp = datetime.now(CHILE_TZ).strftime(
+        "%Y-%m-%d_%H-%M-%S"
     )
+    safe_title = safe_file_part(config["titulo"])
 
-    col_excel, col_csv = st.columns(2)
+    excel_column, csv_column = st.columns(2)
 
-    with col_excel:
+    with excel_column:
         st.download_button(
             "⬇️ Descargar vista en Excel",
             data=dataframe_to_excel_bytes(
                 filtered,
                 config["titulo"],
             ),
-            file_name=f"{base_name}_{safe_sheet}.xlsx",
+            file_name=(
+                f"{base_name}_{safe_title}_{timestamp}.xlsx"
+            ),
             mime=(
                 "application/vnd.openxmlformats-officedocument."
                 "spreadsheetml.sheet"
             ),
             use_container_width=True,
-            key=f"{dictionary_key}_download_excel",
+            key=f"dict_{dictionary_key}_excel_v02",
         )
 
-    with col_csv:
+    with csv_column:
         st.download_button(
             "⬇️ Descargar vista en CSV",
             data=dataframe_to_csv_bytes(filtered),
-            file_name=f"{base_name}_{safe_sheet}.csv",
+            file_name=(
+                f"{base_name}_{safe_title}_{timestamp}.csv"
+            ),
             mime="text/csv",
             use_container_width=True,
-            key=f"{dictionary_key}_download_csv",
+            key=f"dict_{dictionary_key}_csv_v02",
         )
 
-    with st.expander("Información de columnas", expanded=False):
+    with st.expander(
+        "Calidad y estructura de columnas",
+        expanded=False,
+    ):
         info = pd.DataFrame(
             {
-                "Columna": df.columns,
+                "Columna": dataframe.columns,
                 "Tipo detectado": [
-                    str(df[column].dtype)
-                    for column in df.columns
+                    str(dataframe[column].dtype)
+                    for column in dataframe.columns
                 ],
                 "Valores no vacíos": [
-                    int(df[column].notna().sum())
-                    for column in df.columns
+                    int(
+                        dataframe[column]
+                        .map(clean_text)
+                        .ne("")
+                        .sum()
+                    )
+                    for column in dataframe.columns
                 ],
                 "Valores únicos": [
-                    int(df[column].nunique(dropna=True))
-                    for column in df.columns
+                    int(
+                        dataframe[column]
+                        .map(clean_text)
+                        .replace("", pd.NA)
+                        .nunique(dropna=True)
+                    )
+                    for column in dataframe.columns
                 ],
             }
         )
+
         st.dataframe(
             info,
             use_container_width=True,
@@ -654,13 +960,9 @@ def render_dictionary(
         )
 
 
-# ============================================================
-# SIN ARCHIVO
-# ============================================================
-
 def render_no_file() -> None:
     st.warning(
-        "No hay un archivo activo. Primero carga el Excel desde "
+        "No hay una base activa. Primero carga el Excel desde "
         "**01 Cargar archivo**."
     )
 
@@ -672,7 +974,9 @@ def render_no_file() -> None:
         ):
             st.switch_page("01_CARGAR_ARCHIVO_FLUJO.py")
     except Exception:
-        st.info("Selecciona **01 Cargar archivo** desde la barra lateral.")
+        st.info(
+            "Selecciona **01 Cargar archivo** desde el menú lateral."
+        )
 
 
 # ============================================================
@@ -683,35 +987,29 @@ def main() -> None:
     aplicar_estilos()
     render_header()
 
-    file_name = st.session_state.get(
-        SESSION_FILE_KEY,
-        "BBDD_FLUJO_LIBERACION.xlsx",
-    )
+    data = st.session_state.get(SESSION_DATA_KEY)
     file_bytes = st.session_state.get(
         SESSION_FILE_BYTES_KEY,
         b"",
     )
 
-    if not file_bytes:
+    if not isinstance(data, dict) and not file_bytes:
         render_no_file()
         return
 
-    try:
-        dictionaries, resolved_names, all_sheets = read_dictionaries(
-            file_bytes
-        )
-    except ValueError as error:
-        st.error(str(error))
-        return
-
-    st.success(
-        f"Archivo activo: **{file_name}** · "
-        f"**{len(all_sheets)} hojas detectadas**"
+    file_name = st.session_state.get(
+        SESSION_FILE_KEY,
+        "BBDD_LIBERACION.xlsx",
     )
 
-    detected_count = sum(
-        sheet_name is not None
-        for sheet_name in resolved_names.values()
+    dictionaries, sources, sheet_names = get_active_dictionaries()
+
+    st.success(
+        (
+            f"Archivo activo: **{file_name}** · "
+            f"**{sum(len(df) for df in dictionaries.values()):,} "
+            "registros de diccionarios**"
+        ).replace(",", ".")
     )
 
     summary_columns = st.columns(3)
@@ -720,13 +1018,9 @@ def main() -> None:
         summary_columns,
         DICTIONARY_CONFIG.items(),
     ):
+        dataframe = dictionaries[key]
+
         with column:
-            sheet_name = resolved_names[key]
-            status = (
-                f"Hoja: {sheet_name}"
-                if sheet_name
-                else "No encontrada"
-            )
             st.markdown(
                 compact_html(
                     f"""
@@ -734,85 +1028,83 @@ def main() -> None:
                         <div class="dictionary-title">
                             {config["icono"]} {config["titulo"]}
                         </div>
-                        <div class="dictionary-caption">{escape_html(status)}</div>
+                        <div class="dictionary-caption">
+                            {len(dataframe):,} registros ·
+                            {len(dataframe.columns):,} columnas
+                        </div>
+                        <div class="dictionary-caption">
+                            {escape_html(sources[key])}
+                        </div>
                     </div>
                     """
-                ),
+                ).replace(",", "."),
                 unsafe_allow_html=True,
             )
 
-    if detected_count < len(DICTIONARY_CONFIG):
-        missing = [
-            DICTIONARY_CONFIG[key]["titulo"]
-            for key, sheet_name in resolved_names.items()
-            if sheet_name is None
-        ]
-        st.info(
-            "No se detectaron todos los diccionarios. Faltan: "
-            f"**{', '.join(missing)}**."
-        )
-
     tab_cecos, tab_users, tab_ranges, tab_sheets = st.tabs(
         [
-            "🏭 CECOS",
+            "🏭 CECO",
             "👥 USUARIOS",
             "📏 RANGOS",
-            "📚 Hojas disponibles",
+            "📚 Hojas del Excel",
         ]
     )
 
     with tab_cecos:
         render_dictionary(
-            dictionary_key="cecos",
-            df=dictionaries["cecos"],
-            real_sheet_name=resolved_names["cecos"],
-            file_name=file_name,
+            "cecos",
+            dictionaries["cecos"],
+            sources["cecos"],
+            file_name,
         )
 
     with tab_users:
         render_dictionary(
-            dictionary_key="usuarios",
-            df=dictionaries["usuarios"],
-            real_sheet_name=resolved_names["usuarios"],
-            file_name=file_name,
+            "usuarios",
+            dictionaries["usuarios"],
+            sources["usuarios"],
+            file_name,
         )
 
     with tab_ranges:
         render_dictionary(
-            dictionary_key="rangos",
-            df=dictionaries["rangos"],
-            real_sheet_name=resolved_names["rangos"],
-            file_name=file_name,
+            "rangos",
+            dictionaries["rangos"],
+            sources["rangos"],
+            file_name,
         )
 
     with tab_sheets:
-        st.subheader("Hojas disponibles en el Excel")
-        sheets_df = pd.DataFrame(
-            {
-                "N.º": range(1, len(all_sheets) + 1),
-                "Nombre de hoja": all_sheets,
-                "Normalización": [
-                    normalize_sheet_name(sheet)
-                    for sheet in all_sheets
-                ],
-            }
-        )
-        st.dataframe(
-            sheets_df,
-            use_container_width=True,
-            hide_index=True,
-        )
+        st.subheader("Hojas disponibles en el Excel original")
 
-        st.caption(
-            "Esta vista ayuda a identificar el nombre exacto cuando "
-            "un diccionario no fue detectado automáticamente."
-        )
+        if not sheet_names:
+            st.info(
+                "No fue posible inspeccionar las hojas del archivo original. "
+                "Los diccionarios activos continúan disponibles en memoria."
+            )
+        else:
+            sheets_df = pd.DataFrame(
+                {
+                    "N.º": range(1, len(sheet_names) + 1),
+                    "Nombre de hoja": sheet_names,
+                    "Nombre normalizado": [
+                        normalize_sheet_name(sheet)
+                        for sheet in sheet_names
+                    ],
+                }
+            )
 
+            st.dataframe(
+                sheets_df,
+                use_container_width=True,
+                hide_index=True,
+            )
 
-def escape_html(value: Any) -> str:
-    """Escapa texto para insertarlo de forma segura en HTML."""
-    import html
-    return html.escape(clean_text(value))
+            st.caption(
+                "Esta pestaña representa las hojas del archivo cargado. "
+                "Los datos mostrados en las otras pestañas priorizan la "
+                "base activa normalizada."
+            )
 
 
 if __name__ == "__main__":
