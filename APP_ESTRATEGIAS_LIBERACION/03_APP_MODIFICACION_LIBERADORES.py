@@ -84,6 +84,7 @@ ACTION_LABEL = {
 }
 
 SCENARIO_LABEL = {
+    "reemplazo_ceco": "🔁 Reemplazar usuario en un CECO completo",
     "ajuste": "🛠️ Ajustar un flujo específico",
     "salida": "🚪 Reemplazar a alguien que salió de la empresa",
     "temporal": "🗓️ Cubrir una ausencia temporal",
@@ -92,6 +93,11 @@ SCENARIO_LABEL = {
 }
 
 SCENARIO_HELP = {
+    "reemplazo_ceco": (
+        "Reemplaza un usuario en todas sus apariciones del CECO seleccionado, "
+        "sin depender del rango. Puede incluir el CECO gemelo EMTS y aplicar "
+        "el cambio a Material, Servicio o ambos tipos."
+    ),
     "ajuste": (
         "Permite mover, reemplazar, agregar o eliminar una pieza "
         "en un CECO, tipo y rango específicos."
@@ -256,6 +262,17 @@ def aplicar_estilos() -> None:
                 margin-top: 4px;
             }
 
+            .replacement-note {
+                border: 1px solid #F59E0B;
+                border-left: 5px solid #F59E0B;
+                background: #FFFBEB;
+                color: #92400E;
+                border-radius: 12px;
+                padding: 12px 14px;
+                margin: 8px 0 12px;
+                font-weight: 650;
+            }
+
             div[data-testid="stDataFrame"] {
                 border: 1px solid #E2E8F0;
                 border-radius: 12px;
@@ -311,7 +328,7 @@ def render_header() -> None:
     st.markdown(
         """
         <div class="app-subtitle">
-            Asistente robusto para modificar flujos sin distinción EO/CD y exportar una versión profesional.
+            Modifica usuarios por CECO completo, rango específico o reemplazo global, con vista previa y auditoría.
         </div>
         """,
         unsafe_allow_html=True,
@@ -1633,6 +1650,578 @@ def render_global_replacement(
             )
 
 
+
+# ============================================================
+# REEMPLAZO DE USUARIO EN CECO COMPLETO
+# ============================================================
+
+def render_ceco_user_replacement(
+    data: dict[str, pd.DataFrame],
+    file_name: str,
+    file_bytes: bytes,
+    actor: str,
+    reason: str,
+) -> None:
+    """
+    Reemplaza un usuario en todas las posiciones de un CECO, sin filtrar
+    por rango. Puede incluir el CECO gemelo EMTS y uno o ambos tipos.
+    """
+    flow = get_working_flow()
+
+    question(
+        2,
+        "¿En qué CECO quieres reemplazar al usuario?",
+        (
+            "Selecciona el CECO principal. Si existe un gemelo EMTS, "
+            "la aplicación lo detectará y permitirá incluirlo."
+        ),
+    )
+
+    ceco_map = (
+        flow[["CECO", "Planta"]]
+        .drop_duplicates()
+        .sort_values(["Planta", "CECO"], kind="stable")
+        .groupby("CECO", as_index=False)
+        .first()
+    )
+
+    if ceco_map.empty:
+        st.warning("No existen CECO disponibles en la base activa.")
+        return
+
+    plant_by_ceco = dict(zip(ceco_map["CECO"], ceco_map["Planta"]))
+
+    selected_ceco = st.selectbox(
+        "CECO principal",
+        options=ceco_map["CECO"].tolist(),
+        format_func=lambda value: (
+            f"{value} | {plant_by_ceco.get(value, '')}"
+            if plant_by_ceco.get(value, "")
+            else value
+        ),
+        key="ceco_replace_selected_v01",
+    )
+
+    twin_records = find_twin_cecos(flow, selected_ceco)
+    include_twin = False
+
+    if twin_records:
+        twin_text = ", ".join(
+            f"{item['ceco']} | {item['planta']}"
+            for item in twin_records
+        )
+        st.info(f"CECO gemelo detectado: **{twin_text}**.")
+
+        include_twin = st.checkbox(
+            "Aplicar también al CECO gemelo EMTS",
+            value=True,
+            key="ceco_replace_include_twin_v01",
+            help=(
+                "Está activado por defecto para mantener sincronizados "
+                "el CECO principal y su gemelo EMTS."
+            ),
+        )
+
+    target_cecos = [selected_ceco]
+
+    if include_twin:
+        target_cecos.extend(
+            item["ceco"]
+            for item in twin_records
+        )
+
+    question(
+        3,
+        "¿En qué tipo de documento se aplicará?",
+        (
+            "Puedes reemplazar al usuario en Material, Servicio "
+            "o en ambos tipos. El rango no limita esta operación."
+        ),
+    )
+
+    available_docs = [
+        doc
+        for doc in ["AZNB", "AZSR"]
+        if not flow[
+            flow["CECO"].isin(target_cecos)
+            & flow["TipoDoc"].eq(doc)
+        ].empty
+    ]
+
+    if not available_docs:
+        st.warning(
+            "Los CECO seleccionados no contienen reglas AZNB ni AZSR."
+        )
+        return
+
+    doc_options = list(available_docs)
+
+    if {"AZNB", "AZSR"}.issubset(set(available_docs)):
+        doc_options.insert(0, "AMBOS")
+
+    selected_doc = st.selectbox(
+        "Tipo de documento",
+        options=doc_options,
+        format_func=lambda value: DOC_LABEL[value],
+        key="ceco_replace_doc_v01",
+    )
+
+    target_docs = (
+        ["AZNB", "AZSR"]
+        if selected_doc == "AMBOS"
+        else [selected_doc]
+    )
+
+    scope_rows = flow[
+        flow["CECO"].isin(target_cecos)
+        & flow["TipoDoc"].isin(target_docs)
+    ].copy()
+
+    if scope_rows.empty:
+        st.warning("No existen filas dentro del alcance seleccionado.")
+        return
+
+    question(
+        4,
+        "¿Qué usuario antiguo quieres reemplazar?",
+        (
+            "La lista contiene solo usuarios que aparecen en los CECO "
+            "y tipos seleccionados. Las posiciones afectadas se marcarán "
+            "en amarillo en la vista previa."
+        ),
+    )
+
+    scoped_users = unique_users(scope_rows)
+
+    if not scoped_users:
+        st.warning(
+            "No se encontraron usuarios reemplazables dentro del alcance."
+        )
+        return
+
+    old_user = st.selectbox(
+        "Usuario antiguo",
+        options=scoped_users,
+        format_func=lambda value: display_user(value, data),
+        key="ceco_replace_old_user_v01",
+    )
+
+    old_key = email_key(old_user)
+
+    occurrences = occurrences_of_person(
+        scope_rows,
+        old_user,
+    )
+
+    if occurrences.empty:
+        st.warning(
+            "El usuario seleccionado no tiene apariciones dentro del alcance."
+        )
+        return
+
+    affected_row_ids = (
+        occurrences["_ID_FILA"]
+        .drop_duplicates()
+        .astype(int)
+        .tolist()
+    )
+    affected_rows = scope_rows[
+        scope_rows["_ID_FILA"].isin(affected_row_ids)
+    ].copy()
+
+    affected_cecos = int(occurrences["CECO"].nunique())
+    affected_ranges = int(
+        occurrences[
+            ["CECO", "TipoDoc", "Desde", "Hasta"]
+        ]
+        .drop_duplicates()
+        .shape[0]
+    )
+    affected_positions = int(len(occurrences))
+
+    metric_columns = st.columns(4)
+    metrics = [
+        ("CECO afectados", affected_cecos),
+        ("Filas afectadas", len(affected_rows)),
+        ("Tramos afectados", affected_ranges),
+        ("Posiciones", affected_positions),
+    ]
+
+    for column, (label, value) in zip(metric_columns, metrics):
+        with column:
+            st.markdown(
+                compact_html(
+                    f"""
+                    <div class="metric-card">
+                        <div class="metric-label">{escape(label)}</div>
+                        <div class="metric-value">{value}</div>
+                    </div>
+                    """
+                ),
+                unsafe_allow_html=True,
+            )
+
+    st.markdown(
+        compact_html(
+            f"""
+            <div class="replacement-note">
+                Las celdas amarillas contienen
+                {escape(display_user(old_user, data))}
+                y serán reemplazadas. El cambio se aplicará en todos los
+                rangos mostrados.
+            </div>
+            """
+        ),
+        unsafe_allow_html=True,
+    )
+
+    visible_columns = [
+        "CECO", "Planta", "Desde", "Hasta", "TipoDoc",
+        "Lib1", "Lib2", "Lib3", "Lib4", "Lib5",
+    ]
+    preview = affected_rows.loc[:, visible_columns].copy()
+
+    def highlight_replacement_cells(column: pd.Series) -> list[str]:
+        return [
+            (
+                "background-color:#FDE68A;"
+                "color:#78350F;"
+                "font-weight:850;"
+                "border:2px solid #F59E0B;"
+            )
+            if email_key(value) == old_key
+            else ""
+            for value in column
+        ]
+
+    styled_preview = (
+        preview.style
+        .apply(
+            highlight_replacement_cells,
+            subset=LIB_COLS,
+            axis=0,
+        )
+        .format(
+            {
+                "Desde": lambda value: fmt_bound(value),
+                "Hasta": lambda value: fmt_bound(value),
+            }
+        )
+    )
+
+    st.dataframe(
+        styled_preview,
+        use_container_width=True,
+        hide_index=True,
+        height=min(
+            700,
+            max(280, 38 * (len(preview) + 2)),
+        ),
+    )
+
+    with st.expander(
+        "Detalle exacto de posiciones que serán reemplazadas",
+        expanded=True,
+    ):
+        occurrence_view = occurrences[
+            [
+                "CECO",
+                "Planta",
+                "Desde",
+                "Hasta",
+                "TipoDoc",
+                "Campo",
+                "ValorAntes",
+            ]
+        ].rename(
+            columns={
+                "Campo": "Posición",
+                "ValorAntes": "Usuario antiguo",
+            }
+        )
+
+        occurrence_view["Desde"] = occurrence_view["Desde"].map(fmt_bound)
+        occurrence_view["Hasta"] = occurrence_view["Hasta"].map(fmt_bound)
+
+        st.dataframe(
+            occurrence_view,
+            use_container_width=True,
+            hide_index=True,
+            height=min(
+                650,
+                max(240, 36 * (len(occurrence_view) + 2)),
+            ),
+        )
+
+    question(
+        5,
+        "¿Qué usuario nuevo debe reemplazarlo?",
+        (
+            "Selecciona un usuario existente o escribe un correo nuevo. "
+            "Se conservarán las mismas posiciones Lib1 a Lib5."
+        ),
+    )
+
+    replacement_source = st.radio(
+        "Origen del usuario nuevo",
+        options=["existing", "new"],
+        format_func=lambda value: (
+            "Seleccionar usuario existente"
+            if value == "existing"
+            else "Escribir correo nuevo"
+        ),
+        horizontal=True,
+        key="ceco_replace_source_v01",
+    )
+
+    new_user = ""
+
+    if replacement_source == "existing":
+        all_users = unique_users(flow)
+        candidates = [
+            user
+            for user in all_users
+            if email_key(user) != old_key
+        ]
+
+        if candidates:
+            new_user = st.selectbox(
+                "Usuario nuevo",
+                options=candidates,
+                format_func=lambda value: display_user(value, data),
+                key="ceco_replace_new_existing_v01",
+            )
+        else:
+            st.warning(
+                "No existen otros usuarios disponibles. "
+                "Selecciona Escribir correo nuevo."
+            )
+    else:
+        new_user = strip_user(
+            st.text_input(
+                "Correo del usuario nuevo",
+                placeholder="nombre.apellido@enaex.com",
+                key="ceco_replace_new_text_v01",
+            )
+        )
+
+    if new_user:
+        duplicated_rows: list[str] = []
+
+        for _, row in affected_rows.iterrows():
+            row_users = [
+                email_key(row.get(column, ""))
+                for column in LIB_COLS
+                if email_key(row.get(column, ""))
+            ]
+
+            if (
+                email_key(new_user) in row_users
+                and email_key(new_user) != old_key
+            ):
+                duplicated_rows.append(
+                    (
+                        f"{row['CECO']} / {row['TipoDoc']} / "
+                        f"{fmt_bound(row['Desde'])}–{fmt_bound(row['Hasta'])}"
+                    )
+                )
+
+        if duplicated_rows:
+            st.error(
+                "El usuario nuevo ya aparece en algunas filas afectadas. "
+                "El reemplazo generaría duplicados en: "
+                + "; ".join(duplicated_rows[:8])
+                + ("…" if len(duplicated_rows) > 8 else "")
+            )
+
+    question(
+        6,
+        "¿Confirmas el reemplazo?",
+        (
+            "La operación reemplazará solo las celdas destacadas, "
+            "manteniendo rangos, tipos, posiciones y demás usuarios."
+        ),
+    )
+
+    if new_user:
+        st.info(
+            f"Se reemplazará **{display_user(old_user, data)}** por "
+            f"**{display_user(new_user, data)}** en "
+            f"**{affected_positions} posiciones**, "
+            f"**{len(affected_rows)} filas** y "
+            f"**{affected_cecos} CECO**."
+        )
+
+    duplicate_conflict = False
+
+    if new_user:
+        for _, row in affected_rows.iterrows():
+            row_keys = [
+                email_key(row.get(column, ""))
+                for column in LIB_COLS
+                if email_key(row.get(column, ""))
+            ]
+            if (
+                email_key(new_user) in row_keys
+                and email_key(new_user) != old_key
+            ):
+                duplicate_conflict = True
+                break
+
+    confirmation = st.checkbox(
+        (
+            "Confirmo el reemplazo en todos los rangos y posiciones "
+            "destacados."
+        ),
+        value=False,
+        key="ceco_replace_confirm_v01",
+    )
+
+    ready = bool(
+        new_user
+        and is_valid_email(new_user)
+        and email_key(new_user) != old_key
+        and not duplicate_conflict
+        and confirmation
+        and clean_text(actor)
+        and clean_text(reason)
+    )
+
+    if new_user and not is_valid_email(new_user):
+        st.error("El correo del usuario nuevo no tiene un formato válido.")
+
+    if new_user and email_key(new_user) == old_key:
+        st.error("El usuario nuevo debe ser distinto del usuario antiguo.")
+
+    if not clean_text(actor) or not clean_text(reason):
+        st.warning(
+            "Completa ¿Quién modifica? y ¿Por qué? para habilitar el guardado."
+        )
+
+    apply_clicked = st.button(
+        "🔁 Aplicar reemplazo y preparar Excel",
+        type="primary",
+        use_container_width=True,
+        disabled=not ready,
+        key="ceco_replace_apply_v01",
+    )
+
+    if apply_clicked:
+        updated = flow.copy(deep=True)
+        timestamp = datetime.now(CHILE_TZ).strftime("%Y-%m-%d %H:%M:%S")
+        replacement = strip_user(new_user)
+        changes: list[dict[str, Any]] = []
+
+        target_index = updated[
+            updated["_ID_FILA"].isin(affected_row_ids)
+        ].index
+
+        for row_index in target_index:
+            row = updated.loc[row_index]
+
+            for column in LIB_COLS:
+                current = strip_user(row.get(column, ""))
+
+                if email_key(current) != old_key:
+                    continue
+
+                updated.at[row_index, column] = replacement
+
+                changes.append(
+                    {
+                        "FechaHora": timestamp,
+                        "Usuario": actor or "anonimo",
+                        "CECO": row["CECO"],
+                        "Desde": row["Desde"],
+                        "Hasta": row["Hasta"],
+                        "TipoDoc": row["TipoDoc"],
+                        "Campo": column,
+                        "ValorAntes": current,
+                        "ValorDespues": replacement,
+                        "Nota": (
+                            f"{reason}. Reemplazo completo por CECO, "
+                            f"independiente del rango"
+                            + (
+                                ", incluyendo gemelo EMTS"
+                                if include_twin
+                                else ""
+                            )
+                            + (
+                                ", ambos tipos de documento"
+                                if selected_doc == "AMBOS"
+                                else ""
+                            )
+                        ),
+                    }
+                )
+
+        set_working_flow(updated)
+
+        history = list(
+            st.session_state.get(
+                SESSION_HISTORY_KEY,
+                [],
+            )
+        )
+        history.extend(changes)
+        st.session_state[SESSION_HISTORY_KEY] = history
+
+        try:
+            refresh_download(file_name, file_bytes)
+            st.success(
+                f"Reemplazo completado: **{len(changes)} posiciones** "
+                f"actualizadas en **{affected_cecos} CECO**."
+            )
+            st.toast(
+                "Reemplazo por CECO guardado.",
+                icon="✅",
+            )
+        except ValueError as error:
+            st.error(str(error))
+
+    generated = st.session_state.get(
+        SESSION_DOWNLOAD_KEY
+    )
+    generated_name = st.session_state.get(
+        SESSION_DOWNLOAD_NAME_KEY
+    )
+
+    if generated and generated_name:
+        st.markdown("---")
+        st.subheader("Descargar versión modificada")
+
+        st.download_button(
+            "⬇️ Descargar archivo modificado",
+            data=generated,
+            file_name=generated_name,
+            mime=(
+                "application/vnd.openxmlformats-officedocument."
+                "spreadsheetml.sheet"
+            ),
+            type="primary",
+            use_container_width=True,
+            key="ceco_replace_download_v01",
+        )
+
+        st.caption(f"Archivo preparado: `{generated_name}`")
+
+    history = st.session_state.get(
+        SESSION_HISTORY_KEY,
+        [],
+    )
+
+    if history:
+        with st.expander(
+            f"Historial de esta sesión ({len(history)} cambios)",
+            expanded=False,
+        ):
+            st.dataframe(
+                pd.DataFrame(history),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+
 # ============================================================
 # INTERFAZ PASO A PASO
 # ============================================================
@@ -1696,6 +2285,16 @@ def render_wizard(
         ),
     )
     st.info(SCENARIO_HELP[scenario])
+
+    if scenario == "reemplazo_ceco":
+        render_ceco_user_replacement(
+            data=data,
+            file_name=file_name,
+            file_bytes=file_bytes,
+            actor=actor,
+            reason=reason,
+        )
+        return
 
     if scenario == "salida":
         if not clean_text(actor) or not clean_text(reason):
