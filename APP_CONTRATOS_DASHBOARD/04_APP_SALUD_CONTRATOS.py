@@ -339,11 +339,16 @@ def formato_entero(x) -> str:
 
 
 def formato_porcentaje(x) -> str:
-    """Formato porcentual."""
+    """Formato porcentual sin decimales innecesarios."""
     if pd.isna(x):
         x = 0
 
-    return f"{x:.2%}"
+    porcentaje = float(x) * 100
+
+    if np.isclose(porcentaje, round(porcentaje)):
+        return f"{porcentaje:.0f}%"
+
+    return f"{porcentaje:.2f}%"
 
 
 def validar_columnas(
@@ -1681,6 +1686,150 @@ else:
                 },
             )
 
+        section_title(
+            "Mapas de calor individuales por estado",
+            (
+                "Vista separada por gestor para Vencido, Por Vencer y Vigente, "
+                "usando gradientes rojo, naranjo y verde respectivamente."
+            ),
+        )
+
+        configuracion_heatmaps_individuales = [
+            ("Vencido", "Reds", "Contratos vencidos por gestor"),
+            ("Por Vencer", "Oranges", "Contratos por vencer por gestor"),
+            ("Vigente", "Greens", "Contratos vigentes por gestor"),
+        ]
+
+        for estado_individual, cmap_individual, titulo_individual in configuracion_heatmaps_individuales:
+            df_heatmap_individual = (
+                df_heatmap_pivot[[estado_individual]]
+                if estado_individual in df_heatmap_pivot.columns
+                else pd.DataFrame(
+                    0,
+                    index=df_heatmap_pivot.index,
+                    columns=[estado_individual],
+                )
+            )
+
+            df_heatmap_individual = (
+                df_heatmap_individual
+                .sort_values(estado_individual, ascending=False)
+            )
+
+            if df_heatmap_individual.empty:
+                st.info(
+                    f"No hay datos para construir el mapa de calor de {estado_individual}."
+                )
+                continue
+
+            altura_individual = max(5, 0.36 * len(df_heatmap_individual) + 2)
+            fig_individual, ax_individual = plt.subplots(
+                figsize=(8.5, altura_individual)
+            )
+
+            matriz_individual = df_heatmap_individual.values
+
+            im_individual = ax_individual.imshow(
+                matriz_individual,
+                aspect="auto",
+                cmap=cmap_individual,
+                interpolation="nearest",
+            )
+
+            ax_individual.set_xticks([-0.5, 0.5], minor=True)
+            ax_individual.set_yticks(
+                np.arange(-0.5, len(df_heatmap_individual.index), 1),
+                minor=True,
+            )
+            ax_individual.grid(
+                which="minor",
+                color="white",
+                linestyle="-",
+                linewidth=1.4,
+            )
+            ax_individual.tick_params(
+                which="minor",
+                bottom=False,
+                left=False,
+            )
+
+            ax_individual.set_xticks([0])
+            ax_individual.set_xticklabels([estado_individual])
+            ax_individual.set_yticks(
+                np.arange(len(df_heatmap_individual.index))
+            )
+            ax_individual.set_yticklabels(df_heatmap_individual.index)
+
+            ax_individual.set_title(
+                titulo_individual,
+                fontsize=14,
+                fontweight="bold",
+                pad=14,
+            )
+            ax_individual.set_xlabel("Estado")
+            ax_individual.set_ylabel("Gestor de contrato")
+
+            valor_maximo_individual = (
+                matriz_individual.max()
+                if matriz_individual.size > 0
+                else 0
+            )
+
+            for fila_individual in range(matriz_individual.shape[0]):
+                valor_individual = matriz_individual[fila_individual, 0]
+
+                color_texto_individual = (
+                    "white"
+                    if (
+                        valor_maximo_individual > 0
+                        and valor_individual >= valor_maximo_individual * 0.65
+                    )
+                    else "#111827"
+                )
+
+                ax_individual.text(
+                    0,
+                    fila_individual,
+                    str(int(valor_individual)) if valor_individual > 0 else "–",
+                    ha="center",
+                    va="center",
+                    fontsize=9,
+                    fontweight="bold" if valor_individual > 0 else "normal",
+                    color=(
+                        color_texto_individual
+                        if valor_individual > 0
+                        else "#9CA3AF"
+                    ),
+                )
+
+            cbar_individual = fig_individual.colorbar(
+                im_individual,
+                ax=ax_individual,
+            )
+            cbar_individual.set_label("Recuento de contratos")
+
+            fig_individual.tight_layout()
+            st.pyplot(fig_individual, clear_figure=True)
+
+            with st.expander(
+                f"Ver tabla del mapa de calor: {estado_individual}",
+                expanded=False,
+            ):
+                st.dataframe(
+                    df_heatmap_individual.reset_index(),
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Gestor_Contrato": st.column_config.TextColumn(
+                            "Gestor de contrato"
+                        ),
+                        estado_individual: st.column_config.NumberColumn(
+                            estado_individual,
+                            format="%d",
+                        ),
+                    },
+                )
+
 
 # ============================================================
 # Contratos por vencer por gestor
@@ -1953,7 +2102,7 @@ with st.expander(
 
     st.write(
         "- Cobertura ME3N sobre contratos filtrados: "
-        f"{cobertura_me3n:.2%}"
+        + formato_porcentaje(cobertura_me3n)
     )
 
     st.write(
@@ -1963,7 +2112,7 @@ with st.expander(
 
     st.write(
         "- Participación sin información ME3N: "
-        f"{sin_cobertura_me3n:.2%}"
+        + formato_porcentaje(sin_cobertura_me3n)
     )
 
     st.write(
@@ -1973,7 +2122,7 @@ with st.expander(
 
     st.write(
         "- Participación de contratos por vencer: "
-        f"{porcentaje_por_vencer:.2%}"
+        + formato_porcentaje(porcentaje_por_vencer)
     )
 
     st.write(
