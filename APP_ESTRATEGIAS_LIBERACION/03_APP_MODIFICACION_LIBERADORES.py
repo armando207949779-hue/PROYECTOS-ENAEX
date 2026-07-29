@@ -73,6 +73,7 @@ FLOW_COLUMNS = [
 DOC_LABEL = {
     "AZNB": "Material (AZNB)",
     "AZSR": "Servicio (AZSR)",
+    "AMBOS": "Ambos (AZNB + AZSR)",
 }
 
 ACTION_LABEL = {
@@ -529,6 +530,78 @@ def unique_users(flow: pd.DataFrame) -> list[str]:
 
 
 
+def normalize_plant_family(value: Any) -> str:
+    """Normaliza la planta para identificar su CECO base y su gemelo EMTS."""
+    text = clean_text(value).upper()
+    text = re.sub(r"\bEMTS\b", "", text)
+    text = re.sub(r"[^A-Z0-9]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def find_twin_cecos(
+    flow: pd.DataFrame,
+    selected_ceco: str,
+) -> list[dict[str, str]]:
+    """Busca CECO distintos cuya planta pertenece a la misma familia."""
+    selected_rows = flow[flow["CECO"].eq(selected_ceco)]
+    selected_plants = [
+        clean_text(value)
+        for value in selected_rows["Planta"].tolist()
+        if clean_text(value)
+    ]
+    families = {
+        normalize_plant_family(value)
+        for value in selected_plants
+        if normalize_plant_family(value)
+    }
+
+    if not families:
+        return []
+
+    candidates = (
+        flow[["CECO", "Planta"]]
+        .drop_duplicates()
+        .sort_values(["Planta", "CECO"], kind="stable")
+    )
+
+    twins: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    for _, row in candidates.iterrows():
+        ceco = clean_text(row.get("CECO"))
+        planta = clean_text(row.get("Planta"))
+
+        if not ceco or ceco == selected_ceco or ceco in seen:
+            continue
+
+        if normalize_plant_family(planta) not in families:
+            continue
+
+        seen.add(ceco)
+        twins.append({"ceco": ceco, "planta": planta})
+
+    return twins
+
+
+def same_range_mask(
+    dataframe: pd.DataFrame,
+    desde: Any,
+    hasta: Any,
+) -> pd.Series:
+    """Compara rangos usando valores numéricos normalizados."""
+    target_from = parse_bound(desde, low=True)
+    target_until = parse_bound(hasta, low=False)
+
+    return (
+        dataframe["Desde"].map(lambda value: parse_bound(value, low=True)).eq(target_from)
+        & dataframe["Hasta"].map(lambda value: parse_bound(value, low=False)).eq(target_until)
+    )
+
+
+def row_flow_signature(row: pd.Series) -> tuple[str, ...]:
+    return tuple(libs_padded(libs_from_row(row)))
+
+
 def is_valid_email(value: Any) -> bool:
     """Valida correos simples; Liberador Servicios es una excepción válida."""
     text = strip_user(value)
@@ -603,6 +676,9 @@ def default_draft() -> dict[str, Any]:
         "ceco": "",
         "doc": "",
         "row_id": None,
+        "target_row_ids": [],
+        "target_cecos": [],
+        "target_docs": [],
         "libs_before": [],
         "libs_after": [],
         "replaced_from": "",
@@ -1637,18 +1713,21 @@ def render_wizard(
         return
 
     # --------------------------------------------------------
-    # 2. CECO
+    # 2. CECO y gemelo EMTS
     # --------------------------------------------------------
     question(
         2,
         "¿Qué CECO quieres modificar?",
-        "Selecciona el CECO y revisa su tabla completa.",
+        (
+            "Selecciona el CECO. Si existe un CECO gemelo EMTS, "
+            "podrás incluirlo en la misma modificación."
+        ),
     )
 
     ceco_map = (
         flow[["CECO", "Planta"]]
         .drop_duplicates()
-        .sort_values(["CECO", "Planta"])
+        .sort_values(["CECO", "Planta"], kind="stable")
         .groupby("CECO", as_index=False)
         .first()
     )
@@ -1662,10 +1741,36 @@ def render_wizard(
             if plant_by_ceco.get(value, "")
             else value
         ),
-        key="mod_ceco_v04",
+        key="mod_ceco_v08",
     )
 
-    ceco_rows = flow[flow["CECO"].eq(selected_ceco)].copy()
+    twin_records = find_twin_cecos(flow, selected_ceco)
+    include_twin = False
+
+    if twin_records:
+        twin_description = ", ".join(
+            f"{item['planta']} ({item['ceco']})"
+            for item in twin_records
+        )
+        st.info(
+            f"Se detectó CECO gemelo para **{plant_by_ceco.get(selected_ceco, selected_ceco)}**: "
+            f"**{twin_description}**."
+        )
+        include_twin = st.checkbox(
+            "Aplicar también la modificación al CECO gemelo EMTS",
+            value=False,
+            key="mod_include_twin_v08",
+            help=(
+                "Al activarlo se modificarán las filas equivalentes del CECO "
+                "seleccionado y de su gemelo, usando el mismo tipo y rango."
+            ),
+        )
+
+    target_cecos = [selected_ceco]
+    if include_twin:
+        target_cecos.extend(item["ceco"] for item in twin_records)
+
+    ceco_rows = flow[flow["CECO"].isin(target_cecos)].copy()
 
     st.dataframe(
         style_flow_table(ceco_rows),
@@ -1675,75 +1780,152 @@ def render_wizard(
     )
 
     # --------------------------------------------------------
-    # 2. Tipo
+    # 3. Tipo de documento
     # --------------------------------------------------------
     question(
         3,
         "¿Qué tipo quieres modificar?",
-        "Selecciona Material o Servicio.",
+        "Selecciona Material, Servicio o Ambos.",
     )
 
+    primary_rows = flow[flow["CECO"].eq(selected_ceco)].copy()
     available_docs = [
         doc
         for doc in ["AZNB", "AZSR"]
-        if not ceco_rows[ceco_rows["TipoDoc"].eq(doc)].empty
+        if not primary_rows[primary_rows["TipoDoc"].eq(doc)].empty
     ]
 
     if not available_docs:
         st.error("El CECO no contiene reglas AZNB ni AZSR.")
         return
 
-    selected_doc = st.radio(
+    doc_options = list(available_docs)
+    if {"AZNB", "AZSR"}.issubset(set(available_docs)):
+        doc_options.append("AMBOS")
+
+    selected_doc = st.selectbox(
         "Tipo de documento",
-        options=available_docs,
+        options=doc_options,
         format_func=lambda value: DOC_LABEL[value],
-        horizontal=True,
-        key="mod_doc_v04",
+        key="mod_doc_v08",
+        help=(
+            "Ambos aplica la misma modificación a Material (AZNB) "
+            "y Servicio (AZSR) para el rango seleccionado."
+        ),
     )
 
-    doc_rows = ceco_rows[
-        ceco_rows["TipoDoc"].eq(selected_doc)
-    ].copy()
-
-    doc_rows["_DESDE"] = doc_rows["Desde"].map(
-        lambda value: parse_bound(value, low=True)
-    )
-    doc_rows = (
-        doc_rows.sort_values(["_DESDE", "_ID_FILA"])
-        .drop(columns=["_DESDE"])
+    selected_docs = (
+        ["AZNB", "AZSR"]
+        if selected_doc == "AMBOS"
+        else [selected_doc]
     )
 
     # --------------------------------------------------------
-    # 3. Rango
+    # 4. Rango
     # --------------------------------------------------------
     question(
         4,
         "¿Qué rango quieres abrir?",
-        "Selecciona el tramo cuyo flujo deseas modificar.",
-    )
-
-    row_lookup = doc_rows.set_index("_ID_FILA")
-
-    selected_row_id = st.selectbox(
-        "Rango",
-        options=doc_rows["_ID_FILA"].tolist(),
-        format_func=lambda row_id: (
-            f"{fmt_bound(row_lookup.loc[row_id, 'Desde'])} – "
-            f"{fmt_bound(row_lookup.loc[row_id, 'Hasta'])}"
+        (
+            "Selecciona el tramo. La aplicación buscará el mismo rango "
+            "en los tipos y CECO incluidos."
         ),
-        key="mod_range_v04",
     )
 
-    selected_row = row_lookup.loc[selected_row_id]
+    range_source = primary_rows[
+        primary_rows["TipoDoc"].isin(selected_docs)
+    ].copy()
+    range_source["_DESDE"] = range_source["Desde"].map(
+        lambda value: parse_bound(value, low=True)
+    )
+    range_source["_HASTA"] = range_source["Hasta"].map(
+        lambda value: parse_bound(value, low=False)
+    )
+    range_options = (
+        range_source[["_DESDE", "_HASTA", "Desde", "Hasta"]]
+        .drop_duplicates(["_DESDE", "_HASTA"])
+        .sort_values(["_DESDE", "_HASTA"], kind="stable")
+        .reset_index(drop=True)
+    )
+
+    if range_options.empty:
+        st.error("No se encontraron rangos para la selección actual.")
+        return
+
+    selected_range_index = st.selectbox(
+        "Rango",
+        options=range_options.index.tolist(),
+        format_func=lambda index: (
+            f"{fmt_bound(range_options.loc[index, 'Desde'])} – "
+            f"{fmt_bound(range_options.loc[index, 'Hasta'])}"
+        ),
+        key="mod_range_v08",
+    )
+
+    selected_from = range_options.loc[selected_range_index, "Desde"]
+    selected_until = range_options.loc[selected_range_index, "Hasta"]
+
+    target_rows = flow[
+        flow["CECO"].isin(target_cecos)
+        & flow["TipoDoc"].isin(selected_docs)
+        & same_range_mask(flow, selected_from, selected_until)
+    ].copy()
+
+    if target_rows.empty:
+        st.error("No existen filas equivalentes para la selección realizada.")
+        return
+
+    expected_combinations = {
+        (ceco, doc)
+        for ceco in target_cecos
+        for doc in selected_docs
+    }
+    found_combinations = set(
+        target_rows[["CECO", "TipoDoc"]]
+        .drop_duplicates()
+        .itertuples(index=False, name=None)
+    )
+    missing_combinations = sorted(expected_combinations - found_combinations)
+
+    if missing_combinations:
+        missing_text = ", ".join(
+            f"{ceco} / {DOC_LABEL.get(doc, doc)}"
+            for ceco, doc in missing_combinations
+        )
+        st.warning(
+            "No se encontró el mismo rango para todas las combinaciones. "
+            f"No serán modificadas: **{missing_text}**."
+        )
+
+    target_rows = target_rows.sort_values(
+        ["CECO", "TipoDoc", "_ID_FILA"],
+        kind="stable",
+    )
+    target_row_ids = target_rows["_ID_FILA"].astype(int).tolist()
+
+    primary_candidates = target_rows[
+        target_rows["CECO"].eq(selected_ceco)
+    ]
+    selected_row = (
+        primary_candidates.iloc[0]
+        if not primary_candidates.empty
+        else target_rows.iloc[0]
+    )
+    selected_row_id = int(selected_row["_ID_FILA"])
+
     current_identity = (
-        selected_ceco,
-        selected_doc,
-        int(selected_row_id),
+        tuple(target_cecos),
+        tuple(selected_docs),
+        float(parse_bound(selected_from, low=True)),
+        float(parse_bound(selected_until, low=False)),
+        tuple(target_row_ids),
     )
     draft_identity = (
-        draft.get("ceco"),
-        draft.get("doc"),
-        draft.get("row_id"),
+        tuple(draft.get("target_cecos", [])),
+        tuple(draft.get("target_docs", [])),
+        draft.get("range_from"),
+        draft.get("range_until"),
+        tuple(draft.get("target_row_ids", [])),
     )
 
     if current_identity != draft_identity:
@@ -1753,7 +1935,12 @@ def render_wizard(
             {
                 "ceco": selected_ceco,
                 "doc": selected_doc,
-                "row_id": int(selected_row_id),
+                "row_id": selected_row_id,
+                "target_row_ids": target_row_ids,
+                "target_cecos": list(target_cecos),
+                "target_docs": list(selected_docs),
+                "range_from": float(parse_bound(selected_from, low=True)),
+                "range_until": float(parse_bound(selected_until, low=False)),
                 "libs_before": list(libs),
                 "libs_after": list(libs),
             }
@@ -1763,16 +1950,37 @@ def render_wizard(
     libs_before = list(draft["libs_before"])
     libs_after = list(draft["libs_after"])
 
+    signatures = {
+        row_flow_signature(row)
+        for _, row in target_rows.iterrows()
+    }
+    if len(signatures) > 1:
+        st.warning(
+            "Las filas seleccionadas no tienen exactamente el mismo flujo actual. "
+            "La edición usará como base el flujo del CECO principal y, al guardar, "
+            "aplicará el resultado final a todas las filas indicadas."
+        )
+
     st.info(
-        f"Tramo activo: **{fmt_bound(selected_row['Desde'])} – "
-        f"{fmt_bound(selected_row['Hasta'])}**."
+        f"Tramo activo: **{fmt_bound(selected_from)} – {fmt_bound(selected_until)}** · "
+        f"**{len(target_rows)} fila(s)** · "
+        f"**{len(set(target_rows['CECO']))} CECO** · "
+        f"**{len(set(target_rows['TipoDoc']))} tipo(s)**."
     )
+
+    with st.expander("Ver filas que serán modificadas", expanded=True):
+        st.dataframe(
+            style_flow_table(target_rows),
+            use_container_width=True,
+            hide_index=True,
+            height=min(520, max(220, 36 * (len(target_rows) + 2))),
+        )
 
     st.markdown(
         flow_html(
             libs_after,
             data,
-            "Flujo actual del tramo",
+            "Flujo que se aplicará a las filas seleccionadas",
         ),
         unsafe_allow_html=True,
     )
@@ -1980,6 +2188,9 @@ def render_wizard(
                 "mod_user_mode_v04",
                 "mod_existing_user_v04",
                 "mod_new_user_v04",
+                "mod_include_twin_v08",
+                "mod_doc_v08",
+                "mod_range_v08",
             ]:
                 st.session_state.pop(key, None)
             st.rerun()
@@ -2094,7 +2305,18 @@ def render_wizard(
         ),
     )
 
-    no_changes = libs_padded(libs_before) == libs_padded(libs_after)
+    target_row_ids = [
+        int(value)
+        for value in draft.get("target_row_ids", [])
+    ]
+    target_current_rows = flow[
+        flow["_ID_FILA"].isin(target_row_ids)
+    ]
+    after_padded_for_check = libs_padded(libs_after)
+    no_changes = bool(target_current_rows.empty) or all(
+        libs_padded(libs_from_row(row)) == after_padded_for_check
+        for _, row in target_current_rows.iterrows()
+    )
     validation_errors = validate_flow_result(libs_after)
     missing_identification = (
         not clean_text(actor)
@@ -2128,40 +2350,58 @@ def render_wizard(
 
     if save_clicked:
         updated = flow.copy(deep=True)
-        selected_mask = updated["_ID_FILA"].eq(int(selected_row_id))
+        target_row_ids = [
+            int(value)
+            for value in draft.get("target_row_ids", [])
+        ]
+        selected_mask = updated["_ID_FILA"].isin(target_row_ids)
 
         if not selected_mask.any():
-            st.error("La fila seleccionada ya no existe.")
+            st.error("Las filas seleccionadas ya no existen.")
             return
 
-        before_padded = libs_padded(libs_before)
         after_padded = libs_padded(libs_after)
         timestamp = datetime.now(CHILE_TZ).strftime("%Y-%m-%d %H:%M:%S")
         changes: list[dict[str, Any]] = []
 
-        for column, old_value, new_value in zip(
-            LIB_COLS,
-            before_padded,
-            after_padded,
-        ):
-            if strip_user(old_value) == strip_user(new_value):
-                continue
+        for row_index, row in updated[selected_mask].iterrows():
+            row_before = libs_padded(libs_from_row(row))
 
-            updated.loc[selected_mask, column] = strip_user(new_value)
-            changes.append(
-                {
-                    "FechaHora": timestamp,
-                    "Usuario": actor or "anonimo",
-                    "CECO": selected_ceco,
-                    "Desde": selected_row["Desde"],
-                    "Hasta": selected_row["Hasta"],
-                    "TipoDoc": selected_doc,
-                    "Campo": column,
-                    "ValorAntes": strip_user(old_value) or "—",
-                    "ValorDespues": strip_user(new_value) or "—",
-                    "Nota": reason or "Edición guiada de liberadores",
-                }
-            )
+            for column, old_value, new_value in zip(
+                LIB_COLS,
+                row_before,
+                after_padded,
+            ):
+                if strip_user(old_value) == strip_user(new_value):
+                    continue
+
+                updated.at[row_index, column] = strip_user(new_value)
+                changes.append(
+                    {
+                        "FechaHora": timestamp,
+                        "Usuario": actor or "anonimo",
+                        "CECO": row["CECO"],
+                        "Desde": row["Desde"],
+                        "Hasta": row["Hasta"],
+                        "TipoDoc": row["TipoDoc"],
+                        "Campo": column,
+                        "ValorAntes": strip_user(old_value) or "—",
+                        "ValorDespues": strip_user(new_value) or "—",
+                        "Nota": (
+                            (reason or "Edición guiada de liberadores")
+                            + (
+                                " | aplicado también a CECO gemelo"
+                                if len(set(draft.get("target_cecos", []))) > 1
+                                else ""
+                            )
+                            + (
+                                " | aplicado a ambos tipos de documento"
+                                if len(set(draft.get("target_docs", []))) > 1
+                                else ""
+                            )
+                        ),
+                    }
+                )
 
 
         if (
@@ -2180,13 +2420,7 @@ def render_wizard(
                         continue
 
                     # Evita duplicar el registro ya modificado del tramo actual.
-                    if (
-                        int(row["_ID_FILA"]) == int(selected_row_id)
-                        and column in [
-                            change["Campo"]
-                            for change in changes
-                        ]
-                    ):
+                    if int(row["_ID_FILA"]) in target_row_ids:
                         continue
 
                     updated.at[row_index, column] = new_person
