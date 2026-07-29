@@ -380,6 +380,9 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+st.caption("Versión V3 · Sin filtro global de proveedor")
+
+
 if "dataframes_cargados" not in st.session_state:
     st.warning("Primero debes cargar los archivos en la pestaña 01_CARGA_ARCHIVOS.")
     st.stop()
