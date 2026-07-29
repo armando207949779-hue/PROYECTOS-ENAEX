@@ -1,11 +1,15 @@
 # ============================================================
 # 02_APP_SIMULADOR_ALEATORIO
-# APP_FLUJO_LIBERACION_SERVICIOS
+# APP_ESTRATEGIAS_LIBERACION
 #
 # Lee la base cargada por 01_CARGAR_ARCHIVO_FLUJO desde
-# st.session_state. Permite generar un caso aleatorio, editar
-# CECO, tipo y monto, recalcular el flujo y consultar la tabla
-# completa de reglas asociadas al CECO seleccionado.
+# st.session_state. Permite buscar o generar un caso aleatorio,
+# editar CECO, tipo y monto, recalcular el flujo y consultar la
+# tabla completa de reglas asociadas al CECO seleccionado.
+#
+# Formato esperado:
+# CECO | Planta | Desde | Hasta | TipoDoc |
+# Lib1 | Lib2 | Lib3 | Lib4 | Lib5
 # ============================================================
 
 from __future__ import annotations
@@ -42,7 +46,6 @@ LIB_COLS = ["Lib1", "Lib2", "Lib3", "Lib4", "Lib5"]
 TABLE_COLS = [
     "CECO", "Planta", "Desde", "Hasta", "TipoDoc",
     "Lib1", "Lib2", "Lib3", "Lib4", "Lib5",
-    "N_EO", "N_CD", "Match", "FuenteCD",
 ]
 
 DOC_LABEL = {
@@ -107,7 +110,7 @@ def clean_user(value: Any) -> str:
         pass
 
     text = str(value).strip()
-    return "" if text.lower() in {"", "nan", "none", "—", "-"} else text
+    return "" if text.lower() in {"", "nan", "none", "null", "<na>", "n/a", "no usar", "—", "-"} else text
 
 
 def strip_user_email(value: Any) -> str:
@@ -178,18 +181,6 @@ def fmt_bound(value: Any) -> str:
 def fmt_money(value: int | float) -> str:
     return f"$ {int(value):,}".replace(",", ".")
 
-
-def normalize_int(value: Any) -> int:
-    try:
-        if value is None or pd.isna(value):
-            return 0
-        return int(float(str(value).replace(",", ".")))
-    except (TypeError, ValueError):
-        return 0
-
-
-def normalize_yes(value: Any) -> bool:
-    return clean_user(value).upper() in {"SI", "SÍ", "YES", "TRUE", "1"}
 
 
 # ============================================================
@@ -367,6 +358,29 @@ def mostrar_logo() -> None:
 # DATOS Y REGLAS DEL FLUJO
 # ============================================================
 
+def validate_flow_schema(data: dict[str, pd.DataFrame]) -> pd.DataFrame:
+    """Valida que la base activa tenga el formato simplificado vigente."""
+    flow = data.get("flujo")
+
+    if not isinstance(flow, pd.DataFrame) or flow.empty:
+        raise ValueError("La base activa no contiene registros de flujo.")
+
+    required = [
+        "CECO", "Planta", "Desde", "Hasta", "TipoDoc",
+        "Lib1", "Lib2", "Lib3", "Lib4", "Lib5",
+    ]
+    missing = [column for column in required if column not in flow.columns]
+
+    if missing:
+        raise ValueError(
+            "La base activa no tiene el formato vigente. "
+            f"Faltan: {', '.join(missing)}. "
+            "Vuelve a cargar el Excel desde 01 Cargar Archivo."
+        )
+
+    return flow
+
+
 def cargo_map(data: dict[str, pd.DataFrame]) -> dict[str, str]:
     mapping: dict[str, str] = {}
 
@@ -438,7 +452,7 @@ def build_case(
     doc_type: str | None = None,
     amount: int | None = None,
 ) -> dict[str, Any]:
-    flow = data["flujo"]
+    flow = validate_flow_schema(data)
     ceco = clean_user(ceco)
 
     docs = sorted(
@@ -486,23 +500,15 @@ def build_case(
         "monto": int(amount),
         "desde": selected_row["Desde"],
         "hasta": selected_row["Hasta"],
-        "match": normalize_yes(selected_row.get("Match", "")),
-        "n_eo": normalize_int(selected_row.get("N_EO", 0)),
-        "n_cd": normalize_int(selected_row.get("N_CD", 0)),
-        "fuente_cd": clean_user(selected_row.get("FuenteCD", "")),
         "libs": libs_from_row(selected_row),
     }
 
 
 def available_pairs(
     data: dict[str, pd.DataFrame],
-    only_match: bool,
     doc_filter: str,
 ) -> list[tuple[str, str]]:
-    flow = data["flujo"]
-
-    if only_match:
-        flow = flow[flow["Match"].map(normalize_yes)]
+    flow = validate_flow_schema(data)
 
     if doc_filter in DOC_LABEL:
         flow = flow[flow["TipoDoc"].eq(doc_filter)]
@@ -521,7 +527,7 @@ def ceco_values(data: dict[str, pd.DataFrame]) -> list[str]:
 
 
 def ceco_label(data: dict[str, pd.DataFrame], ceco: str) -> str:
-    flow = data["flujo"]
+    flow = validate_flow_schema(data)
     plants = (
         flow.loc[flow["CECO"].eq(ceco), "Planta"]
         .map(clean_user)
@@ -531,7 +537,7 @@ def ceco_label(data: dict[str, pd.DataFrame], ceco: str) -> str:
 
 
 def docs_for_ceco(data: dict[str, pd.DataFrame], ceco: str) -> list[str]:
-    flow = data["flujo"]
+    flow = validate_flow_schema(data)
     docs = (
         flow.loc[flow["CECO"].eq(ceco), "TipoDoc"]
         .dropna()
@@ -559,29 +565,16 @@ def html_flow(case: dict[str, Any], data: dict[str, pd.DataFrame]) -> str:
     parts: list[str] = []
 
     for index, user in enumerate(users, start=1):
-        is_eo = index <= case["n_eo"]
-
-        if is_eo:
-            background = "#EAF7EE"
-            border = "#7BC596"
-            text_color = "#166534"
-            group = "EO"
-        else:
-            background = "#F8FAFC"
-            border = "#CBD5E1"
-            text_color = "#1E3A8A"
-            group = "CD"
-
         parts.append(
             compact_html(
                 f"""
-                <div style="min-width:170px;max-width:225px;background:{background};
-                    border:2px solid {border};border-radius:12px;padding:11px;
+                <div style="min-width:170px;max-width:225px;background:#F8FAFC;
+                    border:2px solid #CBD5E1;border-radius:12px;padding:11px;
                     font-family:Arial,sans-serif;">
                     <div style="font-size:11px;color:#64748B;font-weight:700;">
-                        Liberador {index} · {group}
+                        Liberador {index}
                     </div>
-                    <div style="font-weight:700;color:{text_color};margin:6px 0;
+                    <div style="font-weight:700;color:#17365D;margin:6px 0;
                         overflow-wrap:anywhere;font-size:12px;">
                         {escape(display_with_cargo(user, data))}
                     </div>
@@ -612,17 +605,6 @@ def html_case(
     data: dict[str, pd.DataFrame],
     title: str,
 ) -> str:
-    if case["match"]:
-        badge = (
-            "<span style='background:#166534;color:#FFF;padding:3px 9px;"
-            "border-radius:999px;font-size:11px;font-weight:700;'>MATCH</span>"
-        )
-    else:
-        badge = (
-            "<span style='background:#C2410C;color:#FFF;padding:3px 9px;"
-            "border-radius:999px;font-size:11px;font-weight:700;'>SIN MATCH</span>"
-        )
-
     metrics = [
         ("CECO", case["ceco"]),
         ("Planta", case["planta"] or "—"),
@@ -656,11 +638,8 @@ def html_case(
     return compact_html(
         f"""
         <div class="fl-card" style="border-top:4px solid {doc_color};">
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
-                <div style="color:#17365D;font-size:17px;font-weight:800;">
-                    {escape(title)}
-                </div>
-                {badge}
+            <div style="color:#17365D;font-size:17px;font-weight:800;">
+                {escape(title)}
             </div>
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
                 gap:9px;margin-top:13px;">
@@ -691,10 +670,6 @@ def format_table_dataframe(flow: pd.DataFrame, ceco: str) -> pd.DataFrame:
         if column in table.columns:
             table[column] = table[column].map(strip_user_email)
 
-    if "N_EO" in table.columns:
-        table["N_EO"] = table["N_EO"].map(normalize_int)
-    if "N_CD" in table.columns:
-        table["N_CD"] = table["N_CD"].map(normalize_int)
 
     sort_columns = [column for column in ["TipoDoc", "Desde"] if column in table.columns]
     if sort_columns:
@@ -859,7 +834,7 @@ def clear_case() -> None:
 def render_header() -> None:
     mostrar_logo()
     st.markdown(
-        '<div class="fl-title">02 Simulador Aleatorio</div>',
+        '<div class="fl-title">02 Simulación y Búsqueda</div>',
         unsafe_allow_html=True,
     )
     st.markdown(
@@ -1049,15 +1024,7 @@ def render_random_generator(data: dict[str, pd.DataFrame]) -> None:
         unsafe_allow_html=True,
     )
 
-    col_match, col_doc, col_button = st.columns([1.15, 1.35, 1.2], gap="medium")
-
-    with col_match:
-        only_match = st.checkbox(
-            "Solo CECO con MATCH",
-            value=True,
-            key="sim_only_match_v03",
-            help="Si está activo, el caso aleatorio solo usa filas marcadas como MATCH.",
-        )
+    col_doc, col_button = st.columns([1.7, 1.2], gap="medium")
 
     with col_doc:
         doc_filter = st.selectbox(
@@ -1083,7 +1050,7 @@ def render_random_generator(data: dict[str, pd.DataFrame]) -> None:
 
     if random_button:
         try:
-            pairs = available_pairs(data, only_match, doc_filter)
+            pairs = available_pairs(data, doc_filter)
             if not pairs:
                 raise ValueError(
                     "No existen combinaciones CECO/tipo para los filtros seleccionados."
@@ -1206,7 +1173,7 @@ def render_editable_case(data: dict[str, pd.DataFrame]) -> None:
 
     if random_amount_button:
         try:
-            flow = data["flujo"]
+            flow = validate_flow_schema(data)
             rows = flow[
                 flow["CECO"].eq(selected_ceco)
                 & flow["TipoDoc"].eq(selected_doc)
@@ -1246,7 +1213,7 @@ def render_editable_case(data: dict[str, pd.DataFrame]) -> None:
 
 
 def render_simulator(data: dict[str, pd.DataFrame]) -> None:
-    flow = data["flujo"]
+    flow = validate_flow_schema(data)
     file_name = st.session_state.get(SESSION_FILE_KEY, "Archivo cargado")
 
     st.success(
@@ -1287,6 +1254,12 @@ def main() -> None:
         except Exception:
             st.info("Selecciona **01 Cargar Archivo** desde el menú lateral.")
 
+        st.stop()
+
+    try:
+        validate_flow_schema(data)
+    except ValueError as error:
+        st.error(str(error))
         st.stop()
 
     render_simulator(data)
