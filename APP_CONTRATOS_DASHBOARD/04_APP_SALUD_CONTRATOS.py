@@ -654,12 +654,15 @@ with st.container(border=True):
         )
 
     with col_filtro_2:
-        proveedores_sel = st.multiselect(
+        proveedor_sel = st.selectbox(
             "Proveedor",
-            options=proveedores_disponibles,
-            default=proveedores_disponibles,
+            options=["Todos"] + proveedores_disponibles,
+            index=0,
             key="salud_filtro_proveedor_global",
-            help="Proveedor consolidado desde ME3N por documento de compra.",
+            help=(
+                "Escribe dentro del selector para buscar un proveedor. "
+                "El proveedor se consolida desde ME3N por documento de compra."
+            ),
         )
 
     col_filtro_3, col_filtro_4 = st.columns([1.25, 0.75])
@@ -692,13 +695,10 @@ if gestores_sel:
 else:
     df_contratos_estado_filtrado = df_contratos_estado_filtrado.iloc[0:0]
 
-if proveedores_disponibles:
-    if proveedores_sel:
-        df_contratos_estado_filtrado = df_contratos_estado_filtrado[
-            df_contratos_estado_filtrado["Proveedor"].isin(proveedores_sel)
-        ]
-    else:
-        df_contratos_estado_filtrado = df_contratos_estado_filtrado.iloc[0:0]
+if proveedores_disponibles and proveedor_sel != "Todos":
+    df_contratos_estado_filtrado = df_contratos_estado_filtrado[
+        df_contratos_estado_filtrado["Proveedor"] == proveedor_sel
+    ]
 
 if estados_sel_globales:
     df_contratos_estado_filtrado = df_contratos_estado_filtrado[
@@ -1043,8 +1043,19 @@ else:
         from matplotlib import colors as mcolors
         from matplotlib import cm
 
-        altura_figura = max(5.8, 0.42 * len(df_heatmap_plot) + 2.2)
-        fig, ax = plt.subplots(figsize=(10.8, altura_figura))
+        altura_figura = max(6.2, 0.42 * len(df_heatmap_plot) + 2.6)
+
+        # GridSpec reserva una fila inferior con tres ejes del mismo ancho.
+        # Así cada barra queda alineada exactamente con su columna.
+        fig = plt.figure(figsize=(10.8, altura_figura))
+        grid = fig.add_gridspec(
+            nrows=2,
+            ncols=3,
+            height_ratios=[18, 1],
+            hspace=0.28,
+            wspace=0.08,
+        )
+        ax = fig.add_subplot(grid[0, :])
 
         mapas_color = {
             "Vencido": cm.Reds,
@@ -1066,7 +1077,6 @@ else:
             normalizadores[estado] = normalizador
 
             colores_columna = mapas_color[estado](normalizador(valores))
-            # Los ceros quedan muy claros, sin perder la identidad del estado.
             colores_columna[valores == 0, 3] = 0.16
             matriz_rgba[:, columna_idx, :] = colores_columna
 
@@ -1126,15 +1136,8 @@ else:
                     color=color_texto if valor > 0 else "#6B7280",
                 )
 
-        # Tres barras de escala independientes dentro de una sola visualización.
-        posiciones_colorbar = [
-            (0.18, "Vencido"),
-            (0.44, "Por Vencer"),
-            (0.70, "Vigente"),
-        ]
-
-        for posicion_x, estado in posiciones_colorbar:
-            eje_color = fig.add_axes([posicion_x, 0.035, 0.18, 0.022])
+        for columna_idx, estado in enumerate(estados_mapa):
+            eje_color = fig.add_subplot(grid[1, columna_idx])
             mapeable = cm.ScalarMappable(
                 norm=normalizadores[estado],
                 cmap=mapas_color[estado],
@@ -1144,7 +1147,7 @@ else:
                 cax=eje_color,
                 orientation="horizontal",
             )
-            barra.ax.tick_params(labelsize=8)
+            barra.ax.tick_params(labelsize=8, pad=2)
             barra.set_label(
                 estado,
                 fontsize=8,
@@ -1155,8 +1158,8 @@ else:
         fig.subplots_adjust(
             left=0.25,
             right=0.98,
-            top=0.91,
-            bottom=0.14,
+            top=0.92,
+            bottom=0.08,
         )
         st.pyplot(fig, clear_figure=True)
 
@@ -2527,7 +2530,23 @@ else:
             "Filtra y ordena documentos según urgencia de gestión.",
         )
 
-        col_filtro_1, col_filtro_2, col_filtro_3 = st.columns([1.0, 1.45, 0.75])
+        proveedores_indice_disponibles = (
+            sorted(
+                df_indice_salud["Proveedor/Centro_suministrador"]
+                .dropna()
+                .astype(str)
+                .str.strip()
+                .replace("", pd.NA)
+                .dropna()
+                .unique()
+                .tolist()
+            )
+            if "Proveedor/Centro_suministrador" in df_indice_salud.columns
+            else []
+        )
+
+        col_filtro_1, col_filtro_2 = st.columns([1.0, 1.35])
+
         with col_filtro_1:
             estados_disponibles_indice = [
                 estado for estado in orden_estados_indice
@@ -2539,12 +2558,26 @@ else:
                 default=estados_disponibles_indice,
                 key="estados_indice_salud",
             )
+
         with col_filtro_2:
-            busqueda_indice = st.text_input(
-                "Buscar documento, proveedor o texto",
-                key="busqueda_indice_salud",
-            ).strip().casefold()
+            proveedor_indice_sel = st.selectbox(
+                "Proveedor",
+                options=["Todos"] + proveedores_indice_disponibles,
+                index=0,
+                key="proveedor_indice_salud",
+                help="Escribe dentro del selector para buscar un proveedor.",
+            )
+
+        col_filtro_3, col_filtro_4 = st.columns([1.45, 0.75])
+
         with col_filtro_3:
+            busqueda_indice = st.text_input(
+                "Buscar documento o descripción",
+                key="busqueda_indice_salud",
+                placeholder="Ej.: 4600012345 o servicio de transporte",
+            ).strip().casefold()
+
+        with col_filtro_4:
             solo_vigentes_indice = st.checkbox(
                 "Solo vigentes",
                 value=True,
@@ -2558,17 +2591,26 @@ else:
                     estados_seleccionados_indice
                 )
             ]
+        if proveedor_indice_sel != "Todos":
+            df_detalle_indice = df_detalle_indice[
+                df_detalle_indice["Proveedor/Centro_suministrador"]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+                == proveedor_indice_sel
+            ]
+
         if solo_vigentes_indice:
             df_detalle_indice = df_detalle_indice[
                 (df_detalle_indice["Fecha_Inicio"] <= hoy_indice)
                 & (df_detalle_indice["Fecha_Fin"] >= hoy_indice)
             ]
+
         if busqueda_indice:
             mascara_busqueda = pd.Series(False, index=df_detalle_indice.index)
             for campo in [
                 "Documento_compras",
                 "Texto_breve",
-                "Proveedor/Centro_suministrador",
             ]:
                 if campo in df_detalle_indice.columns:
                     mascara_busqueda |= (
