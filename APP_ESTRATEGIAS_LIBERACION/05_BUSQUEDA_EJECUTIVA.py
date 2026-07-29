@@ -3,13 +3,14 @@
 # APP_ESTRATEGIAS_LIBERACION
 #
 # Consulta rápida de flujos de liberación.
-# No incluye simulación aleatoria ni modificación de datos.
 #
-# Flujo:
-# 1. Seleccionar CECO
-# 2. Seleccionar Material o Servicio
-# 3. Ingresar monto
-# 4. Consultar flujo
+# Modos disponibles:
+# 1. Buscar por CECO + tipo + monto.
+# 2. Buscar por usuario y mostrar todos los CECO donde aparece.
+#
+# Formato esperado:
+# CECO | Planta | Desde | Hasta | TipoDoc |
+# Lib1 | Lib2 | Lib3 | Lib4 | Lib5
 # ============================================================
 
 from __future__ import annotations
@@ -46,14 +47,17 @@ LOGO_CANDIDATES = [
 SESSION_DATA_KEY = "flujo_liberacion_data"
 SESSION_FILE_KEY = "flujo_liberacion_file_name"
 
-SESSION_RESULT_KEY = "busqueda_ejecutiva_result_v01"
-SESSION_CECO_KEY = "busqueda_ejecutiva_ceco_v01"
-SESSION_DOC_KEY = "busqueda_ejecutiva_doc_v01"
-SESSION_AMOUNT_KEY = "busqueda_ejecutiva_amount_v01"
+SESSION_MODE_KEY = "busqueda_ejecutiva_mode_v02"
+SESSION_RESULT_KEY = "busqueda_ejecutiva_result_v02"
+SESSION_CECO_KEY = "busqueda_ejecutiva_ceco_v02"
+SESSION_DOC_KEY = "busqueda_ejecutiva_doc_v02"
+SESSION_AMOUNT_KEY = "busqueda_ejecutiva_amount_v02"
+SESSION_USER_KEY = "busqueda_ejecutiva_user_v02"
+SESSION_USER_TEXT_KEY = "busqueda_ejecutiva_user_text_v02"
 
 LIB_COLS = ["Lib1", "Lib2", "Lib3", "Lib4", "Lib5"]
 
-TABLE_COLS = [
+FLOW_COLUMNS = [
     "CECO",
     "Planta",
     "Desde",
@@ -64,20 +68,11 @@ TABLE_COLS = [
     "Lib3",
     "Lib4",
     "Lib5",
-    "N_EO",
-    "N_CD",
-    "Match",
-    "FuenteCD",
 ]
 
 DOC_LABEL = {
     "AZNB": "Material (AZNB)",
     "AZSR": "Servicio (AZSR)",
-}
-
-DOC_SHORT_LABEL = {
-    "AZNB": "Material",
-    "AZSR": "Servicio",
 }
 
 DOC_COLOR = {
@@ -93,6 +88,11 @@ DOC_BG = {
 DOC_BORDER = {
     "AZNB": "#FDA29B",
     "AZSR": "#84CAFF",
+}
+
+MODE_LABEL = {
+    "FLOW": "🔎 Buscar por CECO + tipo + monto",
+    "USER": "👤 Buscar por usuario",
 }
 
 LS_LABEL = "Liberador Servicios"
@@ -117,16 +117,35 @@ def clean_text(value: Any) -> str:
         pass
 
     text = str(value).strip()
-    return "" if text.lower() in {"", "nan", "none", "—", "-"} else text
+
+    if text.lower() in {
+        "",
+        "nan",
+        "none",
+        "null",
+        "<na>",
+        "n/a",
+        "no usar",
+        "—",
+        "-",
+    }:
+        return ""
+
+    return text
 
 
 def strip_user_email(value: Any) -> str:
     text = clean_text(value)
+
     if not text or text == LS_LABEL:
         return text
 
-    match = re.match(r"^(.*?)(?:\s*\(([^)]+)\))?$", text)
+    match = re.match(r"^(.*?)(?:\s+\([^)]+\))?$", text)
     return match.group(1).strip() if match else text
+
+
+def email_key(value: Any) -> str:
+    return strip_user_email(value).casefold()
 
 
 def parse_bound(value: Any, low: bool = True) -> float:
@@ -151,17 +170,21 @@ def parse_bound(value: Any, low: bool = True) -> float:
         normalized = left + right if len(right) == 3 else left + "." + right
     elif "." in normalized:
         left, right = normalized.rsplit(".", 1)
+
         if len(right) == 3 and left.replace("-", "").isdigit():
             normalized = left + right
 
     try:
         return float(normalized)
     except ValueError as error:
-        raise ValueError(f"Monto o rango no válido: {value!r}") from error
+        raise ValueError(
+            f"Monto o rango no válido: {value!r}"
+        ) from error
 
 
 def parse_amount(value: Any) -> int | None:
     text = clean_text(value)
+
     if not text:
         return None
 
@@ -189,31 +212,13 @@ def fmt_bound(value: Any) -> str:
             return "1E+12"
 
         return f"{int(number):,}".replace(",", ".")
+
     except (TypeError, ValueError):
         return text
 
 
 def fmt_money(value: int | float) -> str:
     return f"$ {int(value):,}".replace(",", ".")
-
-
-def normalize_int(value: Any) -> int:
-    try:
-        if value is None or pd.isna(value):
-            return 0
-        return int(float(str(value).replace(",", ".")))
-    except (TypeError, ValueError):
-        return 0
-
-
-def normalize_yes(value: Any) -> bool:
-    return clean_text(value).upper() in {
-        "SI",
-        "SÍ",
-        "YES",
-        "TRUE",
-        "1",
-    }
 
 
 # ============================================================
@@ -237,7 +242,6 @@ def aplicar_estilos() -> None:
                 justify-content: center;
                 align-items: center;
                 margin: .6rem 0 12px;
-                overflow: visible;
             }
 
             .executive-logo img {
@@ -245,7 +249,6 @@ def aplicar_estilos() -> None:
                 max-width: min(60vw, 220px);
                 max-height: 88px;
                 object-fit: contain;
-                display: block;
             }
 
             .executive-title {
@@ -339,6 +342,8 @@ def aplicar_estilos() -> None:
                 border-radius: 12px;
                 padding: 11px;
                 font-family: Arial, sans-serif;
+                background: #F8FAFC;
+                border: 2px solid #CBD5E1;
             }
 
             .legend {
@@ -401,8 +406,9 @@ def mostrar_logo() -> None:
             ),
             unsafe_allow_html=True,
         )
-    except (OSError, UnicodeError):
-        st.warning(f"No fue posible leer el logo: {path.name}")
+
+    except (OSError, UnicodeError) as error:
+        st.warning(f"No fue posible leer el logo: {error}")
 
 
 def render_header() -> None:
@@ -416,8 +422,8 @@ def render_header() -> None:
     st.markdown(
         """
         <div class="executive-subtitle">
-            Consulta rápida del flujo de liberación por CECO,
-            tipo de documento y monto.
+            Consulta un flujo por CECO o revisa todos los CECO
+            donde participa un usuario.
         </div>
         """,
         unsafe_allow_html=True,
@@ -452,41 +458,72 @@ def question_node(
 def prepare_data(
     raw_data: dict[str, pd.DataFrame],
 ) -> dict[str, pd.DataFrame]:
-    if "flujo" not in raw_data:
-        raise ValueError("No se encontró la hoja Flujo en la sesión.")
+    flow = raw_data.get("flujo")
 
-    flow = raw_data["flujo"].copy()
-    flow.columns = [str(column).strip() for column in flow.columns]
+    if not isinstance(flow, pd.DataFrame):
+        raise ValueError(
+            "No se encontró la hoja Flujo en la sesión."
+        )
 
-    for column in TABLE_COLS:
-        if column not in flow.columns:
-            flow[column] = ""
+    flow = flow.copy()
+    flow.columns = [
+        str(column).strip()
+        for column in flow.columns
+    ]
 
+    missing = [
+        column
+        for column in FLOW_COLUMNS
+        if column not in flow.columns
+    ]
+
+    if missing:
+        raise ValueError(
+            "La base activa no tiene el formato vigente. "
+            f"Faltan: {', '.join(missing)}."
+        )
+
+    flow = flow.loc[:, FLOW_COLUMNS].copy()
     flow["CECO"] = flow["CECO"].map(clean_text)
     flow["Planta"] = flow["Planta"].map(clean_text)
-    flow["TipoDoc"] = flow["TipoDoc"].map(clean_text).str.upper()
+    flow["TipoDoc"] = (
+        flow["TipoDoc"]
+        .map(clean_text)
+        .str.upper()
+    )
 
     for column in LIB_COLS:
-        flow[column] = flow[column].map(strip_user_email)
+        flow[column] = flow[column].map(
+            strip_user_email
+        )
 
     flow = flow[
         flow["CECO"].ne("")
         & flow["TipoDoc"].isin(DOC_LABEL)
     ].reset_index(drop=True)
 
-    users = raw_data.get("dic_users", pd.DataFrame()).copy()
+    users = raw_data.get(
+        "dic_users",
+        pd.DataFrame(),
+    )
+
+    if not isinstance(users, pd.DataFrame):
+        users = pd.DataFrame()
 
     return {
         **raw_data,
         "flujo": flow,
-        "dic_users": users,
+        "dic_users": users.copy(),
     }
 
 
 def cargo_map(
     data: dict[str, pd.DataFrame],
 ) -> dict[str, str]:
-    users = data.get("dic_users", pd.DataFrame())
+    users = data.get(
+        "dic_users",
+        pd.DataFrame(),
+    )
 
     if not isinstance(users, pd.DataFrame) or users.empty:
         return {}
@@ -495,11 +532,8 @@ def cargo_map(
         (
             column
             for column in users.columns
-            if str(column).strip().lower() in {
-                "correo",
-                "email",
-                "mail",
-            }
+            if str(column).strip().lower()
+            in {"correo", "email", "mail"}
         ),
         None,
     )
@@ -508,11 +542,8 @@ def cargo_map(
         (
             column
             for column in users.columns
-            if str(column).strip().lower() in {
-                "cargo",
-                "rol",
-                "role",
-            }
+            if str(column).strip().lower()
+            in {"cargo", "rol", "role"}
         ),
         None,
     )
@@ -523,7 +554,9 @@ def cargo_map(
     result: dict[str, str] = {}
 
     for _, row in users.iterrows():
-        email = strip_user_email(row.get(email_column, ""))
+        email = strip_user_email(
+            row.get(email_column, "")
+        )
         cargo = (
             clean_text(row.get(cargo_column, ""))
             if cargo_column is not None
@@ -531,7 +564,7 @@ def cargo_map(
         )
 
         if email:
-            result[email.lower()] = cargo
+            result[email.casefold()] = cargo
 
     return result
 
@@ -545,7 +578,10 @@ def display_with_cargo(
     if not email or email == LS_LABEL:
         return email
 
-    cargo = cargo_map(data).get(email.lower(), "")
+    cargo = cargo_map(data).get(
+        email.casefold(),
+        "",
+    )
 
     return (
         email
@@ -572,13 +608,24 @@ def ceco_label(
 ) -> str:
     plants = (
         data["flujo"]
-        .loc[data["flujo"]["CECO"].eq(ceco), "Planta"]
+        .loc[
+            data["flujo"]["CECO"].eq(ceco),
+            "Planta",
+        ]
         .map(clean_text)
     )
 
-    plants = plants[plants.ne("")].unique().tolist()
+    plants = (
+        plants[plants.ne("")]
+        .unique()
+        .tolist()
+    )
 
-    return f"{ceco} | {plants[0]}" if plants else ceco
+    return (
+        f"{ceco} | {plants[0]}"
+        if plants
+        else ceco
+    )
 
 
 def docs_for_ceco(
@@ -587,7 +634,10 @@ def docs_for_ceco(
 ) -> list[str]:
     docs = (
         data["flujo"]
-        .loc[data["flujo"]["CECO"].eq(ceco), "TipoDoc"]
+        .loc[
+            data["flujo"]["CECO"].eq(ceco),
+            "TipoDoc",
+        ]
         .dropna()
         .astype(str)
         .unique()
@@ -613,8 +663,14 @@ def pick_row(
     ]
 
     for _, row in subset.iterrows():
-        low = parse_bound(row["Desde"], low=True)
-        high = parse_bound(row["Hasta"], low=False)
+        low = parse_bound(
+            row["Desde"],
+            low=True,
+        )
+        high = parse_bound(
+            row["Hasta"],
+            low=False,
+        )
 
         if low <= amount <= high:
             return row
@@ -624,9 +680,13 @@ def pick_row(
 
 def libs_from_row(row: pd.Series) -> list[str]:
     return [
-        strip_user_email(row.get(column, ""))
+        strip_user_email(
+            row.get(column, "")
+        )
         for column in LIB_COLS
-        if strip_user_email(row.get(column, ""))
+        if strip_user_email(
+            row.get(column, "")
+        )
     ]
 
 
@@ -651,21 +711,116 @@ def build_case(
 
     return {
         "ceco": ceco,
-        "planta": clean_text(selected_row.get("Planta", "")),
+        "planta": clean_text(
+            selected_row.get("Planta", "")
+        ),
         "doc": doc_type,
         "monto": amount,
         "desde": selected_row["Desde"],
         "hasta": selected_row["Hasta"],
-        "match": normalize_yes(selected_row.get("Match", "")),
-        "n_eo": normalize_int(selected_row.get("N_EO", 0)),
-        "n_cd": normalize_int(selected_row.get("N_CD", 0)),
-        "fuente_cd": clean_text(selected_row.get("FuenteCD", "")),
         "libs": libs_from_row(selected_row),
     }
 
 
+def unique_users(
+    data: dict[str, pd.DataFrame],
+) -> list[str]:
+    flow = data["flujo"]
+
+    return sorted(
+        {
+            strip_user_email(value)
+            for column in LIB_COLS
+            for value in flow[column].tolist()
+            if strip_user_email(value)
+        },
+        key=str.casefold,
+    )
+
+
+def user_occurrences(
+    data: dict[str, pd.DataFrame],
+    user: str,
+) -> pd.DataFrame:
+    target = email_key(user)
+    records: list[dict[str, Any]] = []
+
+    if not target:
+        return pd.DataFrame()
+
+    flow = data["flujo"]
+
+    for _, row in flow.iterrows():
+        for position, column in enumerate(
+            LIB_COLS,
+            start=1,
+        ):
+            current = strip_user_email(
+                row.get(column, "")
+            )
+
+            if email_key(current) != target:
+                continue
+
+            records.append(
+                {
+                    "CECO": row["CECO"],
+                    "Planta": row["Planta"],
+                    "TipoDoc": row["TipoDoc"],
+                    "Desde": row["Desde"],
+                    "Hasta": row["Hasta"],
+                    "Posición": f"Liberador {position}",
+                    "Usuario": current,
+                }
+            )
+
+    if not records:
+        return pd.DataFrame(
+            columns=[
+                "CECO",
+                "Planta",
+                "TipoDoc",
+                "Desde",
+                "Hasta",
+                "Posición",
+                "Usuario",
+            ]
+        )
+
+    result = pd.DataFrame(records)
+    result["_DesdeOrden"] = result["Desde"].map(
+        lambda value: parse_bound(
+            value,
+            low=True,
+        )
+    )
+    result["_TipoOrden"] = result["TipoDoc"].map(
+        {"AZNB": 0, "AZSR": 1}
+    ).fillna(99)
+
+    return (
+        result.sort_values(
+            [
+                "Planta",
+                "CECO",
+                "_TipoOrden",
+                "_DesdeOrden",
+                "Posición",
+            ],
+            kind="stable",
+        )
+        .drop(
+            columns=[
+                "_DesdeOrden",
+                "_TipoOrden",
+            ]
+        )
+        .reset_index(drop=True)
+    )
+
+
 # ============================================================
-# RESULTADO
+# RESULTADO DE FLUJO
 # ============================================================
 
 def html_flow(
@@ -691,37 +846,25 @@ def html_flow(
 
     parts: list[str] = []
 
-    for index, user in enumerate(users, start=1):
-        is_eo = index <= case["n_eo"]
-
-        if is_eo:
-            background = "#EAF7EE"
-            border = "#7BC596"
-            text_color = "#166534"
-            group = "EO"
-        else:
-            background = "#F8FAFC"
-            border = "#CBD5E1"
-            text_color = "#1E3A8A"
-            group = "CD"
-
+    for index, user in enumerate(
+        users,
+        start=1,
+    ):
         parts.append(
             compact_html(
                 f"""
-                <div class="flow-card"
-                     style="background:{background};
-                            border:2px solid {border};">
+                <div class="flow-card">
                     <div style="
                         font-size:11px;
                         color:#64748B;
                         font-weight:700;
                     ">
-                        Liberador {index} · {group}
+                        Liberador {index}
                     </div>
 
                     <div style="
                         font-weight:700;
-                        color:{text_color};
+                        color:#17365D;
                         margin:6px 0;
                         overflow-wrap:anywhere;
                         font-size:12px;
@@ -773,23 +916,16 @@ def html_result(
     case: dict[str, Any],
     data: dict[str, pd.DataFrame],
 ) -> str:
-    if case["match"]:
-        badge = (
-            "<span style='background:#166534;color:#FFF;"
-            "padding:3px 9px;border-radius:999px;"
-            "font-size:11px;font-weight:700;'>MATCH</span>"
-        )
-    else:
-        badge = (
-            "<span style='background:#C2410C;color:#FFF;"
-            "padding:3px 9px;border-radius:999px;"
-            "font-size:11px;font-weight:700;'>SIN MATCH</span>"
-        )
-
     metrics = [
         ("CECO", case["ceco"]),
         ("Planta", case["planta"] or "—"),
-        ("Tipo", DOC_LABEL.get(case["doc"], case["doc"])),
+        (
+            "Tipo",
+            DOC_LABEL.get(
+                case["doc"],
+                case["doc"],
+            ),
+        ),
         ("Monto", fmt_money(case["monto"])),
         (
             "Tramo",
@@ -799,9 +935,18 @@ def html_result(
         ("Liberadores", str(len(case["libs"]))),
     ]
 
-    doc_color = DOC_COLOR.get(case["doc"], "#17365D")
-    doc_background = DOC_BG.get(case["doc"], "#FFFFFF")
-    doc_border = DOC_BORDER.get(case["doc"], "#E2E8F0")
+    doc_color = DOC_COLOR.get(
+        case["doc"],
+        "#17365D",
+    )
+    doc_background = DOC_BG.get(
+        case["doc"],
+        "#FFFFFF",
+    )
+    doc_border = DOC_BORDER.get(
+        case["doc"],
+        "#E2E8F0",
+    )
 
     metric_html = "".join(
         compact_html(
@@ -836,19 +981,11 @@ def html_result(
         <div class="result-card"
              style="border-top:4px solid {doc_color};">
             <div style="
-                display:flex;
-                justify-content:space-between;
-                align-items:center;
-                gap:12px;
+                color:#17365D;
+                font-size:18px;
+                font-weight:850;
             ">
-                <div style="
-                    color:#17365D;
-                    font-size:18px;
-                    font-weight:850;
-                ">
-                    Resultado de la consulta
-                </div>
-                {badge}
+                Resultado de la consulta
             </div>
 
             <div style="
@@ -868,56 +1005,59 @@ def html_result(
 
 
 # ============================================================
-# TABLA DEL CECO
+# TABLAS
 # ============================================================
 
 def format_ceco_table(
     flow: pd.DataFrame,
     ceco: str,
 ) -> pd.DataFrame:
-    table = flow[flow["CECO"].eq(ceco)].copy()
+    table = flow[
+        flow["CECO"].eq(ceco)
+    ].copy()
 
     table["_DesdeOrden"] = table["Desde"].map(
-        lambda value: parse_bound(value, low=True)
+        lambda value: parse_bound(
+            value,
+            low=True,
+        )
     )
-
     table["_TipoOrden"] = table["TipoDoc"].map(
         {"AZNB": 0, "AZSR": 1}
     ).fillna(99)
 
     table = table.sort_values(
-        ["_TipoOrden", "_DesdeOrden"]
+        [
+            "_TipoOrden",
+            "_DesdeOrden",
+        ]
     )
 
-    available_columns = [
-        column
-        for column in TABLE_COLS
-        if column in table.columns
-    ]
-
-    table = table[available_columns].copy()
-
-    table["Desde"] = table["Desde"].map(fmt_bound)
-    table["Hasta"] = table["Hasta"].map(fmt_bound)
+    table = table[FLOW_COLUMNS].copy()
+    table["Desde"] = table["Desde"].map(
+        fmt_bound
+    )
+    table["Hasta"] = table["Hasta"].map(
+        fmt_bound
+    )
 
     for column in LIB_COLS:
-        if column in table.columns:
-            table[column] = table[column].map(strip_user_email)
-
-    if "N_EO" in table.columns:
-        table["N_EO"] = table["N_EO"].map(normalize_int)
-
-    if "N_CD" in table.columns:
-        table["N_CD"] = table["N_CD"].map(normalize_int)
+        table[column] = table[column].map(
+            strip_user_email
+        )
 
     return table.reset_index(drop=True)
 
 
-def style_ceco_table(
+def style_flow_table(
     table: pd.DataFrame,
 ) -> pd.io.formats.style.Styler:
-    def style_row(row: pd.Series) -> list[str]:
-        doc = clean_text(row.get("TipoDoc", ""))
+    def style_row(
+        row: pd.Series,
+    ) -> list[str]:
+        doc = clean_text(
+            row.get("TipoDoc", "")
+        )
 
         if doc == "AZNB":
             style = (
@@ -936,7 +1076,10 @@ def style_ceco_table(
 
     return (
         table.style
-        .apply(style_row, axis=1)
+        .apply(
+            style_row,
+            axis=1,
+        )
         .set_properties(
             **{
                 "border-color": "#D0D5DD",
@@ -953,37 +1096,15 @@ def render_ceco_table(
     st.markdown("---")
     st.subheader("Reglas del CECO")
 
-    st.markdown(
-        compact_html(
-            f"""
-            <div class="legend">
-                <span class="legend-pill"
-                      style="
-                        background:{DOC_BG['AZNB']};
-                        color:{DOC_COLOR['AZNB']};
-                        border:1px solid {DOC_BORDER['AZNB']};
-                      ">
-                    Material · AZNB
-                </span>
-
-                <span class="legend-pill"
-                      style="
-                        background:{DOC_BG['AZSR']};
-                        color:{DOC_COLOR['AZSR']};
-                        border:1px solid {DOC_BORDER['AZSR']};
-                      ">
-                    Servicio · AZSR
-                </span>
-            </div>
-            """
-        ),
-        unsafe_allow_html=True,
+    table = format_ceco_table(
+        data["flujo"],
+        ceco,
     )
 
-    table = format_ceco_table(data["flujo"], ceco)
-
     if table.empty:
-        st.info("No existen reglas para el CECO seleccionado.")
+        st.info(
+            "No existen reglas para el CECO seleccionado."
+        )
         return
 
     st.caption(
@@ -994,82 +1115,155 @@ def render_ceco_table(
     )
 
     st.dataframe(
-        style_ceco_table(table),
+        style_flow_table(table),
         use_container_width=True,
         hide_index=True,
-        height=min(650, 85 + len(table) * 35),
+        height=min(
+            650,
+            85 + len(table) * 35,
+        ),
+    )
+
+
+def style_user_table(
+    table: pd.DataFrame,
+) -> pd.io.formats.style.Styler:
+    def style_row(
+        row: pd.Series,
+    ) -> list[str]:
+        doc = clean_text(
+            row.get("TipoDoc", "")
+        )
+
+        if doc == "AZNB":
+            style = (
+                "background-color:#FFF1F0;"
+                "color:#7A271A;"
+            )
+        elif doc == "AZSR":
+            style = (
+                "background-color:#EFF8FF;"
+                "color:#1849A9;"
+            )
+        else:
+            style = ""
+
+        return [style] * len(row)
+
+    return (
+        table.style
+        .apply(
+            style_row,
+            axis=1,
+        )
+        .set_properties(
+            **{
+                "border-color": "#D0D5DD",
+                "font-size": "12px",
+            }
+        )
     )
 
 
 # ============================================================
-# BÚSQUEDA
+# NODO INICIAL
 # ============================================================
 
-def render_search(
-    data: dict[str, pd.DataFrame],
-) -> None:
-    flow = data["flujo"]
-    file_name = st.session_state.get(
-        SESSION_FILE_KEY,
-        "Archivo cargado",
-    )
-
-    st.success(
-        (
-            f"Usando archivo activo: **{file_name}** · "
-            f"**{len(flow):,} filas** · "
-            f"**{flow['CECO'].nunique():,} CECO**"
-        ).replace(",", ".")
-    )
-
+def render_initial_mode() -> str:
     question_node(
         1,
+        "¿Cómo quieres realizar la búsqueda?",
+        (
+            "Busca un flujo por CECO, tipo y monto, "
+            "o revisa todos los CECO donde aparece un usuario."
+        ),
+    )
+
+    return st.selectbox(
+        "Tipo de búsqueda",
+        options=list(MODE_LABEL),
+        format_func=lambda value: MODE_LABEL[value],
+        key=SESSION_MODE_KEY,
+        help=(
+            "Selecciona el criterio que deseas utilizar "
+            "para consultar la base activa."
+        ),
+    )
+
+
+# ============================================================
+# BÚSQUEDA POR CECO + TIPO + MONTO
+# ============================================================
+
+def render_flow_search(
+    data: dict[str, pd.DataFrame],
+) -> None:
+    question_node(
+        2,
         "¿Qué flujo quieres consultar?",
         (
-            "Selecciona el CECO, indica si corresponde a Material "
-            "o Servicio e ingresa el monto."
+            "Selecciona el CECO, indica si corresponde "
+            "a Material o Servicio e ingresa el monto."
         ),
     )
 
     all_cecos = ceco_values(data)
 
     if not all_cecos:
-        st.warning("No existen CECO disponibles en la base activa.")
+        st.warning(
+            "No existen CECO disponibles en la base activa."
+        )
         return
 
-    current_ceco = st.session_state.get(SESSION_CECO_KEY)
-
-    if current_ceco not in all_cecos:
-        st.session_state[SESSION_CECO_KEY] = all_cecos[0]
-
-    ceco_col, doc_col, amount_col = st.columns(
-        [1.55, 1.15, 1.1],
-        gap="medium",
+    current_ceco = st.session_state.get(
+        SESSION_CECO_KEY
     )
 
-    with ceco_col:
+    if current_ceco not in all_cecos:
+        st.session_state[SESSION_CECO_KEY] = (
+            all_cecos[0]
+        )
+
+    ceco_column, doc_column, amount_column = (
+        st.columns(
+            [1.55, 1.15, 1.1],
+            gap="medium",
+        )
+    )
+
+    with ceco_column:
         selected_ceco = st.selectbox(
             "CECO",
             options=all_cecos,
-            format_func=lambda value: ceco_label(data, value),
+            format_func=lambda value: ceco_label(
+                data,
+                value,
+            ),
             key=SESSION_CECO_KEY,
         )
 
-    available_docs = docs_for_ceco(data, selected_ceco)
+    available_docs = docs_for_ceco(
+        data,
+        selected_ceco,
+    )
 
     if not available_docs:
         st.warning(
-            "El CECO seleccionado no tiene registros de "
-            "Material ni Servicio."
+            "El CECO seleccionado no tiene registros "
+            "de Material ni Servicio."
         )
         return
 
-    current_doc = st.session_state.get(SESSION_DOC_KEY)
+    current_doc = st.session_state.get(
+        SESSION_DOC_KEY
+    )
 
     if current_doc not in available_docs:
-        st.session_state[SESSION_DOC_KEY] = available_docs[0]
+        st.session_state[SESSION_DOC_KEY] = (
+            available_docs[0]
+        )
 
-    with doc_col:
+    with doc_column:
         selected_doc = st.selectbox(
             "Tipo",
             options=available_docs,
@@ -1077,7 +1271,7 @@ def render_search(
             key=SESSION_DOC_KEY,
         )
 
-    with amount_col:
+    with amount_column:
         amount_text = st.text_input(
             "Monto",
             placeholder="Ejemplo: 5.000.000",
@@ -1088,7 +1282,7 @@ def render_search(
         "🔎 Consultar flujo",
         type="primary",
         use_container_width=True,
-        key="executive_search_button_v01",
+        key="executive_flow_search_button_v02",
     )
 
     if search_clicked:
@@ -1107,49 +1301,331 @@ def render_search(
                 amount=amount,
             )
 
-            st.session_state[SESSION_RESULT_KEY] = case
+            st.session_state[SESSION_RESULT_KEY] = {
+                "mode": "FLOW",
+                "case": case,
+            }
 
         except ValueError as error:
-            st.session_state.pop(SESSION_RESULT_KEY, None)
+            st.session_state.pop(
+                SESSION_RESULT_KEY,
+                None,
+            )
             st.error(str(error))
 
-    result = st.session_state.get(SESSION_RESULT_KEY)
+    result = st.session_state.get(
+        SESSION_RESULT_KEY
+    )
 
-    if result:
-        # Si se cambia manualmente el CECO o tipo, no muestra un
-        # resultado antiguo correspondiente a otra selección.
+    if (
+        isinstance(result, dict)
+        and result.get("mode") == "FLOW"
+    ):
+        case = result.get("case", {})
+
         same_selection = (
-            result["ceco"] == selected_ceco
-            and result["doc"] == selected_doc
+            case.get("ceco") == selected_ceco
+            and case.get("doc") == selected_doc
         )
 
         if same_selection:
             st.markdown("---")
             st.markdown(
-                html_result(result, data),
+                html_result(
+                    case,
+                    data,
+                ),
                 unsafe_allow_html=True,
             )
         else:
             st.info(
-                "Presiona **Consultar flujo** para actualizar el resultado "
-                "con la nueva selección."
+                "Presiona **Consultar flujo** para actualizar "
+                "el resultado con la nueva selección."
             )
 
     with st.expander(
         f"Ver tramos disponibles para {selected_ceco}",
         expanded=False,
     ):
-        table = format_ceco_table(data["flujo"], selected_ceco)
-
-        st.dataframe(
-            style_ceco_table(table),
-            use_container_width=True,
-            hide_index=True,
-            height=min(650, 85 + len(table) * 35),
+        table = format_ceco_table(
+            data["flujo"],
+            selected_ceco,
         )
 
-    if result and result["ceco"] == selected_ceco:
-        render_ceco_table(data, selected_ceco)
+        st.dataframe(
+            style_flow_table(table),
+            use_container_width=True,
+            hide_index=True,
+            height=min(
+                650,
+                85 + len(table) * 35,
+            ),
+        )
+
+    if (
+        isinstance(result, dict)
+        and result.get("mode") == "FLOW"
+        and result.get("case", {}).get("ceco")
+        == selected_ceco
+    ):
+        render_ceco_table(
+            data,
+            selected_ceco,
+        )
+
+
+# ============================================================
+# BÚSQUEDA POR USUARIO
+# ============================================================
+
+def render_user_search(
+    data: dict[str, pd.DataFrame],
+) -> None:
+    question_node(
+        2,
+        "¿Qué usuario quieres consultar?",
+        (
+            "Selecciona un usuario existente o escribe un correo. "
+            "La aplicación mostrará todos los CECO, tipos, tramos "
+            "y posiciones donde participa."
+        ),
+    )
+
+    users = unique_users(data)
+
+    if not users:
+        st.warning(
+            "No se encontraron usuarios en los flujos activos."
+        )
+        return
+
+    input_mode = st.radio(
+        "Origen del usuario",
+        options=["LIST", "TEXT"],
+        format_func=lambda value: (
+            "Seleccionar usuario existente"
+            if value == "LIST"
+            else "Escribir correo"
+        ),
+        horizontal=True,
+        key="executive_user_input_mode_v02",
+    )
+
+    selected_user = ""
+
+    if input_mode == "LIST":
+        selected_user = st.selectbox(
+            "Usuario",
+            options=users,
+            format_func=lambda value: display_with_cargo(
+                value,
+                data,
+            ),
+            key=SESSION_USER_KEY,
+        )
+    else:
+        selected_user = strip_user_email(
+            st.text_input(
+                "Correo del usuario",
+                placeholder="nombre.apellido@enaex.com",
+                key=SESSION_USER_TEXT_KEY,
+            )
+        )
+
+    search_clicked = st.button(
+        "👤 Buscar apariciones del usuario",
+        type="primary",
+        use_container_width=True,
+        key="executive_user_search_button_v02",
+    )
+
+    if search_clicked:
+        if not selected_user:
+            st.error(
+                "Selecciona o escribe un usuario."
+            )
+        else:
+            occurrences = user_occurrences(
+                data,
+                selected_user,
+            )
+
+            st.session_state[SESSION_RESULT_KEY] = {
+                "mode": "USER",
+                "user": selected_user,
+                "occurrences": occurrences,
+            }
+
+    result = st.session_state.get(
+        SESSION_RESULT_KEY
+    )
+
+    if not (
+        isinstance(result, dict)
+        and result.get("mode") == "USER"
+    ):
+        return
+
+    result_user = clean_text(
+        result.get("user", "")
+    )
+
+    if email_key(result_user) != email_key(selected_user):
+        st.info(
+            "Presiona **Buscar apariciones del usuario** "
+            "para actualizar el resultado."
+        )
+        return
+
+    occurrences = result.get(
+        "occurrences",
+        pd.DataFrame(),
+    )
+
+    if not isinstance(
+        occurrences,
+        pd.DataFrame,
+    ):
+        occurrences = pd.DataFrame()
+
+    st.markdown("---")
+    st.subheader("Resultado por usuario")
+
+    if occurrences.empty:
+        st.warning(
+            f"No se encontraron apariciones para "
+            f"**{display_with_cargo(result_user, data)}**."
+        )
+        return
+
+    unique_cecos = int(
+        occurrences["CECO"].nunique()
+    )
+    unique_plants = int(
+        occurrences["Planta"].nunique()
+    )
+    unique_rows = int(
+        occurrences[
+            [
+                "CECO",
+                "TipoDoc",
+                "Desde",
+                "Hasta",
+            ]
+        ]
+        .drop_duplicates()
+        .shape[0]
+    )
+    total_positions = len(occurrences)
+
+    metric_columns = st.columns(4)
+    metrics = [
+        ("CECO", unique_cecos),
+        ("Plantas", unique_plants),
+        ("Tramos", unique_rows),
+        ("Apariciones", total_positions),
+    ]
+
+    for column, (label, value) in zip(
+        metric_columns,
+        metrics,
+    ):
+        column.metric(
+            label,
+            f"{value:,}".replace(",", "."),
+        )
+
+    st.success(
+        f"Usuario consultado: "
+        f"**{display_with_cargo(result_user, data)}**"
+    )
+
+    display = occurrences.copy()
+    display["Tipo"] = display["TipoDoc"].map(
+        DOC_LABEL
+    )
+    display["Desde"] = display["Desde"].map(
+        fmt_bound
+    )
+    display["Hasta"] = display["Hasta"].map(
+        fmt_bound
+    )
+
+    display = display[
+        [
+            "CECO",
+            "Planta",
+            "Tipo",
+            "Desde",
+            "Hasta",
+            "Posición",
+            "Usuario",
+        ]
+    ]
+
+    st.dataframe(
+        style_user_table(
+            display.rename(
+                columns={"Tipo": "TipoDoc"}
+            )
+        ).set_properties(
+            subset=["TipoDoc"],
+        ),
+        use_container_width=True,
+        hide_index=True,
+        height=min(
+            700,
+            max(
+                280,
+                36 * (len(display) + 2),
+            ),
+        ),
+    )
+
+    st.markdown("#### Resumen por CECO")
+
+    summary = (
+        occurrences.groupby(
+            [
+                "CECO",
+                "Planta",
+                "TipoDoc",
+            ],
+            as_index=False,
+        )
+        .agg(
+            Tramos=(
+                "Desde",
+                "count",
+            ),
+            Posiciones=(
+                "Posición",
+                lambda values: ", ".join(
+                    sorted(set(values))
+                ),
+            ),
+        )
+    )
+
+    summary["Tipo"] = summary["TipoDoc"].map(
+        DOC_LABEL
+    )
+
+    summary = summary[
+        [
+            "CECO",
+            "Planta",
+            "Tipo",
+            "Tramos",
+            "Posiciones",
+        ]
+    ]
+
+    st.dataframe(
+        summary,
+        use_container_width=True,
+        hide_index=True,
+    )
 
 
 # ============================================================
@@ -1168,10 +1644,13 @@ def render_no_file() -> None:
             type="primary",
             use_container_width=True,
         ):
-            st.switch_page("01_CARGAR_ARCHIVO_FLUJO.py")
+            st.switch_page(
+                "01_CARGAR_ARCHIVO_FLUJO.py"
+            )
     except Exception:
         st.info(
-            "Selecciona **01 Cargar archivo** desde la barra lateral."
+            "Selecciona **01 Cargar archivo** "
+            "desde la barra lateral."
         )
 
 
@@ -1183,7 +1662,9 @@ def main() -> None:
     aplicar_estilos()
     render_header()
 
-    raw_data = st.session_state.get(SESSION_DATA_KEY)
+    raw_data = st.session_state.get(
+        SESSION_DATA_KEY
+    )
 
     if not isinstance(raw_data, dict):
         render_no_file()
@@ -1195,7 +1676,26 @@ def main() -> None:
         st.error(str(error))
         return
 
-    render_search(data)
+    flow = data["flujo"]
+    file_name = st.session_state.get(
+        SESSION_FILE_KEY,
+        "Archivo cargado",
+    )
+
+    st.success(
+        (
+            f"Usando archivo activo: **{file_name}** · "
+            f"**{len(flow):,} reglas** · "
+            f"**{flow['CECO'].nunique():,} CECO**"
+        ).replace(",", ".")
+    )
+
+    mode = render_initial_mode()
+
+    if mode == "FLOW":
+        render_flow_search(data)
+    else:
+        render_user_search(data)
 
 
 if __name__ == "__main__":
