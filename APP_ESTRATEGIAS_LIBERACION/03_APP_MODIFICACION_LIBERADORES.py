@@ -2,10 +2,10 @@
 # 03_APP_MODIFICACION_LIBERADORES
 # APP_ESTRATEGIAS_LIBERACION
 #
-# Lógica inspirada en el notebook original:
-# CECO → Tipo → Rango → ¿Qué pieza? → ¿Qué quieres hacer?
-# → subpregunta → vista previa → propagación global opcional
-# → guardar → descargar Excel actualizado.
+# Asistente de modificación basado en escenarios:
+# situación → alcance → CECO/tipo/rango → pieza/acción
+# → validación → vista previa → impacto global opcional
+# → auditoría → Excel profesional.
 # ============================================================
 
 from __future__ import annotations
@@ -24,6 +24,9 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 from openpyxl import load_workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.worksheet.table import Table, TableStyleInfo
+from openpyxl.utils import get_column_letter
 from openpyxl.utils.dataframe import dataframe_to_rows
 
 
@@ -74,6 +77,37 @@ ACTION_LABEL = {
     "reemplazar": "Reemplazar esta pieza",
     "eliminar": "Eliminar esta pieza",
     "agregar": "Agregar una pieza nueva",
+}
+
+SCENARIO_LABEL = {
+    "ajuste": "🛠️ Ajustar un flujo específico",
+    "salida": "🚪 Reemplazar a alguien que salió de la empresa",
+    "temporal": "🗓️ Cubrir una ausencia temporal",
+    "orden": "↕️ Reordenar aprobadores de un tramo",
+    "dotacion": "➕➖ Agregar o retirar un liberador",
+}
+
+SCENARIO_HELP = {
+    "ajuste": (
+        "Permite mover, reemplazar, agregar o eliminar una pieza "
+        "en un CECO, tipo y rango específicos."
+    ),
+    "salida": (
+        "Busca todas las apariciones de una persona y la reemplaza "
+        "en todos los CECO de la base."
+    ),
+    "temporal": (
+        "Reemplaza una persona solo en el tramo seleccionado, "
+        "sin afectar sus demás participaciones."
+    ),
+    "orden": (
+        "Cambia el orden de aprobación dentro de un tramo, "
+        "sin modificar las personas."
+    ),
+    "dotacion": (
+        "Agrega un nuevo liberador o retira uno existente "
+        "en un tramo específico."
+    ),
 }
 
 LS_LABEL = "Liberador Servicios"
@@ -273,7 +307,7 @@ def render_header() -> None:
     st.markdown(
         """
         <div class="app-subtitle">
-            Modificación guiada mediante preguntas y respuestas.
+            Asistente robusto para cambios puntuales, reemplazos globales y exportación profesional.
         </div>
         """,
         unsafe_allow_html=True,
@@ -471,6 +505,72 @@ def unique_users(flow: pd.DataFrame) -> list[str]:
         },
         key=str.lower,
     )
+
+
+
+def is_valid_email(value: Any) -> bool:
+    """Valida correos simples; Liberador Servicios es una excepción válida."""
+    text = strip_user(value)
+    if text == LS_LABEL:
+        return True
+    if not text:
+        return False
+    return bool(
+        re.fullmatch(
+            r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
+            text,
+        )
+    )
+
+
+def validate_flow_result(
+    libs: list[str],
+    *,
+    allow_empty: bool = False,
+) -> list[str]:
+    """Valida el flujo borrador antes de permitir su guardado."""
+    errors: list[str] = []
+    cleaned = [strip_user(value) for value in libs if strip_user(value)]
+
+    if not cleaned and not allow_empty:
+        errors.append(
+            "El tramo no puede quedar sin liberadores. "
+            "Agrega al menos una persona antes de guardar."
+        )
+
+    if len(cleaned) > 5:
+        errors.append("El flujo no puede superar 5 liberadores.")
+
+    normalized = [email_key(value) for value in cleaned]
+    if len(normalized) != len(set(normalized)):
+        errors.append("El flujo contiene liberadores duplicados.")
+
+    invalid = [
+        value
+        for value in cleaned
+        if value != LS_LABEL and not is_valid_email(value)
+    ]
+    if invalid:
+        errors.append(
+            "Existen correos con formato no válido: "
+            + ", ".join(invalid)
+        )
+
+    return errors
+
+
+def adjusted_role_counts(
+    libs: list[str],
+    original_n_eo: int,
+) -> tuple[int, int]:
+    """
+    Mantiene tantos EO como sea posible y recalcula CD según
+    la cantidad final de liberadores.
+    """
+    total = len([value for value in libs if strip_user(value)])
+    n_eo = min(max(0, int(original_n_eo)), total)
+    n_cd = max(0, total - n_eo)
+    return n_eo, n_cd
 
 
 # ============================================================
@@ -812,9 +912,156 @@ def occurrences_of_person(
 # ============================================================
 
 def download_name(original_name: str) -> str:
-    stem = Path(original_name or "BBDD_FLUJO_LIBERACION.xlsx").stem
+    """
+    Nombre estable, corto e intuitivo usando hora oficial de Santiago.
+    Ejemplo: BBDD_LIBERACION_2026-07-29_12-23-45.xlsx
+    """
     timestamp = datetime.now(CHILE_TZ).strftime("%Y-%m-%d_%H-%M-%S")
-    return f"{stem}_VERSION_{timestamp}.xlsx"
+    return f"BBDD_LIBERACION_{timestamp}.xlsx"
+
+
+def sanitize_excel_value(value: Any) -> Any:
+    """Evita que NaN/NaT sean escritos como valores inválidos."""
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    return value
+
+
+def remove_existing_tables(sheet) -> None:
+    """Elimina tablas antiguas antes de reescribir una hoja."""
+    for table_name in list(sheet.tables.keys()):
+        del sheet.tables[table_name]
+
+
+def professional_sheet_format(
+    sheet,
+    *,
+    table_name: str,
+    header_fill: str = "17365D",
+    tab_color: str | None = None,
+) -> None:
+    """Aplica formato corporativo y legible a una hoja."""
+    if sheet.max_row < 1 or sheet.max_column < 1:
+        return
+
+    if tab_color:
+        sheet.sheet_properties.tabColor = tab_color
+
+    header_font = Font(
+        name="Calibri",
+        size=11,
+        bold=True,
+        color="FFFFFF",
+    )
+    header_pattern = PatternFill(
+        fill_type="solid",
+        fgColor=header_fill,
+    )
+    thin_gray = Side(style="thin", color="D0D5DD")
+    body_border = Border(
+        left=thin_gray,
+        right=thin_gray,
+        top=thin_gray,
+        bottom=thin_gray,
+    )
+
+    for cell in sheet[1]:
+        cell.font = header_font
+        cell.fill = header_pattern
+        cell.alignment = Alignment(
+            horizontal="center",
+            vertical="center",
+            wrap_text=True,
+        )
+        cell.border = body_border
+
+    sheet.row_dimensions[1].height = 30
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = sheet.dimensions
+    sheet.sheet_view.showGridLines = False
+
+    for row in sheet.iter_rows(min_row=2):
+        for cell in row:
+            cell.font = Font(name="Calibri", size=10)
+            cell.alignment = Alignment(
+                vertical="top",
+                wrap_text=True,
+            )
+            cell.border = body_border
+
+    # Formatos numéricos de montos.
+    header_index = {
+        str(cell.value).strip(): cell.column
+        for cell in sheet[1]
+        if cell.value is not None
+    }
+    for column_name in ["Desde", "Hasta"]:
+        column_index = header_index.get(column_name)
+        if column_index:
+            for row_index in range(2, sheet.max_row + 1):
+                sheet.cell(row_index, column_index).number_format = '#,##0'
+
+    # Anchos calculados con límites para evitar hojas excesivamente anchas.
+    for column_index in range(1, sheet.max_column + 1):
+        letter = get_column_letter(column_index)
+        values = [
+            str(sheet.cell(row_index, column_index).value or "")
+            for row_index in range(1, min(sheet.max_row, 250) + 1)
+        ]
+        width = min(max(max(map(len, values), default=8) + 2, 10), 42)
+
+        header = str(sheet.cell(1, column_index).value or "")
+        if header in LIB_COLS:
+            width = max(width, 30)
+        elif header in {"Nota", "ValorAntes", "ValorDespues"}:
+            width = max(width, 24)
+        elif header in {"CECO", "Planta", "TipoDoc", "Campo"}:
+            width = max(width, 14)
+
+        sheet.column_dimensions[letter].width = width
+
+    remove_existing_tables(sheet)
+
+    if sheet.max_row >= 2:
+        safe_name = re.sub(r"[^A-Za-z0-9_]", "_", table_name)
+        reference = (
+            f"A1:{get_column_letter(sheet.max_column)}{sheet.max_row}"
+        )
+        table = Table(
+            displayName=safe_name[:250],
+            ref=reference,
+        )
+        table.tableStyleInfo = TableStyleInfo(
+            name="TableStyleMedium2",
+            showFirstColumn=False,
+            showLastColumn=False,
+            showRowStripes=True,
+            showColumnStripes=False,
+        )
+        sheet.add_table(table)
+
+
+def write_dataframe_to_sheet(
+    sheet,
+    dataframe: pd.DataFrame,
+) -> None:
+    """Reescribe una hoja conservando el libro y otras pestañas."""
+    if sheet.max_row:
+        sheet.delete_rows(1, sheet.max_row)
+
+    for row_index, values in enumerate(
+        dataframe_to_rows(dataframe, index=False, header=True),
+        start=1,
+    ):
+        for column_index, value in enumerate(values, start=1):
+            sheet.cell(
+                row=row_index,
+                column=column_index,
+                value=sanitize_excel_value(value),
+            )
 
 
 def build_excel(
@@ -838,59 +1085,110 @@ def build_excel(
     else:
         flow_sheet = workbook.create_sheet("Flujo")
 
-    if flow_sheet.max_row:
-        flow_sheet.delete_rows(1, flow_sheet.max_row)
-
     export_flow = (
         flow.drop(columns=["_ID_FILA"], errors="ignore")
         .loc[:, FLOW_COLUMNS]
         .copy()
     )
-
-    for row_index, values in enumerate(
-        dataframe_to_rows(export_flow, index=False, header=True),
-        start=1,
-    ):
-        for column_index, value in enumerate(values, start=1):
-            flow_sheet.cell(
-                row=row_index,
-                column=column_index,
-                value=value,
-            )
-
-    flow_sheet.freeze_panes = "A2"
-    flow_sheet.auto_filter.ref = flow_sheet.dimensions
+    write_dataframe_to_sheet(flow_sheet, export_flow)
+    professional_sheet_format(
+        flow_sheet,
+        table_name="TablaFlujoLiberacion",
+        header_fill="17365D",
+        tab_color="175CD3",
+    )
 
     if "Cambios" in workbook.sheetnames:
         change_sheet = workbook["Cambios"]
-        if change_sheet.max_row:
-            change_sheet.delete_rows(1, change_sheet.max_row)
     else:
         change_sheet = workbook.create_sheet("Cambios")
 
     history_df = pd.DataFrame(history)
+    history_columns = [
+        "FechaHora",
+        "Usuario",
+        "CECO",
+        "Desde",
+        "Hasta",
+        "TipoDoc",
+        "Campo",
+        "ValorAntes",
+        "ValorDespues",
+        "Nota",
+    ]
     if history_df.empty:
-        history_df = pd.DataFrame(
-            columns=[
-                "FechaHora", "Usuario", "CECO", "Desde", "Hasta",
-                "TipoDoc", "Campo", "ValorAntes", "ValorDespues",
-                "Nota",
-            ]
-        )
+        history_df = pd.DataFrame(columns=history_columns)
+    else:
+        for column in history_columns:
+            if column not in history_df.columns:
+                history_df[column] = ""
+        history_df = history_df.loc[:, history_columns]
 
-    for row_index, values in enumerate(
-        dataframe_to_rows(history_df, index=False, header=True),
-        start=1,
-    ):
-        for column_index, value in enumerate(values, start=1):
-            change_sheet.cell(
-                row=row_index,
-                column=column_index,
-                value=value,
-            )
+    write_dataframe_to_sheet(change_sheet, history_df)
+    professional_sheet_format(
+        change_sheet,
+        table_name="TablaHistorialCambios",
+        header_fill="7F1D1D",
+        tab_color="B42318",
+    )
 
-    change_sheet.freeze_panes = "A2"
-    change_sheet.auto_filter.ref = change_sheet.dimensions
+    # Hoja ejecutiva con información de la versión generada.
+    if "Resumen_Version" in workbook.sheetnames:
+        summary_sheet = workbook["Resumen_Version"]
+    else:
+        summary_sheet = workbook.create_sheet("Resumen_Version", 0)
+
+    summary_df = pd.DataFrame(
+        [
+            {
+                "Fecha generación": datetime.now(CHILE_TZ).strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                ),
+                "Zona horaria": "America/Santiago",
+                "Filas de flujo": len(export_flow),
+                "CECO únicos": export_flow["CECO"].nunique(),
+                "Cambios registrados": len(history_df),
+                "Estado": "Versión modificada",
+            }
+        ]
+    )
+    write_dataframe_to_sheet(summary_sheet, summary_df)
+    professional_sheet_format(
+        summary_sheet,
+        table_name="TablaResumenVersion",
+        header_fill="166534",
+        tab_color="16A34A",
+    )
+
+    # Las demás hojas se preservan. Se estilizan solo sus encabezados
+    # cuando contienen una tabla reconocible, sin alterar sus datos.
+    protected = {"Resumen_Version", "Flujo", "Cambios"}
+    for sheet in workbook.worksheets:
+        if sheet.title in protected:
+            continue
+        if sheet.max_row >= 1 and sheet.max_column >= 1:
+            for cell in sheet[1]:
+                if cell.value is not None:
+                    cell.font = Font(
+                        name="Calibri",
+                        size=11,
+                        bold=True,
+                        color="FFFFFF",
+                    )
+                    cell.fill = PatternFill(
+                        fill_type="solid",
+                        fgColor="475467",
+                    )
+                    cell.alignment = Alignment(
+                        horizontal="center",
+                        vertical="center",
+                        wrap_text=True,
+                    )
+            sheet.freeze_panes = "A2"
+            sheet.auto_filter.ref = sheet.dimensions
+            sheet.sheet_view.showGridLines = False
+
+    workbook.active = workbook.sheetnames.index("Resumen_Version")
 
     output = BytesIO()
     workbook.save(output)
@@ -908,7 +1206,6 @@ def refresh_download(
     )
     st.session_state[SESSION_DOWNLOAD_KEY] = generated
     st.session_state[SESSION_DOWNLOAD_NAME_KEY] = download_name(file_name)
-
 
 
 # ============================================================
@@ -1108,12 +1405,29 @@ def render_global_replacement(
         key="global_confirm_v05",
     )
 
+    global_ready = bool(
+        new_user
+        and confirmation
+        and clean_text(actor)
+        and clean_text(reason)
+        and is_valid_email(new_user)
+    )
+
+    if new_user and not is_valid_email(new_user):
+        st.error("El correo de la nueva persona no tiene un formato válido.")
+
+    if not clean_text(actor) or not clean_text(reason):
+        st.warning(
+            "Para realizar un reemplazo global debes indicar "
+            "quién modifica y el motivo."
+        )
+
     apply_clicked = st.button(
-        "🔁 Aplicar reemplazo global",
+        "🔁 Aplicar reemplazo global y preparar Excel",
         type="primary",
         use_container_width=True,
-        disabled=not (new_user and confirmation),
-        key="global_apply_v05",
+        disabled=not global_ready,
+        key="global_apply_v06",
     )
 
     if apply_clicked:
@@ -1181,7 +1495,7 @@ def render_global_replacement(
 
     if generated and generated_name:
         st.markdown("---")
-        st.subheader("Descargar Excel actualizado")
+        st.subheader("Descargar versión profesional del Excel")
         st.download_button(
             "⬇️ Descargar archivo modificado",
             data=generated,
@@ -1250,31 +1564,32 @@ def render_wizard(
             )
 
     # --------------------------------------------------------
-    # 1. Tipo de modificación
+    # 1. Escenario de negocio
     # --------------------------------------------------------
     question(
         1,
-        "¿Qué quieres modificar?",
+        "¿Qué situación necesitas resolver?",
         (
-            "Puedes trabajar sobre un CECO específico o reemplazar "
-            "a una persona en toda la base cuando deja la empresa."
+            "Selecciona el escenario más parecido a tu necesidad. "
+            "La aplicación limitará las opciones para evitar errores."
         ),
     )
 
-    modification_scope = st.radio(
-        "Alcance de la modificación",
-        options=["ceco", "global"],
-        format_func=lambda value: (
-            "📍 Modificar un CECO específico"
-            if value == "ceco"
-            else "🌐 Reemplazar una persona de manera global"
-        ),
-        horizontal=True,
+    scenario = st.radio(
+        "Escenario",
+        options=list(SCENARIO_LABEL),
+        format_func=lambda value: SCENARIO_LABEL[value],
         label_visibility="collapsed",
-        key="mod_scope_v05",
+        key="mod_scenario_v06",
     )
+    st.info(SCENARIO_HELP[scenario])
 
-    if modification_scope == "global":
+    if scenario == "salida":
+        if not clean_text(actor) or not clean_text(reason):
+            st.warning(
+                "Completa ¿Quién modifica? y ¿Por qué? antes de "
+                "aplicar un reemplazo global."
+            )
         render_global_replacement(
             data=data,
             file_name=file_name,
@@ -1464,11 +1779,22 @@ def render_wizard(
         "La subpregunta cambia según la acción seleccionada.",
     )
 
+    scenario_actions = {
+        "ajuste": ["mover", "reemplazar", "eliminar", "agregar"],
+        "temporal": ["reemplazar"],
+        "orden": ["mover"],
+        "dotacion": ["agregar", "eliminar"],
+    }
+    allowed_actions = scenario_actions.get(
+        scenario,
+        list(ACTION_LABEL),
+    )
+
     action = st.selectbox(
         "Acción",
-        options=list(ACTION_LABEL),
+        options=allowed_actions,
         format_func=lambda value: ACTION_LABEL[value],
-        key="mod_action_v04",
+        key="mod_action_v06",
     )
 
     destination_index = None
@@ -1545,6 +1871,15 @@ def render_wizard(
 
     if apply_clicked:
         try:
+            if (
+                action in {"reemplazar", "agregar"}
+                and new_value
+                and not is_valid_email(new_value)
+            ):
+                raise ValueError(
+                    "El correo ingresado no tiene un formato válido."
+                )
+
             result, message, replaced_from, replaced_to = apply_action(
                 action=action,
                 libs=libs_after,
@@ -1727,13 +2062,32 @@ def render_wizard(
     )
 
     no_changes = libs_padded(libs_before) == libs_padded(libs_after)
+    validation_errors = validate_flow_result(libs_after)
+    missing_identification = (
+        not clean_text(actor)
+        or not clean_text(reason)
+    )
+
+    if validation_errors:
+        for validation_error in validation_errors:
+            st.error(validation_error)
+
+    if missing_identification:
+        st.warning(
+            "Para guardar debes indicar quién realiza el cambio "
+            "y el motivo."
+        )
 
     save_clicked = st.button(
-        "💾 Guardar cambios en Excel",
+        "💾 Guardar cambios y preparar Excel",
         type="primary",
         use_container_width=True,
-        disabled=no_changes,
-        key="mod_save_v04",
+        disabled=(
+            no_changes
+            or bool(validation_errors)
+            or missing_identification
+        ),
+        key="mod_save_v06",
     )
 
     if no_changes:
@@ -1775,6 +2129,13 @@ def render_wizard(
                     "Nota": reason or "Edición guiada de liberadores",
                 }
             )
+
+        final_n_eo, final_n_cd = adjusted_role_counts(
+            libs_after,
+            n_eo,
+        )
+        updated.loc[selected_mask, "N_EO"] = final_n_eo
+        updated.loc[selected_mask, "N_CD"] = final_n_cd
 
         if (
             propagate
@@ -1851,7 +2212,7 @@ def render_wizard(
 
     if generated and generated_name:
         st.markdown("---")
-        st.subheader("Descargar Excel actualizado")
+        st.subheader("Descargar versión profesional del Excel")
 
         st.download_button(
             "⬇️ Descargar archivo modificado",
