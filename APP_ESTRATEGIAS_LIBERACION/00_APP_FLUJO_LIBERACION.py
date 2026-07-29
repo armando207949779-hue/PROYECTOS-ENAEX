@@ -60,7 +60,7 @@ LOGO_CANDIDATES = [
 
 APPS = [
     {
-        "grupo": "Operación",
+        "grupo": "Flujo de liberación",
         "nombre": "01_CARGAR_ARCHIVO_FLUJO",
         "archivo": "01_CARGAR_ARCHIVO_FLUJO.py",
         "titulo": "01 Cargar archivo",
@@ -71,18 +71,18 @@ APPS = [
         ),
     },
     {
-        "grupo": "Operación",
+        "grupo": "Flujo de liberación",
         "nombre": "02_APP_SIMULADOR_ALEATORIO",
         "archivo": "02_APP_SIMULADOR_ALEATORIO.py",
         "titulo": "02 Simulación",
         "icono": "🎲",
         "descripcion": (
-            "Genera casos aleatorios o busca un flujo por CECO, "
-            "tipo de documento y monto."
+            "Genera casos aleatorios y permite ajustar posteriormente "
+            "el CECO, el tipo de documento y el monto."
         ),
     },
     {
-        "grupo": "Administración de datos",
+        "grupo": "Flujo de liberación",
         "nombre": "03_APP_MODIFICACION_LIBERADORES",
         "archivo": "03_APP_MODIFICACION_LIBERADORES.py",
         "titulo": "03 Modificación de Liberadores",
@@ -93,7 +93,7 @@ APPS = [
         ),
     },
     {
-        "grupo": "Administración de datos",
+        "grupo": "Flujo de liberación",
         "nombre": "04_APP_DICCIONARIOS",
         "archivo": "04_APP_DICCIONARIOS.py",
         "titulo": "04 Diccionarios",
@@ -104,14 +104,14 @@ APPS = [
         ),
     },
     {
-        "grupo": "Operación",
+        "grupo": "Flujo de liberación",
         "nombre": "05_BUSQUEDA_EJECUTIVA",
         "archivo": "05_BUSQUEDA_EJECUTIVA.py",
         "titulo": "05 Búsqueda Ejecutiva",
         "icono": "🔎",
         "descripcion": (
-            "Consulta rápida de un flujo por CECO, tipo de documento "
-            "y monto, sin generación aleatoria."
+            "Consulta por CECO, tipo y monto, o busca todos los CECO "
+            "en los que participa un usuario."
         ),
     },
 ]
@@ -287,25 +287,16 @@ def crear_pagina(app: dict[str, Any]) -> st.Page:
 
 def construir_paginas() -> dict[str, list[st.Page]]:
     """
-    Organiza las páginas en grupos intuitivos.
+    Construye la navegación en el orden definido en APPS.
 
-    No se agrega una página de inicio; la primera página disponible
-    se abre automáticamente.
+    Se utiliza un único grupo para asegurar que la barra lateral muestre
+    estrictamente las páginas 01, 02, 03, 04 y 05.
     """
-    grupos: dict[str, list[st.Page]] = {
-        "Operación": [],
-        "Administración de datos": [],
-    }
-
-    for app in APPS:
-        grupos.setdefault(app["grupo"], []).append(
-            crear_pagina(app)
-        )
-
     return {
-        nombre_grupo: paginas
-        for nombre_grupo, paginas in grupos.items()
-        if paginas
+        "Flujo de liberación": [
+            crear_pagina(app)
+            for app in APPS
+        ]
     }
 
 
