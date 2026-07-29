@@ -1781,6 +1781,41 @@ def render_ceco_user_replacement(
         st.warning("No existen filas dentro del alcance seleccionado.")
         return
 
+    st.markdown("#### Tabla completa del alcance")
+    st.caption(
+        (
+            f"Se muestran **{len(scope_rows):,} filas** de "
+            f"**{scope_rows['CECO'].nunique():,} CECO**, sin filtrar por usuario. "
+            "Esta tabla permite revisar todos los rangos, tipos y liberadores "
+            "antes de seleccionar a la persona que será reemplazada."
+        ).replace(",", ".")
+    )
+
+    complete_scope = scope_rows.copy()
+    complete_scope["_TipoOrden"] = complete_scope["TipoDoc"].map(
+        {"AZNB": 0, "AZSR": 1}
+    ).fillna(99)
+    complete_scope["_DesdeOrden"] = complete_scope["Desde"].map(
+        lambda value: parse_bound(value, low=True)
+    )
+    complete_scope = (
+        complete_scope.sort_values(
+            ["Planta", "CECO", "_TipoOrden", "_DesdeOrden", "_ID_FILA"],
+            kind="stable",
+        )
+        .drop(columns=["_TipoOrden", "_DesdeOrden"])
+    )
+
+    st.dataframe(
+        style_flow_table(complete_scope),
+        use_container_width=True,
+        hide_index=True,
+        height=min(
+            700,
+            max(300, 36 * (len(complete_scope) + 2)),
+        ),
+    )
+
     question(
         4,
         "¿Qué usuario antiguo quieres reemplazar?",
@@ -1860,6 +1895,8 @@ def render_ceco_user_replacement(
                 ),
                 unsafe_allow_html=True,
             )
+
+    st.markdown("#### Vista previa de posiciones afectadas")
 
     st.markdown(
         compact_html(
