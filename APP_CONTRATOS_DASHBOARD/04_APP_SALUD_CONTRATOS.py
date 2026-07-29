@@ -368,14 +368,14 @@ def validar_columnas(
 render_logo()
 
 st.markdown(
-    "<div class='main-title'>Salud y vigencia de contratos</div>",
+    "<div class='main-title'>Salud y vigencia de contratos · V5</div>",
     unsafe_allow_html=True,
 )
 
 st.markdown(
     """
     <div class='subtitle'>
-        Estado de vigencia, cobertura ME3N y contratos por vencer por gestor.
+        Vigencia, cobertura ME3N e Índice de Salud contractual. Filtros globales: gestor, vigencia y cobertura.
     </div>
     """,
     unsafe_allow_html=True,
@@ -612,8 +612,8 @@ if df_contratos_estado.empty:
 section_title(
     "Filtros globales",
     (
-        "Aplica los mismos criterios a indicadores, gráficos, mapas de calor "
-        "y tablas de detalle."
+        "Filtros globales disponibles: gestor de contrato, estado de vigencia "
+        "y cobertura ME3N. El proveedor se filtra solo en el detalle."
     ),
 )
 
@@ -642,7 +642,7 @@ with st.container(border=True):
         "Gestor de contrato",
         options=gestores_disponibles,
         default=gestores_disponibles,
-        key="v4_filtro_gestor_global",
+        key="v5_filtro_gestor_global",
     )
 
     col_filtro_1, col_filtro_2 = st.columns([1.25, 0.75])
@@ -652,7 +652,7 @@ with st.container(border=True):
             "Estado de vigencia",
             options=estados_disponibles_globales,
             default=estados_disponibles_globales,
-            key="v4_filtro_estado_global",
+            key="v5_filtro_estado_global",
         )
 
     with col_filtro_2:
@@ -663,7 +663,7 @@ with st.container(border=True):
                 "Con cobertura ME3N",
                 "Sin cobertura ME3N",
             ],
-            key="v4_filtro_cobertura_global",
+            key="v5_filtro_cobertura_global",
         )
 
 df_contratos_estado_filtrado = df_contratos_estado.copy()
@@ -2531,7 +2531,7 @@ else:
                 "Estado",
                 options=estados_disponibles_indice,
                 default=estados_disponibles_indice,
-                key="estados_indice_salud",
+                key="v5_estados_detalle",
             )
 
         with col_filtro_2:
@@ -2539,7 +2539,7 @@ else:
                 "Proveedor",
                 options=["Todos"] + proveedores_indice_disponibles,
                 index=0,
-                key="proveedor_indice_salud",
+                key="v5_proveedor_detalle",
                 help="Escribe dentro del selector para buscar un proveedor.",
             )
 
@@ -2548,7 +2548,7 @@ else:
         with col_filtro_3:
             busqueda_indice = st.text_input(
                 "Buscar documento o descripción",
-                key="busqueda_indice_salud",
+                key="v5_busqueda_detalle",
                 placeholder="Ej.: 4600012345 o servicio de transporte",
             ).strip().casefold()
 
@@ -2556,7 +2556,7 @@ else:
             solo_vigentes_indice = st.checkbox(
                 "Solo vigentes",
                 value=True,
-                key="solo_vigentes_indice_salud",
+                key="v5_solo_vigentes_detalle",
             )
 
         df_detalle_indice = df_indice_salud.copy()
