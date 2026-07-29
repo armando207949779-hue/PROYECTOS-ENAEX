@@ -20,7 +20,7 @@ import matplotlib.ticker as mticker
 # ============================================================
 
 st.set_page_config(
-    page_title="04_SALUD_CONTRATOS | Dashboard Contratos ENAEX",
+    page_title="04_SALUD_CONTRATOS_V4 | Dashboard Contratos ENAEX",
     page_icon="🩺",
     layout="wide",
 )
@@ -29,7 +29,8 @@ BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
 LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
 
-VERSION_NORMALIZACION_IDS = "v_2026_06_10_cobertura_me3n"
+VERSION_NORMALIZACION_IDS = "v_2026_07_29_sin_proveedor_global"
+BUILD_APP = "V4_SIN_PROVEEDOR_GLOBAL"
 
 
 # ============================================================
@@ -380,7 +381,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.caption("Versión V3 · Sin filtro global de proveedor")
 
 
 if "dataframes_cargados" not in st.session_state:
@@ -642,7 +642,7 @@ with st.container(border=True):
         "Gestor de contrato",
         options=gestores_disponibles,
         default=gestores_disponibles,
-        key="salud_filtro_gestor_global",
+        key="v4_filtro_gestor_global",
     )
 
     col_filtro_1, col_filtro_2 = st.columns([1.25, 0.75])
@@ -652,7 +652,7 @@ with st.container(border=True):
             "Estado de vigencia",
             options=estados_disponibles_globales,
             default=estados_disponibles_globales,
-            key="salud_filtro_estado_global",
+            key="v4_filtro_estado_global",
         )
 
     with col_filtro_2:
@@ -663,7 +663,7 @@ with st.container(border=True):
                 "Con cobertura ME3N",
                 "Sin cobertura ME3N",
             ],
-            key="salud_filtro_cobertura_global",
+            key="v4_filtro_cobertura_global",
         )
 
 df_contratos_estado_filtrado = df_contratos_estado.copy()
