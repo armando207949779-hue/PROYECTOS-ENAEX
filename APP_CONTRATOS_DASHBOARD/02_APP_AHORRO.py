@@ -336,7 +336,7 @@ def tarjeta_gestor(row: pd.Series) -> None:
 
 
 def clasificar_salud(row: pd.Series) -> pd.Series:
-    """Clasifica el contrato y entrega diagnóstico y acción sugerida."""
+    """Clasifica cada documento con pocos estados, separados del diagnóstico."""
     inicio = row.get("Fecha_Inicio")
     fin = row.get("Fecha_Fin")
     saldo = row.get("Saldo_Restante_%")
@@ -344,32 +344,81 @@ def clasificar_salud(row: pd.Series) -> pd.Series:
     indice = row.get("Indice_Salud")
 
     if pd.isna(inicio) or pd.isna(fin):
-        return pd.Series(["⚪ Sin cálculo", "Fechas de vigencia incompletas.", "Corregir fechas contractuales."])
+        return pd.Series([
+            "Sin datos",
+            "No evaluable",
+            "Faltan fechas de vigencia.",
+            "Completar o corregir las fechas contractuales.",
+        ])
     if fin < hoy:
-        return pd.Series(["⚫ Vencido", "El período de validez ya terminó.", "Revisar cierre, renovación o regularización."])
+        return pd.Series([
+            "Vencido",
+            "Fuera de vigencia",
+            "El período contractual ya terminó.",
+            "Revisar cierre, renovación o regularización.",
+        ])
     if inicio > hoy:
-        return pd.Series(["🔵 Aún no inicia", "El contrato todavía no entra en vigencia.", "Verificar planificación y fecha de inicio."])
+        return pd.Series([
+            "No iniciado",
+            "Pendiente de inicio",
+            "El contrato todavía no entra en vigencia.",
+            "Confirmar necesidad y fecha de inicio.",
+        ])
     if pd.isna(saldo) or pd.isna(tiempo) or pd.isna(indice):
-        return pd.Series(["⚪ Sin cálculo", "No fue posible calcular el índice con datos válidos.", "Revisar valores y duración contractual."])
+        return pd.Series([
+            "Sin datos",
+            "No evaluable",
+            "No fue posible calcular el indicador con datos válidos.",
+            "Revisar valores, moneda y duración contractual.",
+        ])
     if saldo < 0:
-        return pd.Series(["🔴 Saldo negativo", "El valor pendiente informado es menor que cero.", "Validar consumo, ampliaciones y datos en SAP."])
+        return pd.Series([
+            "Crítico",
+            "Saldo negativo",
+            "El valor pendiente informado es menor que cero.",
+            "Validar consumos, ampliaciones y datos de origen.",
+        ])
     if saldo >= 0.98 and tiempo <= 0.10:
-        return pd.Series(["🚨 Nunca utilizado", "El contrato está próximo a vencer y conserva prácticamente todo el saldo.", "Analizar renovación, cierre o baja del contrato."])
-    if indice < 0.50:
-        return pd.Series(["🔴 Crítico - Sobreconsumo", "El saldo restante es muy bajo respecto del plazo que aún queda.", "Evaluar ampliación urgente o un nuevo contrato."])
-    if indice < 0.75:
-        return pd.Series(["🟠 Riesgo de quedarse sin saldo", "El consumo avanza más rápido que el plazo contractual.", "Proyectar consumo y evaluar ampliación de monto."])
-    if indice < 0.90:
-        return pd.Series(["🟡 Consumo acelerado", "El presupuesto se consume algo más rápido que el plazo.", "Monitorear periódicamente."])
-    if indice <= 1.10:
-        return pd.Series(["🟢 Saludable", "El saldo y el tiempo restante evolucionan a un ritmo equilibrado.", "Mantener seguimiento normal."])
+        return pd.Series([
+            "Crítico",
+            "Sin uso relevante",
+            "El contrato está próximo a vencer y conserva prácticamente todo el saldo.",
+            "Definir continuidad, extensión o cierre.",
+        ])
+    if indice < 0.60:
+        return pd.Series([
+            "Crítico",
+            "Consumo muy acelerado",
+            "El saldo disponible es insuficiente para el plazo que resta.",
+            "Proyectar consumo y evaluar ampliación o reemplazo.",
+        ])
+    if indice < 0.85:
+        return pd.Series([
+            "Revisar",
+            "Consumo acelerado",
+            "El presupuesto se consume más rápido que el plazo contractual.",
+            "Monitorear y actualizar la proyección de consumo.",
+        ])
     if indice <= 1.30:
-        return pd.Series(["🟡 Consumo lento", "El consumo es un poco menor que el esperado para el plazo transcurrido.", "Revisar utilización prevista."])
+        return pd.Series([
+            "Equilibrado",
+            "Ritmo esperado",
+            "Saldo y tiempo restante evolucionan de forma razonablemente alineada.",
+            "Mantener seguimiento normal.",
+        ])
     if indice <= 2.00:
-        return pd.Series(["🟠 Riesgo de subejecución", "Podría quedar un saldo relevante al término del contrato.", "Revisar planificación, demanda y vigencia."])
-    if indice <= 5.00:
-        return pd.Series(["🔴 Baja ejecución", "El saldo es alto respecto del poco plazo restante.", "Definir plan de uso, extensión o cierre."])
-    return pd.Series(["🚨 Crítico - Baja ejecución", "El contrato está próximo a vencer con una ejecución muy baja.", "Revisar urgentemente continuidad o cierre."])
+        return pd.Series([
+            "Revisar",
+            "Baja ejecución",
+            "El consumo es menor que el esperado para el plazo transcurrido.",
+            "Revisar demanda, planificación y vigencia.",
+        ])
+    return pd.Series([
+        "Crítico",
+        "Ejecución muy baja",
+        "Existe mucho saldo en relación con el plazo restante.",
+        "Definir plan de uso, extensión o cierre.",
+    ])
 
 
 def limpiar_estilo_grafico(ax) -> None:
@@ -804,7 +853,7 @@ df_salud["Indice_Salud"] = np.where(
 df_salud["Tiempo_Restante_pct"] = df_salud["Tiempo_Restante_%"] * 100
 df_salud["Saldo_Restante_pct"] = df_salud["Saldo_Restante_%"] * 100
 
-df_salud[["Estado_Salud", "Diagnostico", "Accion_Sugerida"]] = df_salud.apply(
+df_salud[["Estado_Salud", "Tendencia", "Diagnostico", "Accion_Sugerida"]] = df_salud.apply(
     clasificar_salud,
     axis=1,
 )
@@ -1098,51 +1147,47 @@ st.markdown("---")
 
 st.markdown("### Índice de Salud contractual")
 st.caption(
-    "Compara el porcentaje de saldo restante con el porcentaje de tiempo restante. "
-    "El análisis se consolida por documento de compra."
+    "Compara el saldo restante con el tiempo restante. Para facilitar la gestión, "
+    "se utilizan solo tres estados operativos: Equilibrado, Revisar y Crítico. "
+    "Los contratos vencidos, no iniciados o sin datos se muestran aparte."
 )
 
-with st.expander("Fórmula e interpretación", expanded=False):
+with st.expander("Cómo se calcula e interpreta", expanded=False):
     col_formula1, col_formula2, col_formula3 = st.columns(3)
     with col_formula1:
         info_card(
-            "Paso 1 · % saldo restante",
-            "Proporción del valor contractual que todavía está disponible.",
-            "% Saldo = Valor pendiente total / Valor previsto",
+            "1 · Saldo restante",
+            "Porción del valor contractual que todavía está disponible.",
+            "% Saldo = Valor pendiente / Valor previsto",
         )
     with col_formula2:
         info_card(
-            "Paso 2 · % tiempo restante",
-            "Proporción de la vigencia contractual que todavía queda desde hoy.",
-            "% Tiempo = (Fin validez − Hoy) / (Fin validez − Inicio validez)",
+            "2 · Tiempo restante",
+            "Porción de la vigencia contractual que queda desde la fecha actual.",
+            "% Tiempo = (Fin − Hoy) / (Fin − Inicio)",
         )
     with col_formula3:
         info_card(
-            "Paso 3 · Índice de Salud",
-            "Compara el ritmo de consumo presupuestario con el avance del plazo.",
-            "Índice = % Saldo restante / % Tiempo restante",
+            "3 · Índice de Salud",
+            "Relaciona el saldo disponible con el plazo pendiente.",
+            "Índice = % Saldo / % Tiempo",
         )
 
     tabla_rangos = pd.DataFrame(
         [
-            ["< 0,50", "🔴 Crítico - Sobreconsumo", "Saldo muy bajo para el tiempo restante."],
-            ["0,50 - 0,74", "🟠 Riesgo de quedarse sin saldo", "El consumo avanza demasiado rápido."],
-            ["0,75 - 0,89", "🟡 Consumo acelerado", "Requiere seguimiento."],
-            ["0,90 - 1,10", "🟢 Saludable", "Consumo equilibrado."],
-            ["1,11 - 1,30", "🟡 Consumo lento", "Uso algo menor que el esperado."],
-            ["1,31 - 2,00", "🟠 Riesgo de subejecución", "Podría terminar con saldo importante."],
-            ["2,01 - 5,00", "🔴 Baja ejecución", "Muy poco consumo respecto del plazo restante."],
-            ["> 5,00", "🚨 Crítico - Baja ejecución", "Contrato próximo a vencer con baja ejecución."],
+            ["< 0,60", "Crítico", "Consumo muy acelerado; riesgo de agotar el saldo."],
+            ["0,60 a 0,84", "Revisar", "Consumo más rápido que el plazo."],
+            ["0,85 a 1,30", "Equilibrado", "Ritmo razonablemente alineado."],
+            ["1,31 a 2,00", "Revisar", "Ejecución menor que la esperada."],
+            ["> 2,00", "Crítico", "Ejecución muy baja respecto del plazo restante."],
         ],
-        columns=["Índice", "Estado", "Diagnóstico general"],
+        columns=["Índice", "Estado", "Lectura"],
     )
     st.dataframe(tabla_rangos, use_container_width=True, hide_index=True)
     st.caption(
-        "Regla especial: saldo ≥ 98% y tiempo restante ≤ 10% se clasifica como “Nunca utilizado”. "
-        "Los documentos vencidos y los que aún no inician se muestran en estados separados."
+        "Casos especiales: saldo negativo o contrato casi sin uso próximo a vencer se clasifican como Crítico. "
+        "El índice es una señal de gestión y debe revisarse junto con la necesidad real del contrato."
     )
-
-df_salud_valida = df_salud.dropna(subset=["Indice_Salud"]).copy()
 
 if df_salud.empty:
     st.info("No hay documentos de compra disponibles para analizar.")
@@ -1150,43 +1195,31 @@ else:
     documentos_vigentes = df_salud[
         (df_salud["Fecha_Inicio"] <= hoy) & (df_salud["Fecha_Fin"] >= hoy)
     ].copy()
-    indice_mediano = documentos_vigentes["Indice_Salud"].median()
-    saludables = int((df_salud["Estado_Salud"] == "🟢 Saludable").sum())
-    alertas_altas = int(
-        df_salud["Estado_Salud"].str.startswith(("🔴", "🚨"), na=False).sum()
-    )
-    vencidos = int((df_salud["Estado_Salud"] == "⚫ Vencido").sum())
+
+    equilibrados = int((documentos_vigentes["Estado_Salud"] == "Equilibrado").sum())
+    revisar = int((documentos_vigentes["Estado_Salud"] == "Revisar").sum())
+    criticos = int((documentos_vigentes["Estado_Salud"] == "Crítico").sum())
+    vencidos = int((df_salud["Estado_Salud"] == "Vencido").sum())
 
     col_s1, col_s2, col_s3, col_s4, col_s5 = st.columns(5)
     with col_s1:
-        kpi_card("Documentos analizados", f"{len(df_salud):,}")
+        kpi_card("Contratos vigentes", f"{len(documentos_vigentes):,}")
     with col_s2:
-        kpi_card(
-            "Índice mediano vigente",
-            "--" if pd.isna(indice_mediano) else f"{indice_mediano:.2f}".replace(".", ","),
-            "La mediana reduce el efecto de valores extremos.",
-        )
+        kpi_card("Equilibrados", f"{equilibrados:,}", "Seguimiento normal")
     with col_s3:
-        kpi_card("Saludables", f"{saludables:,}")
+        kpi_card("Por revisar", f"{revisar:,}", "Requieren análisis")
     with col_s4:
-        kpi_card("Alertas altas", f"{alertas_altas:,}", "Estados rojos o críticos")
+        kpi_card("Críticos", f"{criticos:,}", "Acción prioritaria")
     with col_s5:
         kpi_card("Vencidos", f"{vencidos:,}")
 
     estados_orden = [
-        "🚨 Nunca utilizado",
-        "🚨 Crítico - Baja ejecución",
-        "🔴 Crítico - Sobreconsumo",
-        "🔴 Baja ejecución",
-        "🔴 Saldo negativo",
-        "🟠 Riesgo de quedarse sin saldo",
-        "🟠 Riesgo de subejecución",
-        "🟡 Consumo acelerado",
-        "🟡 Consumo lento",
-        "🟢 Saludable",
-        "🔵 Aún no inicia",
-        "⚫ Vencido",
-        "⚪ Sin cálculo",
+        "Crítico",
+        "Revisar",
+        "Equilibrado",
+        "No iniciado",
+        "Vencido",
+        "Sin datos",
     ]
 
     df_estado_salud = (
@@ -1199,15 +1232,16 @@ else:
     ).fillna(999)
     df_estado_salud = df_estado_salud.sort_values("orden", ascending=False)
 
-    col_grafico_salud, col_ejemplos = st.columns([1.08, 0.92])
+    col_grafico_salud, col_lectura = st.columns([1.08, 0.92])
     with col_grafico_salud:
-        fig, ax = plt.subplots(figsize=(10.8, 6.3))
+        fig, ax = plt.subplots(figsize=(10.8, 5.4))
         bars = ax.barh(df_estado_salud["Estado_Salud"], df_estado_salud["Contratos"])
         ax.set_title("Distribución por estado contractual", loc="left", fontweight="bold")
         ax.set_xlabel("Documentos de compra")
         limpiar_estilo_grafico(ax)
-        margen = max(float(df_estado_salud["Contratos"].max()) * 0.12, 1)
-        ax.set_xlim(0, float(df_estado_salud["Contratos"].max()) + margen)
+        max_contratos = float(df_estado_salud["Contratos"].max())
+        margen = max(max_contratos * 0.12, 1)
+        ax.set_xlim(0, max_contratos + margen)
         for bar in bars:
             ax.text(
                 bar.get_width() + margen * 0.08,
@@ -1219,30 +1253,29 @@ else:
         fig.tight_layout()
         st.pyplot(fig, clear_figure=True)
 
-    with col_ejemplos:
-        st.markdown("#### Lectura de casos referenciales")
-        ejemplos_salud = pd.DataFrame(
+    with col_lectura:
+        st.markdown("#### Lectura rápida")
+        lectura_salud = pd.DataFrame(
             [
-                ["80%", "80%", "1,00", "🟢 Saludable", "Ritmo equilibrado."],
-                ["70%", "85%", "0,82", "🟡 Consumo acelerado", "Monitorear."],
-                ["60%", "50%", "1,20", "🟡 Consumo lento", "Revisar utilización."],
-                ["30%", "50%", "0,60", "🟠 Riesgo de saldo", "Evaluar ampliación."],
-                ["90%", "50%", "1,80", "🟠 Riesgo de subejecución", "Revisar planificación."],
-                ["10%", "40%", "0,25", "🔴 Sobreconsumo", "Acción urgente."],
-                ["85%", "15%", "5,67", "🚨 Baja ejecución", "Extender o cerrar."],
-                ["100%", "5%", "20,00", "🚨 Nunca utilizado", "Analizar continuidad."],
+                ["Equilibrado", "Saldo y plazo avanzan a un ritmo similar.", "Seguimiento normal."],
+                ["Revisar", "Existe una desviación moderada de consumo.", "Validar proyección y necesidad."],
+                ["Crítico", "La desviación puede afectar continuidad o ejecución.", "Definir acción y responsable."],
+                ["No iniciado", "El contrato aún no entra en vigencia.", "Confirmar planificación."],
+                ["Vencido", "El período contractual terminó.", "Cerrar, renovar o regularizar."],
+                ["Sin datos", "No existen datos suficientes para evaluar.", "Corregir información de origen."],
             ],
-            columns=["% Saldo", "% Tiempo", "Índice", "Estado", "Acción"],
+            columns=["Estado", "Qué significa", "Acción"],
         )
-        st.dataframe(ejemplos_salud, use_container_width=True, hide_index=True, height=345)
+        st.dataframe(lectura_salud, use_container_width=True, hide_index=True, height=300)
 
     st.markdown("#### Detalle y priorización contractual")
-    col_hf1, col_hf2, col_hf3 = st.columns([1.2, 1.1, 0.9])
+    col_hf1, col_hf2, col_hf3 = st.columns([1.0, 1.45, 0.75])
     with col_hf1:
+        estados_disponibles = [e for e in estados_orden if e in df_salud["Estado_Salud"].unique()]
         estados_filtro_salud = st.multiselect(
-            "Estado de salud",
-            options=[e for e in estados_orden if e in df_salud["Estado_Salud"].unique()],
-            default=[e for e in estados_orden if e in df_salud["Estado_Salud"].unique()],
+            "Estado",
+            options=estados_disponibles,
+            default=estados_disponibles,
             key="estados_filtro_salud",
         )
     with col_hf2:
@@ -1251,7 +1284,7 @@ else:
             key="buscar_salud",
         ).strip().casefold()
     with col_hf3:
-        solo_vigentes = st.checkbox("Solo contratos vigentes", value=False)
+        solo_vigentes = st.checkbox("Solo vigentes", value=True)
 
     df_salud_detalle = df_salud.copy()
     if estados_filtro_salud:
@@ -1277,26 +1310,41 @@ else:
                 )
         df_salud_detalle = df_salud_detalle[mascara]
 
-    prioridad = {estado: i for i, estado in enumerate(estados_orden)}
+    prioridad = {
+        "Crítico": 0,
+        "Revisar": 1,
+        "Equilibrado": 2,
+        "No iniciado": 3,
+        "Vencido": 4,
+        "Sin datos": 5,
+    }
     df_salud_detalle["Prioridad"] = df_salud_detalle["Estado_Salud"].map(prioridad).fillna(999)
     df_salud_detalle = df_salud_detalle.sort_values(
         ["Prioridad", "Fecha_Fin", "Indice_Salud"], ascending=[True, True, True]
+    )
+
+    # Formato de presentación: separador de miles y sin decimales.
+    # Se crean columnas visuales para garantizar el formato en cualquier versión de Streamlit.
+    df_salud_detalle["Valor_Previsto_fmt"] = df_salud_detalle["Valor_Previsto_num"].apply(
+        lambda valor: "" if pd.isna(valor) else f"{float(valor):,.0f}".replace(",", ".")
+    )
+    df_salud_detalle["Valor_Pendiente_fmt"] = df_salud_detalle["Valor_Pendiente_num"].apply(
+        lambda valor: "" if pd.isna(valor) else f"{float(valor):,.0f}".replace(",", ".")
     )
 
     columnas_salud = [
         "Documento_compras",
         "Texto_breve",
         "Proveedor/Centro_suministrador",
-        "Fecha_Inicio",
         "Fecha_Fin",
-        "Valor_Previsto_num",
-        "Valor_Pendiente_num",
+        "Valor_Previsto_fmt",
+        "Valor_Pendiente_fmt",
         "Tiempo_Restante_Dias",
-        "Tiempo_Restante_pct",
         "Saldo_Restante_pct",
+        "Tiempo_Restante_pct",
         "Indice_Salud",
         "Estado_Salud",
-        "Diagnostico",
+        "Tendencia",
         "Accion_Sugerida",
     ]
 
@@ -1304,38 +1352,32 @@ else:
         df_salud_detalle,
         columnas=columnas_salud,
         nombres={
-            "Documento_compras": "Documento de compra",
-            "Texto_breve": "Texto breve",
+            "Documento_compras": "Documento",
+            "Texto_breve": "Descripción",
             "Proveedor/Centro_suministrador": "Proveedor",
-            "Fecha_Inicio": "Inicio validez",
             "Fecha_Fin": "Fin validez",
-            "Valor_Previsto_num": "Valor previsto",
-            "Valor_Pendiente_num": "Valor pendiente",
+            "Valor_Previsto_fmt": "Valor previsto",
+            "Valor_Pendiente_fmt": "Valor pendiente",
             "Tiempo_Restante_Dias": "Días restantes",
-            "Tiempo_Restante_pct": "% tiempo restante",
-            "Saldo_Restante_pct": "% saldo restante",
-            "Indice_Salud": "Índice de Salud",
+            "Saldo_Restante_pct": "% saldo",
+            "Tiempo_Restante_pct": "% tiempo",
+            "Indice_Salud": "Índice",
             "Estado_Salud": "Estado",
-            "Diagnostico": "Diagnóstico",
+            "Tendencia": "Lectura",
             "Accion_Sugerida": "Acción sugerida",
         },
         column_config={
-            "% tiempo restante": st.column_config.ProgressColumn(
-                format="%.1f%%", min_value=0, max_value=100
-            ),
-            "% saldo restante": st.column_config.ProgressColumn(
-                format="%.1f%%", min_value=0, max_value=100
-            ),
-            "Índice de Salud": st.column_config.NumberColumn(format="%.2f"),
-            "Valor previsto": st.column_config.NumberColumn(format="%.2f"),
-            "Valor pendiente": st.column_config.NumberColumn(format="%.2f"),
+            "Días restantes": st.column_config.NumberColumn(format="%,.0f"),
+            "% saldo": st.column_config.NumberColumn(format="%.0f%%"),
+            "% tiempo": st.column_config.NumberColumn(format="%.0f%%"),
+            "Índice": st.column_config.NumberColumn(format="%.2f"),
         },
-        altura=580,
+        altura=560,
     )
 
     st.caption(
-        "Los valores monetarios conservan la moneda original informada en ME3N. "
-        "No deben sumarse entre monedas sin una conversión previa."
+        "Los montos se muestran con separador de miles y sin decimales. "
+        "Conservan la moneda original de ME3N, por lo que no deben sumarse entre monedas sin conversión previa."
     )
 
 st.markdown("---")
