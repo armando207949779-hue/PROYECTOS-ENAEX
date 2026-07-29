@@ -1271,11 +1271,18 @@ def render_flow_search(
             key=SESSION_DOC_KEY,
         )
 
+    if SESSION_AMOUNT_KEY not in st.session_state:
+        st.session_state[SESSION_AMOUNT_KEY] = "1"
+
     with amount_column:
         amount_text = st.text_input(
             "Monto",
             placeholder="Ejemplo: 5.000.000",
             key=SESSION_AMOUNT_KEY,
+            help=(
+                "El monto comienza en 1 por defecto. "
+                "Puedes reemplazarlo por cualquier monto válido."
+            ),
         )
 
     search_clicked = st.button(
