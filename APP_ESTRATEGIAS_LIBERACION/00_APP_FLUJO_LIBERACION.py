@@ -7,6 +7,7 @@
 # 02 Simulador aleatorio
 # 03 Modificación de liberadores
 # 04 Diccionarios
+# 05 Búsqueda ejecutiva
 # ============================================================
 
 from __future__ import annotations
@@ -91,6 +92,16 @@ APPS = [
         "descripcion": (
             "Permite consultar las hojas de CECOS, USUARIOS y RANGOS "
             "del archivo Excel activo."
+        ),
+    },
+    {
+        "nombre": "05_BUSQUEDA_EJECUTIVA",
+        "archivo": "05_BUSQUEDA_EJECUTIVA.py",
+        "titulo": "05 Búsqueda Ejecutiva",
+        "icono": "🔎",
+        "descripcion": (
+            "Consulta rápida de un flujo de liberación por CECO, "
+            "tipo de documento y monto, sin simulación aleatoria."
         ),
     },
 ]
@@ -205,7 +216,7 @@ def mostrar_logo() -> None:
 
 
 # ============================================================
-# CONSTRUCCIÓN DE LAS CUATRO PÁGINAS
+# CONSTRUCCIÓN DE LAS CINCO PÁGINAS
 # ============================================================
 
 def crear_pagina(app: dict) -> st.Page:
@@ -218,7 +229,7 @@ def crear_pagina(app: dict) -> st.Page:
 
 
 def construir_paginas() -> dict[str, list[st.Page]]:
-    """Construye las cuatro páginas en la barra lateral, sin página de inicio."""
+    """Construye las cinco páginas en la barra lateral, sin página de inicio."""
     return {
         "Flujo de liberación": [
             crear_pagina(app)
@@ -243,12 +254,13 @@ if apps_faltantes:
         st.write(f"**{nombre}:** `{ruta}`")
 
     st.info(
-        "Los cinco archivos deben estar dentro de la misma carpeta: "
+        "Los seis archivos deben estar dentro de la misma carpeta: "
         "`00_APP_FLUJO_LIBERACION.py`, "
         "`01_CARGAR_ARCHIVO_FLUJO.py`, "
         "`02_APP_SIMULADOR_ALEATORIO.py`, "
-        "`03_APP_MODIFICACION_LIBERADORES.py` y "
-        "`04_APP_DICCIONARIOS.py`."
+        "`03_APP_MODIFICACION_LIBERADORES.py`, "
+        "`04_APP_DICCIONARIOS.py` y "
+        "`05_BUSQUEDA_EJECUTIVA.py`."
     )
     st.stop()
 
