@@ -3,9 +3,9 @@
 # APP_ESTRATEGIAS_LIBERACION
 #
 # Lee la base cargada por 01_CARGAR_ARCHIVO_FLUJO desde
-# st.session_state. Permite buscar o generar un caso aleatorio,
-# editar CECO, tipo y monto, recalcular el flujo y consultar la
-# tabla completa de reglas asociadas al CECO seleccionado.
+# st.session_state. Genera casos aleatorios y permite editar
+# CECO, tipo y monto, recalcular el flujo y consultar la tabla
+# completa de reglas asociadas al CECO seleccionado.
 #
 # Formato esperado:
 # CECO | Planta | Desde | Hasta | TipoDoc |
@@ -84,11 +84,6 @@ SESSION_EDITOR_AMOUNT = "sim_editor_amount_v03"
 SESSION_PENDING_EDITOR = "sim_pending_editor_v03"
 SESSION_HISTORY_KEY = "sim_case_history_v04"
 
-# Estado exclusivo del nuevo nodo inicial y del modo Buscar.
-SESSION_MODE_KEY = "sim_initial_mode_v05"
-SESSION_SEARCH_CECO = "sim_search_ceco_v05"
-SESSION_SEARCH_DOC = "sim_search_doc_v05"
-SESSION_SEARCH_AMOUNT = "sim_search_amount_v05"
 
 
 # ============================================================
@@ -828,187 +823,24 @@ def clear_case() -> None:
 
 
 # ============================================================
-# ENCABEZADO Y SIMULADOR
+# ENCABEZADO Y SIMULADOR ALEATORIO
 # ============================================================
 
 def render_header() -> None:
     mostrar_logo()
     st.markdown(
-        '<div class="fl-title">02 Simulación y Búsqueda</div>',
+        '<div class="fl-title">02 Simulador Aleatorio</div>',
         unsafe_allow_html=True,
     )
     st.markdown(
-        '<div class="fl-subtitle">Busca un flujo específico o genera un caso aleatorio y ajusta sus parámetros.</div>',
+        '<div class="fl-subtitle">Genera un caso aleatorio y ajusta CECO, tipo de documento y monto.</div>',
         unsafe_allow_html=True,
     )
-
-
-def render_initial_question() -> str:
-    """
-    Muestra el nodo inicial y devuelve el modo elegido por el usuario.
-
-    La lógica del generador aleatorio permanece separada e intacta.
-    """
-    st.markdown(
-        compact_html(
-            """
-            <div class="fl-question-node">
-                <div>
-                    <span class="fl-question-number">1</span>
-                    <span class="fl-question-title">¿Qué quieres hacer?</span>
-                </div>
-                <div class="fl-question-help">
-                    Busca un flujo indicando CECO, tipo y monto,
-                    o genera una combinación aleatoria.
-                </div>
-            </div>
-            """
-        ),
-        unsafe_allow_html=True,
-    )
-
-    return st.radio(
-        "Modo del simulador",
-        options=["SEARCH", "RANDOM"],
-        format_func=lambda value: {
-            "SEARCH": "🔎 Buscar un flujo",
-            "RANDOM": "🎲 Simular aleatoriamente",
-        }[value],
-        horizontal=True,
-        label_visibility="collapsed",
-        key=SESSION_MODE_KEY,
-    )
-
-
-def render_search_generator(data: dict[str, pd.DataFrame]) -> None:
-    """
-    Construye un caso específico a partir de CECO, tipo de documento y monto.
-
-    Después de buscar, el resultado se guarda usando exactamente el mismo
-    formato de caso que utiliza el simulador aleatorio. Por eso conserva la
-    edición, el botón Nuevo monto del tramo, Retroceder y la tabla del CECO.
-    """
-    st.markdown(
-        '<div class="fl-section-title">2. Buscar flujo</div>',
-        unsafe_allow_html=True,
-    )
-
-    st.markdown(
-        compact_html(
-            """
-            <div class="fl-help-box">
-                Selecciona un CECO, elige Material o Servicio e ingresa el monto.
-                La aplicación buscará el tramo correspondiente y mostrará
-                el flujo de liberadores asociado.
-            </div>
-            """
-        ),
-        unsafe_allow_html=True,
-    )
-
-    all_cecos = ceco_values(data)
-    if not all_cecos:
-        st.warning("No existen CECO disponibles en la base activa.")
-        return
-
-    current_ceco = st.session_state.get(SESSION_SEARCH_CECO)
-    if current_ceco not in all_cecos:
-        st.session_state[SESSION_SEARCH_CECO] = all_cecos[0]
-
-    ceco_col, doc_col, amount_col = st.columns(
-        [1.55, 1.15, 1.1],
-        gap="medium",
-    )
-
-    with ceco_col:
-        selected_ceco = st.selectbox(
-            "CECO",
-            options=all_cecos,
-            format_func=lambda value: ceco_label(data, value),
-            key=SESSION_SEARCH_CECO,
-            help="Selecciona el centro de costo que deseas consultar.",
-        )
-
-    available_docs = docs_for_ceco(data, selected_ceco)
-    if not available_docs:
-        st.warning(
-            "El CECO seleccionado no tiene registros de Material ni Servicio."
-        )
-        return
-
-    current_doc = st.session_state.get(SESSION_SEARCH_DOC)
-    if current_doc not in available_docs:
-        st.session_state[SESSION_SEARCH_DOC] = available_docs[0]
-
-    with doc_col:
-        selected_doc = st.selectbox(
-            "Tipo de documento",
-            options=available_docs,
-            format_func=lambda value: DOC_LABEL[value],
-            key=SESSION_SEARCH_DOC,
-            help="Material corresponde a AZNB y Servicio a AZSR.",
-        )
-
-    with amount_col:
-        amount_text = st.text_input(
-            "Monto",
-            placeholder="Ejemplo: 5.000.000",
-            key=SESSION_SEARCH_AMOUNT,
-            help="Puedes escribir el monto con o sin separadores de miles.",
-        )
-
-    search_button = st.button(
-        "🔎 Buscar flujo",
-        type="primary",
-        use_container_width=True,
-        key="sim_search_button_v05",
-    )
-
-    if search_button:
-        try:
-            amount = parse_amount(amount_text)
-            if amount is None:
-                raise ValueError("Ingresa un monto para realizar la búsqueda.")
-
-            case = build_case(
-                data=data,
-                ceco=selected_ceco,
-                doc_type=selected_doc,
-                amount=amount,
-            )
-
-            remember_current_case()
-            save_case(
-                case,
-                f"Búsqueda · {DOC_LABEL[selected_doc]}",
-                update_editor_next_run=True,
-            )
-            st.rerun()
-
-        except ValueError as exc:
-            st.error(str(exc))
-
-    # La tabla ayuda a identificar los tramos válidos antes de buscar.
-    with st.expander(
-        f"Ver reglas disponibles para {selected_ceco}",
-        expanded=False,
-    ):
-        table = format_table_dataframe(data["flujo"], selected_ceco)
-
-        if table.empty:
-            st.info("No existen reglas para el CECO seleccionado.")
-        else:
-            st.dataframe(
-                style_ceco_table(table),
-                use_container_width=True,
-                hide_index=True,
-                height=min(650, 85 + (len(table) * 35)),
-            )
 
 
 def render_random_generator(data: dict[str, pd.DataFrame]) -> None:
     st.markdown(
-        '<div class="fl-section-title">2. Generar caso inicial</div>',
+        '<div class="fl-section-title">1. Generar caso aleatorio</div>',
         unsafe_allow_html=True,
     )
 
@@ -1016,8 +848,9 @@ def render_random_generator(data: dict[str, pd.DataFrame]) -> None:
         compact_html(
             """
             <div class="fl-help-box">
-                Genera una combinación aleatoria. Después podrás modificar el CECO,
-                cambiar entre material y servicio, editar el monto y recalcular el flujo.
+                Selecciona el tipo inicial y genera una combinación aleatoria.
+                Después podrás cambiar el CECO, el tipo de documento o el monto
+                para recalcular el flujo.
             </div>
             """
         ),
@@ -1078,12 +911,12 @@ def render_editable_case(data: dict[str, pd.DataFrame]) -> None:
 
     st.markdown("---")
     st.markdown(
-        '<div class="fl-section-title">3. Ajustar caso</div>',
+        '<div class="fl-section-title">2. Ajustar caso generado</div>',
         unsafe_allow_html=True,
     )
 
     if not result:
-        st.info("Busca un flujo o genera un caso aleatorio para habilitar los campos editables.")
+        st.info("Genera un caso aleatorio para habilitar los campos editables.")
         return
 
     current_case = result["case"]
@@ -1217,19 +1050,12 @@ def render_simulator(data: dict[str, pd.DataFrame]) -> None:
     file_name = st.session_state.get(SESSION_FILE_KEY, "Archivo cargado")
 
     st.success(
-        f"Usando archivo activo: **{file_name}** · **{len(flow):,} filas** · "
+        f"Usando archivo activo: **{file_name}** · **{len(flow):,} reglas** · "
         f"**{flow['CECO'].nunique():,} CECO**".replace(",", ".")
     )
 
-    selected_mode = render_initial_question()
-
-    if selected_mode == "SEARCH":
-        render_search_generator(data)
-    else:
-        # Se conserva la lógica original del simulador aleatorio.
-        render_random_generator(data)
-
-    # Ambos caminos utilizan la misma sección de ajuste y resultado.
+    # El simulador abre directamente en modo aleatorio.
+    render_random_generator(data)
     render_editable_case(data)
 
 
