@@ -622,14 +622,6 @@ gestores_disponibles = sorted(
     .tolist()
 )
 
-proveedores_disponibles = sorted(
-    df_contratos_estado["Proveedor"]
-    .dropna()
-    .astype(str)
-    .unique()
-    .tolist()
-) if "Proveedor" in df_contratos_estado.columns else []
-
 estados_disponibles_globales = [
     estado
     for estado in [
@@ -643,31 +635,16 @@ estados_disponibles_globales = [
 ]
 
 with st.container(border=True):
-    col_filtro_1, col_filtro_2 = st.columns(2)
+    gestores_sel = st.multiselect(
+        "Gestor de contrato",
+        options=gestores_disponibles,
+        default=gestores_disponibles,
+        key="salud_filtro_gestor_global",
+    )
+
+    col_filtro_1, col_filtro_2 = st.columns([1.25, 0.75])
 
     with col_filtro_1:
-        gestores_sel = st.multiselect(
-            "Gestor de contrato",
-            options=gestores_disponibles,
-            default=gestores_disponibles,
-            key="salud_filtro_gestor_global",
-        )
-
-    with col_filtro_2:
-        proveedor_sel = st.selectbox(
-            "Proveedor",
-            options=["Todos"] + proveedores_disponibles,
-            index=0,
-            key="salud_filtro_proveedor_global",
-            help=(
-                "Escribe dentro del selector para buscar un proveedor. "
-                "El proveedor se consolida desde ME3N por documento de compra."
-            ),
-        )
-
-    col_filtro_3, col_filtro_4 = st.columns([1.25, 0.75])
-
-    with col_filtro_3:
         estados_sel_globales = st.multiselect(
             "Estado de vigencia",
             options=estados_disponibles_globales,
@@ -675,7 +652,7 @@ with st.container(border=True):
             key="salud_filtro_estado_global",
         )
 
-    with col_filtro_4:
+    with col_filtro_2:
         cobertura_sel = st.selectbox(
             "Cobertura ME3N",
             options=[
@@ -694,11 +671,6 @@ if gestores_sel:
     ]
 else:
     df_contratos_estado_filtrado = df_contratos_estado_filtrado.iloc[0:0]
-
-if proveedores_disponibles and proveedor_sel != "Todos":
-    df_contratos_estado_filtrado = df_contratos_estado_filtrado[
-        df_contratos_estado_filtrado["Proveedor"] == proveedor_sel
-    ]
 
 if estados_sel_globales:
     df_contratos_estado_filtrado = df_contratos_estado_filtrado[
