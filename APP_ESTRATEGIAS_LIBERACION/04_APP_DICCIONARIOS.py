@@ -2,13 +2,11 @@
 # 04_APP_DICCIONARIOS
 # APP_ESTRATEGIAS_LIBERACION
 #
-# Consulta los diccionarios normalizados del archivo activo:
-# - Dic_CECO: CECO | Planta | Centro
-# - Dic_Usuarios: Correo | Cargo
-# - Dic_Rangos: Orden | Desde | Hasta
+# Consulta los dos diccionarios cargados como archivos independientes:
+# - Diccionario CECO-Plantas: CECO | Planta | Centro
+# - Diccionario Usuarios-Cargos: Correo | Cargo
 #
-# La aplicación prioriza los DataFrame disponibles en
-# st.session_state y utiliza el Excel original como respaldo.
+# No utiliza el Excel maestro antiguo ni Dic_Rangos.
 # ============================================================
 
 from __future__ import annotations
@@ -52,55 +50,27 @@ LOGO_CANDIDATES = [
 
 SESSION_DATA_KEY = "flujo_liberacion_data"
 SESSION_FILE_KEY = "flujo_liberacion_file_name"
-SESSION_FILE_BYTES_KEY = "flujo_liberacion_file_bytes"
+SESSION_SOURCE_FILES_KEY = "flujo_liberacion_source_files_v05"
 
 DICTIONARY_CONFIG = {
     "cecos": {
-        "titulo": "CECO",
+        "titulo": "CECO Y PLANTAS",
         "icono": "🏭",
         "session_key": "dic_ceco",
+        "file_role": "dic_ceco",
         "columns": ["CECO", "Planta", "Centro"],
-        "description": "Catálogo simplificado de centros de costo.",
-        "aliases": [
-            "DIC_CECO",
-            "DIC_CECOS",
-            "CECO",
-            "CECOS",
-            "DICCIONARIO_CECO",
-            "DICCIONARIO_CECOS",
-        ],
+        "description": "Catálogo de centros de costo, plantas y centros.",
     },
     "usuarios": {
-        "titulo": "USUARIOS",
+        "titulo": "USUARIOS Y CARGOS",
         "icono": "👥",
         "session_key": "dic_users",
+        "file_role": "dic_users",
         "columns": ["Correo", "Cargo"],
-        "description": "Catálogo de usuarios y cargos asociados.",
-        "aliases": [
-            "DIC_USUARIOS",
-            "DIC_USUARIO",
-            "USUARIOS",
-            "USUARIO",
-            "DICCIONARIO_USUARIOS",
-            "DICCIONARIO_USUARIO",
-        ],
-    },
-    "rangos": {
-        "titulo": "RANGOS",
-        "icono": "📏",
-        "session_key": "dic_rangos",
-        "columns": ["Orden", "Desde", "Hasta"],
-        "description": "Catálogo de tramos de monto utilizados por el flujo.",
-        "aliases": [
-            "DIC_RANGOS",
-            "DIC_RANGO",
-            "RANGOS",
-            "RANGO",
-            "DICCIONARIO_RANGOS",
-            "DICCIONARIO_RANGO",
-        ],
+        "description": "Catálogo de correos y cargos asociados.",
     },
 }
+
 
 
 # ============================================================
@@ -276,8 +246,8 @@ def render_header() -> None:
     st.markdown(
         """
         <div class="app-subtitle">
-            Consulta, filtra y descarga los catálogos activos de CECO,
-            usuarios y rangos.
+            Consulta, filtra y descarga los diccionarios activos de CECO–Plantas
+            y Usuarios–Cargos.
         </div>
         """,
         unsafe_allow_html=True,
@@ -420,95 +390,41 @@ def normalize_dictionary(
 # OBTENCIÓN DE DATOS
 # ============================================================
 
-@st.cache_data(show_spinner=False)
-def read_excel_metadata(
-    file_bytes: bytes,
-) -> tuple[dict[str, pd.DataFrame], dict[str, str | None], list[str]]:
-    if not file_bytes:
-        return {}, {}, []
-
-    try:
-        excel = pd.ExcelFile(BytesIO(file_bytes))
-    except Exception:
-        return {}, {}, []
-
-    sheet_names = list(excel.sheet_names)
-    dictionaries: dict[str, pd.DataFrame] = {}
-    resolved_names: dict[str, str | None] = {}
-
-    for key, config in DICTIONARY_CONFIG.items():
-        sheet_name = find_sheet_name(
-            sheet_names,
-            config["aliases"],
-        )
-        resolved_names[key] = sheet_name
-
-        if sheet_name is None:
-            dictionaries[key] = pd.DataFrame(
-                columns=config["columns"]
-            )
-            continue
-
-        try:
-            raw = pd.read_excel(
-                excel,
-                sheet_name=sheet_name,
-            )
-        except Exception:
-            raw = None
-
-        dictionaries[key] = normalize_dictionary(
-            raw,
-            config["columns"],
-        )
-
-    return dictionaries, resolved_names, sheet_names
-
-
 def get_active_dictionaries() -> tuple[
     dict[str, pd.DataFrame],
     dict[str, str],
-    list[str],
 ]:
     data = st.session_state.get(SESSION_DATA_KEY)
-    file_bytes = st.session_state.get(SESSION_FILE_BYTES_KEY, b"")
+    file_names = st.session_state.get(SESSION_FILE_KEY, {})
 
-    fallback, resolved_names, sheet_names = read_excel_metadata(
-        file_bytes
-    )
+    if not isinstance(data, dict):
+        return {}, {}
 
     dictionaries: dict[str, pd.DataFrame] = {}
     sources: dict[str, str] = {}
 
     for key, config in DICTIONARY_CONFIG.items():
-        session_df = (
-            data.get(config["session_key"])
-            if isinstance(data, dict)
-            else None
-        )
-
-        normalized_session = normalize_dictionary(
-            session_df
-            if isinstance(session_df, pd.DataFrame)
-            else None,
+        raw = data.get(config["session_key"])
+        normalized = normalize_dictionary(
+            raw if isinstance(raw, pd.DataFrame) else None,
             config["columns"],
         )
+        dictionaries[key] = normalized
 
-        if not normalized_session.empty:
-            dictionaries[key] = normalized_session
-            sources[key] = "Base activa"
+        if isinstance(file_names, dict):
+            loaded_name = clean_text(
+                file_names.get(config["file_role"], "")
+            )
         else:
-            dictionaries[key] = fallback.get(
-                key,
-                pd.DataFrame(columns=config["columns"]),
-            )
-            sources[key] = (
-                f"Excel · {resolved_names.get(key)}"
-                if resolved_names.get(key)
-                else "No disponible"
-            )
+            loaded_name = ""
 
-    return dictionaries, sources, sheet_names
+        sources[key] = (
+            loaded_name
+            if loaded_name
+            else "Archivo cargado en la versión activa"
+        )
+
+    return dictionaries, sources
 
 
 # ============================================================
@@ -614,6 +530,8 @@ def safe_file_part(value: str) -> str:
 def dataframe_to_csv_bytes(dataframe: pd.DataFrame) -> bytes:
     return dataframe.to_csv(
         index=False,
+        sep=";",
+        lineterminator="\n",
     ).encode("utf-8-sig")
 
 
@@ -962,21 +880,22 @@ def render_dictionary(
 
 def render_no_file() -> None:
     st.warning(
-        "No hay una base activa. Primero carga el Excel desde "
-        "**01 Cargar archivo**."
+        "No hay una versión activa. Primero carga los siete archivos desde "
+        "**01 Cargar Versión**."
     )
 
     try:
         if st.button(
-            "📤 Ir a 01 Cargar archivo",
+            "📤 Ir a 01 Cargar Versión",
             type="primary",
             use_container_width=True,
         ):
             st.switch_page("01_CARGAR_ARCHIVO_FLUJO.py")
     except Exception:
         st.info(
-            "Selecciona **01 Cargar archivo** desde el menú lateral."
+            "Selecciona **01 Cargar Versión** desde el menú lateral."
         )
+
 
 
 # ============================================================
@@ -988,36 +907,40 @@ def main() -> None:
     render_header()
 
     data = st.session_state.get(SESSION_DATA_KEY)
-    file_bytes = st.session_state.get(
-        SESSION_FILE_BYTES_KEY,
-        b"",
-    )
 
-    if not isinstance(data, dict) and not file_bytes:
+    if not isinstance(data, dict):
         render_no_file()
         return
 
-    file_name = st.session_state.get(
-        SESSION_FILE_KEY,
-        "BBDD_LIBERACION.xlsx",
-    )
+    dictionaries, sources = get_active_dictionaries()
 
-    dictionaries, sources, sheet_names = get_active_dictionaries()
+    required_keys = set(DICTIONARY_CONFIG)
+    if not required_keys.issubset(dictionaries):
+        render_no_file()
+        return
+
+    cecos = dictionaries["cecos"]
+    users = dictionaries["usuarios"]
+
+    if cecos.empty and users.empty:
+        st.error(
+            "La versión activa no contiene los diccionarios CECO-Plantas "
+            "ni Usuarios-Cargos."
+        )
+        return
 
     st.success(
         (
-            f"Archivo activo: **{file_name}** · "
-            f"**{sum(len(df) for df in dictionaries.values()):,} "
-            "registros de diccionarios**"
+            f"Diccionarios activos · "
+            f"**{len(cecos):,} CECO** · "
+            f"**{len(users):,} usuarios**"
         ).replace(",", ".")
     )
 
-    summary_columns = st.columns(3)
+    summary_columns = st.columns(2)
 
-    for column, (key, config) in zip(
-        summary_columns,
-        DICTIONARY_CONFIG.items(),
-    ):
+    for column, key in zip(summary_columns, ["cecos", "usuarios"]):
+        config = DICTIONARY_CONFIG[key]
         dataframe = dictionaries[key]
 
         with column:
@@ -1041,70 +964,91 @@ def main() -> None:
                 unsafe_allow_html=True,
             )
 
-    tab_cecos, tab_users, tab_ranges, tab_sheets = st.tabs(
+    tab_cecos, tab_users, tab_quality = st.tabs(
         [
-            "🏭 CECO",
-            "👥 USUARIOS",
-            "📏 RANGOS",
-            "📚 Hojas del Excel",
+            "🏭 CECO Y PLANTAS",
+            "👥 USUARIOS Y CARGOS",
+            "✅ VALIDACIÓN",
         ]
     )
 
     with tab_cecos:
         render_dictionary(
             "cecos",
-            dictionaries["cecos"],
+            cecos,
             sources["cecos"],
-            file_name,
+            sources["cecos"],
         )
 
     with tab_users:
         render_dictionary(
             "usuarios",
-            dictionaries["usuarios"],
+            users,
             sources["usuarios"],
-            file_name,
+            sources["usuarios"],
         )
 
-    with tab_ranges:
-        render_dictionary(
-            "rangos",
-            dictionaries["rangos"],
-            sources["rangos"],
-            file_name,
-        )
+    with tab_quality:
+        st.subheader("Validación cruzada")
 
-    with tab_sheets:
-        st.subheader("Hojas disponibles en el Excel original")
+        flow = data.get("flujo", pd.DataFrame())
+        if not isinstance(flow, pd.DataFrame) or flow.empty:
+            st.info("No hay flujo consolidado para realizar validaciones.")
+            return
 
-        if not sheet_names:
-            st.info(
-                "No fue posible inspeccionar las hojas del archivo original. "
-                "Los diccionarios activos continúan disponibles en memoria."
-            )
-        else:
-            sheets_df = pd.DataFrame(
-                {
-                    "N.º": range(1, len(sheet_names) + 1),
-                    "Nombre de hoja": sheet_names,
-                    "Nombre normalizado": [
-                        normalize_sheet_name(sheet)
-                        for sheet in sheet_names
-                    ],
-                }
-            )
+        known_cecos = set(cecos["CECO"].map(clean_text))
+        flow_cecos = set(flow["CECO"].map(clean_text))
+        missing_cecos = sorted(flow_cecos - known_cecos)
 
+        known_users = {
+            clean_text(value).casefold()
+            for value in users["Correo"].tolist()
+            if clean_text(value)
+        }
+        lib_columns = [
+            column for column in ["Lib1", "Lib2", "Lib3", "Lib4", "Lib5"]
+            if column in flow.columns
+        ]
+        flow_users = {
+            clean_text(value).casefold()
+            for column in lib_columns
+            for value in flow[column].tolist()
+            if clean_text(value)
+            and clean_text(value) != "Liberador Servicios"
+        }
+        missing_users = sorted(flow_users - known_users)
+
+        metrics = st.columns(4)
+        metrics[0].metric("CECO en flujo", len(flow_cecos))
+        metrics[1].metric("CECO sin diccionario", len(missing_cecos))
+        metrics[2].metric("Usuarios en flujo", len(flow_users))
+        metrics[3].metric("Usuarios sin diccionario", len(missing_users))
+
+        if missing_cecos:
+            st.error("Hay CECO del flujo que no existen en el diccionario.")
             st.dataframe(
-                sheets_df,
+                pd.DataFrame({"CECO": missing_cecos}),
                 use_container_width=True,
                 hide_index=True,
             )
+        else:
+            st.success("Todos los CECO del flujo existen en el diccionario.")
 
-            st.caption(
-                "Esta pestaña representa las hojas del archivo cargado. "
-                "Los datos mostrados en las otras pestañas priorizan la "
-                "base activa normalizada."
+        if missing_users:
+            st.error(
+                "Hay liberadores del flujo que no existen en el diccionario "
+                "de usuarios."
             )
+            st.dataframe(
+                pd.DataFrame({"Correo": missing_users}),
+                use_container_width=True,
+                hide_index=True,
+            )
+        else:
+            st.success(
+                "Todos los usuarios del flujo existen en el diccionario."
+            )
+
 
 
 if __name__ == "__main__":
