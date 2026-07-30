@@ -4,7 +4,10 @@
 # APP_ESTRATEGIAS_LIBERACION
 #
 # NUEVO FORMATO ÚNICO:
-#   5 archivos independientes: Liberador 1, 2, 3, 4 y 5.
+#   7 archivos independientes:
+#   - Liberador 1, 2, 3, 4 y 5.
+#   - Diccionario CECO-Plantas.
+#   - Diccionario Usuarios-Cargos.
 #   Cada archivo puede ser CSV, Parquet o Excel.
 #
 # La aplicación:
@@ -13,7 +16,8 @@
 #   3. reconstruye una tabla interna:
 #      CECO | Planta | Desde | Hasta | TipoDoc |
 #      Lib1 | Lib2 | Lib3 | Lib4 | Lib5
-#   4. deja los 5 DataFrame originales en session_state.
+#   4. incorpora Planta y cargos desde los dos diccionarios;
+#   5. deja los 7 DataFrame originales en session_state.
 # ============================================================
 
 from __future__ import annotations
@@ -100,13 +104,26 @@ LS_GROUP_VALUES = {
     "liberador servicios",
 }
 
+
+CECO_DICTIONARY_COLUMNS = ["CECO", "Planta", "Centro"]
+USER_DICTIONARY_COLUMNS = ["Correo", "Cargo"]
+
+FILE_ROLE_LIBERATORS = {level: f"liberador_{level}" for level in LEVELS}
+FILE_ROLE_CECO = "dic_ceco"
+FILE_ROLE_USERS = "dic_users"
+REQUIRED_FILE_ROLES = [
+    *[FILE_ROLE_LIBERATORS[level] for level in LEVELS],
+    FILE_ROLE_CECO,
+    FILE_ROLE_USERS,
+]
+
 SESSION_DATA_KEY = "flujo_liberacion_data"
 SESSION_FILE_KEY = "flujo_liberacion_file_name"
 SESSION_CASE_KEY = "flujo_liberacion_last_case"
 SESSION_FILE_BYTES_KEY = "flujo_liberacion_file_bytes"
-SESSION_SIGNATURE_KEY = "flujo_liberacion_upload_signature_v03"
-SESSION_VALIDATION_KEY = "flujo_liberacion_validation_v03"
-SESSION_SOURCE_FILES_KEY = "flujo_liberacion_source_files_v03"
+SESSION_SIGNATURE_KEY = "flujo_liberacion_upload_signature_v05"
+SESSION_VALIDATION_KEY = "flujo_liberacion_validation_v05"
+SESSION_SOURCE_FILES_KEY = "flujo_liberacion_source_files_v05"
 
 
 # ============================================================
@@ -488,6 +505,154 @@ def normalize_level_dataframe(
 
 
 # ============================================================
+# DICCIONARIOS
+# ============================================================
+
+def normalize_ceco_dictionary(
+    dataframe: pd.DataFrame,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    frame = dataframe.copy()
+    frame.columns = [normalize_column_name(column) for column in frame.columns]
+
+    missing = [
+        column
+        for column in ["CECO", "Planta"]
+        if column not in frame.columns
+    ]
+    if missing:
+        raise ValueError(
+            "Diccionario CECO-Plantas: faltan columnas obligatorias: "
+            + ", ".join(missing)
+        )
+
+    if "Centro" not in frame.columns:
+        frame["Centro"] = ""
+
+    frame = frame.loc[:, CECO_DICTIONARY_COLUMNS].copy()
+
+    for column in CECO_DICTIONARY_COLUMNS:
+        frame[column] = frame[column].map(clean_text)
+
+    frame = frame[frame["CECO"].ne("")].copy()
+
+    duplicate_rows = int(
+        frame.duplicated(subset=["CECO"], keep=False).sum()
+    )
+
+    conflicting_cecos: list[dict[str, Any]] = []
+    for ceco, group in frame.groupby("CECO", sort=False):
+        plants = [
+            value
+            for value in group["Planta"].drop_duplicates().tolist()
+            if value
+        ]
+        if len(plants) > 1:
+            conflicting_cecos.append({
+                "CECO": ceco,
+                "Plantas": " | ".join(plants),
+            })
+
+    result = (
+        frame.drop_duplicates(subset=["CECO"], keep="last")
+        .sort_values("CECO", kind="stable")
+        .reset_index(drop=True)
+    )
+
+    report = {
+        "rows": len(result),
+        "duplicate_rows": duplicate_rows,
+        "conflicts": pd.DataFrame(conflicting_cecos),
+        "empty_plants": int(result["Planta"].eq("").sum()),
+    }
+    return result, report
+
+
+def normalize_user_dictionary(
+    dataframe: pd.DataFrame,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    frame = dataframe.copy()
+    frame.columns = [normalize_column_name(column) for column in frame.columns]
+
+    aliases = {
+        "Email": "Correo",
+        "Mail": "Correo",
+        "Usuario": "Correo",
+        "Rol": "Cargo",
+        "Role": "Cargo",
+    }
+    frame = frame.rename(
+        columns={
+            column: aliases.get(column, column)
+            for column in frame.columns
+        }
+    )
+
+    missing = [
+        column
+        for column in USER_DICTIONARY_COLUMNS
+        if column not in frame.columns
+    ]
+    if missing:
+        raise ValueError(
+            "Diccionario Usuarios-Cargos: faltan columnas obligatorias: "
+            + ", ".join(missing)
+        )
+
+    frame = frame.loc[:, USER_DICTIONARY_COLUMNS].copy()
+    frame["Correo"] = frame["Correo"].map(clean_text)
+    frame["Cargo"] = frame["Cargo"].map(clean_text)
+    frame = frame[frame["Correo"].ne("")].copy()
+
+    duplicate_rows = int(
+        frame.duplicated(subset=["Correo"], keep=False).sum()
+    )
+
+    result = (
+        frame.drop_duplicates(subset=["Correo"], keep="last")
+        .sort_values("Correo", key=lambda values: values.str.casefold())
+        .reset_index(drop=True)
+    )
+
+    report = {
+        "rows": len(result),
+        "duplicate_rows": duplicate_rows,
+        "empty_roles": int(result["Cargo"].eq("").sum()),
+    }
+    return result, report
+
+
+def apply_ceco_dictionary(
+    flow: pd.DataFrame,
+    ceco_dictionary: pd.DataFrame,
+) -> tuple[pd.DataFrame, list[str], list[str]]:
+    result = flow.copy()
+    plant_by_ceco = dict(
+        zip(
+            ceco_dictionary["CECO"],
+            ceco_dictionary["Planta"],
+        )
+    )
+    known_cecos = set(ceco_dictionary["CECO"].astype(str))
+
+    result["Planta"] = result["CECO"].map(plant_by_ceco).fillna("")
+
+    missing_cecos = sorted(
+        set(result["CECO"].astype(str)) - known_cecos
+    )
+    cecos_without_plant = sorted(
+        result.loc[
+            result["CECO"].isin(known_cecos)
+            & result["Planta"].eq(""),
+            "CECO",
+        ]
+        .drop_duplicates()
+        .astype(str)
+        .tolist()
+    )
+    return result, missing_cecos, cecos_without_plant
+
+
+# ============================================================
 # RECONSTRUCCIÓN DEL FLUJO INTERNO
 # ============================================================
 
@@ -630,18 +795,19 @@ def reconstruct_flow(
 # FIRMA, ESTADO Y CARGA
 # ============================================================
 
-def files_signature(files: dict[int, Any]) -> str:
+def files_signature(files: dict[str, Any]) -> str:
     parts: list[str] = []
 
-    for level in LEVELS:
-        uploaded = files[level]
+    for role in REQUIRED_FILE_ROLES:
+        uploaded = files[role]
         raw = uploaded.getvalue()
         digest = hashlib.sha1(raw).hexdigest()
         parts.append(
-            f"{level}|{uploaded.name}|{len(raw)}|{digest}"
+            f"{role}|{uploaded.name}|{len(raw)}|{digest}"
         )
 
     return "||".join(parts)
+
 
 
 def clear_active_files() -> None:
@@ -657,28 +823,48 @@ def clear_active_files() -> None:
         st.session_state.pop(key, None)
 
 
-def load_five_files(
-    uploaded_files: dict[int, Any],
+def load_seven_files(
+    uploaded_files: dict[str, Any],
 ) -> tuple[dict[str, Any], dict[str, bytes], dict[str, Any]]:
     level_frames: dict[int, pd.DataFrame] = {}
     level_reports: dict[int, dict[str, Any]] = {}
     source_bytes: dict[str, bytes] = {}
 
     for level in LEVELS:
-        frame_raw, raw = read_uploaded_table(uploaded_files[level])
+        role = FILE_ROLE_LIBERATORS[level]
+        frame_raw, raw = read_uploaded_table(uploaded_files[role])
         frame, report = normalize_level_dataframe(frame_raw, level)
 
         level_frames[level] = frame
         level_reports[level] = report
-        source_bytes[f"liberador_{level}"] = raw
+        source_bytes[role] = raw
+
+    ceco_raw, ceco_bytes = read_uploaded_table(
+        uploaded_files[FILE_ROLE_CECO]
+    )
+    ceco_dictionary, ceco_report = normalize_ceco_dictionary(ceco_raw)
+    source_bytes[FILE_ROLE_CECO] = ceco_bytes
+
+    users_raw, users_bytes = read_uploaded_table(
+        uploaded_files[FILE_ROLE_USERS]
+    )
+    users_dictionary, users_report = normalize_user_dictionary(users_raw)
+    source_bytes[FILE_ROLE_USERS] = users_bytes
 
     flow, flow_report = reconstruct_flow(level_frames)
 
     if flow.empty:
         raise ValueError(
-            "Los cinco archivos no contienen reglas con CostCenter explícito "
-            "y TipoDoc AZNB/AZSR para construir el flujo."
+            "Los cinco archivos de liberadores no contienen reglas con "
+            "CostCenter explícito y TipoDoc AZNB/AZSR."
         )
+
+    flow, missing_cecos, cecos_without_plant = apply_ceco_dictionary(
+        flow,
+        ceco_dictionary,
+    )
+    flow_report["cecos_without_dictionary"] = missing_cecos
+    flow_report["cecos_without_plant"] = cecos_without_plant
 
     data: dict[str, Any] = {
         "flujo": flow,
@@ -688,18 +874,22 @@ def load_five_files(
         "liberador_3": level_frames[3],
         "liberador_4": level_frames[4],
         "liberador_5": level_frames[5],
-        # Se mantienen claves conocidas por otras pantallas.
-        "dic_users": pd.DataFrame(columns=["Correo", "Cargo"]),
-        "dic_ceco": pd.DataFrame(columns=["CECO", "Planta", "Centro"]),
-        "dic_rangos": pd.DataFrame(columns=["Orden", "Desde", "Hasta"]),
+        "dic_users": users_dictionary,
+        "dic_ceco": ceco_dictionary,
+        "dic_rangos": pd.DataFrame(
+            columns=["Orden", "Desde", "Hasta"]
+        ),
     }
 
     validation = {
         "levels": level_reports,
         "flow": flow_report,
+        "dic_ceco": ceco_report,
+        "dic_users": users_report,
     }
 
     return data, source_bytes, validation
+
 
 
 # ============================================================
@@ -710,13 +900,13 @@ def render_header() -> None:
     mostrar_logo()
 
     st.markdown(
-        '<div class="fl-title">01 Cargar Liberadores</div>',
+        '<div class="fl-title">01 Cargar Versión</div>',
         unsafe_allow_html=True,
     )
     st.markdown(
         """
         <div class="fl-subtitle">
-            Selecciona una versión completa de cinco archivos.
+            Selecciona una versión completa de siete archivos.
         </div>
         """,
         unsafe_allow_html=True,
@@ -745,9 +935,34 @@ def render_format_help() -> None:
     )
 
 
-def detect_level_from_filename(name: str) -> int | None:
-    """Detecta el nivel 1–5 a partir del nombre del archivo."""
+def detect_file_role(name: str) -> str | None:
+    """Identifica los cinco niveles y los dos diccionarios."""
     text = Path(name).stem.casefold()
+    simplified = re.sub(r"[^a-z0-9]+", " ", text).strip()
+
+    ceco_terms = (
+        ("diccionario" in simplified or "dic" in simplified)
+        and ("ceco" in simplified or "centro costo" in simplified)
+        and ("planta" in simplified or "centro" in simplified)
+    )
+    if ceco_terms:
+        return FILE_ROLE_CECO
+
+    user_terms = (
+        ("diccionario" in simplified or "dic" in simplified)
+        and (
+            "usuario" in simplified
+            or "usuarios" in simplified
+            or "correo" in simplified
+        )
+        and (
+            "cargo" in simplified
+            or "cargos" in simplified
+            or "rol" in simplified
+        )
+    )
+    if user_terms:
+        return FILE_ROLE_USERS
 
     patterns = [
         r"liberador[_\-\s]*(\d)",
@@ -759,68 +974,82 @@ def detect_level_from_filename(name: str) -> int | None:
         match = re.search(pattern, text)
         if match:
             level = int(match.group(1))
-            return level if level in LEVELS else None
-
-    isolated = re.findall(r"(?<!\d)([1-5])(?!\d)", text)
-    if len(isolated) == 1:
-        return int(isolated[0])
+            if level in LEVELS:
+                return FILE_ROLE_LIBERATORS[level]
 
     return None
 
 
-def render_uploader() -> dict[int, Any]:
-    """Muestra un solo cargador y ordena los archivos por nivel."""
+def role_label(role: str) -> str:
+    if role == FILE_ROLE_CECO:
+        return "Diccionario CECO-Plantas"
+    if role == FILE_ROLE_USERS:
+        return "Diccionario Usuarios-Cargos"
+
+    for level in LEVELS:
+        if role == FILE_ROLE_LIBERATORS[level]:
+            return f"Liberador {level}"
+
+    return role
+
+
+def render_uploader() -> dict[str, Any]:
+    """Carga los siete archivos juntos y los clasifica por nombre."""
     selected_files = st.file_uploader(
-        "Seleccionar los cinco archivos",
+        "Seleccionar los siete archivos",
         type=["csv", "parquet", "pq", "xlsx", "xls", "xlsm"],
         accept_multiple_files=True,
-        key="liberadores_uploader_multiple_v04",
+        key="liberadores_diccionarios_uploader_v05",
         label_visibility="collapsed",
         help=(
-            "Selecciona juntos los archivos Liberador 1, 2, 3, 4 y 5. "
-            "El nivel se identifica desde el nombre del archivo."
+            "Selecciona juntos Liberador 1–5, Diccionario CECO-Plantas "
+            "y Diccionario Usuarios-Cargos."
         ),
     )
 
     if not selected_files:
         return {}
 
-    if len(selected_files) > 5:
-        st.error("Selecciona exactamente cinco archivos.")
+    if len(selected_files) > 7:
+        st.error("Selecciona exactamente siete archivos.")
         return {}
 
-    uploaded: dict[int, Any] = {}
+    uploaded: dict[str, Any] = {}
     unresolved: list[str] = []
-    duplicated_levels: list[int] = []
+    duplicated_roles: list[str] = []
 
     for uploaded_file in selected_files:
-        level = detect_level_from_filename(uploaded_file.name)
+        role = detect_file_role(uploaded_file.name)
 
-        if level is None:
+        if role is None:
             unresolved.append(uploaded_file.name)
             continue
 
-        if level in uploaded:
-            duplicated_levels.append(level)
+        if role in uploaded:
+            duplicated_roles.append(role)
             continue
 
-        uploaded[level] = uploaded_file
+        uploaded[role] = uploaded_file
 
     if unresolved:
         st.error(
-            "No pude identificar el nivel de: "
+            "No pude identificar: "
             + ", ".join(unresolved)
-            + ". Usa nombres que incluyan 'Liberador 1' hasta 'Liberador 5'."
+            + ". Revisa los nombres de los archivos."
         )
 
-    if duplicated_levels:
-        levels = ", ".join(str(level) for level in sorted(set(duplicated_levels)))
-        st.error(f"Hay archivos duplicados para Liberador {levels}.")
+    if duplicated_roles:
+        labels = ", ".join(
+            role_label(role)
+            for role in sorted(set(duplicated_roles))
+        )
+        st.error(f"Hay archivos duplicados para: {labels}.")
 
-    if unresolved or duplicated_levels:
+    if unresolved or duplicated_roles:
         return {}
 
     return uploaded
+
 
 
 def render_validation_report(report: dict[str, Any]) -> None:
@@ -847,6 +1076,63 @@ def render_validation_report(report: dict[str, Any]) -> None:
             use_container_width=True,
             hide_index=True,
         )
+
+        dictionary_rows = [
+            {
+                "Archivo": "Diccionario CECO-Plantas",
+                "Filas": report.get("dic_ceco", {}).get("rows", 0),
+                "Duplicadas": report.get("dic_ceco", {}).get(
+                    "duplicate_rows", 0
+                ),
+                "Valores vacíos": report.get("dic_ceco", {}).get(
+                    "empty_plants", 0
+                ),
+            },
+            {
+                "Archivo": "Diccionario Usuarios-Cargos",
+                "Filas": report.get("dic_users", {}).get("rows", 0),
+                "Duplicadas": report.get("dic_users", {}).get(
+                    "duplicate_rows", 0
+                ),
+                "Valores vacíos": report.get("dic_users", {}).get(
+                    "empty_roles", 0
+                ),
+            },
+        ]
+
+        st.markdown("#### Diccionarios")
+        st.dataframe(
+            pd.DataFrame(dictionary_rows),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        ceco_conflicts = report.get("dic_ceco", {}).get(
+            "conflicts", pd.DataFrame()
+        )
+        if isinstance(ceco_conflicts, pd.DataFrame) and not ceco_conflicts.empty:
+            st.error(
+                "Hay CECO asociados a más de una planta en el diccionario."
+            )
+            st.dataframe(
+                ceco_conflicts,
+                use_container_width=True,
+                hide_index=True,
+            )
+
+        missing_cecos = flow_report.get("cecos_without_dictionary", [])
+        if missing_cecos:
+            st.error(
+                f"Hay {len(missing_cecos)} CECO del flujo que no existen "
+                "en el diccionario CECO-Plantas."
+            )
+
+        cecos_without_plant = flow_report.get("cecos_without_plant", [])
+        if cecos_without_plant:
+            st.warning(
+                f"Hay {len(cecos_without_plant)} CECO presentes en el "
+                "diccionario, pero con Planta vacía."
+            )
 
         conflicts = flow_report.get("conflicts", pd.DataFrame())
 
@@ -879,7 +1165,7 @@ def render_active_state() -> None:
     data = st.session_state.get(SESSION_DATA_KEY)
 
     if not isinstance(data, dict):
-        st.info("Carga los cinco archivos para activar la aplicación.")
+        st.info("Carga los siete archivos para activar la aplicación.")
         return
 
     flow = data.get("flujo", pd.DataFrame())
@@ -891,7 +1177,7 @@ def render_active_state() -> None:
 
     st.success(
         (
-            f"Cinco archivos activos · **{len(flow):,} reglas internas** · "
+            f"Siete archivos activos · **{len(flow):,} reglas internas** · "
             f"**{flow['CECO'].nunique():,} CECO**"
         ).replace(",", ".")
     )
@@ -915,9 +1201,12 @@ def render_active_state() -> None:
             hide_index=True,
         )
 
-    tabs = st.tabs([f"Liberador {level}" for level in LEVELS])
+    tabs = st.tabs(
+        [f"Liberador {level}" for level in LEVELS]
+        + ["CECO-Plantas", "Usuarios-Cargos"]
+    )
 
-    for level, tab in zip(LEVELS, tabs):
+    for level, tab in zip(LEVELS, tabs[:5]):
         with tab:
             frame = liberators.get(level, pd.DataFrame())
             st.dataframe(
@@ -934,8 +1223,22 @@ def render_active_state() -> None:
                 hide_index=True,
             )
 
+    with tabs[5]:
+        st.dataframe(
+            data.get("dic_ceco", pd.DataFrame()).head(300),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    with tabs[6]:
+        st.dataframe(
+            data.get("dic_users", pd.DataFrame()).head(300),
+            use_container_width=True,
+            hide_index=True,
+        )
+
     if st.button(
-        "🗑️ Quitar los cinco archivos",
+        "🗑️ Quitar los siete archivos",
         use_container_width=True,
     ):
         clear_active_files()
@@ -947,14 +1250,14 @@ def main() -> None:
     render_header()
 
     st.markdown(
-        '<div class="fl-section-title">Cargar versión de liberadores</div>',
+        '<div class="fl-section-title">Cargar versión completa</div>',
         unsafe_allow_html=True,
     )
     st.markdown(
         """
         <div class="fl-help">
-            Selecciona juntos los cinco archivos: Liberador 1, 2, 3, 4 y 5.
-            Se aceptan CSV, Parquet y Excel.
+            Selecciona juntos Liberador 1–5, el diccionario CECO–Plantas
+            y el diccionario Usuarios–Cargos. Se aceptan CSV, Parquet y Excel.
         </div>
         """,
         unsafe_allow_html=True,
@@ -962,26 +1265,30 @@ def main() -> None:
 
     uploaded_files = render_uploader()
 
-    # Antes de cargar los cinco archivos no se muestra ningún elemento adicional.
+    # Antes de cargar los siete archivos no se muestra ningún elemento adicional.
     if not uploaded_files:
         st.info(
-            "Los nombres deben permitir identificar cada nivel, por ejemplo: "
-            "Liberador_1.xlsx, Liberador_2.csv, ..., Liberador_5.parquet."
+            "Los nombres deben identificar Liberador 1–5, "
+            "Diccionario_CECO_Plantas y Diccionario_Usuarios_Cargos."
         )
         return
 
-    missing = [level for level in LEVELS if level not in uploaded_files]
+    missing = [
+        role
+        for role in REQUIRED_FILE_ROLES
+        if role not in uploaded_files
+    ]
 
     if missing:
         st.warning(
             "Faltan archivos: "
-            + ", ".join(f"Liberador {level}" for level in missing)
+            + ", ".join(role_label(role) for role in missing)
             + "."
         )
         return
 
-    if len(uploaded_files) != 5:
-        st.warning("Debes seleccionar exactamente cinco archivos.")
+    if len(uploaded_files) != 7:
+        st.warning("Debes seleccionar exactamente siete archivos.")
         return
 
     signature = files_signature(uploaded_files)
@@ -994,15 +1301,15 @@ def main() -> None:
     if needs_load:
         try:
             with st.spinner(
-                "Leyendo, validando y consolidando los cinco archivos..."
+                "Leyendo, validando y consolidando los siete archivos..."
             ):
-                data, source_bytes, validation = load_five_files(
+                data, source_bytes, validation = load_seven_files(
                     uploaded_files
                 )
 
             names = {
-                level: uploaded_files[level].name
-                for level in LEVELS
+                role: uploaded_files[role].name
+                for role in REQUIRED_FILE_ROLES
             }
 
             st.session_state[SESSION_DATA_KEY] = data
@@ -1014,7 +1321,7 @@ def main() -> None:
             st.session_state.pop(SESSION_CASE_KEY, None)
 
             st.toast(
-                "Cinco archivos cargados correctamente.",
+                "Siete archivos cargados correctamente.",
                 icon="✅",
             )
             st.rerun()
