@@ -70,6 +70,8 @@ SESSION_DOWNLOAD_PARQUET_KEY = "mod_liberadores_download_parquet_v02"
 SESSION_DOWNLOAD_CSV_KEY = "mod_liberadores_download_csv_v02"
 SESSION_DOWNLOAD_PARQUET_NAME_KEY = "mod_liberadores_download_parquet_name_v02"
 SESSION_DOWNLOAD_CSV_NAME_KEY = "mod_liberadores_download_csv_name_v02"
+SESSION_DOWNLOAD_EXCEL_KEY = "mod_liberadores_download_excel_v01"
+SESSION_DOWNLOAD_EXCEL_NAME_KEY = "mod_liberadores_download_excel_name_v01"
 
 LIB_COLS = ["Lib1", "Lib2", "Lib3", "Lib4", "Lib5"]
 FLOW_COLUMNS = [
@@ -1504,6 +1506,51 @@ def dataframe_to_parquet_bytes(dataframe: pd.DataFrame) -> bytes:
     return output.getvalue()
 
 
+def dataframe_to_excel_bytes(
+    dataframe: pd.DataFrame,
+    sheet_name: str = "Datos",
+) -> bytes:
+    output = BytesIO()
+    clean_frame = clean_export_frame(dataframe)
+
+    try:
+        with pd.ExcelWriter(
+            output,
+            engine="openpyxl",
+        ) as writer:
+            clean_frame.to_excel(
+                writer,
+                index=False,
+                sheet_name=sheet_name[:31],
+            )
+            worksheet = writer.book[sheet_name[:31]]
+            worksheet.freeze_panes = "A2"
+            worksheet.auto_filter.ref = worksheet.dimensions
+            worksheet.sheet_view.showGridLines = False
+
+            for column_cells in worksheet.columns:
+                values = [
+                    "" if cell.value is None else str(cell.value)
+                    for cell in list(column_cells)[:250]
+                ]
+                width = min(
+                    max(
+                        max((len(value) for value in values), default=8) + 2,
+                        12,
+                    ),
+                    45,
+                )
+                worksheet.column_dimensions[
+                    column_cells[0].column_letter
+                ].width = width
+    except Exception as error:
+        raise ValueError(
+            "No fue posible generar el archivo Excel."
+        ) from error
+
+    return output.getvalue()
+
+
 def archive_filename(
     role: str,
     extension: str,
@@ -1535,7 +1582,7 @@ def build_seven_files_archive(
     pd.DataFrame,
     pd.DataFrame,
 ]:
-    if export_format not in {"parquet", "csv"}:
+    if export_format not in {"parquet", "csv", "excel"}:
         raise ValueError("Formato de descarga no válido.")
 
     timestamp = (
@@ -1565,11 +1612,11 @@ def build_seven_files_archive(
         "dic_users": updated_users,
     }
 
-    extension = (
-        ".parquet"
-        if export_format == "parquet"
-        else ".csv"
-    )
+    extension = {
+        "parquet": ".parquet",
+        "csv": ".csv",
+        "excel": ".xlsx",
+    }[export_format]
 
     zip_output = BytesIO()
     with zipfile.ZipFile(
@@ -1578,11 +1625,21 @@ def build_seven_files_archive(
         compression=zipfile.ZIP_DEFLATED,
     ) as archive:
         for role, dataframe in logical_files.items():
-            content = (
-                dataframe_to_parquet_bytes(dataframe)
-                if export_format == "parquet"
-                else dataframe_to_csv_bytes(dataframe)
-            )
+            if export_format == "parquet":
+                content = dataframe_to_parquet_bytes(dataframe)
+            elif export_format == "excel":
+                content = dataframe_to_excel_bytes(
+                    dataframe,
+                    sheet_name=(
+                        "CECO_Plantas"
+                        if role == "dic_ceco"
+                        else "Usuarios_Cargos"
+                        if role == "dic_users"
+                        else role.replace("_", " ").title()
+                    ),
+                )
+            else:
+                content = dataframe_to_csv_bytes(dataframe)
             archive.writestr(
                 archive_filename(
                     role,
@@ -1693,6 +1750,18 @@ def refresh_download(
         download_name_for_format("csv", timestamp)
     )
 
+    excel_zip, _, _, _ = build_seven_files_archive(
+        data=updated_data,
+        flow=flow,
+        history=history,
+        export_format="excel",
+        modification_timestamp=timestamp,
+    )
+    st.session_state[SESSION_DOWNLOAD_EXCEL_KEY] = excel_zip
+    st.session_state[SESSION_DOWNLOAD_EXCEL_NAME_KEY] = (
+        download_name_for_format("excel", timestamp)
+    )
+
     parquet_engine = available_parquet_engine()
     if parquet_engine is not None:
         parquet_zip, _, _, _ = build_seven_files_archive(
@@ -1728,6 +1797,84 @@ def refresh_download(
             st.session_state[SESSION_DOWNLOAD_CSV_NAME_KEY]
         )
 
+
+
+
+def render_download_selector(
+    key_prefix: str,
+) -> None:
+    parquet_zip = st.session_state.get(
+        SESSION_DOWNLOAD_PARQUET_KEY
+    )
+    parquet_name = st.session_state.get(
+        SESSION_DOWNLOAD_PARQUET_NAME_KEY
+    )
+    csv_zip = st.session_state.get(
+        SESSION_DOWNLOAD_CSV_KEY
+    )
+    csv_name = st.session_state.get(
+        SESSION_DOWNLOAD_CSV_NAME_KEY
+    )
+    excel_zip = st.session_state.get(
+        SESSION_DOWNLOAD_EXCEL_KEY
+    )
+    excel_name = st.session_state.get(
+        SESSION_DOWNLOAD_EXCEL_NAME_KEY
+    )
+
+    if not any([parquet_zip, csv_zip, excel_zip]):
+        return
+
+    st.markdown("---")
+    st.subheader("Descargar versión modificada")
+    st.caption(
+        "El ZIP contiene cinco liberadores, dos diccionarios "
+        "actualizados y un archivo CSV de cambios. Todos los nombres "
+        "incluyen la fecha y hora de modificación de Santiago."
+    )
+
+    selected_format = st.radio(
+        "¿En qué formato deseas descargar los siete archivos principales?",
+        options=["parquet", "csv", "excel"],
+        index=0,
+        format_func=lambda value: {
+            "parquet": "Parquet — predeterminado",
+            "csv": "CSV — separador punto y coma",
+            "excel": "Excel — formato XLSX",
+        }[value],
+        key=f"{key_prefix}_format_v03",
+    )
+
+    payloads = {
+        "parquet": (parquet_zip, parquet_name),
+        "csv": (csv_zip, csv_name),
+        "excel": (excel_zip, excel_name),
+    }
+    download_data, download_name = payloads[selected_format]
+
+    if selected_format == "parquet" and not download_data:
+        st.warning(
+            "Parquet no está disponible en este entorno. "
+            "Instala `pyarrow` o selecciona CSV/Excel."
+        )
+        return
+
+    if not download_data or not download_name:
+        st.error(
+            f"No fue posible preparar la descarga en "
+            f"{selected_format.upper()}."
+        )
+        return
+
+    st.download_button(
+        "⬇️ Descargar ZIP con 8 archivos",
+        data=download_data,
+        file_name=download_name,
+        mime="application/zip",
+        type="primary",
+        use_container_width=True,
+        key=f"{key_prefix}_{selected_format}_download_v03",
+    )
 
 
 
@@ -2013,24 +2160,7 @@ def render_global_replacement(
         except ValueError as error:
             st.error(str(error))
 
-    generated = st.session_state.get(SESSION_DOWNLOAD_KEY)
-    generated_name = st.session_state.get(SESSION_DOWNLOAD_NAME_KEY)
-
-    if generated and generated_name:
-        st.markdown("---")
-        st.subheader("Descargar los cinco archivos actualizados")
-        st.download_button(
-            "⬇️ Descargar ZIP con 5 Excel",
-            data=generated,
-            file_name=generated_name,
-            mime=(
-                "application/zip"
-            ),
-            type="primary",
-            use_container_width=True,
-            key="global_download_v05",
-        )
-        st.caption(f"Archivo preparado: `{generated_name}`")
+    render_download_selector("global")
 
     history = st.session_state.get(SESSION_HISTORY_KEY, [])
     if history:
@@ -2666,30 +2796,7 @@ def render_ceco_user_replacement(
         except ValueError as error:
             st.error(str(error))
 
-    generated = st.session_state.get(
-        SESSION_DOWNLOAD_KEY
-    )
-    generated_name = st.session_state.get(
-        SESSION_DOWNLOAD_NAME_KEY
-    )
-
-    if generated and generated_name:
-        st.markdown("---")
-        st.subheader("Descargar versión modificada")
-
-        st.download_button(
-            "⬇️ Descargar ZIP con 5 Excel",
-            data=generated,
-            file_name=generated_name,
-            mime=(
-                "application/zip"
-            ),
-            type="primary",
-            use_container_width=True,
-            key="ceco_replace_download_v01",
-        )
-
-        st.caption(f"Archivo preparado: `{generated_name}`")
+    render_download_selector("ceco_replace")
 
     history = st.session_state.get(
         SESSION_HISTORY_KEY,
@@ -3545,72 +3652,7 @@ def render_wizard(
     # --------------------------------------------------------
     # Descarga
     # --------------------------------------------------------
-    parquet_zip = st.session_state.get(
-        SESSION_DOWNLOAD_PARQUET_KEY
-    )
-    parquet_name = st.session_state.get(
-        SESSION_DOWNLOAD_PARQUET_NAME_KEY
-    )
-    csv_zip = st.session_state.get(
-        SESSION_DOWNLOAD_CSV_KEY
-    )
-    csv_name = st.session_state.get(
-        SESSION_DOWNLOAD_CSV_NAME_KEY
-    )
-
-    if parquet_zip or csv_zip:
-        st.markdown("---")
-        st.subheader("Descargar versión actualizada")
-        st.caption(
-            "El ZIP contiene exactamente ocho archivos: cinco liberadores, "
-            "dos diccionarios actualizados y un CSV de cambios. "
-            "Todos usan la misma fecha y hora de Santiago."
-        )
-
-        available_formats: list[str] = []
-        if parquet_zip and parquet_name:
-            available_formats.append("parquet")
-        if csv_zip and csv_name:
-            available_formats.append("csv")
-
-        selected_format = st.radio(
-            "Formato de los siete archivos principales",
-            options=available_formats,
-            index=(
-                available_formats.index("parquet")
-                if "parquet" in available_formats
-                else 0
-            ),
-            format_func=lambda value: (
-                "Parquet — recomendado"
-                if value == "parquet"
-                else "CSV — separador punto y coma"
-            ),
-            key="mod_download_format_v02",
-        )
-
-        if selected_format == "parquet":
-            download_data = parquet_zip
-            download_name = parquet_name
-        else:
-            download_data = csv_zip
-            download_name = csv_name
-
-        st.download_button(
-            "⬇️ Descargar ZIP con 8 archivos",
-            data=download_data,
-            file_name=download_name,
-            mime="application/zip",
-            type="primary",
-            use_container_width=True,
-            key=f"mod_download_{selected_format}_v02",
-        )
-
-        if "parquet" not in available_formats:
-            st.info(
-                "Parquet se habilitará automáticamente al instalar "
-                "`pyarrow` o `fastparquet`."
-            )
+    render_download_selector("mod")
 
     history = st.session_state.get(SESSION_HISTORY_KEY, [])
     if history:
@@ -3662,6 +3704,14 @@ def render_wizard(
                 )
                 st.session_state.pop(
                     SESSION_DOWNLOAD_CSV_NAME_KEY,
+                    None,
+                )
+                st.session_state.pop(
+                    SESSION_DOWNLOAD_EXCEL_KEY,
+                    None,
+                )
+                st.session_state.pop(
+                    SESSION_DOWNLOAD_EXCEL_NAME_KEY,
                     None,
                 )
                 st.rerun()
