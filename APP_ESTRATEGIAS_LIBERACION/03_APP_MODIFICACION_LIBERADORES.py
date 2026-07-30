@@ -7,9 +7,9 @@
 # → validación → vista previa → impacto global opcional
 # → auditoría → Excel profesional.
 #
-# Fuente vigente: cinco archivos Liberador 1–5.
-# La pantalla trabaja con un flujo interno consolidado y exporta
-# nuevamente los cinco archivos, preservando reglas especiales.
+# Fuente vigente: cinco liberadores y dos diccionarios.
+# La pantalla actualiza reglas explícitas y reglas especiales,
+# incluidas las filas sin CECO o con CostCenter='*'.
 # ============================================================
 
 from __future__ import annotations
@@ -347,7 +347,7 @@ def render_header() -> None:
     st.markdown(
         """
         <div class="app-subtitle">
-            Modifica la versión consolidada y descarga nuevamente los cinco archivos de liberadores.
+            Modifica reglas con y sin CECO y descarga cinco liberadores, dos diccionarios y cambios.
         </div>
         """,
         unsafe_allow_html=True,
@@ -776,7 +776,13 @@ def initialize_state(
         st.session_state[SESSION_BACKUP_KEY] = flow.copy(deep=True)
         st.session_state[SESSION_SIGNATURE_KEY] = signature
         st.session_state[SESSION_DRAFT_KEY] = default_draft()
-        st.session_state[SESSION_HISTORY_KEY] = []
+        loaded_changes = data.get("cambios", pd.DataFrame())
+        st.session_state[SESSION_HISTORY_KEY] = (
+            loaded_changes.to_dict("records")
+            if isinstance(loaded_changes, pd.DataFrame)
+            and not loaded_changes.empty
+            else []
+        )
         st.session_state.pop(SESSION_DOWNLOAD_KEY, None)
         st.session_state.pop(SESSION_DOWNLOAD_NAME_KEY, None)
 
@@ -1197,6 +1203,154 @@ def normalized_level_frame(frame: pd.DataFrame, level: int) -> pd.DataFrame:
 
 def range_key(value: Any, *, low: bool) -> float:
     return parse_bound(value, low=low)
+
+
+def replace_user_in_special_rules(
+    data: dict[str, Any],
+    old_user: str,
+    new_user: str,
+    actor: str,
+    reason: str,
+    timestamp: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """
+    Reemplaza un usuario en reglas que no forman parte del flujo CECO.
+
+    Incluye filas con CostCenter vacío o '*', documentos distintos de
+    AZNB/AZSR y otras reglas especiales que el flujo consolidado no contiene.
+    """
+    updated_data = dict(data)
+    original_frames = data.get("liberadores", {})
+
+    if not isinstance(original_frames, dict):
+        return updated_data, []
+
+    old_key = email_key(old_user)
+    replacement = strip_user(new_user)
+    updated_frames: dict[int, pd.DataFrame] = {}
+    changes: list[dict[str, Any]] = []
+
+    for level in LEVELS:
+        original = normalized_level_frame(
+            original_frames.get(level, pd.DataFrame()),
+            level,
+        )
+
+        special_mask = (
+            original["CostCenter"].isin({"", "*"})
+            | ~original["cus_POClasedeDocumento"].isin(
+                {"AZNB", "AZSR"}
+            )
+        )
+
+        for row_index, row in original[special_mask].iterrows():
+            current = strip_user(row.get("User", ""))
+
+            if email_key(current) != old_key:
+                continue
+
+            original.at[row_index, "User"] = replacement
+
+            ceco_value = clean_text(row.get("CostCenter", ""))
+            changes.append(
+                {
+                    "FechaHora": timestamp,
+                    "Usuario": actor or "anonimo",
+                    "CECO": ceco_value or "[SIN CECO]",
+                    "Desde": clean_text(
+                        row.get("TotalCost Bajo", "")
+                    ),
+                    "Hasta": clean_text(
+                        row.get("TotalCost Alto", "")
+                    ),
+                    "TipoDoc": clean_text(
+                        row.get(
+                            "cus_POClasedeDocumento",
+                            "",
+                        )
+                    )
+                    or "*",
+                    "Campo": f"Liberador {level} · User",
+                    "ValorAntes": current,
+                    "ValorDespues": replacement,
+                    "Nota": (
+                        (reason or "Reemplazo global")
+                        + " | regla especial sin CECO explícito"
+                    ),
+                }
+            )
+
+        updated_frames[level] = original.reset_index(drop=True)
+
+    updated_data["liberadores"] = updated_frames
+    for level in LEVELS:
+        updated_data[f"liberador_{level}"] = updated_frames[level]
+
+    return updated_data, changes
+
+
+def special_occurrences_of_person(
+    data: dict[str, Any],
+    person: str,
+) -> pd.DataFrame:
+    """Lista las apariciones de una persona en reglas especiales."""
+    frames = data.get("liberadores", {})
+    target = email_key(person)
+    records: list[dict[str, Any]] = []
+
+    if not target or not isinstance(frames, dict):
+        return pd.DataFrame()
+
+    for level in LEVELS:
+        frame = normalized_level_frame(
+            frames.get(level, pd.DataFrame()),
+            level,
+        )
+        special_mask = (
+            frame["CostCenter"].isin({"", "*"})
+            | ~frame["cus_POClasedeDocumento"].isin(
+                {"AZNB", "AZSR"}
+            )
+        )
+
+        for _, row in frame[special_mask].iterrows():
+            current = strip_user(row.get("User", ""))
+            if email_key(current) != target:
+                continue
+
+            records.append(
+                {
+                    "Nivel": f"Liberador {level}",
+                    "CECO": (
+                        clean_text(row.get("CostCenter", ""))
+                        or "[SIN CECO]"
+                    ),
+                    "CompanyCode": clean_text(
+                        row.get("CompanyCode", "")
+                    ),
+                    "TipoDoc": (
+                        clean_text(
+                            row.get(
+                                "cus_POClasedeDocumento",
+                                "",
+                            )
+                        )
+                        or "*"
+                    ),
+                    "PurchaseGroup": clean_text(
+                        row.get("PurchaseGroup", "")
+                    ),
+                    "Desde": clean_text(
+                        row.get("TotalCost Bajo", "")
+                    ),
+                    "Hasta": clean_text(
+                        row.get("TotalCost Alto", "")
+                    ),
+                    "Persona actual": current,
+                }
+            )
+
+    return pd.DataFrame(records)
 
 
 def flow_to_level_frames(
@@ -1914,20 +2068,34 @@ def render_global_replacement(
     )
 
     occurrences = occurrences_of_person(flow, old_user)
+    special_occurrences = special_occurrences_of_person(
+        data,
+        old_user,
+    )
 
-    if occurrences.empty:
+    if occurrences.empty and special_occurrences.empty:
         st.warning("La persona seleccionada no tiene apariciones en la base.")
         return
 
-    affected_cecos = int(occurrences["CECO"].nunique())
-    affected_rows = int(occurrences["_ID_FILA"].nunique())
+    affected_cecos = (
+        int(occurrences["CECO"].nunique())
+        if not occurrences.empty
+        else 0
+    )
+    affected_rows = (
+        int(occurrences["_ID_FILA"].nunique())
+        if not occurrences.empty
+        else 0
+    )
     affected_positions = int(len(occurrences))
+    affected_special = int(len(special_occurrences))
 
-    metric_cols = st.columns(3)
+    metric_cols = st.columns(4)
     metrics = [
         ("CECO donde participa", affected_cecos),
-        ("Filas afectadas", affected_rows),
-        ("Apariciones", affected_positions),
+        ("Filas CECO", affected_rows),
+        ("Posiciones CECO", affected_positions),
+        ("Reglas sin CECO", affected_special),
     ]
 
     for column, (label, value) in zip(metric_cols, metrics):
@@ -1953,21 +2121,35 @@ def render_global_replacement(
         ),
     )
 
-    occurrence_view = occurrences[
-        [
-            "CECO",
-            "Planta",
-            "Desde",
-            "Hasta",
-            "TipoDoc",
-            "Campo",
-            "ValorAntes",
-        ]
-    ].rename(
-        columns={
-            "Campo": "Posición",
-            "ValorAntes": "Persona actual",
-        }
+    occurrence_view = (
+        occurrences[
+            [
+                "CECO",
+                "Planta",
+                "Desde",
+                "Hasta",
+                "TipoDoc",
+                "Campo",
+                "ValorAntes",
+            ]
+        ].rename(
+            columns={
+                "Campo": "Posición",
+                "ValorAntes": "Persona actual",
+            }
+        )
+        if not occurrences.empty
+        else pd.DataFrame(
+            columns=[
+                "CECO",
+                "Planta",
+                "Desde",
+                "Hasta",
+                "TipoDoc",
+                "Posición",
+                "Persona actual",
+            ]
+        )
     )
 
     def style_occurrence_row(row: pd.Series) -> list[str]:
@@ -1991,12 +2173,35 @@ def render_global_replacement(
         )
     )
 
-    st.dataframe(
-        styled_occurrences,
-        use_container_width=True,
-        hide_index=True,
-        height=min(600, max(260, 36 * (len(occurrence_view) + 2))),
-    )
+    if not occurrence_view.empty:
+        st.dataframe(
+            styled_occurrences,
+            use_container_width=True,
+            hide_index=True,
+            height=min(
+                600,
+                max(260, 36 * (len(occurrence_view) + 2)),
+            ),
+        )
+
+    if not special_occurrences.empty:
+        st.markdown("#### Reglas especiales sin CECO explícito")
+        st.warning(
+            "Estas filas no aparecen en el flujo consolidado por CECO, "
+            "pero también serán actualizadas por el reemplazo global."
+        )
+        st.dataframe(
+            special_occurrences.style.apply(
+                lambda row: [
+                    "background-color:#FEF3C7;"
+                    "color:#92400E;"
+                    "font-weight:700;"
+                ] * len(row),
+                axis=1,
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
 
     question(
         4,
@@ -2062,8 +2267,9 @@ def render_global_replacement(
         st.info(
             f"Se reemplazará **{display_user(old_user, data)}** por "
             f"**{display_user(new_user, data)}** en "
-            f"**{affected_cecos} CECO**, **{affected_rows} filas** "
-            f"y **{affected_positions} posiciones**."
+            f"**{affected_cecos} CECO**, **{affected_rows} filas CECO**, "
+            f"**{affected_positions} posiciones** y "
+            f"**{affected_special} reglas especiales sin CECO**."
         )
 
     confirmation = st.checkbox(
@@ -2093,7 +2299,7 @@ def render_global_replacement(
         )
 
     apply_clicked = st.button(
-        "🔁 Aplicar reemplazo global y preparar 5 archivos",
+        "🔁 Aplicar reemplazo global y preparar 8 archivos",
         type="primary",
         use_container_width=True,
         disabled=not global_ready,
@@ -2143,6 +2349,24 @@ def render_global_replacement(
                     }
                 )
 
+        current_data = st.session_state.get(
+            SESSION_DATA_KEY,
+            data,
+        )
+        if isinstance(current_data, dict):
+            updated_data, special_changes = (
+                replace_user_in_special_rules(
+                    current_data,
+                    old_user,
+                    replacement,
+                    actor,
+                    reason,
+                    timestamp,
+                )
+            )
+            st.session_state[SESSION_DATA_KEY] = updated_data
+            changes.extend(special_changes)
+
         set_working_flow(updated)
 
         history = list(st.session_state.get(SESSION_HISTORY_KEY, []))
@@ -2153,7 +2377,8 @@ def render_global_replacement(
             refresh_download(file_name, file_bytes)
             st.success(
                 f"Reemplazo global completado: "
-                f"**{len(changes)} apariciones** actualizadas "
+                f"**{len(changes)} apariciones** actualizadas, "
+                f"incluidas **{affected_special} reglas sin CECO**, "
                 f"en **{affected_cecos} CECO**."
             )
             st.toast("Reemplazo global guardado.", icon="✅")
@@ -3518,7 +3743,7 @@ def render_wizard(
         )
 
     save_clicked = st.button(
-        "💾 Guardar cambios y preparar Excel",
+        "💾 Guardar cambios y preparar ZIP",
         type="primary",
         use_container_width=True,
         disabled=(
@@ -3625,6 +3850,29 @@ def render_wizard(
                             ),
                         }
                     )
+
+        if (
+            propagate
+            and draft.get("replaced_from")
+            and draft.get("replaced_to")
+        ):
+            current_data = st.session_state.get(
+                SESSION_DATA_KEY,
+                data,
+            )
+            if isinstance(current_data, dict):
+                updated_data, special_changes = (
+                    replace_user_in_special_rules(
+                        current_data,
+                        draft["replaced_from"],
+                        draft["replaced_to"],
+                        actor,
+                        reason,
+                        timestamp,
+                    )
+                )
+                st.session_state[SESSION_DATA_KEY] = updated_data
+                changes.extend(special_changes)
 
         set_working_flow(updated)
 
