@@ -710,13 +710,13 @@ def render_header() -> None:
     mostrar_logo()
 
     st.markdown(
-        '<div class="fl-title">01 Cargar Archivos</div>',
+        '<div class="fl-title">01 Cargar Liberadores</div>',
         unsafe_allow_html=True,
     )
     st.markdown(
         """
         <div class="fl-subtitle">
-            Carga los cinco niveles oficiales de liberación.
+            Selecciona una versión completa de cinco archivos.
         </div>
         """,
         unsafe_allow_html=True,
@@ -745,29 +745,80 @@ def render_format_help() -> None:
     )
 
 
-def render_uploaders() -> dict[int, Any]:
+def detect_level_from_filename(name: str) -> int | None:
+    """Detecta el nivel 1–5 a partir del nombre del archivo."""
+    text = Path(name).stem.casefold()
+
+    patterns = [
+        r"liberador[_\-\s]*(\d)",
+        r"nivel[_\-\s]*(\d)",
+        r"lib[_\-\s]*(\d)",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            level = int(match.group(1))
+            return level if level in LEVELS else None
+
+    isolated = re.findall(r"(?<!\d)([1-5])(?!\d)", text)
+    if len(isolated) == 1:
+        return int(isolated[0])
+
+    return None
+
+
+def render_uploader() -> dict[int, Any]:
+    """Muestra un solo cargador y ordena los archivos por nivel."""
+    selected_files = st.file_uploader(
+        "Seleccionar los cinco archivos",
+        type=["csv", "parquet", "pq", "xlsx", "xls", "xlsm"],
+        accept_multiple_files=True,
+        key="liberadores_uploader_multiple_v04",
+        label_visibility="collapsed",
+        help=(
+            "Selecciona juntos los archivos Liberador 1, 2, 3, 4 y 5. "
+            "El nivel se identifica desde el nombre del archivo."
+        ),
+    )
+
+    if not selected_files:
+        return {}
+
+    if len(selected_files) > 5:
+        st.error("Selecciona exactamente cinco archivos.")
+        return {}
+
     uploaded: dict[int, Any] = {}
+    unresolved: list[str] = []
+    duplicated_levels: list[int] = []
 
-    columns = st.columns(5)
+    for uploaded_file in selected_files:
+        level = detect_level_from_filename(uploaded_file.name)
 
-    for level, column in zip(LEVELS, columns):
-        with column:
-            st.markdown(
-                f"""
-                <div class="level-card">
-                    <b>Liberador {level}</b><br>
-                    <small>CSV · Parquet · Excel</small>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            uploaded[level] = st.file_uploader(
-                f"Archivo Liberador {level}",
-                type=["csv", "parquet", "pq", "xlsx", "xls", "xlsm"],
-                accept_multiple_files=False,
-                key=f"liberador_uploader_v03_{level}",
-                label_visibility="collapsed",
-            )
+        if level is None:
+            unresolved.append(uploaded_file.name)
+            continue
+
+        if level in uploaded:
+            duplicated_levels.append(level)
+            continue
+
+        uploaded[level] = uploaded_file
+
+    if unresolved:
+        st.error(
+            "No pude identificar el nivel de: "
+            + ", ".join(unresolved)
+            + ". Usa nombres que incluyan 'Liberador 1' hasta 'Liberador 5'."
+        )
+
+    if duplicated_levels:
+        levels = ", ".join(str(level) for level in sorted(set(duplicated_levels)))
+        st.error(f"Hay archivos duplicados para Liberador {levels}.")
+
+    if unresolved or duplicated_levels:
+        return {}
 
     return uploaded
 
@@ -896,80 +947,84 @@ def main() -> None:
     render_header()
 
     st.markdown(
-        '<div class="fl-section-title">1. Seleccionar los cinco archivos</div>',
+        '<div class="fl-section-title">Cargar versión de liberadores</div>',
         unsafe_allow_html=True,
     )
     st.markdown(
         """
         <div class="fl-help">
-            Los cinco niveles son obligatorios y forman una única versión.
-            No se acepta el formato maestro antiguo.
+            Selecciona juntos los cinco archivos: Liberador 1, 2, 3, 4 y 5.
+            Se aceptan CSV, Parquet y Excel.
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    render_format_help()
-    uploaded_files = render_uploaders()
+    uploaded_files = render_uploader()
 
-    all_present = all(uploaded_files[level] is not None for level in LEVELS)
+    # Antes de cargar los cinco archivos no se muestra ningún elemento adicional.
+    if not uploaded_files:
+        st.info(
+            "Los nombres deben permitir identificar cada nivel, por ejemplo: "
+            "Liberador_1.xlsx, Liberador_2.csv, ..., Liberador_5.parquet."
+        )
+        return
 
-    if any(uploaded_files.values()) and not all_present:
-        missing = [
-            str(level)
-            for level in LEVELS
-            if uploaded_files[level] is None
-        ]
+    missing = [level for level in LEVELS if level not in uploaded_files]
+
+    if missing:
         st.warning(
-            "Faltan archivos: Liberador " + ", ".join(missing) + "."
+            "Faltan archivos: "
+            + ", ".join(f"Liberador {level}" for level in missing)
+            + "."
         )
+        return
 
-    if all_present:
-        signature = files_signature(uploaded_files)
+    if len(uploaded_files) != 5:
+        st.warning("Debes seleccionar exactamente cinco archivos.")
+        return
 
-        needs_load = (
-            st.session_state.get(SESSION_SIGNATURE_KEY) != signature
-            or SESSION_DATA_KEY not in st.session_state
-        )
+    signature = files_signature(uploaded_files)
 
-        if needs_load:
-            try:
-                with st.spinner(
-                    "Leyendo, validando y consolidando los cinco archivos..."
-                ):
-                    data, source_bytes, validation = load_five_files(
-                        uploaded_files
-                    )
-
-                names = {
-                    level: uploaded_files[level].name
-                    for level in LEVELS
-                }
-
-                st.session_state[SESSION_DATA_KEY] = data
-                st.session_state[SESSION_FILE_KEY] = names
-                st.session_state[SESSION_SOURCE_FILES_KEY] = source_bytes
-                st.session_state[SESSION_FILE_BYTES_KEY] = source_bytes
-                st.session_state[SESSION_SIGNATURE_KEY] = signature
-                st.session_state[SESSION_VALIDATION_KEY] = validation
-                st.session_state.pop(SESSION_CASE_KEY, None)
-
-                st.toast(
-                    "Cinco archivos cargados correctamente.",
-                    icon="✅",
-                )
-                st.rerun()
-
-            except ValueError as error:
-                clear_active_files()
-                st.error(str(error))
-
-    st.markdown("---")
-    st.markdown(
-        '<div class="fl-section-title">2. Versión activa</div>',
-        unsafe_allow_html=True,
+    needs_load = (
+        st.session_state.get(SESSION_SIGNATURE_KEY) != signature
+        or SESSION_DATA_KEY not in st.session_state
     )
 
+    if needs_load:
+        try:
+            with st.spinner(
+                "Leyendo, validando y consolidando los cinco archivos..."
+            ):
+                data, source_bytes, validation = load_five_files(
+                    uploaded_files
+                )
+
+            names = {
+                level: uploaded_files[level].name
+                for level in LEVELS
+            }
+
+            st.session_state[SESSION_DATA_KEY] = data
+            st.session_state[SESSION_FILE_KEY] = names
+            st.session_state[SESSION_SOURCE_FILES_KEY] = source_bytes
+            st.session_state[SESSION_FILE_BYTES_KEY] = source_bytes
+            st.session_state[SESSION_SIGNATURE_KEY] = signature
+            st.session_state[SESSION_VALIDATION_KEY] = validation
+            st.session_state.pop(SESSION_CASE_KEY, None)
+
+            st.toast(
+                "Cinco archivos cargados correctamente.",
+                icon="✅",
+            )
+            st.rerun()
+
+        except ValueError as error:
+            clear_active_files()
+            st.error(str(error))
+            return
+
+    # Solo después de una carga válida aparecen los demás elementos.
     render_active_state()
 
 
