@@ -6,3 +6,4 @@ openpyxl
 xlrd>=2.0.1
 numpy
 matplotlib
+pyarrow>=16.0.0
