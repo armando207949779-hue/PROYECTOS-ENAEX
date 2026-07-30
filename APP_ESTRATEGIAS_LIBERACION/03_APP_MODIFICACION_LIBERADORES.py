@@ -1517,7 +1517,10 @@ def archive_filename(
         level = int(role.rsplit("_", 1)[-1])
         stem = f"Liberador_{level}_Compra_Directa_ENAEX"
 
-    return f"{stem}_{modification_timestamp}{extension}"
+    return (
+        f"{stem}_MODIFICADO_"
+        f"{modification_timestamp}{extension}"
+    )
 
 
 def build_seven_files_archive(
@@ -1606,12 +1609,32 @@ def build_seven_files_archive(
             columns=changes_columns,
         )
         archive.writestr(
-            f"Cambios_{timestamp}.csv",
+            f"Cambios_MODIFICACION_{timestamp}.csv",
             dataframe_to_csv_bytes(changes_dataframe),
         )
 
+    zip_bytes = zip_output.getvalue()
+
+    # Garantiza la entrega contractual:
+    # 5 liberadores + 2 diccionarios + 1 CSV de cambios.
+    with zipfile.ZipFile(BytesIO(zip_bytes), mode="r") as validation_zip:
+        archive_names = validation_zip.namelist()
+
+    if len(archive_names) != 8:
+        raise ValueError(
+            "La exportación no generó los ocho archivos esperados."
+        )
+
+    expected_change_name = (
+        f"Cambios_MODIFICACION_{timestamp}.csv"
+    )
+    if expected_change_name not in archive_names:
+        raise ValueError(
+            "No se generó correctamente el archivo CSV de cambios."
+        )
+
     return (
-        zip_output.getvalue(),
+        zip_bytes,
         updated_frames,
         updated_cecos,
         updated_users,
@@ -1623,6 +1646,7 @@ def download_name_for_format(
     modification_timestamp: str,
 ) -> str:
     return (
+        f"VERSION_MODIFICADA_"
         f"LIBERADORES_Y_DICCIONARIOS_"
         f"{export_format.upper()}_"
         f"{modification_timestamp}.zip"
@@ -3538,9 +3562,9 @@ def render_wizard(
         st.markdown("---")
         st.subheader("Descargar versión actualizada")
         st.caption(
-            "El ZIP contiene los siete archivos sincronizados, "
-            "con fecha de modificación de Santiago en sus nombres, "
-            "más un archivo CSV de cambios."
+            "El ZIP contiene exactamente ocho archivos: cinco liberadores, "
+            "dos diccionarios actualizados y un CSV de cambios. "
+            "Todos usan la misma fecha y hora de Santiago."
         )
 
         available_formats: list[str] = []
@@ -3573,7 +3597,7 @@ def render_wizard(
             download_name = csv_name
 
         st.download_button(
-            "⬇️ Descargar ZIP actualizado",
+            "⬇️ Descargar ZIP con 8 archivos",
             data=download_data,
             file_name=download_name,
             mime="application/zip",
@@ -3649,8 +3673,8 @@ def render_wizard(
 
 def render_no_file() -> None:
     st.warning(
-        "No hay una versión activa. Primero carga los cinco archivos desde "
-        "**01 Cargar Liberadores**."
+        "No hay una versión activa. Primero carga los siete archivos desde "
+        "**01 Cargar Versión**."
     )
 
     try:
