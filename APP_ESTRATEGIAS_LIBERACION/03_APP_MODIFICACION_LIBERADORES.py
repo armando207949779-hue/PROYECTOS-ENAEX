@@ -7,9 +7,9 @@
 # → validación → vista previa → impacto global opcional
 # → auditoría → Excel profesional.
 #
-# Fuente vigente: siete archivos independientes.
-# La pantalla actualiza los cinco liberadores y sincroniza
-# los diccionarios CECO-Plantas y Usuarios-Cargos.
+# Fuente vigente: cinco archivos Liberador 1–5.
+# La pantalla trabaja con un flujo interno consolidado y exporta
+# nuevamente los cinco archivos, preservando reglas especiales.
 # ============================================================
 
 from __future__ import annotations
@@ -57,7 +57,7 @@ LOGO_CANDIDATES = [
 SESSION_DATA_KEY = "flujo_liberacion_data"
 SESSION_FILE_KEY = "flujo_liberacion_file_name"
 SESSION_FILE_BYTES_KEY = "flujo_liberacion_file_bytes"
-SESSION_SOURCE_FILES_KEY = "flujo_liberacion_source_files_v03"
+SESSION_SOURCE_FILES_KEY = "flujo_liberacion_source_files_v05"
 
 SESSION_WORKING_KEY = "mod_liberadores_working_df_v04"
 SESSION_BACKUP_KEY = "mod_liberadores_backup_df_v04"
@@ -66,10 +66,10 @@ SESSION_DRAFT_KEY = "mod_liberadores_draft_v04"
 SESSION_HISTORY_KEY = "mod_liberadores_history_v04"
 SESSION_DOWNLOAD_KEY = "mod_liberadores_download_v04"
 SESSION_DOWNLOAD_NAME_KEY = "mod_liberadores_download_name_v04"
-SESSION_DOWNLOAD_PARQUET_KEY = "mod_liberadores_download_parquet_v01"
-SESSION_DOWNLOAD_CSV_KEY = "mod_liberadores_download_csv_v01"
-SESSION_DOWNLOAD_PARQUET_NAME_KEY = "mod_liberadores_download_parquet_name_v01"
-SESSION_DOWNLOAD_CSV_NAME_KEY = "mod_liberadores_download_csv_name_v01"
+SESSION_DOWNLOAD_PARQUET_KEY = "mod_liberadores_download_parquet_v02"
+SESSION_DOWNLOAD_CSV_KEY = "mod_liberadores_download_csv_v02"
+SESSION_DOWNLOAD_PARQUET_NAME_KEY = "mod_liberadores_download_parquet_name_v02"
+SESSION_DOWNLOAD_CSV_NAME_KEY = "mod_liberadores_download_csv_name_v02"
 
 LIB_COLS = ["Lib1", "Lib2", "Lib3", "Lib4", "Lib5"]
 FLOW_COLUMNS = [
@@ -294,55 +294,6 @@ def aplicar_estilos() -> None:
                 border: 1px solid #E2E8F0;
                 border-radius: 12px;
                 overflow: hidden;
-            }
-
-            .tree-path {
-                display: flex;
-                flex-wrap: wrap;
-                align-items: center;
-                gap: 7px;
-                margin: 4px 0 18px;
-            }
-
-            .tree-node-done,
-            .tree-node-active,
-            .tree-node-pending {
-                border-radius: 999px;
-                padding: 6px 10px;
-                font-size: .78rem;
-                font-weight: 750;
-                border: 1px solid #D0D5DD;
-            }
-
-            .tree-node-done {
-                background: #ECFDF3;
-                color: #067647;
-                border-color: #ABEFC6;
-            }
-
-            .tree-node-active {
-                background: #EFF8FF;
-                color: #175CD3;
-                border-color: #84CAFF;
-            }
-
-            .tree-node-pending {
-                background: #F8FAFC;
-                color: #98A2B3;
-            }
-
-            .tree-arrow {
-                color: #98A2B3;
-                font-weight: 800;
-            }
-
-            .active-summary {
-                border: 1px solid #E2E8F0;
-                border-radius: 12px;
-                padding: 10px 13px;
-                background: #F8FAFC;
-                color: #475467;
-                margin-bottom: 14px;
             }
         </style>
         """,
@@ -826,10 +777,6 @@ def initialize_state(
         st.session_state[SESSION_HISTORY_KEY] = []
         st.session_state.pop(SESSION_DOWNLOAD_KEY, None)
         st.session_state.pop(SESSION_DOWNLOAD_NAME_KEY, None)
-        st.session_state.pop(SESSION_DOWNLOAD_PARQUET_KEY, None)
-        st.session_state.pop(SESSION_DOWNLOAD_CSV_KEY, None)
-        st.session_state.pop(SESSION_DOWNLOAD_PARQUET_NAME_KEY, None)
-        st.session_state.pop(SESSION_DOWNLOAD_CSV_NAME_KEY, None)
 
 
 def get_working_flow() -> pd.DataFrame:
@@ -1386,6 +1333,11 @@ def available_parquet_engine() -> str | None:
     return None
 
 
+def chile_modification_timestamp() -> str:
+    """Fecha y hora de modificación en Santiago, Chile."""
+    return datetime.now(CHILE_TZ).strftime("%Y-%m-%d_%H-%M-%S")
+
+
 def clean_export_frame(dataframe: pd.DataFrame) -> pd.DataFrame:
     return dataframe.drop(
         columns=[
@@ -1447,10 +1399,7 @@ def synchronize_user_dictionary(
 
     return (
         result[result["Correo"].map(strip_user).ne("")]
-        .drop_duplicates(
-            subset=["Correo"],
-            keep="last",
-        )
+        .drop_duplicates("Correo", keep="last")
         .sort_values(
             "Correo",
             key=lambda values: values.astype(str).str.casefold(),
@@ -1539,6 +1488,7 @@ def dataframe_to_csv_bytes(dataframe: pd.DataFrame) -> bytes:
 
 def dataframe_to_parquet_bytes(dataframe: pd.DataFrame) -> bytes:
     engine = available_parquet_engine()
+
     if engine is None:
         raise ValueError(
             "Para descargar en Parquet debes instalar `pyarrow` "
@@ -1552,11 +1502,6 @@ def dataframe_to_parquet_bytes(dataframe: pd.DataFrame) -> bytes:
         engine=engine,
     )
     return output.getvalue()
-
-
-def chile_modification_timestamp() -> str:
-    """Fecha y hora de modificación en zona horaria Santiago, Chile."""
-    return datetime.now(CHILE_TZ).strftime("%Y-%m-%d_%H-%M-%S")
 
 
 def archive_filename(
@@ -1630,11 +1575,11 @@ def build_seven_files_archive(
         compression=zipfile.ZIP_DEFLATED,
     ) as archive:
         for role, dataframe in logical_files.items():
-            if export_format == "parquet":
-                content = dataframe_to_parquet_bytes(dataframe)
-            else:
-                content = dataframe_to_csv_bytes(dataframe)
-
+            content = (
+                dataframe_to_parquet_bytes(dataframe)
+                if export_format == "parquet"
+                else dataframe_to_csv_bytes(dataframe)
+            )
             archive.writestr(
                 archive_filename(
                     role,
@@ -1675,15 +1620,12 @@ def build_seven_files_archive(
 
 def download_name_for_format(
     export_format: str,
-    modification_timestamp: str | None = None,
+    modification_timestamp: str,
 ) -> str:
-    timestamp = (
-        modification_timestamp
-        or chile_modification_timestamp()
-    )
     return (
         f"LIBERADORES_Y_DICCIONARIOS_"
-        f"{export_format.upper()}_{timestamp}.zip"
+        f"{export_format.upper()}_"
+        f"{modification_timestamp}.zip"
     )
 
 
@@ -1699,9 +1641,8 @@ def refresh_download(
     history = list(
         st.session_state.get(SESSION_HISTORY_KEY, [])
     )
-    modification_timestamp = chile_modification_timestamp()
+    timestamp = chile_modification_timestamp()
 
-    # CSV siempre queda disponible.
     (
         csv_zip,
         updated_frames,
@@ -1712,7 +1653,7 @@ def refresh_download(
         flow=flow,
         history=history,
         export_format="csv",
-        modification_timestamp=modification_timestamp,
+        modification_timestamp=timestamp,
     )
 
     updated_data = dict(data)
@@ -1725,10 +1666,9 @@ def refresh_download(
     st.session_state[SESSION_DATA_KEY] = updated_data
     st.session_state[SESSION_DOWNLOAD_CSV_KEY] = csv_zip
     st.session_state[SESSION_DOWNLOAD_CSV_NAME_KEY] = (
-        download_name_for_format("csv", modification_timestamp)
+        download_name_for_format("csv", timestamp)
     )
 
-    # Parquet es el formato predeterminado.
     parquet_engine = available_parquet_engine()
     if parquet_engine is not None:
         parquet_zip, _, _, _ = build_seven_files_archive(
@@ -1736,21 +1676,20 @@ def refresh_download(
             flow=flow,
             history=history,
             export_format="parquet",
-            modification_timestamp=modification_timestamp,
+            modification_timestamp=timestamp,
         )
-        st.session_state[
-            SESSION_DOWNLOAD_PARQUET_KEY
-        ] = parquet_zip
+        parquet_name = download_name_for_format(
+            "parquet",
+            timestamp,
+        )
+        st.session_state[SESSION_DOWNLOAD_PARQUET_KEY] = (
+            parquet_zip
+        )
         st.session_state[
             SESSION_DOWNLOAD_PARQUET_NAME_KEY
-        ] = download_name_for_format("parquet", modification_timestamp)
-
+        ] = parquet_name
         st.session_state[SESSION_DOWNLOAD_KEY] = parquet_zip
-        st.session_state[SESSION_DOWNLOAD_NAME_KEY] = (
-            st.session_state[
-                SESSION_DOWNLOAD_PARQUET_NAME_KEY
-            ]
-        )
+        st.session_state[SESSION_DOWNLOAD_NAME_KEY] = parquet_name
     else:
         st.session_state.pop(
             SESSION_DOWNLOAD_PARQUET_KEY,
@@ -2055,9 +1994,9 @@ def render_global_replacement(
 
     if generated and generated_name:
         st.markdown("---")
-        st.subheader("Descargar los siete archivos actualizados")
+        st.subheader("Descargar los cinco archivos actualizados")
         st.download_button(
-            "⬇️ Descargar ZIP con los 7 archivos",
+            "⬇️ Descargar ZIP con 5 Excel",
             data=generated,
             file_name=generated_name,
             mime=(
@@ -2660,7 +2599,7 @@ def render_ceco_user_replacement(
         st.subheader("Descargar versión modificada")
 
         st.download_button(
-            "⬇️ Descargar ZIP con los 7 archivos",
+            "⬇️ Descargar ZIP con 5 Excel",
             data=generated,
             file_name=generated_name,
             mime=(
@@ -2678,969 +2617,6 @@ def render_ceco_user_replacement(
         [],
     )
 
-    if history:
-        with st.expander(
-            f"Historial de esta sesión ({len(history)} cambios)",
-            expanded=False,
-        ):
-            st.dataframe(
-                pd.DataFrame(history),
-                use_container_width=True,
-                hide_index=True,
-            )
-
-
-
-# ============================================================
-# ASISTENTE GUIADO POR NODOS
-# ============================================================
-
-TREE_STAGE_KEY = "mod_tree_stage_v01"
-TREE_PAYLOAD_KEY = "mod_tree_payload_v01"
-
-TREE_STEPS = [
-    "Situación",
-    "Identificación",
-    "Alcance",
-    "Detalle",
-    "Acción",
-    "Revisión",
-]
-
-
-def tree_payload() -> dict[str, Any]:
-    value = st.session_state.get(TREE_PAYLOAD_KEY)
-    if not isinstance(value, dict):
-        value = {}
-        st.session_state[TREE_PAYLOAD_KEY] = value
-    return dict(value)
-
-
-def set_tree_payload(payload: dict[str, Any]) -> None:
-    st.session_state[TREE_PAYLOAD_KEY] = dict(payload)
-
-
-def tree_stage() -> int:
-    return int(st.session_state.get(TREE_STAGE_KEY, 1))
-
-
-def set_tree_stage(stage: int) -> None:
-    st.session_state[TREE_STAGE_KEY] = max(1, min(len(TREE_STEPS), int(stage)))
-
-
-def reset_tree() -> None:
-    st.session_state[TREE_STAGE_KEY] = 1
-    st.session_state[TREE_PAYLOAD_KEY] = {}
-    reset_draft()
-
-
-def render_tree_path(stage: int) -> None:
-    parts: list[str] = []
-
-    for index, label in enumerate(TREE_STEPS, start=1):
-        css = (
-            "tree-node-done"
-            if index < stage
-            else "tree-node-active"
-            if index == stage
-            else "tree-node-pending"
-        )
-        symbol = "✓" if index < stage else str(index)
-        parts.append(
-            f'<span class="{css}">{symbol} · {escape(label)}</span>'
-        )
-        if index < len(TREE_STEPS):
-            parts.append('<span class="tree-arrow">→</span>')
-
-    st.markdown(
-        '<div class="tree-path">' + "".join(parts) + "</div>",
-        unsafe_allow_html=True,
-    )
-
-
-def render_compact_active_summary(
-    flow: pd.DataFrame,
-    data: dict[str, Any],
-) -> None:
-    users = data.get("dic_users", pd.DataFrame())
-    cecos = data.get("dic_ceco", pd.DataFrame())
-
-    st.markdown(
-        compact_html(
-            f"""
-            <div class="active-summary">
-                <b>Versión lista para modificar</b> ·
-                {len(flow):,} reglas ·
-                {flow["CECO"].nunique():,} CECO ·
-                {len(users) if isinstance(users, pd.DataFrame) else 0:,} usuarios ·
-                {len(cecos) if isinstance(cecos, pd.DataFrame) else 0:,} registros CECO
-            </div>
-            """
-        ).replace(",", "."),
-        unsafe_allow_html=True,
-    )
-
-
-def render_tree_navigation(
-    *,
-    current_stage: int,
-    allow_next: bool,
-    next_label: str = "Continuar",
-) -> tuple[bool, bool]:
-    back_col, next_col = st.columns([1, 1.6])
-
-    with back_col:
-        back = st.button(
-            "← Volver",
-            use_container_width=True,
-            disabled=current_stage <= 1,
-            key=f"tree_back_{current_stage}",
-        )
-
-    with next_col:
-        next_clicked = st.button(
-            next_label,
-            type="primary",
-            use_container_width=True,
-            disabled=not allow_next,
-            key=f"tree_next_{current_stage}",
-        )
-
-    return back, next_clicked
-
-
-def apply_global_person_replacement(
-    flow: pd.DataFrame,
-    old_user: str,
-    new_user: str,
-    actor: str,
-    reason: str,
-) -> tuple[pd.DataFrame, list[dict[str, Any]]]:
-    updated = flow.copy(deep=True)
-    old_key = email_key(old_user)
-    replacement = strip_user(new_user)
-    timestamp = datetime.now(CHILE_TZ).strftime("%Y-%m-%d %H:%M:%S")
-    changes: list[dict[str, Any]] = []
-
-    for row_index, row in updated.iterrows():
-        for column in LIB_COLS:
-            current = strip_user(row[column])
-            if email_key(current) != old_key:
-                continue
-
-            updated.at[row_index, column] = replacement
-            changes.append({
-                "FechaHora": timestamp,
-                "Usuario": actor,
-                "CECO": row["CECO"],
-                "Desde": row["Desde"],
-                "Hasta": row["Hasta"],
-                "TipoDoc": row["TipoDoc"],
-                "Campo": column,
-                "ValorAntes": current,
-                "ValorDespues": replacement,
-                "Nota": reason,
-            })
-
-    return updated, changes
-
-
-def apply_scope_replacement(
-    flow: pd.DataFrame,
-    target_mask: pd.Series,
-    old_user: str,
-    new_user: str,
-    actor: str,
-    reason: str,
-) -> tuple[pd.DataFrame, list[dict[str, Any]]]:
-    updated = flow.copy(deep=True)
-    old_key = email_key(old_user)
-    replacement = strip_user(new_user)
-    timestamp = datetime.now(CHILE_TZ).strftime("%Y-%m-%d %H:%M:%S")
-    changes: list[dict[str, Any]] = []
-
-    for row_index, row in updated[target_mask].iterrows():
-        for column in LIB_COLS:
-            current = strip_user(row[column])
-            if email_key(current) != old_key:
-                continue
-
-            updated.at[row_index, column] = replacement
-            changes.append({
-                "FechaHora": timestamp,
-                "Usuario": actor,
-                "CECO": row["CECO"],
-                "Desde": row["Desde"],
-                "Hasta": row["Hasta"],
-                "TipoDoc": row["TipoDoc"],
-                "Campo": column,
-                "ValorAntes": current,
-                "ValorDespues": replacement,
-                "Nota": reason,
-            })
-
-    return updated, changes
-
-
-def render_generated_download() -> None:
-    parquet_zip = st.session_state.get(
-        SESSION_DOWNLOAD_PARQUET_KEY
-    )
-    parquet_name = st.session_state.get(
-        SESSION_DOWNLOAD_PARQUET_NAME_KEY
-    )
-    csv_zip = st.session_state.get(
-        SESSION_DOWNLOAD_CSV_KEY
-    )
-    csv_name = st.session_state.get(
-        SESSION_DOWNLOAD_CSV_NAME_KEY
-    )
-
-    if not parquet_zip and not csv_zip:
-        return
-
-    st.markdown("---")
-    st.subheader("Descargar versión actualizada")
-    st.caption(
-        "El ZIP contiene los siete archivos sincronizados y un CSV "
-        "adicional con el historial de cambios."
-    )
-
-    available_formats: list[str] = []
-    if parquet_zip and parquet_name:
-        available_formats.append("parquet")
-    if csv_zip and csv_name:
-        available_formats.append("csv")
-
-    default_index = (
-        available_formats.index("parquet")
-        if "parquet" in available_formats
-        else 0
-    )
-
-    selected_format = st.radio(
-        "Formato de los 7 archivos",
-        options=available_formats,
-        index=default_index,
-        format_func=lambda value: (
-            "Parquet — recomendado"
-            if value == "parquet"
-            else "CSV — separador punto y coma"
-        ),
-        key="tree_download_format_v02",
-    )
-
-    if selected_format == "parquet":
-        download_data = parquet_zip
-        download_name = parquet_name
-    else:
-        download_data = csv_zip
-        download_name = csv_name
-
-    st.download_button(
-        "⬇️ Descargar ZIP con los 7 archivos",
-        data=download_data,
-        file_name=download_name,
-        mime="application/zip",
-        type="primary",
-        use_container_width=True,
-        key=f"tree_download_{selected_format}_v02",
-    )
-
-    if "parquet" not in available_formats:
-        st.info(
-            "Parquet no está habilitado en este entorno. "
-            "Instala `pyarrow` para usarlo como formato predeterminado."
-        )
-
-
-
-def render_guided_wizard(
-    data: dict[str, Any],
-    file_name: Any,
-    file_bytes: Any,
-) -> None:
-    flow = get_working_flow()
-    payload = tree_payload()
-    stage = tree_stage()
-
-    render_compact_active_summary(flow, data)
-    render_tree_path(stage)
-
-    top_reset = st.button(
-        "Reiniciar asistente",
-        use_container_width=False,
-        key="tree_reset_top_v01",
-    )
-    if top_reset:
-        reset_tree()
-        st.rerun()
-
-    # --------------------------------------------------------
-    # 1. Situación
-    # --------------------------------------------------------
-    if stage == 1:
-        question(
-            1,
-            "¿Qué situación necesitas resolver?",
-            "Selecciona un escenario para abrir únicamente la siguiente pregunta.",
-        )
-
-        scenario_options = ["", *list(SCENARIO_LABEL)]
-        scenario = st.selectbox(
-            "Situación",
-            options=scenario_options,
-            format_func=lambda value: (
-                "Selecciona una opción"
-                if value == ""
-                else SCENARIO_LABEL[value]
-            ),
-            key="tree_scenario_v01",
-        )
-
-        if scenario:
-            st.caption(SCENARIO_HELP[scenario])
-
-        _, next_clicked = render_tree_navigation(
-            current_stage=stage,
-            allow_next=bool(scenario),
-        )
-        if next_clicked:
-            payload["scenario"] = scenario
-            set_tree_payload(payload)
-            set_tree_stage(2)
-            st.rerun()
-        return
-
-    scenario = payload.get("scenario", "")
-    st.caption(f"Ruta seleccionada: {SCENARIO_LABEL.get(scenario, scenario)}")
-
-    # --------------------------------------------------------
-    # 2. Identificación
-    # --------------------------------------------------------
-    if stage == 2:
-        question(
-            2,
-            "¿Quién realiza el cambio y por qué?",
-            "Estos datos quedarán registrados en la auditoría.",
-        )
-
-        actor = st.text_input(
-            "Quién modifica",
-            value=payload.get("actor", ""),
-            placeholder="nombre.apellido",
-            key="tree_actor_v01",
-        )
-        reason = st.text_area(
-            "Motivo",
-            value=payload.get("reason", ""),
-            placeholder="Describe brevemente el motivo del cambio.",
-            key="tree_reason_v01",
-            height=100,
-        )
-
-        back, next_clicked = render_tree_navigation(
-            current_stage=stage,
-            allow_next=bool(clean_text(actor) and clean_text(reason)),
-        )
-        if back:
-            set_tree_stage(1)
-            st.rerun()
-        if next_clicked:
-            payload.update({
-                "actor": clean_text(actor),
-                "reason": clean_text(reason),
-            })
-            set_tree_payload(payload)
-            set_tree_stage(3)
-            st.rerun()
-        return
-
-    actor = clean_text(payload.get("actor", ""))
-    reason = clean_text(payload.get("reason", ""))
-
-    # --------------------------------------------------------
-    # 3. Alcance
-    # --------------------------------------------------------
-    if stage == 3:
-        question(
-            3,
-            "¿Cuál es el alcance del cambio?",
-            "La respuesta depende del escenario seleccionado.",
-        )
-
-        if scenario == "salida":
-            users = unique_users(flow)
-            old_user = st.selectbox(
-                "Persona que sale",
-                options=["", *users],
-                format_func=lambda value: (
-                    "Selecciona una persona"
-                    if value == ""
-                    else display_user(value, data)
-                ),
-                key="tree_global_old_v01",
-            )
-            allow = bool(old_user)
-            payload_update = {"old_user": old_user}
-        else:
-            ceco_map = (
-                flow[["CECO", "Planta"]]
-                .drop_duplicates()
-                .sort_values(["CECO", "Planta"], kind="stable")
-                .groupby("CECO", as_index=False)
-                .first()
-            )
-            plant_by_ceco = dict(zip(ceco_map["CECO"], ceco_map["Planta"]))
-            selected_ceco = st.selectbox(
-                "CECO",
-                options=["", *ceco_map["CECO"].tolist()],
-                format_func=lambda value: (
-                    "Selecciona un CECO"
-                    if value == ""
-                    else (
-                        f"{value} | {plant_by_ceco.get(value, '')}"
-                        if plant_by_ceco.get(value, "")
-                        else value
-                    )
-                ),
-                key="tree_ceco_v01",
-            )
-
-            include_twin = False
-            twin_records = (
-                find_twin_cecos(flow, selected_ceco)
-                if selected_ceco
-                else []
-            )
-            if twin_records:
-                include_twin = st.checkbox(
-                    "Incluir CECO gemelo EMTS",
-                    value=False,
-                    key="tree_include_twin_v01",
-                )
-
-            target_cecos = [selected_ceco] if selected_ceco else []
-            if include_twin:
-                target_cecos.extend(
-                    item["ceco"] for item in twin_records
-                )
-
-            allow = bool(selected_ceco)
-            payload_update = {
-                "ceco": selected_ceco,
-                "target_cecos": target_cecos,
-            }
-
-        back, next_clicked = render_tree_navigation(
-            current_stage=stage,
-            allow_next=allow,
-        )
-        if back:
-            set_tree_stage(2)
-            st.rerun()
-        if next_clicked:
-            payload.update(payload_update)
-            set_tree_payload(payload)
-            set_tree_stage(4)
-            st.rerun()
-        return
-
-    # --------------------------------------------------------
-    # 4. Detalle
-    # --------------------------------------------------------
-    if stage == 4:
-        question(
-            4,
-            "¿Qué detalle debe aplicarse?",
-            "Define la persona, el tipo de documento o el rango según corresponda.",
-        )
-
-        if scenario == "salida":
-            old_user = payload["old_user"]
-            candidates = [
-                user for user in unique_users(flow)
-                if email_key(user) != email_key(old_user)
-            ]
-            replacement_source = st.radio(
-                "Nueva persona",
-                options=["existing", "new"],
-                format_func=lambda value: (
-                    "Seleccionar usuario existente"
-                    if value == "existing"
-                    else "Escribir correo nuevo"
-                ),
-                horizontal=True,
-                key="tree_global_source_v01",
-            )
-            if replacement_source == "existing":
-                new_user = st.selectbox(
-                    "Reemplazo",
-                    options=["", *candidates],
-                    format_func=lambda value: (
-                        "Selecciona una persona"
-                        if value == ""
-                        else display_user(value, data)
-                    ),
-                    key="tree_global_new_existing_v01",
-                )
-            else:
-                new_user = strip_user(
-                    st.text_input(
-                        "Correo nuevo",
-                        placeholder="nombre.apellido@enaex.com",
-                        key="tree_global_new_email_v01",
-                    )
-                )
-            allow = bool(new_user and is_valid_email(new_user))
-            payload_update = {"new_user": new_user}
-
-        elif scenario == "reemplazo_ceco":
-            target_cecos = payload.get("target_cecos", [])
-            scope = flow[flow["CECO"].isin(target_cecos)]
-            docs_available = [
-                doc for doc in ["AZNB", "AZSR"]
-                if not scope[scope["TipoDoc"].eq(doc)].empty
-            ]
-            doc_scope = st.selectbox(
-                "Tipo de documento",
-                options=["", *docs_available, "AMBOS"]
-                if len(docs_available) == 2
-                else ["", *docs_available],
-                format_func=lambda value: (
-                    "Selecciona un tipo"
-                    if value == ""
-                    else DOC_LABEL[value]
-                ),
-                key="tree_ceco_doc_v01",
-            )
-            target_docs = (
-                ["AZNB", "AZSR"]
-                if doc_scope == "AMBOS"
-                else [doc_scope] if doc_scope else []
-            )
-            scope = scope[scope["TipoDoc"].isin(target_docs)]
-            scope_users = unique_users(scope) if not scope.empty else []
-            old_user = st.selectbox(
-                "Persona actual",
-                options=["", *scope_users],
-                format_func=lambda value: (
-                    "Selecciona una persona"
-                    if value == ""
-                    else display_user(value, data)
-                ),
-                key="tree_ceco_old_v01",
-            )
-            new_user = strip_user(
-                st.text_input(
-                    "Nueva persona",
-                    placeholder="nombre.apellido@enaex.com",
-                    key="tree_ceco_new_v01",
-                )
-            )
-            allow = bool(
-                target_docs
-                and old_user
-                and new_user
-                and is_valid_email(new_user)
-            )
-            payload_update = {
-                "target_docs": target_docs,
-                "old_user": old_user,
-                "new_user": new_user,
-            }
-
-        else:
-            selected_ceco = payload["ceco"]
-            primary_rows = flow[flow["CECO"].eq(selected_ceco)]
-            docs_available = [
-                doc for doc in ["AZNB", "AZSR"]
-                if not primary_rows[primary_rows["TipoDoc"].eq(doc)].empty
-            ]
-            doc_scope = st.selectbox(
-                "Tipo de documento",
-                options=["", *docs_available, "AMBOS"]
-                if len(docs_available) == 2
-                else ["", *docs_available],
-                format_func=lambda value: (
-                    "Selecciona un tipo"
-                    if value == ""
-                    else DOC_LABEL[value]
-                ),
-                key="tree_generic_doc_v01",
-            )
-            target_docs = (
-                ["AZNB", "AZSR"]
-                if doc_scope == "AMBOS"
-                else [doc_scope] if doc_scope else []
-            )
-
-            ranges = primary_rows[
-                primary_rows["TipoDoc"].isin(target_docs)
-            ].copy()
-            if not ranges.empty:
-                ranges["_LOW"] = ranges["Desde"].map(
-                    lambda value: parse_bound(value, low=True)
-                )
-                ranges["_HIGH"] = ranges["Hasta"].map(
-                    lambda value: parse_bound(value, low=False)
-                )
-                range_options = (
-                    ranges[["_LOW", "_HIGH", "Desde", "Hasta"]]
-                    .drop_duplicates(["_LOW", "_HIGH"])
-                    .sort_values(["_LOW", "_HIGH"])
-                    .reset_index(drop=True)
-                )
-            else:
-                range_options = pd.DataFrame()
-
-            range_index = st.selectbox(
-                "Rango",
-                options=["", *range_options.index.tolist()],
-                format_func=lambda index: (
-                    "Selecciona un rango"
-                    if index == ""
-                    else (
-                        f"{fmt_bound(range_options.loc[index, 'Desde'])} – "
-                        f"{fmt_bound(range_options.loc[index, 'Hasta'])}"
-                    )
-                ),
-                key="tree_range_v01",
-            )
-
-            allow = bool(target_docs and range_index != "")
-            payload_update = {
-                "target_docs": target_docs,
-                "range_from": (
-                    range_options.loc[range_index, "Desde"]
-                    if range_index != ""
-                    else None
-                ),
-                "range_until": (
-                    range_options.loc[range_index, "Hasta"]
-                    if range_index != ""
-                    else None
-                ),
-            }
-
-        back, next_clicked = render_tree_navigation(
-            current_stage=stage,
-            allow_next=allow,
-        )
-        if back:
-            set_tree_stage(3)
-            st.rerun()
-        if next_clicked:
-            payload.update(payload_update)
-            set_tree_payload(payload)
-            set_tree_stage(5)
-            st.rerun()
-        return
-
-    # --------------------------------------------------------
-    # 5. Acción
-    # --------------------------------------------------------
-    if stage == 5:
-        question(
-            5,
-            "¿Qué acción se aplicará?",
-            "Solo se muestran las opciones compatibles con el escenario.",
-        )
-
-        if scenario in {"salida", "reemplazo_ceco"}:
-            st.info(
-                f"Se reemplazará **{display_user(payload['old_user'], data)}** "
-                f"por **{display_user(payload['new_user'], data)}**."
-            )
-            action_result = {
-                "action": "reemplazar",
-                "libs_after": [],
-            }
-            allow = True
-        else:
-            target_cecos = payload.get("target_cecos", [])
-            target_docs = payload.get("target_docs", [])
-            selected_from = payload.get("range_from")
-            selected_until = payload.get("range_until")
-
-            target_rows = flow[
-                flow["CECO"].isin(target_cecos)
-                & flow["TipoDoc"].isin(target_docs)
-                & same_range_mask(flow, selected_from, selected_until)
-            ].copy()
-
-            if target_rows.empty:
-                st.error("No existen filas para el alcance seleccionado.")
-                return
-
-            base_row = target_rows.iloc[0]
-            libs = libs_from_row(base_row)
-
-            scenario_actions = {
-                "ajuste": ["mover", "reemplazar", "eliminar", "agregar"],
-                "temporal": ["reemplazar"],
-                "orden": ["mover"],
-                "dotacion": ["agregar", "eliminar"],
-            }
-            allowed_actions = scenario_actions.get(
-                scenario,
-                ["mover", "reemplazar", "eliminar", "agregar"],
-            )
-
-            action = st.selectbox(
-                "Acción",
-                options=["", *allowed_actions],
-                format_func=lambda value: (
-                    "Selecciona una acción"
-                    if value == ""
-                    else ACTION_LABEL[value]
-                ),
-                key="tree_action_v01",
-            )
-
-            selected_piece = None
-            if action in {"mover", "reemplazar", "eliminar"}:
-                selected_piece = st.selectbox(
-                    "Liberador actual",
-                    options=list(range(len(libs))),
-                    format_func=lambda index: (
-                        f"Liberador {index + 1}: "
-                        f"{display_user(libs[index], data)}"
-                    ),
-                    key="tree_piece_v01",
-                )
-
-            destination = None
-            new_value = ""
-
-            if action == "mover":
-                destination = st.selectbox(
-                    "Nueva posición",
-                    options=list(range(len(libs))),
-                    format_func=lambda index: f"Liberador {index + 1}",
-                    key="tree_destination_v01",
-                )
-            elif action in {"reemplazar", "agregar"}:
-                new_value = strip_user(
-                    st.text_input(
-                        "Nueva persona",
-                        placeholder="nombre.apellido@enaex.com",
-                        key="tree_new_value_v01",
-                    )
-                )
-
-            try:
-                if action:
-                    libs_after, message, replaced_from, replaced_to = apply_action(
-                        action,
-                        libs,
-                        selected_piece,
-                        destination,
-                        new_value,
-                    )
-                    validation_errors = validate_flow_result(libs_after)
-                    for error in validation_errors:
-                        st.error(error)
-                    allow = not validation_errors
-                    if allow:
-                        st.success(message)
-                    action_result = {
-                        "action": action,
-                        "target_row_ids": target_rows["_ID_FILA"].astype(int).tolist(),
-                        "libs_before": libs,
-                        "libs_after": libs_after,
-                        "replaced_from": replaced_from,
-                        "replaced_to": replaced_to,
-                    }
-                else:
-                    allow = False
-                    action_result = {}
-            except ValueError as error:
-                st.warning(str(error))
-                allow = False
-                action_result = {}
-
-        back, next_clicked = render_tree_navigation(
-            current_stage=stage,
-            allow_next=allow,
-            next_label="Revisar cambio",
-        )
-        if back:
-            set_tree_stage(4)
-            st.rerun()
-        if next_clicked:
-            payload.update(action_result)
-            set_tree_payload(payload)
-            set_tree_stage(6)
-            st.rerun()
-        return
-
-    # --------------------------------------------------------
-    # 6. Revisión y guardado
-    # --------------------------------------------------------
-    question(
-        6,
-        "Revisa y confirma el cambio",
-        "Esta es la última etapa antes de modificar la versión activa.",
-    )
-
-    st.markdown(
-        compact_html(
-            f"""
-            <div class="active-summary">
-                <b>Situación:</b> {escape(SCENARIO_LABEL.get(scenario, scenario))}<br>
-                <b>Responsable:</b> {escape(actor)}<br>
-                <b>Motivo:</b> {escape(reason)}
-            </div>
-            """
-        ),
-        unsafe_allow_html=True,
-    )
-
-    if scenario == "salida":
-        occurrences = occurrences_of_person(flow, payload["old_user"])
-        st.info(
-            f"Se actualizarán **{len(occurrences)} apariciones** en "
-            f"**{occurrences['CECO'].nunique() if not occurrences.empty else 0} CECO**."
-        )
-    elif scenario == "reemplazo_ceco":
-        scope_mask = (
-            flow["CECO"].isin(payload.get("target_cecos", []))
-            & flow["TipoDoc"].isin(payload.get("target_docs", []))
-        )
-        scope = flow[scope_mask]
-        st.info(
-            f"Alcance: **{len(scope)} filas** de "
-            f"**{scope['CECO'].nunique() if not scope.empty else 0} CECO**."
-        )
-    else:
-        st.markdown(
-            flow_html(
-                payload.get("libs_before", []),
-                data,
-                "ANTES",
-            ),
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            flow_html(
-                payload.get("libs_after", []),
-                data,
-                "DESPUÉS",
-            ),
-            unsafe_allow_html=True,
-        )
-
-    confirm = st.checkbox(
-        "Confirmo que revisé el alcance y deseo guardar.",
-        key="tree_confirm_save_v01",
-    )
-
-    back_col, save_col = st.columns([1, 1.6])
-    with back_col:
-        back = st.button(
-            "← Volver",
-            use_container_width=True,
-            key="tree_review_back_v01",
-        )
-    with save_col:
-        save_clicked = st.button(
-            "💾 Guardar y preparar descarga",
-            type="primary",
-            use_container_width=True,
-            disabled=not confirm,
-            key="tree_review_save_v01",
-        )
-
-    if back:
-        set_tree_stage(5)
-        st.rerun()
-
-    if save_clicked:
-        changes: list[dict[str, Any]] = []
-
-        if scenario == "salida":
-            updated, changes = apply_global_person_replacement(
-                flow,
-                payload["old_user"],
-                payload["new_user"],
-                actor,
-                reason,
-            )
-
-        elif scenario == "reemplazo_ceco":
-            scope_mask = (
-                flow["CECO"].isin(payload.get("target_cecos", []))
-                & flow["TipoDoc"].isin(payload.get("target_docs", []))
-            )
-            updated, changes = apply_scope_replacement(
-                flow,
-                scope_mask,
-                payload["old_user"],
-                payload["new_user"],
-                actor,
-                reason,
-            )
-
-        else:
-            updated = flow.copy(deep=True)
-            target_row_ids = [
-                int(value)
-                for value in payload.get("target_row_ids", [])
-            ]
-            selected_mask = updated["_ID_FILA"].isin(target_row_ids)
-            after_padded = libs_padded(payload.get("libs_after", []))
-            timestamp = datetime.now(CHILE_TZ).strftime(
-                "%Y-%m-%d %H:%M:%S"
-            )
-
-            for row_index, row in updated[selected_mask].iterrows():
-                before_padded = libs_padded(libs_from_row(row))
-                for column, old_value, new_value in zip(
-                    LIB_COLS,
-                    before_padded,
-                    after_padded,
-                ):
-                    if strip_user(old_value) == strip_user(new_value):
-                        continue
-                    updated.at[row_index, column] = strip_user(new_value)
-                    changes.append({
-                        "FechaHora": timestamp,
-                        "Usuario": actor,
-                        "CECO": row["CECO"],
-                        "Desde": row["Desde"],
-                        "Hasta": row["Hasta"],
-                        "TipoDoc": row["TipoDoc"],
-                        "Campo": column,
-                        "ValorAntes": strip_user(old_value) or "—",
-                        "ValorDespues": strip_user(new_value) or "—",
-                        "Nota": reason,
-                    })
-
-        if not changes:
-            st.warning("No se detectaron cambios para guardar.")
-        else:
-            set_working_flow(updated)
-            history = list(
-                st.session_state.get(SESSION_HISTORY_KEY, [])
-            )
-            history.extend(changes)
-            st.session_state[SESSION_HISTORY_KEY] = history
-
-            try:
-                refresh_download(file_name, file_bytes)
-                st.success(
-                    f"Cambio guardado correctamente: "
-                    f"**{len(changes)} actualización(es)**."
-                )
-                st.toast("Versión activa actualizada.", icon="✅")
-                render_generated_download()
-            except ValueError as error:
-                st.error(str(error))
-
-    render_generated_download()
-
-    history = st.session_state.get(SESSION_HISTORY_KEY, [])
     if history:
         with st.expander(
             f"Historial de esta sesión ({len(history)} cambios)",
@@ -4490,26 +3466,72 @@ def render_wizard(
     # --------------------------------------------------------
     # Descarga
     # --------------------------------------------------------
-    generated = st.session_state.get(SESSION_DOWNLOAD_KEY)
-    generated_name = st.session_state.get(SESSION_DOWNLOAD_NAME_KEY)
+    parquet_zip = st.session_state.get(
+        SESSION_DOWNLOAD_PARQUET_KEY
+    )
+    parquet_name = st.session_state.get(
+        SESSION_DOWNLOAD_PARQUET_NAME_KEY
+    )
+    csv_zip = st.session_state.get(
+        SESSION_DOWNLOAD_CSV_KEY
+    )
+    csv_name = st.session_state.get(
+        SESSION_DOWNLOAD_CSV_NAME_KEY
+    )
 
-    if generated and generated_name:
+    if parquet_zip or csv_zip:
         st.markdown("---")
-        st.subheader("Descargar los siete archivos actualizados")
-
-        st.download_button(
-            "⬇️ Descargar ZIP con los 7 archivos",
-            data=generated,
-            file_name=generated_name,
-            mime=(
-                "application/zip"
-            ),
-            type="primary",
-            use_container_width=True,
-            key="mod_download_v04",
+        st.subheader("Descargar versión actualizada")
+        st.caption(
+            "El ZIP contiene los siete archivos sincronizados, "
+            "con fecha de modificación de Santiago en sus nombres, "
+            "más un archivo CSV de cambios."
         )
 
-        st.caption(f"Archivo preparado: `{generated_name}`")
+        available_formats: list[str] = []
+        if parquet_zip and parquet_name:
+            available_formats.append("parquet")
+        if csv_zip and csv_name:
+            available_formats.append("csv")
+
+        selected_format = st.radio(
+            "Formato de los siete archivos principales",
+            options=available_formats,
+            index=(
+                available_formats.index("parquet")
+                if "parquet" in available_formats
+                else 0
+            ),
+            format_func=lambda value: (
+                "Parquet — recomendado"
+                if value == "parquet"
+                else "CSV — separador punto y coma"
+            ),
+            key="mod_download_format_v02",
+        )
+
+        if selected_format == "parquet":
+            download_data = parquet_zip
+            download_name = parquet_name
+        else:
+            download_data = csv_zip
+            download_name = csv_name
+
+        st.download_button(
+            "⬇️ Descargar ZIP actualizado",
+            data=download_data,
+            file_name=download_name,
+            mime="application/zip",
+            type="primary",
+            use_container_width=True,
+            key=f"mod_download_{selected_format}_v02",
+        )
+
+        if "parquet" not in available_formats:
+            st.info(
+                "Parquet se habilitará automáticamente al instalar "
+                "`pyarrow` o `fastparquet`."
+            )
 
     history = st.session_state.get(SESSION_HISTORY_KEY, [])
     if history:
@@ -4530,7 +3552,7 @@ def render_wizard(
         )
 
         confirm_restore = st.checkbox(
-            "Confirmo que deseo restaurar los siete archivos originalmente cargados.",
+            "Confirmo que deseo restaurar la versión original cargada.",
             key="mod_confirm_restore_v04",
         )
 
@@ -4547,6 +3569,22 @@ def render_wizard(
                 st.session_state[SESSION_HISTORY_KEY] = []
                 st.session_state.pop(SESSION_DOWNLOAD_KEY, None)
                 st.session_state.pop(SESSION_DOWNLOAD_NAME_KEY, None)
+                st.session_state.pop(
+                    SESSION_DOWNLOAD_PARQUET_KEY,
+                    None,
+                )
+                st.session_state.pop(
+                    SESSION_DOWNLOAD_CSV_KEY,
+                    None,
+                )
+                st.session_state.pop(
+                    SESSION_DOWNLOAD_PARQUET_NAME_KEY,
+                    None,
+                )
+                st.session_state.pop(
+                    SESSION_DOWNLOAD_CSV_NAME_KEY,
+                    None,
+                )
                 st.rerun()
 
 
@@ -4556,7 +3594,7 @@ def render_wizard(
 
 def render_no_file() -> None:
     st.warning(
-        "No hay una versión activa. Primero carga los siete archivos desde "
+        "No hay una versión activa. Primero carga los cinco archivos desde "
         "**01 Cargar Liberadores**."
     )
 
@@ -4601,7 +3639,7 @@ def main() -> None:
         file_bytes=file_bytes,
     )
 
-    render_guided_wizard(
+    render_wizard(
         data=data,
         file_name=file_name,
         file_bytes=file_bytes,
