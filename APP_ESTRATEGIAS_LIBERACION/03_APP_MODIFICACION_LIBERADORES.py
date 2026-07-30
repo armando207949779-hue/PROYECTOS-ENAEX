@@ -7,9 +7,9 @@
 # → validación → vista previa → impacto global opcional
 # → auditoría → Excel profesional.
 #
-# Formato vigente:
-# CECO | Planta | Desde | Hasta | TipoDoc |
-# Lib1 | Lib2 | Lib3 | Lib4 | Lib5
+# Fuente vigente: cinco archivos Liberador 1–5.
+# La pantalla trabaja con un flujo interno consolidado y exporta
+# nuevamente los cinco archivos, preservando reglas especiales.
 # ============================================================
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import re
+import zipfile
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from html import escape
@@ -27,7 +28,7 @@ from typing import Any
 
 import pandas as pd
 import streamlit as st
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.utils import get_column_letter
@@ -55,6 +56,7 @@ LOGO_CANDIDATES = [
 SESSION_DATA_KEY = "flujo_liberacion_data"
 SESSION_FILE_KEY = "flujo_liberacion_file_name"
 SESSION_FILE_BYTES_KEY = "flujo_liberacion_file_bytes"
+SESSION_SOURCE_FILES_KEY = "flujo_liberacion_source_files_v03"
 
 SESSION_WORKING_KEY = "mod_liberadores_working_df_v04"
 SESSION_BACKUP_KEY = "mod_liberadores_backup_df_v04"
@@ -121,6 +123,16 @@ SCENARIO_HELP = {
 }
 
 LS_LABEL = "Liberador Servicios"
+LS_GROUP = "Liberacion Servicios"
+LEVELS = (1, 2, 3, 4, 5)
+BASE_RULE_COLUMNS = [
+    "CompanyCode", "BillingAddress", "AccountCategory", "CostCenter",
+    "cus_POClasedeDocumento", "PurchaseGroup",
+    "TotalCost Bajo", "TotalCost Alto",
+]
+EXPORT_LEVEL_COLUMNS = [
+    *BASE_RULE_COLUMNS, "Group", "User", "Required", "Tooltip",
+]
 
 # Zona horaria oficial de Santiago de Chile. ZoneInfo aplica
 # automáticamente los cambios de horario de verano/invierno.
@@ -328,7 +340,7 @@ def render_header() -> None:
     st.markdown(
         """
         <div class="app-subtitle">
-            Modifica usuarios por CECO completo, rango específico o reemplazo global, con vista previa y auditoría.
+            Modifica la versión consolidada y descarga nuevamente los cinco archivos de liberadores.
         </div>
         """,
         unsafe_allow_html=True,
@@ -356,24 +368,40 @@ def question(number: int, title: str, help_text: str) -> None:
 # NORMALIZACIÓN
 # ============================================================
 
-def validate_flow_schema(data: dict[str, pd.DataFrame]) -> pd.DataFrame:
-    """Valida el formato simplificado antes de permitir modificaciones."""
+def validate_flow_schema(data: dict[str, Any]) -> pd.DataFrame:
+    """Valida la versión activa reconstruida desde cinco archivos."""
+    if not isinstance(data, dict):
+        raise ValueError(
+            "No existe una versión activa. Carga los cinco archivos "
+            "desde 01 Cargar Liberadores."
+        )
+
     flow = data.get("flujo")
-
     if not isinstance(flow, pd.DataFrame) or flow.empty:
-        raise ValueError("La base activa no contiene registros de flujo.")
+        raise ValueError("La versión activa no contiene un flujo válido.")
 
-    missing = [
-        column
-        for column in FLOW_COLUMNS
-        if column not in flow.columns
-    ]
-
+    missing = [column for column in FLOW_COLUMNS if column not in flow.columns]
     if missing:
         raise ValueError(
-            "La base activa no tiene el formato vigente. "
-            f"Faltan: {', '.join(missing)}. "
-            "Vuelve a cargar el Excel desde 01 Cargar Archivo."
+            "El flujo reconstruido no tiene la estructura requerida. "
+            f"Faltan: {', '.join(missing)}."
+        )
+
+    liberadores = data.get("liberadores")
+    if not isinstance(liberadores, dict):
+        raise ValueError(
+            "La versión activa no conserva los cinco archivos de liberadores."
+        )
+
+    missing_levels = [
+        level for level in LEVELS
+        if not isinstance(liberadores.get(level), pd.DataFrame)
+    ]
+    if missing_levels:
+        raise ValueError(
+            "Faltan niveles: "
+            + ", ".join(f"Liberador {level}" for level in missing_levels)
+            + "."
         )
 
     return flow
@@ -676,16 +704,37 @@ def validate_flow_result(
 # ============================================================
 
 def source_signature(
-    file_name: str,
-    file_bytes: bytes,
+    file_name: Any,
+    file_bytes: Any,
     rows: int,
 ) -> str:
-    digest = (
-        hashlib.sha1(file_bytes[:100000]).hexdigest()
-        if file_bytes
-        else "no-bytes"
-    )
-    return f"{file_name}|{len(file_bytes)}|{rows}|{digest}"
+    """Firma estable de la versión formada por cinco archivos."""
+    name_parts: list[str] = []
+    byte_parts: list[str] = []
+
+    if isinstance(file_name, dict):
+        for level in LEVELS:
+            name_parts.append(
+                f"{level}:{clean_text(file_name.get(level, ''))}"
+            )
+    else:
+        name_parts.append(clean_text(file_name))
+
+    if isinstance(file_bytes, dict):
+        for level in LEVELS:
+            raw = file_bytes.get(f"liberador_{level}", b"")
+            if not isinstance(raw, (bytes, bytearray)):
+                raw = b""
+            digest = hashlib.sha1(bytes(raw)[:100000]).hexdigest()
+            byte_parts.append(f"{level}:{len(raw)}:{digest}")
+    elif isinstance(file_bytes, (bytes, bytearray)):
+        digest = hashlib.sha1(bytes(file_bytes)[:100000]).hexdigest()
+        byte_parts.append(f"{len(file_bytes)}:{digest}")
+    else:
+        byte_parts.append("sin-bytes")
+
+    return "|".join([*name_parts, *byte_parts, str(rows)])
+
 
 
 def default_draft() -> dict[str, Any]:
@@ -1001,20 +1050,15 @@ def occurrences_of_person(
 
 
 # ============================================================
-# EXCEL
+# EXPORTACIÓN DE LOS CINCO ARCHIVOS
 # ============================================================
 
-def download_name(original_name: str) -> str:
-    """
-    Nombre estable, corto e intuitivo usando hora oficial de Santiago.
-    Ejemplo: BBDD_LIBERACION_2026-07-29_12-23-45.xlsx
-    """
+def download_name(original_name: Any) -> str:
     timestamp = datetime.now(CHILE_TZ).strftime("%Y-%m-%d_%H-%M-%S")
-    return f"BBDD_LIBERACION_{timestamp}.xlsx"
+    return f"LIBERADORES_ACTUALIZADOS_{timestamp}.zip"
 
 
 def sanitize_excel_value(value: Any) -> Any:
-    """Evita que NaN/NaT sean escritos como valores inválidos."""
     try:
         if pd.isna(value):
             return None
@@ -1024,7 +1068,6 @@ def sanitize_excel_value(value: Any) -> Any:
 
 
 def remove_existing_tables(sheet) -> None:
-    """Elimina tablas antiguas antes de reescribir una hoja."""
     for table_name in list(sheet.tables.keys()):
         del sheet.tables[table_name]
 
@@ -1036,7 +1079,6 @@ def professional_sheet_format(
     header_fill: str = "17365D",
     tab_color: str | None = None,
 ) -> None:
-    """Aplica formato corporativo y legible a una hoja."""
     if sheet.max_row < 1 or sheet.max_column < 1:
         return
 
@@ -1044,21 +1086,15 @@ def professional_sheet_format(
         sheet.sheet_properties.tabColor = tab_color
 
     header_font = Font(
-        name="Calibri",
-        size=11,
-        bold=True,
-        color="FFFFFF",
+        name="Calibri", size=11, bold=True, color="FFFFFF"
     )
     header_pattern = PatternFill(
-        fill_type="solid",
-        fgColor=header_fill,
+        fill_type="solid", fgColor=header_fill
     )
     thin_gray = Side(style="thin", color="D0D5DD")
     body_border = Border(
-        left=thin_gray,
-        right=thin_gray,
-        top=thin_gray,
-        bottom=thin_gray,
+        left=thin_gray, right=thin_gray,
+        top=thin_gray, bottom=thin_gray,
     )
 
     for cell in sheet[1]:
@@ -1080,39 +1116,26 @@ def professional_sheet_format(
         for cell in row:
             cell.font = Font(name="Calibri", size=10)
             cell.alignment = Alignment(
-                vertical="top",
-                wrap_text=True,
+                vertical="top", wrap_text=True
             )
             cell.border = body_border
+            cell.number_format = "@"
 
-    # Formatos numéricos de montos.
-    header_index = {
-        str(cell.value).strip(): cell.column
-        for cell in sheet[1]
-        if cell.value is not None
-    }
-    for column_name in ["Desde", "Hasta"]:
-        column_index = header_index.get(column_name)
-        if column_index:
-            for row_index in range(2, sheet.max_row + 1):
-                sheet.cell(row_index, column_index).number_format = '#,##0'
-
-    # Anchos calculados con límites para evitar hojas excesivamente anchas.
     for column_index in range(1, sheet.max_column + 1):
         letter = get_column_letter(column_index)
         values = [
             str(sheet.cell(row_index, column_index).value or "")
             for row_index in range(1, min(sheet.max_row, 250) + 1)
         ]
-        width = min(max(max(map(len, values), default=8) + 2, 10), 42)
-
+        width = min(max(max(map(len, values), default=8) + 2, 11), 42)
         header = str(sheet.cell(1, column_index).value or "")
-        if header in LIB_COLS:
-            width = max(width, 30)
-        elif header in {"Nota", "ValorAntes", "ValorDespues"}:
-            width = max(width, 24)
-        elif header in {"CECO", "Planta", "TipoDoc", "Campo"}:
-            width = max(width, 14)
+
+        if header in {"User", "Tooltip"}:
+            width = max(width, 32)
+        elif header in {
+            "CostCenter", "cus_POClasedeDocumento", "PurchaseGroup"
+        }:
+            width = max(width, 18)
 
         sheet.column_dimensions[letter].width = width
 
@@ -1120,13 +1143,8 @@ def professional_sheet_format(
 
     if sheet.max_row >= 2:
         safe_name = re.sub(r"[^A-Za-z0-9_]", "_", table_name)
-        reference = (
-            f"A1:{get_column_letter(sheet.max_column)}{sheet.max_row}"
-        )
-        table = Table(
-            displayName=safe_name[:250],
-            ref=reference,
-        )
+        reference = f"A1:{get_column_letter(sheet.max_column)}{sheet.max_row}"
+        table = Table(displayName=safe_name[:250], ref=reference)
         table.tableStyleInfo = TableStyleInfo(
             name="TableStyleMedium2",
             showFirstColumn=False,
@@ -1137,14 +1155,7 @@ def professional_sheet_format(
         sheet.add_table(table)
 
 
-def write_dataframe_to_sheet(
-    sheet,
-    dataframe: pd.DataFrame,
-) -> None:
-    """Reescribe una hoja conservando el libro y otras pestañas."""
-    if sheet.max_row:
-        sheet.delete_rows(1, sheet.max_row)
-
+def write_dataframe_to_sheet(sheet, dataframe: pd.DataFrame) -> None:
     for row_index, values in enumerate(
         dataframe_to_rows(dataframe, index=False, header=True),
         start=1,
@@ -1157,180 +1168,218 @@ def write_dataframe_to_sheet(
             )
 
 
-def build_excel(
-    original_bytes: bytes,
+def normalized_level_frame(frame: pd.DataFrame, level: int) -> pd.DataFrame:
+    """Prepara un nivel sin eliminar reglas especiales ni columnas funcionales."""
+    result = frame.copy()
+
+    for column in EXPORT_LEVEL_COLUMNS:
+        if column not in result.columns:
+            result[column] = ""
+
+    result = result.loc[:, EXPORT_LEVEL_COLUMNS].copy()
+
+    for column in EXPORT_LEVEL_COLUMNS:
+        result[column] = result[column].map(clean_text)
+
+    result["Required"] = result["Required"].replace("", "TRUE")
+    result["Tooltip"] = result["Tooltip"].replace(
+        "", f"Liberador {level} - Directa ENAEX"
+    )
+    return result
+
+
+def range_key(value: Any, *, low: bool) -> float:
+    return parse_bound(value, low=low)
+
+
+def flow_to_level_frames(
     flow: pd.DataFrame,
-    history: list[dict[str, Any]],
-) -> bytes:
-    if not original_bytes:
-        raise ValueError(
-            "No se encontraron los bytes del Excel. "
-            "Vuelve a cargarlo desde 01 Cargar archivo."
-        )
+    original_frames: dict[int, pd.DataFrame],
+) -> dict[int, pd.DataFrame]:
+    """
+    Proyecta el flujo editado hacia los cinco archivos.
 
-    try:
-        workbook = load_workbook(BytesIO(original_bytes))
-    except Exception as error:
-        raise ValueError("No fue posible abrir el Excel original.") from error
-
-    if "Flujo" in workbook.sheetnames:
-        flow_sheet = workbook["Flujo"]
-    else:
-        flow_sheet = workbook.create_sheet("Flujo")
-
-    export_flow = (
+    Las reglas especiales (CostCenter='*', AccountCategory='V',
+    PurchaseGroup específico, etc.) se conservan intactas. Solo se reemplazan
+    las reglas explícitas por CECO/tipo/rango.
+    """
+    clean_flow = (
         flow.drop(columns=["_ID_FILA"], errors="ignore")
         .loc[:, FLOW_COLUMNS]
         .copy()
     )
-    write_dataframe_to_sheet(flow_sheet, export_flow)
+
+    outputs: dict[int, pd.DataFrame] = {}
+
+    for level in LEVELS:
+        original = normalized_level_frame(
+            original_frames.get(level, pd.DataFrame()),
+            level,
+        )
+
+        special_mask = (
+            original["CostCenter"].isin({"", "*"})
+            | ~original["cus_POClasedeDocumento"].isin({"AZNB", "AZSR"})
+        )
+        special = original[special_mask].copy()
+
+        generated_rows: list[dict[str, Any]] = []
+
+        for _, row in clean_flow.iterrows():
+            liberator = strip_user(row.get(f"Lib{level}", ""))
+            if not liberator:
+                continue
+
+            ceco = clean_text(row.get("CECO", ""))
+            doc = clean_text(row.get("TipoDoc", "")).upper()
+
+            if not ceco or doc not in {"AZNB", "AZSR"}:
+                continue
+
+            low = parse_bound(row.get("Desde"), low=True)
+            high = parse_bound(row.get("Hasta"), low=False)
+
+            generated = {
+                "CompanyCode": ceco[:4],
+                "BillingAddress": "*",
+                "AccountCategory": "*",
+                "CostCenter": ceco,
+                "cus_POClasedeDocumento": doc,
+                "PurchaseGroup": "*",
+                "TotalCost Bajo": (
+                    "1" if low <= 1 else str(int(low))
+                ),
+                "TotalCost Alto": (
+                    "*" if high >= 1e12 else str(int(high))
+                ),
+                "Group": "",
+                "User": "",
+                "Required": "TRUE",
+                "Tooltip": f"Liberador {level} - Directa ENAEX",
+            }
+
+            if liberator == LS_LABEL:
+                generated["Group"] = LS_GROUP
+            else:
+                generated["User"] = liberator
+
+            generated_rows.append(generated)
+
+        generated_df = pd.DataFrame(
+            generated_rows,
+            columns=EXPORT_LEVEL_COLUMNS,
+        )
+
+        # Las reglas especiales se conservan exactamente, incluso cuando el
+        # archivo histórico contiene duplicados deliberados.
+        generated_df = generated_df.drop_duplicates(
+            subset=[*BASE_RULE_COLUMNS, "Group", "User"],
+            keep="first",
+        )
+
+        result = pd.concat(
+            [special, generated_df],
+            ignore_index=True,
+        ).reset_index(drop=True)
+
+        outputs[level] = result
+
+    return outputs
+
+
+def build_level_excel(
+    level: int,
+    dataframe: pd.DataFrame,
+    history: list[dict[str, Any]],
+) -> bytes:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Sheet1"
+
+    write_dataframe_to_sheet(sheet, dataframe)
     professional_sheet_format(
-        flow_sheet,
-        table_name="TablaFlujoLiberacion",
+        sheet,
+        table_name=f"TablaLiberador{level}",
         header_fill="17365D",
         tab_color="175CD3",
     )
 
-    if "Cambios" in workbook.sheetnames:
-        change_sheet = workbook["Cambios"]
-    else:
-        change_sheet = workbook.create_sheet("Cambios")
-
-    history_df = pd.DataFrame(history)
-    history_columns = [
-        "FechaHora",
-        "Usuario",
-        "CECO",
-        "Desde",
-        "Hasta",
-        "TipoDoc",
-        "Campo",
-        "ValorAntes",
-        "ValorDespues",
-        "Nota",
-    ]
-    if history_df.empty:
-        history_df = pd.DataFrame(columns=history_columns)
-    else:
-        for column in history_columns:
-            if column not in history_df.columns:
-                history_df[column] = ""
-        history_df = history_df.loc[:, history_columns]
-
-    write_dataframe_to_sheet(change_sheet, history_df)
-    professional_sheet_format(
-        change_sheet,
-        table_name="TablaHistorialCambios",
-        header_fill="7F1D1D",
-        tab_color="B42318",
-    )
-
-    # Hoja ejecutiva con información de la versión generada.
-    if "Resumen_Version" in workbook.sheetnames:
-        summary_sheet = workbook["Resumen_Version"]
-    else:
-        summary_sheet = workbook.create_sheet("Resumen_Version", 0)
-
-    summary_df = pd.DataFrame(
-        [
-            {
-                "Fecha generación": datetime.now(CHILE_TZ).strftime(
-                    "%Y-%m-%d %H:%M:%S"
-                ),
-                "Zona horaria": "America/Santiago",
-                "Filas de flujo": len(export_flow),
-                "CECO únicos": export_flow["CECO"].nunique(),
-                "Cambios registrados": len(history_df),
-                "Estado": "Versión modificada",
-            }
-        ]
-    )
-    write_dataframe_to_sheet(summary_sheet, summary_df)
-    professional_sheet_format(
-        summary_sheet,
-        table_name="TablaResumenVersion",
-        header_fill="166534",
-        tab_color="16A34A",
-    )
-
-    # Alinea los diccionarios con el formato simplificado.
-    if "Dic_CECO" in workbook.sheetnames:
-        ceco_sheet = workbook["Dic_CECO"]
-        headers = [clean_text(cell.value) for cell in ceco_sheet[1]]
-        keep = [name for name in ["CECO", "Planta", "Centro"] if name in headers]
-        if keep:
-            values = list(ceco_sheet.iter_rows(values_only=True))
-            source = pd.DataFrame(values[1:], columns=headers)
-            write_dataframe_to_sheet(ceco_sheet, source.loc[:, keep])
-            professional_sheet_format(
-                ceco_sheet,
-                table_name="TablaDicCECO",
-                header_fill="475467",
-                tab_color="64748B",
-            )
-
-    if "Dic_Rangos" in workbook.sheetnames:
-        range_sheet = workbook["Dic_Rangos"]
-        headers = [clean_text(cell.value) for cell in range_sheet[1]]
-        keep = [name for name in ["Orden", "Desde", "Hasta"] if name in headers]
-        if keep:
-            values = list(range_sheet.iter_rows(values_only=True))
-            source = pd.DataFrame(values[1:], columns=headers)
-            write_dataframe_to_sheet(range_sheet, source.loc[:, keep])
-            professional_sheet_format(
-                range_sheet,
-                table_name="TablaDicRangos",
-                header_fill="475467",
-                tab_color="64748B",
-            )
-
-    if "Formato_Flujo" in workbook.sheetnames:
-        del workbook["Formato_Flujo"]
-
-    # Las demás hojas se preservan. Se estilizan solo sus encabezados
-    # cuando contienen una tabla reconocible, sin alterar sus datos.
-    protected = {"Resumen_Version", "Flujo", "Cambios"}
-    for sheet in workbook.worksheets:
-        if sheet.title in protected:
-            continue
-        if sheet.max_row >= 1 and sheet.max_column >= 1:
-            for cell in sheet[1]:
-                if cell.value is not None:
-                    cell.font = Font(
-                        name="Calibri",
-                        size=11,
-                        bold=True,
-                        color="FFFFFF",
-                    )
-                    cell.fill = PatternFill(
-                        fill_type="solid",
-                        fgColor="475467",
-                    )
-                    cell.alignment = Alignment(
-                        horizontal="center",
-                        vertical="center",
-                        wrap_text=True,
-                    )
-            sheet.freeze_panes = "A2"
-            sheet.auto_filter.ref = sheet.dimensions
-            sheet.sheet_view.showGridLines = False
-
-    workbook.active = workbook.sheetnames.index("Resumen_Version")
+    if history:
+        history_sheet = workbook.create_sheet("Cambios")
+        history_df = pd.DataFrame(history)
+        write_dataframe_to_sheet(history_sheet, history_df)
+        professional_sheet_format(
+            history_sheet,
+            table_name=f"TablaCambiosL{level}",
+            header_fill="7F1D1D",
+            tab_color="B42318",
+        )
 
     output = BytesIO()
     workbook.save(output)
     return output.getvalue()
 
 
+def build_five_files(
+    data: dict[str, Any],
+    flow: pd.DataFrame,
+    history: list[dict[str, Any]],
+) -> tuple[bytes, dict[int, pd.DataFrame]]:
+    original_frames = data.get("liberadores", {})
+
+    if not isinstance(original_frames, dict):
+        raise ValueError(
+            "No se encontraron los cinco DataFrame originales."
+        )
+
+    updated_frames = flow_to_level_frames(flow, original_frames)
+    timestamp = datetime.now(CHILE_TZ).strftime("%Y-%m-%d_%H-%M-%S")
+
+    zip_output = BytesIO()
+
+    with zipfile.ZipFile(
+        zip_output,
+        mode="w",
+        compression=zipfile.ZIP_DEFLATED,
+    ) as archive:
+        for level in LEVELS:
+            excel_bytes = build_level_excel(
+                level,
+                updated_frames[level],
+                history,
+            )
+            archive.writestr(
+                (
+                    f"Liberador_{level}_Compra_Directa_ENAEX_"
+                    f"{timestamp}.xlsx"
+                ),
+                excel_bytes,
+            )
+
+    return zip_output.getvalue(), updated_frames
+
+
 def refresh_download(
-    file_name: str,
-    file_bytes: bytes,
+    file_name: Any,
+    file_bytes: Any,
 ) -> None:
-    generated = build_excel(
-        original_bytes=file_bytes,
+    data = st.session_state.get(SESSION_DATA_KEY)
+
+    if not isinstance(data, dict):
+        raise ValueError("No existe una versión activa.")
+
+    generated, updated_frames = build_five_files(
+        data=data,
         flow=get_working_flow(),
         history=list(st.session_state.get(SESSION_HISTORY_KEY, [])),
     )
+
+    updated_data = dict(data)
+    updated_data["liberadores"] = updated_frames
+    for level in LEVELS:
+        updated_data[f"liberador_{level}"] = updated_frames[level]
+
+    st.session_state[SESSION_DATA_KEY] = updated_data
     st.session_state[SESSION_DOWNLOAD_KEY] = generated
     st.session_state[SESSION_DOWNLOAD_NAME_KEY] = download_name(file_name)
 
@@ -1550,7 +1599,7 @@ def render_global_replacement(
         )
 
     apply_clicked = st.button(
-        "🔁 Aplicar reemplazo global y preparar Excel",
+        "🔁 Aplicar reemplazo global y preparar 5 archivos",
         type="primary",
         use_container_width=True,
         disabled=not global_ready,
@@ -1622,14 +1671,13 @@ def render_global_replacement(
 
     if generated and generated_name:
         st.markdown("---")
-        st.subheader("Descargar versión profesional del Excel")
+        st.subheader("Descargar los cinco archivos actualizados")
         st.download_button(
-            "⬇️ Descargar archivo modificado",
+            "⬇️ Descargar ZIP con 5 Excel",
             data=generated,
             file_name=generated_name,
             mime=(
-                "application/vnd.openxmlformats-officedocument."
-                "spreadsheetml.sheet"
+                "application/zip"
             ),
             type="primary",
             use_container_width=True,
@@ -2228,12 +2276,11 @@ def render_ceco_user_replacement(
         st.subheader("Descargar versión modificada")
 
         st.download_button(
-            "⬇️ Descargar archivo modificado",
+            "⬇️ Descargar ZIP con 5 Excel",
             data=generated,
             file_name=generated_name,
             mime=(
-                "application/vnd.openxmlformats-officedocument."
-                "spreadsheetml.sheet"
+                "application/zip"
             ),
             type="primary",
             use_container_width=True,
@@ -3109,15 +3156,14 @@ def render_wizard(
 
     if generated and generated_name:
         st.markdown("---")
-        st.subheader("Descargar versión profesional del Excel")
+        st.subheader("Descargar los cinco archivos actualizados")
 
         st.download_button(
-            "⬇️ Descargar archivo modificado",
+            "⬇️ Descargar ZIP con 5 Excel",
             data=generated,
             file_name=generated_name,
             mime=(
-                "application/vnd.openxmlformats-officedocument."
-                "spreadsheetml.sheet"
+                "application/zip"
             ),
             type="primary",
             use_container_width=True,
@@ -3138,19 +3184,19 @@ def render_wizard(
                 hide_index=True,
             )
 
-    with st.expander("Restaurar base original", expanded=False):
+    with st.expander("Restaurar versión original", expanded=False):
         st.warning(
             "Esta acción elimina las modificaciones realizadas "
             "durante la sesión."
         )
 
         confirm_restore = st.checkbox(
-            "Confirmo que deseo restaurar el archivo originalmente cargado.",
+            "Confirmo que deseo restaurar los cinco archivos originalmente cargados.",
             key="mod_confirm_restore_v04",
         )
 
         if st.button(
-            "Restaurar base original",
+            "Restaurar versión original",
             disabled=not confirm_restore,
             use_container_width=True,
             key="mod_restore_v04",
@@ -3171,19 +3217,19 @@ def render_wizard(
 
 def render_no_file() -> None:
     st.warning(
-        "No hay un archivo activo. Primero carga el Excel desde "
-        "**01 Cargar archivo**."
+        "No hay una versión activa. Primero carga los cinco archivos desde "
+        "**01 Cargar Liberadores**."
     )
 
     try:
         if st.button(
-            "📤 Ir a 01 Cargar archivo",
+            "📤 Ir a 01 Cargar Liberadores",
             type="primary",
             use_container_width=True,
         ):
             st.switch_page("01_CARGAR_ARCHIVO_FLUJO.py")
     except Exception:
-        st.info("Selecciona **01 Cargar archivo** desde la barra lateral.")
+        st.info("Selecciona **01 Cargar Liberadores** desde la barra lateral.")
 
 
 # ============================================================
@@ -3195,13 +3241,10 @@ def main() -> None:
     render_header()
 
     data = st.session_state.get(SESSION_DATA_KEY)
-    file_name = st.session_state.get(
-        SESSION_FILE_KEY,
-        "BBDD_FLUJO_LIBERACION.xlsx",
-    )
+    file_name = st.session_state.get(SESSION_FILE_KEY, {})
     file_bytes = st.session_state.get(
-        SESSION_FILE_BYTES_KEY,
-        b"",
+        SESSION_SOURCE_FILES_KEY,
+        st.session_state.get(SESSION_FILE_BYTES_KEY, {}),
     )
 
     if (
