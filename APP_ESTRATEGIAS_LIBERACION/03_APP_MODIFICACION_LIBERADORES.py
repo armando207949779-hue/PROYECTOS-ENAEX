@@ -473,14 +473,9 @@ def parse_bound(value: Any, low: bool = True) -> float:
 
 
 def fmt_bound(value: Any) -> str:
-    text = clean_text(value)
-    if text == "*":
-        return "*"
-
     number = parse_bound(value, low=False)
     if number >= 1e12:
-        return "*"
-
+        return "1E+12"
     return f"{int(number):,}".replace(",", ".")
 
 
@@ -1186,26 +1181,6 @@ def write_dataframe_to_sheet(sheet, dataframe: pd.DataFrame) -> None:
             )
 
 
-def normalize_upper_bound_for_export(value: Any) -> str:
-    """
-    Convierte límites superiores abiertos o iguales/mayores a 1E+12 en '*'.
-    También reconoce notación científica y valores con separadores locales.
-    """
-    text = clean_text(value)
-
-    if not text or text == "*":
-        return "*"
-
-    number = parse_bound(text, low=False)
-    if number >= 1e12:
-        return "*"
-
-    if float(number).is_integer():
-        return str(int(number))
-
-    return str(number)
-
-
 def normalized_level_frame(frame: pd.DataFrame, level: int) -> pd.DataFrame:
     """Prepara un nivel sin eliminar reglas especiales ni columnas funcionales."""
     result = frame.copy()
@@ -1222,9 +1197,6 @@ def normalized_level_frame(frame: pd.DataFrame, level: int) -> pd.DataFrame:
     result["Required"] = result["Required"].replace("", "TRUE")
     result["Tooltip"] = result["Tooltip"].replace(
         "", f"Liberador {level} - Directa ENAEX"
-    )
-    result["TotalCost Alto"] = result["TotalCost Alto"].map(
-        normalize_upper_bound_for_export
     )
     return result
 
