@@ -7,15 +7,16 @@
 # → validación → vista previa → impacto global opcional
 # → auditoría → Excel profesional.
 #
-# Fuente vigente: cinco archivos Liberador 1–5.
-# La pantalla trabaja con un flujo interno consolidado y exporta
-# nuevamente los cinco archivos, preservando reglas especiales.
+# Fuente vigente: siete archivos independientes.
+# La pantalla actualiza los cinco liberadores y sincroniza
+# los diccionarios CECO-Plantas y Usuarios-Cargos.
 # ============================================================
 
 from __future__ import annotations
 
 import base64
 import hashlib
+import importlib.util
 import re
 import zipfile
 from datetime import datetime
@@ -65,6 +66,10 @@ SESSION_DRAFT_KEY = "mod_liberadores_draft_v04"
 SESSION_HISTORY_KEY = "mod_liberadores_history_v04"
 SESSION_DOWNLOAD_KEY = "mod_liberadores_download_v04"
 SESSION_DOWNLOAD_NAME_KEY = "mod_liberadores_download_name_v04"
+SESSION_DOWNLOAD_PARQUET_KEY = "mod_liberadores_download_parquet_v01"
+SESSION_DOWNLOAD_CSV_KEY = "mod_liberadores_download_csv_v01"
+SESSION_DOWNLOAD_PARQUET_NAME_KEY = "mod_liberadores_download_parquet_name_v01"
+SESSION_DOWNLOAD_CSV_NAME_KEY = "mod_liberadores_download_csv_name_v01"
 
 LIB_COLS = ["Lib1", "Lib2", "Lib3", "Lib4", "Lib5"]
 FLOW_COLUMNS = [
@@ -821,6 +826,10 @@ def initialize_state(
         st.session_state[SESSION_HISTORY_KEY] = []
         st.session_state.pop(SESSION_DOWNLOAD_KEY, None)
         st.session_state.pop(SESSION_DOWNLOAD_NAME_KEY, None)
+        st.session_state.pop(SESSION_DOWNLOAD_PARQUET_KEY, None)
+        st.session_state.pop(SESSION_DOWNLOAD_CSV_KEY, None)
+        st.session_state.pop(SESSION_DOWNLOAD_PARQUET_NAME_KEY, None)
+        st.session_state.pop(SESSION_DOWNLOAD_CSV_NAME_KEY, None)
 
 
 def get_working_flow() -> pd.DataFrame:
@@ -1369,43 +1378,313 @@ def build_level_excel(
     return output.getvalue()
 
 
-def build_five_files(
+def available_parquet_engine() -> str | None:
+    if importlib.util.find_spec("pyarrow") is not None:
+        return "pyarrow"
+    if importlib.util.find_spec("fastparquet") is not None:
+        return "fastparquet"
+    return None
+
+
+def clean_export_frame(dataframe: pd.DataFrame) -> pd.DataFrame:
+    return dataframe.drop(
+        columns=[
+            "_DesdeNum",
+            "_HastaNum",
+            "_Nivel",
+            "_Liberador",
+            "_ID_FILA",
+        ],
+        errors="ignore",
+    ).copy()
+
+
+def synchronize_user_dictionary(
+    data: dict[str, Any],
+    flow: pd.DataFrame,
+) -> pd.DataFrame:
+    current = data.get("dic_users", pd.DataFrame())
+    if not isinstance(current, pd.DataFrame):
+        current = pd.DataFrame(columns=["Correo", "Cargo"])
+
+    result = current.copy()
+    for column in ["Correo", "Cargo"]:
+        if column not in result.columns:
+            result[column] = ""
+
+    result = result.loc[:, ["Correo", "Cargo"]].copy()
+    result["Correo"] = result["Correo"].map(strip_user)
+    result["Cargo"] = result["Cargo"].map(clean_text)
+
+    existing = {
+        email_key(value)
+        for value in result["Correo"].tolist()
+        if strip_user(value)
+    }
+
+    flow_users = sorted(
+        {
+            strip_user(value)
+            for column in LIB_COLS
+            for value in flow[column].tolist()
+            if strip_user(value)
+            and strip_user(value) != LS_LABEL
+        },
+        key=str.casefold,
+    )
+
+    missing_rows = [
+        {"Correo": user, "Cargo": ""}
+        for user in flow_users
+        if email_key(user) not in existing
+    ]
+
+    if missing_rows:
+        result = pd.concat(
+            [result, pd.DataFrame(missing_rows)],
+            ignore_index=True,
+        )
+
+    return (
+        result[result["Correo"].map(strip_user).ne("")]
+        .drop_duplicates(
+            subset=["Correo"],
+            keep="last",
+        )
+        .sort_values(
+            "Correo",
+            key=lambda values: values.astype(str).str.casefold(),
+            kind="stable",
+        )
+        .reset_index(drop=True)
+    )
+
+
+def synchronize_ceco_dictionary(
+    data: dict[str, Any],
+    flow: pd.DataFrame,
+) -> pd.DataFrame:
+    current = data.get("dic_ceco", pd.DataFrame())
+    if not isinstance(current, pd.DataFrame):
+        current = pd.DataFrame(
+            columns=["CECO", "Planta", "Centro"]
+        )
+
+    result = current.copy()
+    for column in ["CECO", "Planta", "Centro"]:
+        if column not in result.columns:
+            result[column] = ""
+
+    result = result.loc[:, ["CECO", "Planta", "Centro"]].copy()
+    for column in ["CECO", "Planta", "Centro"]:
+        result[column] = result[column].map(clean_text)
+
+    flow_cecos = (
+        flow[["CECO", "Planta"]]
+        .copy()
+        .assign(
+            CECO=lambda frame: frame["CECO"].map(clean_text),
+            Planta=lambda frame: frame["Planta"].map(clean_text),
+        )
+    )
+    flow_cecos = (
+        flow_cecos[flow_cecos["CECO"].ne("")]
+        .drop_duplicates("CECO", keep="last")
+    )
+
+    existing_index = {
+        clean_text(row["CECO"]): index
+        for index, row in result.iterrows()
+        if clean_text(row["CECO"])
+    }
+
+    new_rows: list[dict[str, str]] = []
+
+    for _, row in flow_cecos.iterrows():
+        ceco = clean_text(row["CECO"])
+        planta = clean_text(row["Planta"])
+
+        if ceco in existing_index:
+            index = existing_index[ceco]
+            if not clean_text(result.at[index, "Planta"]) and planta:
+                result.at[index, "Planta"] = planta
+        else:
+            new_rows.append({
+                "CECO": ceco,
+                "Planta": planta,
+                "Centro": "",
+            })
+
+    if new_rows:
+        result = pd.concat(
+            [result, pd.DataFrame(new_rows)],
+            ignore_index=True,
+        )
+
+    return (
+        result[result["CECO"].map(clean_text).ne("")]
+        .drop_duplicates("CECO", keep="last")
+        .sort_values("CECO", kind="stable")
+        .reset_index(drop=True)
+    )
+
+
+def dataframe_to_csv_bytes(dataframe: pd.DataFrame) -> bytes:
+    return clean_export_frame(dataframe).to_csv(
+        index=False,
+        sep=";",
+        lineterminator="\n",
+    ).encode("utf-8-sig")
+
+
+def dataframe_to_parquet_bytes(dataframe: pd.DataFrame) -> bytes:
+    engine = available_parquet_engine()
+    if engine is None:
+        raise ValueError(
+            "Para descargar en Parquet debes instalar `pyarrow` "
+            "o `fastparquet` en el entorno."
+        )
+
+    output = BytesIO()
+    clean_export_frame(dataframe).to_parquet(
+        output,
+        index=False,
+        engine=engine,
+    )
+    return output.getvalue()
+
+
+def chile_modification_timestamp() -> str:
+    """Fecha y hora de modificación en zona horaria Santiago, Chile."""
+    return datetime.now(CHILE_TZ).strftime("%Y-%m-%d_%H-%M-%S")
+
+
+def archive_filename(
+    role: str,
+    extension: str,
+    modification_timestamp: str,
+) -> str:
+    if role == "dic_ceco":
+        stem = "Diccionario_CECO_Plantas"
+    elif role == "dic_users":
+        stem = "Diccionario_Usuarios_Cargos"
+    else:
+        level = int(role.rsplit("_", 1)[-1])
+        stem = f"Liberador_{level}_Compra_Directa_ENAEX"
+
+    return f"{stem}_{modification_timestamp}{extension}"
+
+
+def build_seven_files_archive(
     data: dict[str, Any],
     flow: pd.DataFrame,
     history: list[dict[str, Any]],
-) -> tuple[bytes, dict[int, pd.DataFrame]]:
-    original_frames = data.get("liberadores", {})
+    export_format: str,
+    modification_timestamp: str | None = None,
+) -> tuple[
+    bytes,
+    dict[int, pd.DataFrame],
+    pd.DataFrame,
+    pd.DataFrame,
+]:
+    if export_format not in {"parquet", "csv"}:
+        raise ValueError("Formato de descarga no válido.")
 
+    timestamp = (
+        modification_timestamp
+        or chile_modification_timestamp()
+    )
+
+    original_frames = data.get("liberadores", {})
     if not isinstance(original_frames, dict):
         raise ValueError(
-            "No se encontraron los cinco DataFrame originales."
+            "No se encontraron los cinco liberadores originales."
         )
 
-    updated_frames = flow_to_level_frames(flow, original_frames)
-    timestamp = datetime.now(CHILE_TZ).strftime("%Y-%m-%d_%H-%M-%S")
+    updated_frames = flow_to_level_frames(
+        flow,
+        original_frames,
+    )
+    updated_users = synchronize_user_dictionary(data, flow)
+    updated_cecos = synchronize_ceco_dictionary(data, flow)
+
+    logical_files: dict[str, pd.DataFrame] = {
+        **{
+            f"liberador_{level}": updated_frames[level]
+            for level in LEVELS
+        },
+        "dic_ceco": updated_cecos,
+        "dic_users": updated_users,
+    }
+
+    extension = (
+        ".parquet"
+        if export_format == "parquet"
+        else ".csv"
+    )
 
     zip_output = BytesIO()
-
     with zipfile.ZipFile(
         zip_output,
         mode="w",
         compression=zipfile.ZIP_DEFLATED,
     ) as archive:
-        for level in LEVELS:
-            excel_bytes = build_level_excel(
-                level,
-                updated_frames[level],
-                history,
-            )
+        for role, dataframe in logical_files.items():
+            if export_format == "parquet":
+                content = dataframe_to_parquet_bytes(dataframe)
+            else:
+                content = dataframe_to_csv_bytes(dataframe)
+
             archive.writestr(
-                (
-                    f"Liberador_{level}_Compra_Directa_ENAEX_"
-                    f"{timestamp}.xlsx"
+                archive_filename(
+                    role,
+                    extension,
+                    timestamp,
                 ),
-                excel_bytes,
+                content,
             )
 
-    return zip_output.getvalue(), updated_frames
+        changes_columns = [
+            "FechaHora",
+            "Usuario",
+            "CECO",
+            "Desde",
+            "Hasta",
+            "TipoDoc",
+            "Campo",
+            "ValorAntes",
+            "ValorDespues",
+            "Nota",
+        ]
+        changes_dataframe = pd.DataFrame(
+            history,
+            columns=changes_columns,
+        )
+        archive.writestr(
+            f"Cambios_{timestamp}.csv",
+            dataframe_to_csv_bytes(changes_dataframe),
+        )
+
+    return (
+        zip_output.getvalue(),
+        updated_frames,
+        updated_cecos,
+        updated_users,
+    )
+
+
+def download_name_for_format(
+    export_format: str,
+    modification_timestamp: str | None = None,
+) -> str:
+    timestamp = (
+        modification_timestamp
+        or chile_modification_timestamp()
+    )
+    return (
+        f"LIBERADORES_Y_DICCIONARIOS_"
+        f"{export_format.upper()}_{timestamp}.zip"
+    )
 
 
 def refresh_download(
@@ -1413,24 +1692,80 @@ def refresh_download(
     file_bytes: Any,
 ) -> None:
     data = st.session_state.get(SESSION_DATA_KEY)
-
     if not isinstance(data, dict):
         raise ValueError("No existe una versión activa.")
 
-    generated, updated_frames = build_five_files(
+    flow = get_working_flow()
+    history = list(
+        st.session_state.get(SESSION_HISTORY_KEY, [])
+    )
+    modification_timestamp = chile_modification_timestamp()
+
+    # CSV siempre queda disponible.
+    (
+        csv_zip,
+        updated_frames,
+        updated_cecos,
+        updated_users,
+    ) = build_seven_files_archive(
         data=data,
-        flow=get_working_flow(),
-        history=list(st.session_state.get(SESSION_HISTORY_KEY, [])),
+        flow=flow,
+        history=history,
+        export_format="csv",
+        modification_timestamp=modification_timestamp,
     )
 
     updated_data = dict(data)
     updated_data["liberadores"] = updated_frames
     for level in LEVELS:
         updated_data[f"liberador_{level}"] = updated_frames[level]
+    updated_data["dic_ceco"] = updated_cecos
+    updated_data["dic_users"] = updated_users
 
     st.session_state[SESSION_DATA_KEY] = updated_data
-    st.session_state[SESSION_DOWNLOAD_KEY] = generated
-    st.session_state[SESSION_DOWNLOAD_NAME_KEY] = download_name(file_name)
+    st.session_state[SESSION_DOWNLOAD_CSV_KEY] = csv_zip
+    st.session_state[SESSION_DOWNLOAD_CSV_NAME_KEY] = (
+        download_name_for_format("csv", modification_timestamp)
+    )
+
+    # Parquet es el formato predeterminado.
+    parquet_engine = available_parquet_engine()
+    if parquet_engine is not None:
+        parquet_zip, _, _, _ = build_seven_files_archive(
+            data=updated_data,
+            flow=flow,
+            history=history,
+            export_format="parquet",
+            modification_timestamp=modification_timestamp,
+        )
+        st.session_state[
+            SESSION_DOWNLOAD_PARQUET_KEY
+        ] = parquet_zip
+        st.session_state[
+            SESSION_DOWNLOAD_PARQUET_NAME_KEY
+        ] = download_name_for_format("parquet", modification_timestamp)
+
+        st.session_state[SESSION_DOWNLOAD_KEY] = parquet_zip
+        st.session_state[SESSION_DOWNLOAD_NAME_KEY] = (
+            st.session_state[
+                SESSION_DOWNLOAD_PARQUET_NAME_KEY
+            ]
+        )
+    else:
+        st.session_state.pop(
+            SESSION_DOWNLOAD_PARQUET_KEY,
+            None,
+        )
+        st.session_state.pop(
+            SESSION_DOWNLOAD_PARQUET_NAME_KEY,
+            None,
+        )
+        st.session_state[SESSION_DOWNLOAD_KEY] = csv_zip
+        st.session_state[SESSION_DOWNLOAD_NAME_KEY] = (
+            st.session_state[SESSION_DOWNLOAD_CSV_NAME_KEY]
+        )
+
+
 
 
 # ============================================================
@@ -1720,9 +2055,9 @@ def render_global_replacement(
 
     if generated and generated_name:
         st.markdown("---")
-        st.subheader("Descargar los cinco archivos actualizados")
+        st.subheader("Descargar los siete archivos actualizados")
         st.download_button(
-            "⬇️ Descargar ZIP con 5 Excel",
+            "⬇️ Descargar ZIP con los 7 archivos",
             data=generated,
             file_name=generated_name,
             mime=(
@@ -2325,7 +2660,7 @@ def render_ceco_user_replacement(
         st.subheader("Descargar versión modificada")
 
         st.download_button(
-            "⬇️ Descargar ZIP con 5 Excel",
+            "⬇️ Descargar ZIP con los 7 archivos",
             data=generated,
             file_name=generated_name,
             mime=(
@@ -2434,7 +2769,7 @@ def render_compact_active_summary(
         compact_html(
             f"""
             <div class="active-summary">
-                <b>Versión activa</b> ·
+                <b>Versión lista para modificar</b> ·
                 {len(flow):,} reglas ·
                 {flow["CECO"].nunique():,} CECO ·
                 {len(users) if isinstance(users, pd.DataFrame) else 0:,} usuarios ·
@@ -2548,23 +2883,76 @@ def apply_scope_replacement(
 
 
 def render_generated_download() -> None:
-    generated = st.session_state.get(SESSION_DOWNLOAD_KEY)
-    generated_name = st.session_state.get(SESSION_DOWNLOAD_NAME_KEY)
+    parquet_zip = st.session_state.get(
+        SESSION_DOWNLOAD_PARQUET_KEY
+    )
+    parquet_name = st.session_state.get(
+        SESSION_DOWNLOAD_PARQUET_NAME_KEY
+    )
+    csv_zip = st.session_state.get(
+        SESSION_DOWNLOAD_CSV_KEY
+    )
+    csv_name = st.session_state.get(
+        SESSION_DOWNLOAD_CSV_NAME_KEY
+    )
 
-    if not generated or not generated_name:
+    if not parquet_zip and not csv_zip:
         return
 
     st.markdown("---")
     st.subheader("Descargar versión actualizada")
+    st.caption(
+        "El ZIP contiene los siete archivos sincronizados y un CSV "
+        "adicional con el historial de cambios."
+    )
+
+    available_formats: list[str] = []
+    if parquet_zip and parquet_name:
+        available_formats.append("parquet")
+    if csv_zip and csv_name:
+        available_formats.append("csv")
+
+    default_index = (
+        available_formats.index("parquet")
+        if "parquet" in available_formats
+        else 0
+    )
+
+    selected_format = st.radio(
+        "Formato de los 7 archivos",
+        options=available_formats,
+        index=default_index,
+        format_func=lambda value: (
+            "Parquet — recomendado"
+            if value == "parquet"
+            else "CSV — separador punto y coma"
+        ),
+        key="tree_download_format_v02",
+    )
+
+    if selected_format == "parquet":
+        download_data = parquet_zip
+        download_name = parquet_name
+    else:
+        download_data = csv_zip
+        download_name = csv_name
+
     st.download_button(
-        "⬇️ Descargar ZIP actualizado",
-        data=generated,
-        file_name=generated_name,
+        "⬇️ Descargar ZIP con los 7 archivos",
+        data=download_data,
+        file_name=download_name,
         mime="application/zip",
         type="primary",
         use_container_width=True,
-        key="tree_download_v01",
+        key=f"tree_download_{selected_format}_v02",
     )
+
+    if "parquet" not in available_formats:
+        st.info(
+            "Parquet no está habilitado en este entorno. "
+            "Instala `pyarrow` para usarlo como formato predeterminado."
+        )
+
 
 
 def render_guided_wizard(
@@ -3276,14 +3664,6 @@ def render_wizard(
 ) -> None:
     flow = get_working_flow()
     draft = get_draft()
-
-    st.success(
-        (
-            f"Archivo activo: **{file_name}** · "
-            f"**{len(flow):,} filas** · "
-            f"**{flow['CECO'].nunique():,} CECO**"
-        ).replace(",", ".")
-    )
 
     # --------------------------------------------------------
     # Datos del cambio
@@ -4115,10 +4495,10 @@ def render_wizard(
 
     if generated and generated_name:
         st.markdown("---")
-        st.subheader("Descargar los cinco archivos actualizados")
+        st.subheader("Descargar los siete archivos actualizados")
 
         st.download_button(
-            "⬇️ Descargar ZIP con 5 Excel",
+            "⬇️ Descargar ZIP con los 7 archivos",
             data=generated,
             file_name=generated_name,
             mime=(
@@ -4150,7 +4530,7 @@ def render_wizard(
         )
 
         confirm_restore = st.checkbox(
-            "Confirmo que deseo restaurar los cinco archivos originalmente cargados.",
+            "Confirmo que deseo restaurar los siete archivos originalmente cargados.",
             key="mod_confirm_restore_v04",
         )
 
@@ -4176,7 +4556,7 @@ def render_wizard(
 
 def render_no_file() -> None:
     st.warning(
-        "No hay una versión activa. Primero carga los cinco archivos desde "
+        "No hay una versión activa. Primero carga los siete archivos desde "
         "**01 Cargar Liberadores**."
     )
 
