@@ -24,7 +24,10 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import importlib.util
 import re
+import zipfile
+from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 from textwrap import dedent
@@ -978,6 +981,314 @@ def load_seven_files(
 
 
 # ============================================================
+# EXPORTACIÓN DE LOS SIETE ARCHIVOS
+# ============================================================
+
+def dataframe_for_export(
+    data: dict[str, Any],
+    role: str,
+) -> pd.DataFrame:
+    """Obtiene una copia limpia del archivo lógico solicitado."""
+    if role == FILE_ROLE_CECO:
+        frame = data.get("dic_ceco", pd.DataFrame())
+        columns = CECO_DICTIONARY_COLUMNS
+    elif role == FILE_ROLE_USERS:
+        frame = data.get("dic_users", pd.DataFrame())
+        columns = USER_DICTIONARY_COLUMNS
+    else:
+        level = next(
+            (
+                current_level
+                for current_level in LEVELS
+                if FILE_ROLE_LIBERATORS[current_level] == role
+            ),
+            None,
+        )
+        if level is None:
+            raise ValueError(f"Rol de archivo no reconocido: {role}")
+
+        frame = data.get("liberadores", {}).get(
+            level,
+            pd.DataFrame(),
+        )
+        columns = GROUP_COLUMNS
+
+    if not isinstance(frame, pd.DataFrame):
+        raise ValueError(
+            f"No hay datos disponibles para {role_label(role)}."
+        )
+
+    result = frame.drop(
+        columns=[
+            "_DesdeNum",
+            "_HastaNum",
+            "_Nivel",
+            "_Liberador",
+        ],
+        errors="ignore",
+    ).copy()
+
+    for column in columns:
+        if column not in result.columns:
+            result[column] = ""
+
+    return result.loc[:, columns].copy()
+
+
+def source_extension(
+    role: str,
+    file_names: dict[str, str],
+) -> str:
+    """Determina la extensión del archivo originalmente cargado."""
+    name = clean_text(file_names.get(role, ""))
+    suffix = Path(name).suffix.lower()
+
+    if suffix in {".parquet", ".pq"}:
+        return ".parquet"
+    if suffix == ".csv":
+        return ".csv"
+    if suffix in {".xlsx", ".xls", ".xlsm"}:
+        return ".xlsx"
+
+    return ".csv"
+
+
+def dataframe_to_csv_bytes(dataframe: pd.DataFrame) -> bytes:
+    return dataframe.to_csv(
+        index=False,
+        sep=";",
+        lineterminator="\n",
+    ).encode("utf-8-sig")
+
+
+def available_parquet_engine() -> str | None:
+    """Retorna el motor Parquet disponible en el entorno."""
+    if importlib.util.find_spec("pyarrow") is not None:
+        return "pyarrow"
+
+    if importlib.util.find_spec("fastparquet") is not None:
+        return "fastparquet"
+
+    return None
+
+
+def dataframe_to_parquet_bytes(dataframe: pd.DataFrame) -> bytes:
+    engine = available_parquet_engine()
+
+    if engine is None:
+        raise ValueError(
+            "La exportación Parquet requiere instalar `pyarrow` "
+            "o `fastparquet`. Agrega `pyarrow` a requirements.txt."
+        )
+
+    output = BytesIO()
+
+    try:
+        dataframe.to_parquet(
+            output,
+            index=False,
+            engine=engine,
+        )
+    except Exception as error:
+        raise ValueError(
+            f"No fue posible generar el archivo Parquet con {engine}."
+        ) from error
+
+    return output.getvalue()
+
+
+def dataframe_to_excel_bytes(
+    dataframe: pd.DataFrame,
+) -> bytes:
+    output = BytesIO()
+
+    try:
+        with pd.ExcelWriter(
+            output,
+            engine="openpyxl",
+        ) as writer:
+            dataframe.to_excel(
+                writer,
+                index=False,
+                sheet_name="Sheet1",
+            )
+    except Exception as error:
+        raise ValueError(
+            "No fue posible generar el archivo Excel."
+        ) from error
+
+    return output.getvalue()
+
+
+def export_file_name(
+    role: str,
+    extension: str,
+) -> str:
+    if role == FILE_ROLE_CECO:
+        stem = "Diccionario_CECO_Plantas"
+    elif role == FILE_ROLE_USERS:
+        stem = "Diccionario_Usuarios_Cargos"
+    else:
+        level = next(
+            level
+            for level in LEVELS
+            if FILE_ROLE_LIBERATORS[level] == role
+        )
+        stem = f"Liberador_{level}_Compra_Directa_ENAEX"
+
+    return f"{stem}{extension}"
+
+
+def build_export_zip(
+    data: dict[str, Any],
+    file_names: dict[str, str],
+    export_mode: str,
+) -> bytes:
+    """
+    Genera un ZIP con los siete archivos.
+
+    export_mode:
+      - source: conserva CSV/Parquet/Excel según el archivo de entrada.
+      - csv: convierte todos a CSV.
+      - parquet: convierte todos a Parquet.
+    """
+    if export_mode not in {"source", "csv", "parquet"}:
+        raise ValueError("Modo de exportación no válido.")
+
+    output = BytesIO()
+
+    with zipfile.ZipFile(
+        output,
+        mode="w",
+        compression=zipfile.ZIP_DEFLATED,
+    ) as archive:
+        for role in REQUIRED_FILE_ROLES:
+            dataframe = dataframe_for_export(data, role)
+
+            if export_mode == "csv":
+                extension = ".csv"
+            elif export_mode == "parquet":
+                extension = ".parquet"
+            else:
+                extension = source_extension(role, file_names)
+
+            if extension == ".csv":
+                content = dataframe_to_csv_bytes(dataframe)
+            elif extension == ".parquet":
+                content = dataframe_to_parquet_bytes(dataframe)
+            elif extension == ".xlsx":
+                content = dataframe_to_excel_bytes(dataframe)
+            else:
+                raise ValueError(
+                    f"Extensión de exportación no válida: {extension}"
+                )
+
+            archive.writestr(
+                export_file_name(role, extension),
+                content,
+            )
+
+    return output.getvalue()
+
+
+def render_export_section(data: dict[str, Any]) -> None:
+    st.markdown("---")
+    st.markdown(
+        '<div class="fl-section-title">Descargar versión completa</div>',
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        "Descarga los siete archivos conservando su formato de origen "
+        "o conviértelos todos a CSV o Parquet."
+    )
+
+    file_names = st.session_state.get(SESSION_FILE_KEY, {})
+    if not isinstance(file_names, dict):
+        file_names = {}
+
+    input_extensions = {
+        source_extension(role, file_names)
+        for role in REQUIRED_FILE_ROLES
+    }
+
+    if input_extensions == {".parquet"}:
+        default_index = 2
+    elif input_extensions == {".csv"}:
+        default_index = 1
+    else:
+        default_index = 0
+
+    parquet_engine = available_parquet_engine()
+    options = ["source", "csv"]
+
+    if parquet_engine is not None:
+        options.append("parquet")
+    elif ".parquet" in input_extensions:
+        st.error(
+            "Se cargaron archivos Parquet, pero el entorno no tiene un motor "
+            "Parquet instalado. Agrega `pyarrow` a requirements.txt."
+        )
+        return
+    else:
+        st.info(
+            "La opción Parquet se habilitará automáticamente al instalar "
+            "`pyarrow` o `fastparquet`."
+        )
+
+    default_mode = (
+        "parquet"
+        if default_index == 2 and "parquet" in options
+        else "csv"
+        if default_index == 1
+        else "source"
+    )
+
+    selected_mode = st.radio(
+        "Formato de descarga",
+        options=options,
+        index=options.index(default_mode),
+        format_func=lambda value: {
+            "source": "Conservar formato original de cada archivo",
+            "csv": "Convertir los 7 archivos a CSV",
+            "parquet": (
+                "Convertir los 7 archivos a Parquet "
+                f"({parquet_engine})"
+            ),
+        }[value],
+        horizontal=False,
+        key="export_format_mode_v02",
+    )
+
+    try:
+        zip_bytes = build_export_zip(
+            data=data,
+            file_names=file_names,
+            export_mode=selected_mode,
+        )
+    except ValueError as error:
+        st.error(str(error))
+        return
+
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    mode_label = {
+        "source": "FORMATO_ORIGINAL",
+        "csv": "CSV",
+        "parquet": "PARQUET",
+    }[selected_mode]
+
+    st.download_button(
+        "⬇️ Descargar ZIP con los 7 archivos",
+        data=zip_bytes,
+        file_name=(
+            f"VERSION_LIBERADORES_{mode_label}_{timestamp}.zip"
+        ),
+        mime="application/zip",
+        type="primary",
+        use_container_width=True,
+        key=f"download_seven_files_{selected_mode}_v01",
+    )
+
+# ============================================================
 # INTERFAZ
 # ============================================================
 
@@ -1321,6 +1632,8 @@ def render_active_state() -> None:
             use_container_width=True,
             hide_index=True,
         )
+
+    render_export_section(data)
 
     if st.button(
         "🗑️ Quitar los siete archivos",
