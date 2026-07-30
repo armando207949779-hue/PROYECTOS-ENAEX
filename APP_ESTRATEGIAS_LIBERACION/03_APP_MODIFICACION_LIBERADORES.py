@@ -1490,8 +1490,8 @@ def available_parquet_engine() -> str | None:
 
 
 def chile_modification_timestamp() -> str:
-    """Fecha y hora de modificación en Santiago, Chile."""
-    return datetime.now(CHILE_TZ).strftime("%Y-%m-%d_%H-%M-%S")
+    """Fecha y hora de modificación en Santiago: DDMMYYYY_HHMMSS."""
+    return datetime.now(CHILE_TZ).strftime("%d%m%Y_%H%M%S")
 
 
 def clean_export_frame(dataframe: pd.DataFrame) -> pd.DataFrame:
@@ -1705,6 +1705,173 @@ def dataframe_to_excel_bytes(
     return output.getvalue()
 
 
+def change_level_from_field(value: Any) -> int | None:
+    """Obtiene el nivel desde 'Lib1' o 'Liberador 1 · User'."""
+    text = clean_text(value)
+    match = re.search(r"(?:lib(?:erador)?\s*)([1-5])", text, re.IGNORECASE)
+    return int(match.group(1)) if match else None
+
+
+def effective_audit_changes(
+    history: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    Conserva el último cambio por CECO/tipo/rango/nivel.
+
+    Esto evita que un historial con reemplazos sucesivos exija exportar
+    simultáneamente valores intermedios y finales para la misma regla.
+    """
+    latest: dict[tuple[str, str, float, float, int], dict[str, Any]] = {}
+
+    for change in history:
+        level = change_level_from_field(change.get("Campo", ""))
+        if level is None:
+            continue
+
+        ceco = clean_text(change.get("CECO", ""))
+        doc = clean_text(change.get("TipoDoc", "")).upper() or "*"
+        low = parse_bound(change.get("Desde", ""), low=True)
+        high = parse_bound(change.get("Hasta", ""), low=False)
+        key = (ceco, doc, low, high, level)
+        latest[key] = dict(change)
+
+    return list(latest.values())
+
+
+def audit_row_mask(
+    dataframe: pd.DataFrame,
+    change: dict[str, Any],
+) -> pd.Series:
+    """Localiza en un liberador la fila descrita por un registro de cambios."""
+    ceco = clean_text(change.get("CECO", ""))
+    if ceco == "[SIN CECO]":
+        ceco = ""
+
+    doc = clean_text(change.get("TipoDoc", "")).upper()
+    low = parse_bound(change.get("Desde", ""), low=True)
+    high = parse_bound(change.get("Hasta", ""), low=False)
+
+    mask = dataframe["CostCenter"].map(clean_text).eq(ceco)
+
+    if doc and doc != "*":
+        mask &= (
+            dataframe["cus_POClasedeDocumento"]
+            .map(clean_text)
+            .str.upper()
+            .eq(doc)
+        )
+
+    mask &= dataframe["TotalCost Bajo"].map(
+        lambda value: parse_bound(value, low=True)
+    ).eq(low)
+    mask &= dataframe["TotalCost Alto"].map(
+        lambda value: parse_bound(value, low=False)
+    ).eq(high)
+    return mask
+
+
+def apply_audit_changes_to_level_frames(
+    level_frames: dict[int, pd.DataFrame],
+    history: list[dict[str, Any]],
+) -> tuple[dict[int, pd.DataFrame], list[str]]:
+    """
+    Fuerza cada cambio auditado sobre el liberador correspondiente.
+
+    La tabla consolidada sigue siendo la fuente principal. Este paso funciona
+    como garantía adicional: si el historial dice que Lib1 cambió, el archivo
+    Liberador 1 debe contener el valor final antes de crear el ZIP.
+    """
+    result = {
+        level: normalized_level_frame(frame, level)
+        for level, frame in level_frames.items()
+    }
+    unmatched: list[str] = []
+
+    for change in effective_audit_changes(history):
+        level = change_level_from_field(change.get("Campo", ""))
+        if level is None or level not in result:
+            continue
+
+        replacement = strip_user(change.get("ValorDespues", ""))
+        if not replacement:
+            continue
+
+        frame = result[level]
+        mask = audit_row_mask(frame, change)
+
+        if not mask.any():
+            unmatched.append(
+                " | ".join([
+                    f"Liberador {level}",
+                    clean_text(change.get("CECO", "")) or "[SIN CECO]",
+                    clean_text(change.get("TipoDoc", "")) or "*",
+                    clean_text(change.get("Desde", "")),
+                    clean_text(change.get("Hasta", "")),
+                ])
+            )
+            continue
+
+        if replacement == LS_LABEL:
+            frame.loc[mask, "Group"] = LS_GROUP
+            frame.loc[mask, "User"] = ""
+        else:
+            frame.loc[mask, "Group"] = ""
+            frame.loc[mask, "User"] = replacement
+
+        result[level] = frame
+
+    return result, unmatched
+
+
+def validate_audit_changes_in_level_frames(
+    level_frames: dict[int, pd.DataFrame],
+    history: list[dict[str, Any]],
+) -> list[str]:
+    """Comprueba que cada valor final del historial esté en el archivo final."""
+    errors: list[str] = []
+
+    for change in effective_audit_changes(history):
+        level = change_level_from_field(change.get("Campo", ""))
+        if level is None or level not in level_frames:
+            continue
+
+        replacement = strip_user(change.get("ValorDespues", ""))
+        if not replacement:
+            continue
+
+        frame = level_frames[level]
+        mask = audit_row_mask(frame, change)
+        matches = frame[mask]
+
+        if replacement == LS_LABEL:
+            saved = (
+                matches["Group"].map(clean_text).eq(LS_GROUP)
+                & matches["User"].map(clean_text).eq("")
+            ).any()
+        else:
+            saved = matches["User"].map(email_key).eq(
+                email_key(replacement)
+            ).any()
+
+        if not saved:
+            errors.append(
+                " | ".join([
+                    f"Liberador {level}",
+                    clean_text(change.get("CECO", "")) or "[SIN CECO]",
+                    clean_text(change.get("TipoDoc", "")) or "*",
+                    clean_text(change.get("Desde", "")),
+                    clean_text(change.get("Hasta", "")),
+                    replacement,
+                ])
+            )
+
+    return errors
+
+
+def archive_folder_name(modification_timestamp: str) -> str:
+    return f"ESTRATEGIAS_LIBERACION_{modification_timestamp}"
+
+
 def archive_filename(
     role: str,
     extension: str,
@@ -1718,10 +1885,7 @@ def archive_filename(
         level = int(role.rsplit("_", 1)[-1])
         stem = f"Liberador_{level}_Compra_Directa_ENAEX"
 
-    return (
-        f"{stem}_MODIFICADO_"
-        f"{modification_timestamp}{extension}"
-    )
+    return f"{stem}_{modification_timestamp}{extension}"
 
 
 def build_seven_files_archive(
@@ -1754,6 +1918,22 @@ def build_seven_files_archive(
         flow,
         original_frames,
     )
+    updated_frames, unmatched_changes = apply_audit_changes_to_level_frames(
+        updated_frames,
+        history,
+    )
+
+    validation_errors = validate_audit_changes_in_level_frames(
+        updated_frames,
+        history,
+    )
+    if validation_errors:
+        preview = "; ".join(validation_errors[:10])
+        raise ValueError(
+            "La exportación fue bloqueada porque algunos cambios auditados "
+            "no quedaron reflejados en los liberadores: " + preview
+        )
+
     updated_users = synchronize_user_dictionary(data, flow)
     updated_cecos = synchronize_ceco_dictionary(data, flow)
 
@@ -1794,8 +1974,10 @@ def build_seven_files_archive(
                 )
             else:
                 content = dataframe_to_csv_bytes(dataframe)
+            folder = archive_folder_name(timestamp)
             archive.writestr(
-                archive_filename(
+                f"{folder}/"
+                + archive_filename(
                     role,
                     extension,
                     timestamp,
@@ -1819,8 +2001,9 @@ def build_seven_files_archive(
             history,
             columns=changes_columns,
         )
+        folder = archive_folder_name(timestamp)
         archive.writestr(
-            f"Cambios_MODIFICACION_{timestamp}.csv",
+            f"{folder}/Cambios_{timestamp}.csv",
             dataframe_to_csv_bytes(changes_dataframe),
         )
 
@@ -1837,7 +2020,7 @@ def build_seven_files_archive(
         )
 
     expected_change_name = (
-        f"Cambios_MODIFICACION_{timestamp}.csv"
+        f"{archive_folder_name(timestamp)}/Cambios_{timestamp}.csv"
     )
     if expected_change_name not in archive_names:
         raise ValueError(
@@ -1856,12 +2039,7 @@ def download_name_for_format(
     export_format: str,
     modification_timestamp: str,
 ) -> str:
-    return (
-        f"VERSION_MODIFICADA_"
-        f"LIBERADORES_Y_DICCIONARIOS_"
-        f"{export_format.upper()}_"
-        f"{modification_timestamp}.zip"
-    )
+    return f"ESTRATEGIAS_LIBERACION_{modification_timestamp}.zip"
 
 
 def refresh_download(
@@ -1984,7 +2162,7 @@ def render_download_selector(
     st.caption(
         "El ZIP contiene cinco liberadores, dos diccionarios "
         "actualizados y un archivo CSV de cambios. Todos los nombres "
-        "incluyen la fecha y hora de modificación de Santiago."
+        "usan la taxonomía DDMMYYYY_HHMMSS de Santiago."
     )
 
     selected_format = st.radio(
@@ -3011,8 +3189,9 @@ def render_ceco_user_replacement(
         try:
             refresh_download(file_name, file_bytes)
             st.success(
-                f"Reemplazo completado: **{len(changes)} posiciones** "
-                f"actualizadas en **{affected_cecos} CECO**."
+                f"Reemplazo completado y validado en los archivos de salida: "
+                f"**{len(changes)} posiciones** actualizadas en "
+                f"**{affected_cecos} CECO**."
             )
             st.toast(
                 "Reemplazo por CECO guardado.",
