@@ -91,6 +91,7 @@ SESSION_EDITOR_DOC = "sim_editor_doc_v03"
 SESSION_EDITOR_AMOUNT = "sim_editor_amount_v03"
 SESSION_PENDING_EDITOR = "sim_pending_editor_v03"
 SESSION_HISTORY_KEY = "sim_case_history_v04"
+SESSION_RUNTIME_CACHE_KEY = "sim_runtime_cache_v05"
 
 
 
@@ -361,13 +362,33 @@ def mostrar_logo() -> None:
 # DATOS Y REGLAS DEL FLUJO
 # ============================================================
 
+def data_runtime_signature(data: dict[str, Any]) -> tuple[int, ...]:
+    """Firma liviana para invalidar índices solo cuando cambia la versión."""
+    flow = data.get("flujo", pd.DataFrame())
+    users = data.get("dic_users", pd.DataFrame())
+    cecos = data.get("dic_ceco", pd.DataFrame())
+    liberadores = data.get("liberadores", {})
+
+    return (
+        id(flow), len(flow) if isinstance(flow, pd.DataFrame) else -1,
+        id(users), len(users) if isinstance(users, pd.DataFrame) else -1,
+        id(cecos), len(cecos) if isinstance(cecos, pd.DataFrame) else -1,
+        id(liberadores),
+    )
+
+
 def validate_flow_schema(data: dict[str, Any]) -> pd.DataFrame:
-    """Valida la versión reconstruida desde los siete archivos."""
+    """Valida una vez por versión y reutiliza el resultado."""
     if not isinstance(data, dict):
         raise ValueError(
             "No existe una versión activa. Carga los siete archivos "
             "desde 01 Cargar Versión."
         )
+
+    signature = data_runtime_signature(data)
+    cached = st.session_state.get(SESSION_RUNTIME_CACHE_KEY, {})
+    if cached.get("signature") == signature and cached.get("validated"):
+        return data["flujo"]
 
     flow = data.get("flujo")
     if not isinstance(flow, pd.DataFrame) or flow.empty:
@@ -380,7 +401,6 @@ def validate_flow_schema(data: dict[str, Any]) -> pd.DataFrame:
         "Lib1", "Lib2", "Lib3", "Lib4", "Lib5",
     ]
     missing = [column for column in required if column not in flow.columns]
-
     if missing:
         raise ValueError(
             "El flujo reconstruido no tiene la estructura requerida. "
@@ -389,136 +409,143 @@ def validate_flow_schema(data: dict[str, Any]) -> pd.DataFrame:
 
     liberadores = data.get("liberadores")
     if not isinstance(liberadores, dict):
-        raise ValueError(
-            "La versión activa no conserva los cinco liberadores."
-        )
+        raise ValueError("La versión activa no conserva los cinco liberadores.")
 
     missing_levels = [
-        level
-        for level in LEVELS
+        level for level in LEVELS
         if not isinstance(liberadores.get(level), pd.DataFrame)
     ]
     if missing_levels:
         raise ValueError(
             "Faltan niveles: "
-            + ", ".join(
-                f"Liberador {level}"
-                for level in missing_levels
-            )
+            + ", ".join(f"Liberador {level}" for level in missing_levels)
             + "."
         )
 
     ceco_dictionary = data.get("dic_ceco")
     if not isinstance(ceco_dictionary, pd.DataFrame):
-        raise ValueError(
-            "No se encontró el Diccionario CECO-Plantas."
-        )
-
-    ceco_missing_columns = [
-        column
-        for column in ["CECO", "Planta"]
+        raise ValueError("No se encontró el Diccionario CECO-Plantas.")
+    ceco_missing = [
+        column for column in ["CECO", "Planta"]
         if column not in ceco_dictionary.columns
     ]
-    if ceco_missing_columns:
+    if ceco_missing:
         raise ValueError(
             "El Diccionario CECO-Plantas no tiene las columnas: "
-            + ", ".join(ceco_missing_columns)
-            + "."
+            + ", ".join(ceco_missing) + "."
         )
 
     users_dictionary = data.get("dic_users")
     if not isinstance(users_dictionary, pd.DataFrame):
-        raise ValueError(
-            "No se encontró el Diccionario Usuarios-Cargos."
-        )
-
-    users_missing_columns = [
-        column
-        for column in ["Correo", "Cargo"]
+        raise ValueError("No se encontró el Diccionario Usuarios-Cargos.")
+    user_missing = [
+        column for column in ["Correo", "Cargo"]
         if column not in users_dictionary.columns
     ]
-    if users_missing_columns:
+    if user_missing:
         raise ValueError(
             "El Diccionario Usuarios-Cargos no tiene las columnas: "
-            + ", ".join(users_missing_columns)
-            + "."
+            + ", ".join(user_missing) + "."
         )
 
     return flow
 
 
+def build_runtime_cache(data: dict[str, Any]) -> dict[str, Any]:
+    """Construye todos los índices costosos una sola vez por versión."""
+    flow = data["flujo"]
+    users = data.get("dic_users", pd.DataFrame())
+    cecos = data.get("dic_ceco", pd.DataFrame())
+
+    cargo_mapping: dict[str, str] = {}
+    if isinstance(users, pd.DataFrame) and not users.empty:
+        for correo, cargo in users[["Correo", "Cargo"]].itertuples(index=False, name=None):
+            email = strip_user_email(correo)
+            if email:
+                cargo_mapping[email.lower()] = clean_user(cargo)
+
+    ceco_mapping: dict[str, dict[str, str]] = {}
+    if isinstance(cecos, pd.DataFrame) and not cecos.empty:
+        columns = [column for column in ["CECO", "Planta", "Centro"] if column in cecos.columns]
+        for values in cecos[columns].itertuples(index=False, name=None):
+            row = dict(zip(columns, values))
+            ceco = clean_user(row.get("CECO", ""))
+            if ceco:
+                ceco_mapping[ceco] = {
+                    "planta": clean_user(row.get("Planta", "")),
+                    "centro": clean_user(row.get("Centro", "")),
+                }
+
+    rows_by_pair: dict[tuple[str, str], pd.DataFrame] = {}
+    for (ceco, doc), group in flow.groupby(["CECO", "TipoDoc"], sort=False):
+        rows_by_pair[(str(ceco), str(doc))] = group
+
+    pairs = [
+        pair for pair in rows_by_pair
+        if pair[1] in DOC_LABEL
+    ]
+    docs_by_ceco: dict[str, list[str]] = {}
+    for ceco, doc in pairs:
+        docs_by_ceco.setdefault(ceco, []).append(doc)
+    for ceco in docs_by_ceco:
+        docs_by_ceco[ceco] = [doc for doc in ["AZNB", "AZSR"] if doc in docs_by_ceco[ceco]]
+
+    flow_users = {
+        strip_user_email(value).lower()
+        for column in LIB_COLS
+        for value in flow[column].tolist()
+        if strip_user_email(value) and strip_user_email(value) != LS_LABEL
+    }
+
+    return {
+        "signature": data_runtime_signature(data),
+        "validated": True,
+        "cargo_map": cargo_mapping,
+        "ceco_map": ceco_mapping,
+        "rows_by_pair": rows_by_pair,
+        "pairs": pairs,
+        "docs_by_ceco": docs_by_ceco,
+        "ceco_values": sorted(docs_by_ceco),
+        "missing_users": sorted(flow_users - set(cargo_mapping)),
+    }
+
+
+def runtime_cache(data: dict[str, Any]) -> dict[str, Any]:
+    validate_flow_schema(data)
+    signature = data_runtime_signature(data)
+    cached = st.session_state.get(SESSION_RUNTIME_CACHE_KEY)
+    if not isinstance(cached, dict) or cached.get("signature") != signature:
+        cached = build_runtime_cache(data)
+        st.session_state[SESSION_RUNTIME_CACHE_KEY] = cached
+    return cached
+
 
 def cargo_map(data: dict[str, Any]) -> dict[str, str]:
-    mapping: dict[str, str] = {}
-    users = data.get("dic_users", pd.DataFrame())
-
-    if not isinstance(users, pd.DataFrame) or users.empty:
-        return mapping
-
-    for _, row in users.iterrows():
-        email = strip_user_email(row.get("Correo", ""))
-        cargo = clean_user(row.get("Cargo", ""))
-        if email:
-            mapping[email.lower()] = cargo
-
-    return mapping
+    return runtime_cache(data)["cargo_map"]
 
 
-def display_with_cargo(user: Any, data: dict[str, pd.DataFrame]) -> str:
+def display_with_cargo(user: Any, data: dict[str, Any]) -> str:
     email = strip_user_email(user)
     if not email or email == LS_LABEL:
         return email
 
-    cargo = cargo_map(data).get(email.lower(), "")
+    cargo = runtime_cache(data)["cargo_map"].get(email.lower(), "")
     return email if not cargo or cargo == LS_LABEL else f"{email} ({cargo})"
 
-def ceco_dictionary_map(
-    data: dict[str, Any],
-) -> dict[str, dict[str, str]]:
-    dictionary = data.get("dic_ceco", pd.DataFrame())
-    if not isinstance(dictionary, pd.DataFrame) or dictionary.empty:
-        return {}
 
-    mapping: dict[str, dict[str, str]] = {}
-
-    for _, row in dictionary.iterrows():
-        ceco = clean_user(row.get("CECO", ""))
-        if not ceco:
-            continue
-
-        mapping[ceco] = {
-            "planta": clean_user(row.get("Planta", "")),
-            "centro": clean_user(row.get("Centro", "")),
-        }
-
-    return mapping
+def ceco_dictionary_map(data: dict[str, Any]) -> dict[str, dict[str, str]]:
+    return runtime_cache(data)["ceco_map"]
 
 
-def ceco_metadata(
-    data: dict[str, Any],
-    ceco: str,
-) -> dict[str, str]:
-    return ceco_dictionary_map(data).get(
+def ceco_metadata(data: dict[str, Any], ceco: str) -> dict[str, str]:
+    return runtime_cache(data)["ceco_map"].get(
         clean_user(ceco),
         {"planta": "", "centro": ""},
     )
 
 
-def users_not_in_dictionary(
-    data: dict[str, Any],
-) -> list[str]:
-    flow = validate_flow_schema(data)
-    known = set(cargo_map(data))
-
-    users = {
-        strip_user_email(value).lower()
-        for column in LIB_COLS
-        for value in flow[column].tolist()
-        if strip_user_email(value)
-        and strip_user_email(value) != LS_LABEL
-    }
-
-    return sorted(user for user in users if user not in known)
+def users_not_in_dictionary(data: dict[str, Any]) -> list[str]:
+    return list(runtime_cache(data)["missing_users"])
 
 
 
@@ -575,14 +602,8 @@ def build_case(
     flow = validate_flow_schema(data)
     ceco = clean_user(ceco)
 
-    docs = sorted(
-        flow.loc[flow["CECO"].eq(ceco), "TipoDoc"]
-        .dropna()
-        .astype(str)
-        .unique()
-        .tolist()
-    )
-    docs = [doc for doc in docs if doc in DOC_LABEL]
+    cache = runtime_cache(data)
+    docs = list(cache["docs_by_ceco"].get(ceco, []))
 
     if not docs:
         raise ValueError(f"No existen datos válidos para el CECO {ceco}.")
@@ -596,10 +617,7 @@ def build_case(
             f"{DOC_LABEL.get(doc_type, doc_type)}."
         )
 
-    rows = flow[
-        flow["CECO"].eq(ceco)
-        & flow["TipoDoc"].eq(doc_type)
-    ]
+    rows = cache["rows_by_pair"].get((ceco, doc_type), pd.DataFrame())
 
     if amount is None:
         selected_row = rows.sample(n=1).iloc[0]
@@ -629,59 +647,34 @@ def build_case(
 
 
 def available_pairs(
-    data: dict[str, pd.DataFrame],
+    data: dict[str, Any],
     doc_filter: str,
 ) -> list[tuple[str, str]]:
-    flow = validate_flow_schema(data)
-
+    pairs = runtime_cache(data)["pairs"]
     if doc_filter in DOC_LABEL:
-        flow = flow[flow["TipoDoc"].eq(doc_filter)]
-
-    return [
-        (str(ceco), str(doc))
-        for ceco, doc in flow[["CECO", "TipoDoc"]]
-        .drop_duplicates()
-        .itertuples(index=False, name=None)
-        if doc in DOC_LABEL
-    ]
+        return [pair for pair in pairs if pair[1] == doc_filter]
+    return list(pairs)
 
 
 def ceco_values(data: dict[str, Any]) -> list[str]:
-    flow = validate_flow_schema(data)
-    return sorted(
-        flow["CECO"].dropna().astype(str).unique().tolist()
-    )
+    return list(runtime_cache(data)["ceco_values"])
 
 
 def ceco_label(data: dict[str, Any], ceco: str) -> str:
-    metadata = ceco_metadata(data, ceco)
+    metadata = runtime_cache(data)["ceco_map"].get(
+        clean_user(ceco),
+        {"planta": "", "centro": ""},
+    )
     details = [
-        value
-        for value in [
-            metadata.get("planta", ""),
-            metadata.get("centro", ""),
-        ]
+        value for value in [metadata.get("planta", ""), metadata.get("centro", "")]
         if value
     ]
-
-    return (
-        f"{ceco} | {' | '.join(details)}"
-        if details
-        else ceco
-    )
+    return f"{ceco} | {' | '.join(details)}" if details else ceco
 
 
+def docs_for_ceco(data: dict[str, Any], ceco: str) -> list[str]:
+    return list(runtime_cache(data)["docs_by_ceco"].get(ceco, []))
 
-def docs_for_ceco(data: dict[str, pd.DataFrame], ceco: str) -> list[str]:
-    flow = validate_flow_schema(data)
-    docs = (
-        flow.loc[flow["CECO"].eq(ceco), "TipoDoc"]
-        .dropna()
-        .astype(str)
-        .unique()
-        .tolist()
-    )
-    return [doc for doc in ["AZNB", "AZSR"] if doc in docs]
 
 
 # ============================================================
@@ -975,7 +968,7 @@ def render_header() -> None:
         unsafe_allow_html=True,
     )
     st.markdown(
-        '<div class="fl-subtitle">Simula usando cinco liberadores y los diccionarios de CECO y usuarios.</div>',
+        '<div class="fl-subtitle">Simula rápidamente usando índices precalculados de CECO, rangos y usuarios.</div>',
         unsafe_allow_html=True,
     )
 
@@ -1189,6 +1182,7 @@ def render_editable_case(data: dict[str, pd.DataFrame]) -> None:
 
 def render_simulator(data: dict[str, Any]) -> None:
     flow = validate_flow_schema(data)
+    runtime_cache(data)
     file_names = st.session_state.get(SESSION_FILE_KEY, {})
     liberadores = data.get("liberadores", {})
     dic_ceco = data.get("dic_ceco", pd.DataFrame())
