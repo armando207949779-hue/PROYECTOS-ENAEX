@@ -667,7 +667,7 @@ def validar_respuesta_remota(
         "Content-Type",
         "",
     ).casefold()
-    beginning = response.content[:500].casefold()
+    beginning = response.content[:500].lower()
 
     if (
         "text/html" in content_type
