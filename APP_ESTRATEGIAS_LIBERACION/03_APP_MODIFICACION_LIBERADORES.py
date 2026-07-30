@@ -2157,8 +2157,9 @@ def render_ceco_user_replacement(
         (
             f"Se muestran **{len(scope_rows):,} filas** de "
             f"**{scope_rows['CECO'].nunique():,} CECO**, sin filtrar por usuario. "
-            "Esta tabla permite revisar todos los rangos, tipos y liberadores "
-            "antes de seleccionar a la persona que será reemplazada."
+            "Esta primera tabla muestra el alcance general. Después de seleccionar "
+            "a la persona, aparecerá nuevamente completa con las filas "
+            "afectadas resaltadas para comparar contra las demás."
         ).replace(",", ".")
     )
 
@@ -2273,10 +2274,10 @@ def render_ceco_user_replacement(
         compact_html(
             f"""
             <div class="replacement-note">
-                Las celdas amarillas contienen
-                {escape(display_user(old_user, data))}
-                y serán reemplazadas. El cambio se aplicará en todos los
-                rangos mostrados.
+                Se muestra la tabla completa del alcance para facilitar la
+                comparación. Las filas amarillas contienen al menos una posición
+                que será modificada. Las celdas con borde amarillo intenso contienen
+                {escape(display_user(old_user, data))} y serán reemplazadas.
             </div>
             """
         ),
@@ -2284,16 +2285,35 @@ def render_ceco_user_replacement(
     )
 
     visible_columns = [
-        "CECO", "Planta", "Desde", "Hasta", "TipoDoc",
+        "Estado", "CECO", "Planta", "Desde", "Hasta", "TipoDoc",
         "Lib1", "Lib2", "Lib3", "Lib4", "Lib5",
     ]
-    preview = affected_rows.loc[:, visible_columns].copy()
+
+    preview = complete_scope.copy()
+    preview["Estado"] = preview["_ID_FILA"].map(
+        lambda row_id: (
+            "AFECTADA"
+            if int(row_id) in set(affected_row_ids)
+            else "REFERENCIA"
+        )
+    )
+    preview = preview.loc[:, visible_columns].copy()
+
+    def highlight_affected_rows(row: pd.Series) -> list[str]:
+        if clean_text(row.get("Estado", "")) == "AFECTADA":
+            style = (
+                "background-color:#FEF3C7;"
+                "color:#78350F;"
+            )
+            return [style] * len(row)
+
+        return [""] * len(row)
 
     def highlight_replacement_cells(column: pd.Series) -> list[str]:
         return [
             (
-                "background-color:#FDE68A;"
-                "color:#78350F;"
+                "background-color:#FDE047;"
+                "color:#713F12;"
                 "font-weight:850;"
                 "border:2px solid #F59E0B;"
             )
@@ -2302,11 +2322,34 @@ def render_ceco_user_replacement(
             for value in column
         ]
 
+    def highlight_status(column: pd.Series) -> list[str]:
+        return [
+            (
+                "background-color:#FDE68A;"
+                "color:#78350F;"
+                "font-weight:850;"
+                "text-align:center;"
+            )
+            if clean_text(value) == "AFECTADA"
+            else (
+                "background-color:#F8FAFC;"
+                "color:#64748B;"
+                "text-align:center;"
+            )
+            for value in column
+        ]
+
     styled_preview = (
         preview.style
+        .apply(highlight_affected_rows, axis=1)
         .apply(
             highlight_replacement_cells,
             subset=LIB_COLS,
+            axis=0,
+        )
+        .apply(
+            highlight_status,
+            subset=["Estado"],
             axis=0,
         )
         .format(
@@ -2315,6 +2358,18 @@ def render_ceco_user_replacement(
                 "Hasta": lambda value: fmt_bound(value),
             }
         )
+        .set_properties(
+            subset=["Estado"],
+            **{"font-size": "11px"},
+        )
+    )
+
+    st.caption(
+        (
+            f"Comparación completa: **{len(preview):,} filas visibles** · "
+            f"**{len(affected_rows):,} afectadas** · "
+            f"**{len(preview) - len(affected_rows):,} de referencia**."
+        ).replace(",", ".")
     )
 
     st.dataframe(
@@ -2322,8 +2377,8 @@ def render_ceco_user_replacement(
         use_container_width=True,
         hide_index=True,
         height=min(
-            700,
-            max(280, 38 * (len(preview) + 2)),
+            760,
+            max(320, 38 * (len(preview) + 2)),
         ),
     )
 
