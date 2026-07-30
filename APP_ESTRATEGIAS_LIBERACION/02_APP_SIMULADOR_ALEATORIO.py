@@ -2,9 +2,9 @@
 # 02_APP_SIMULADOR_ALEATORIO
 # APP_ESTRATEGIAS_LIBERACION
 #
-# Lee los cinco archivos cargados por 01_CARGAR_ARCHIVO_FLUJO.
-# El cargador reconstruye data['flujo'] y conserva además
-# data['liberadores'][1..5] con las reglas originales.
+# Lee los siete archivos cargados por 01_CARGAR_ARCHIVO_FLUJO:
+# Liberador 1–5, Diccionario CECO-Plantas y
+# Diccionario Usuarios-Cargos.
 #
 # Flujo interno esperado:
 # CECO | Planta | Desde | Hasta | TipoDoc |
@@ -74,10 +74,18 @@ DOC_BORDER = {
 
 LS_LABEL = "Liberador Servicios"
 
+LEVELS = (1, 2, 3, 4, 5)
+FILE_ROLE_CECO = "dic_ceco"
+FILE_ROLE_USERS = "dic_users"
+FILE_ROLE_LIBERATORS = {
+    level: f"liberador_{level}"
+    for level in LEVELS
+}
+
 SESSION_DATA_KEY = "flujo_liberacion_data"
 SESSION_FILE_KEY = "flujo_liberacion_file_name"
 SESSION_CASE_KEY = "flujo_liberacion_last_case"
-SESSION_SOURCE_FILES_KEY = "flujo_liberacion_source_files_v03"
+SESSION_SOURCE_FILES_KEY = "flujo_liberacion_source_files_v05"
 SESSION_EDITOR_CECO = "sim_editor_ceco_v03"
 SESSION_EDITOR_DOC = "sim_editor_doc_v03"
 SESSION_EDITOR_AMOUNT = "sim_editor_amount_v03"
@@ -354,15 +362,14 @@ def mostrar_logo() -> None:
 # ============================================================
 
 def validate_flow_schema(data: dict[str, Any]) -> pd.DataFrame:
-    """Valida la versión reconstruida desde los cinco liberadores."""
+    """Valida la versión reconstruida desde los siete archivos."""
     if not isinstance(data, dict):
         raise ValueError(
-            "No existe una versión activa. Carga los cinco archivos "
-            "desde 01 Cargar Liberadores."
+            "No existe una versión activa. Carga los siete archivos "
+            "desde 01 Cargar Versión."
         )
 
     flow = data.get("flujo")
-
     if not isinstance(flow, pd.DataFrame) or flow.empty:
         raise ValueError(
             "La versión activa no contiene un flujo reconstruido válido."
@@ -377,31 +384,68 @@ def validate_flow_schema(data: dict[str, Any]) -> pd.DataFrame:
     if missing:
         raise ValueError(
             "El flujo reconstruido no tiene la estructura requerida. "
-            f"Faltan: {', '.join(missing)}. "
-            "Vuelve a cargar los cinco archivos."
+            f"Faltan: {', '.join(missing)}."
         )
 
     liberadores = data.get("liberadores")
-
     if not isinstance(liberadores, dict):
         raise ValueError(
-            "La versión activa no conserva los cinco archivos de liberadores."
+            "La versión activa no conserva los cinco liberadores."
         )
 
     missing_levels = [
         level
-        for level in range(1, 6)
+        for level in LEVELS
         if not isinstance(liberadores.get(level), pd.DataFrame)
     ]
-
     if missing_levels:
         raise ValueError(
-            "Faltan niveles en la versión activa: "
-            + ", ".join(f"Liberador {level}" for level in missing_levels)
+            "Faltan niveles: "
+            + ", ".join(
+                f"Liberador {level}"
+                for level in missing_levels
+            )
+            + "."
+        )
+
+    ceco_dictionary = data.get("dic_ceco")
+    if not isinstance(ceco_dictionary, pd.DataFrame):
+        raise ValueError(
+            "No se encontró el Diccionario CECO-Plantas."
+        )
+
+    ceco_missing_columns = [
+        column
+        for column in ["CECO", "Planta"]
+        if column not in ceco_dictionary.columns
+    ]
+    if ceco_missing_columns:
+        raise ValueError(
+            "El Diccionario CECO-Plantas no tiene las columnas: "
+            + ", ".join(ceco_missing_columns)
+            + "."
+        )
+
+    users_dictionary = data.get("dic_users")
+    if not isinstance(users_dictionary, pd.DataFrame):
+        raise ValueError(
+            "No se encontró el Diccionario Usuarios-Cargos."
+        )
+
+    users_missing_columns = [
+        column
+        for column in ["Correo", "Cargo"]
+        if column not in users_dictionary.columns
+    ]
+    if users_missing_columns:
+        raise ValueError(
+            "El Diccionario Usuarios-Cargos no tiene las columnas: "
+            + ", ".join(users_missing_columns)
             + "."
         )
 
     return flow
+
 
 
 def cargo_map(data: dict[str, Any]) -> dict[str, str]:
@@ -427,6 +471,55 @@ def display_with_cargo(user: Any, data: dict[str, pd.DataFrame]) -> str:
 
     cargo = cargo_map(data).get(email.lower(), "")
     return email if not cargo or cargo == LS_LABEL else f"{email} ({cargo})"
+
+def ceco_dictionary_map(
+    data: dict[str, Any],
+) -> dict[str, dict[str, str]]:
+    dictionary = data.get("dic_ceco", pd.DataFrame())
+    if not isinstance(dictionary, pd.DataFrame) or dictionary.empty:
+        return {}
+
+    mapping: dict[str, dict[str, str]] = {}
+
+    for _, row in dictionary.iterrows():
+        ceco = clean_user(row.get("CECO", ""))
+        if not ceco:
+            continue
+
+        mapping[ceco] = {
+            "planta": clean_user(row.get("Planta", "")),
+            "centro": clean_user(row.get("Centro", "")),
+        }
+
+    return mapping
+
+
+def ceco_metadata(
+    data: dict[str, Any],
+    ceco: str,
+) -> dict[str, str]:
+    return ceco_dictionary_map(data).get(
+        clean_user(ceco),
+        {"planta": "", "centro": ""},
+    )
+
+
+def users_not_in_dictionary(
+    data: dict[str, Any],
+) -> list[str]:
+    flow = validate_flow_schema(data)
+    known = set(cargo_map(data))
+
+    users = {
+        strip_user_email(value).lower()
+        for column in LIB_COLS
+        for value in flow[column].tolist()
+        if strip_user_email(value)
+        and strip_user_email(value) != LS_LABEL
+    }
+
+    return sorted(user for user in users if user not in known)
+
 
 
 def pick_row(
@@ -520,9 +613,13 @@ def build_case(
             "Revisa la tabla de reglas del CECO."
         )
 
+    metadata = ceco_metadata(data, ceco)
+
     return {
         "ceco": ceco,
-        "planta": clean_user(selected_row.get("Planta", "")),
+        "planta": metadata.get("planta", "")
+        or clean_user(selected_row.get("Planta", "")),
+        "centro": metadata.get("centro", ""),
         "doc": doc_type,
         "monto": int(amount),
         "desde": selected_row["Desde"],
@@ -549,18 +646,30 @@ def available_pairs(
     ]
 
 
-def ceco_values(data: dict[str, pd.DataFrame]) -> list[str]:
-    return sorted(data["flujo"]["CECO"].dropna().astype(str).unique().tolist())
-
-
-def ceco_label(data: dict[str, pd.DataFrame], ceco: str) -> str:
+def ceco_values(data: dict[str, Any]) -> list[str]:
     flow = validate_flow_schema(data)
-    plants = (
-        flow.loc[flow["CECO"].eq(ceco), "Planta"]
-        .map(clean_user)
+    return sorted(
+        flow["CECO"].dropna().astype(str).unique().tolist()
     )
-    plants = plants[plants.ne("")].unique().tolist()
-    return f"{ceco} | {plants[0]}" if plants else ceco
+
+
+def ceco_label(data: dict[str, Any], ceco: str) -> str:
+    metadata = ceco_metadata(data, ceco)
+    details = [
+        value
+        for value in [
+            metadata.get("planta", ""),
+            metadata.get("centro", ""),
+        ]
+        if value
+    ]
+
+    return (
+        f"{ceco} | {' | '.join(details)}"
+        if details
+        else ceco
+    )
+
 
 
 def docs_for_ceco(data: dict[str, pd.DataFrame], ceco: str) -> list[str]:
@@ -635,6 +744,7 @@ def html_case(
     metrics = [
         ("CECO", case["ceco"]),
         ("Planta", case["planta"] or "—"),
+        ("Centro", case.get("centro", "") or "—"),
         ("Tipo", DOC_LABEL.get(case["doc"], case["doc"])),
         ("Monto", fmt_money(case["monto"])),
         ("Tramo", f"{fmt_bound(case['desde'])} – {fmt_bound(case['hasta'])}"),
@@ -865,7 +975,7 @@ def render_header() -> None:
         unsafe_allow_html=True,
     )
     st.markdown(
-        '<div class="fl-subtitle">Simula sobre la versión consolidada de los cinco liberadores.</div>',
+        '<div class="fl-subtitle">Simula usando cinco liberadores y los diccionarios de CECO y usuarios.</div>',
         unsafe_allow_html=True,
     )
 
@@ -1081,30 +1191,75 @@ def render_simulator(data: dict[str, Any]) -> None:
     flow = validate_flow_schema(data)
     file_names = st.session_state.get(SESSION_FILE_KEY, {})
     liberadores = data.get("liberadores", {})
+    dic_ceco = data.get("dic_ceco", pd.DataFrame())
+    dic_users = data.get("dic_users", pd.DataFrame())
 
     loaded_levels = sum(
         isinstance(liberadores.get(level), pd.DataFrame)
-        for level in range(1, 6)
+        for level in LEVELS
+    )
+    dictionaries_loaded = int(
+        isinstance(dic_ceco, pd.DataFrame)
+    ) + int(
+        isinstance(dic_users, pd.DataFrame)
     )
 
     st.success(
         (
-            f"Versión activa: **{loaded_levels}/5 liberadores** · "
+            f"Versión activa: **{loaded_levels + dictionaries_loaded}/7 archivos** · "
             f"**{len(flow):,} reglas reconstruidas** · "
-            f"**{flow['CECO'].nunique():,} CECO**"
+            f"**{flow['CECO'].nunique():,} CECO** · "
+            f"**{len(dic_users):,} usuarios**"
         ).replace(",", ".")
     )
+
+    missing_users = users_not_in_dictionary(data)
+    if missing_users:
+        with st.expander(
+            f"Usuarios sin cargo en diccionario ({len(missing_users)})",
+            expanded=False,
+        ):
+            st.dataframe(
+                pd.DataFrame({"Correo": missing_users}),
+                use_container_width=True,
+                hide_index=True,
+            )
 
     if isinstance(file_names, dict):
         with st.expander("Archivos de la versión", expanded=False):
             file_rows = [
                 {
-                    "Nivel": f"Liberador {level}",
-                    "Archivo": file_names.get(level, ""),
-                    "Filas": len(liberadores.get(level, pd.DataFrame())),
+                    "Archivo lógico": f"Liberador {level}",
+                    "Archivo cargado": file_names.get(
+                        FILE_ROLE_LIBERATORS[level],
+                        file_names.get(level, ""),
+                    ),
+                    "Filas": len(
+                        liberadores.get(level, pd.DataFrame())
+                    ),
                 }
-                for level in range(1, 6)
+                for level in LEVELS
             ]
+
+            file_rows.extend([
+                {
+                    "Archivo lógico": "Diccionario CECO-Plantas",
+                    "Archivo cargado": file_names.get(
+                        FILE_ROLE_CECO,
+                        "",
+                    ),
+                    "Filas": len(dic_ceco),
+                },
+                {
+                    "Archivo lógico": "Diccionario Usuarios-Cargos",
+                    "Archivo cargado": file_names.get(
+                        FILE_ROLE_USERS,
+                        "",
+                    ),
+                    "Filas": len(dic_users),
+                },
+            ])
+
             st.dataframe(
                 pd.DataFrame(file_rows),
                 use_container_width=True,
@@ -1113,6 +1268,7 @@ def render_simulator(data: dict[str, Any]) -> None:
 
     render_random_generator(data)
     render_editable_case(data)
+
 
 
 # ============================================================
@@ -1127,14 +1283,14 @@ def main() -> None:
 
     if data is None:
         st.warning(
-            "No hay una versión activa. Primero carga los cinco archivos en **01 Cargar Liberadores**."
+            "No hay una versión activa. Primero carga los siete archivos en **01 Cargar Versión**."
         )
 
         try:
-            if st.button("📤 Ir a 01 Cargar Liberadores", type="primary"):
+            if st.button("📤 Ir a 01 Cargar Versión", type="primary"):
                 st.switch_page("01_CARGAR_ARCHIVO_FLUJO.py")
         except Exception:
-            st.info("Selecciona **01 Cargar Liberadores** desde el menú lateral.")
+            st.info("Selecciona **01 Cargar Versión** desde el menú lateral.")
 
         st.stop()
 
