@@ -1,31 +1,22 @@
-
 # ============================================================
-# 01_CARGAR_ARCHIVO_FLUJO
+# 02_APP_SIMULADOR_ALEATORIO
 # APP_ESTRATEGIAS_LIBERACION
 #
-# NUEVO FORMATO ÚNICO:
-#   7 archivos independientes:
-#   - Liberador 1, 2, 3, 4 y 5.
-#   - Diccionario CECO-Plantas.
-#   - Diccionario Usuarios-Cargos.
-#   Cada archivo puede ser CSV, Parquet o Excel.
+# Lee los siete archivos cargados por 01_CARGAR_ARCHIVO_FLUJO:
+# Liberador 1–5, Diccionario CECO-Plantas y
+# Diccionario Usuarios-Cargos.
 #
-# La aplicación:
-#   1. valida cada nivel;
-#   2. conserva todas las reglas originales, incluidos * y V;
-#   3. reconstruye una tabla interna:
-#      CECO | Planta | Desde | Hasta | TipoDoc |
-#      Lib1 | Lib2 | Lib3 | Lib4 | Lib5
-#   4. incorpora Planta y cargos desde los dos diccionarios;
-#   5. deja los 7 DataFrame originales en session_state.
+# Flujo interno esperado:
+# CECO | Planta | Desde | Hasta | TipoDoc |
+# Lib1 | Lib2 | Lib3 | Lib4 | Lib5
 # ============================================================
 
 from __future__ import annotations
 
 import base64
-import hashlib
+import random
 import re
-from io import BytesIO
+from html import escape
 from pathlib import Path
 from textwrap import dedent
 from typing import Any
@@ -35,7 +26,7 @@ import streamlit as st
 
 
 # ============================================================
-# CONFIGURACIÓN
+# CONFIGURACIÓN Y CONSTANTES
 # ============================================================
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -48,219 +39,74 @@ LOGO_CANDIDATES = [
     BASE_DIR / "assets" / "logo.png",
     PROJECT_DIR / "assets" / "logo.jpg",
     BASE_DIR / "assets" / "logo.jpg",
-    PROJECT_DIR / "assets" / "logo.jpeg",
-    BASE_DIR / "assets" / "logo.jpeg",
 ]
 
-LEVELS = (1, 2, 3, 4, 5)
-
-BASE_RULE_COLUMNS = [
-    "CompanyCode",
-    "BillingAddress",
-    "AccountCategory",
-    "CostCenter",
-    "cus_POClasedeDocumento",
-    "PurchaseGroup",
-    "TotalCost Bajo",
-    "TotalCost Alto",
-]
-
-COMMON_COLUMNS = [
-    *BASE_RULE_COLUMNS,
-    "User",
-    "Required",
-    "Tooltip",
-]
-
-GROUP_COLUMNS = [
-    *BASE_RULE_COLUMNS,
-    "Group",
-    "User",
-    "Required",
-    "Tooltip",
-]
-
-FLOW_COLUMNS = [
-    "CECO",
-    "Planta",
-    "Desde",
-    "Hasta",
-    "TipoDoc",
-    "Lib1",
-    "Lib2",
-    "Lib3",
-    "Lib4",
-    "Lib5",
-]
-
-FLOW_KEY_COLUMNS = ["CECO", "Desde", "Hasta", "TipoDoc"]
 LIB_COLS = ["Lib1", "Lib2", "Lib3", "Lib4", "Lib5"]
+TABLE_COLS = [
+    "CECO", "Planta", "Desde", "Hasta", "TipoDoc",
+    "Lib1", "Lib2", "Lib3", "Lib4", "Lib5",
+]
 
-DOC_TYPES = {"AZNB", "AZSR"}
-LS_LABEL = "Liberador Servicios"
-LS_GROUP_VALUES = {
-    "liberacion servicios",
-    "liberación servicios",
-    "liberador servicios",
+DOC_LABEL = {
+    "AZNB": "Material (AZNB)",
+    "AZSR": "Servicio (AZSR)",
 }
 
+DOC_SHORT_LABEL = {
+    "AZNB": "Material",
+    "AZSR": "Servicio",
+}
 
-CECO_DICTIONARY_COLUMNS = ["CECO", "Planta", "Centro"]
-USER_DICTIONARY_COLUMNS = ["Correo", "Cargo"]
+DOC_COLOR = {
+    "AZNB": "#B42318",
+    "AZSR": "#175CD3",
+}
 
-FILE_ROLE_LIBERATORS = {level: f"liberador_{level}" for level in LEVELS}
+DOC_BG = {
+    "AZNB": "#FFF1F0",
+    "AZSR": "#EFF8FF",
+}
+
+DOC_BORDER = {
+    "AZNB": "#FDA29B",
+    "AZSR": "#84CAFF",
+}
+
+LS_LABEL = "Liberador Servicios"
+
+LEVELS = (1, 2, 3, 4, 5)
 FILE_ROLE_CECO = "dic_ceco"
 FILE_ROLE_USERS = "dic_users"
-REQUIRED_FILE_ROLES = [
-    *[FILE_ROLE_LIBERATORS[level] for level in LEVELS],
-    FILE_ROLE_CECO,
-    FILE_ROLE_USERS,
-]
+FILE_ROLE_LIBERATORS = {
+    level: f"liberador_{level}"
+    for level in LEVELS
+}
 
 SESSION_DATA_KEY = "flujo_liberacion_data"
 SESSION_FILE_KEY = "flujo_liberacion_file_name"
 SESSION_CASE_KEY = "flujo_liberacion_last_case"
-SESSION_FILE_BYTES_KEY = "flujo_liberacion_file_bytes"
-SESSION_SIGNATURE_KEY = "flujo_liberacion_upload_signature_v05"
-SESSION_VALIDATION_KEY = "flujo_liberacion_validation_v05"
 SESSION_SOURCE_FILES_KEY = "flujo_liberacion_source_files_v05"
+SESSION_EDITOR_CECO = "sim_editor_ceco_v03"
+SESSION_EDITOR_DOC = "sim_editor_doc_v03"
+SESSION_EDITOR_AMOUNT = "sim_editor_amount_v03"
+SESSION_PENDING_EDITOR = "sim_pending_editor_v03"
+SESSION_HISTORY_KEY = "sim_case_history_v04"
+SESSION_RUNTIME_CACHE_KEY = "sim_runtime_cache_v05"
+
 
 
 # ============================================================
-# ESTILOS Y LOGO
+# UTILIDADES GENERALES
 # ============================================================
 
 def compact_html(value: str) -> str:
-    return re.sub(r">\s+<", "><", dedent(value).strip())
+    value = dedent(value).strip()
+    return re.sub(r">\s+<", "><", value)
 
 
-def aplicar_estilos() -> None:
-    st.markdown(
-        """
-        <style>
-            .stMainBlockContainer,
-            .block-container {
-                padding-top: 6.5rem !important;
-                padding-bottom: 2.5rem !important;
-            }
-
-            .fl-logo-wrap {
-                width: 100%;
-                min-height: 90px;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                margin: .6rem 0 12px;
-            }
-
-            .fl-logo-wrap img {
-                width: 220px;
-                max-width: min(60vw, 220px);
-                max-height: 88px;
-                object-fit: contain;
-            }
-
-            .fl-title {
-                text-align: center;
-                color: #17365D;
-                font-size: 2rem;
-                font-weight: 850;
-                margin: .2rem 0;
-            }
-
-            .fl-subtitle {
-                text-align: center;
-                color: #64748B;
-                font-size: 1rem;
-                margin-bottom: 1.2rem;
-            }
-
-            .fl-section-title {
-                color: #17365D;
-                font-size: 1.1rem;
-                font-weight: 850;
-                margin: .4rem 0 .6rem;
-            }
-
-            .fl-help {
-                color: #64748B;
-                font-size: .9rem;
-                margin-bottom: .8rem;
-            }
-
-            .format-card {
-                border: 1px solid #BFDBFE;
-                border-radius: 14px;
-                background: #EFF6FF;
-                padding: 14px 16px;
-                margin: .6rem 0 1rem;
-            }
-
-            .format-title {
-                color: #17365D;
-                font-weight: 850;
-                margin-bottom: 6px;
-            }
-
-            .format-columns {
-                color: #334155;
-                font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-                font-size: .82rem;
-                overflow-wrap: anywhere;
-            }
-
-            .level-card {
-                border: 1px solid #E2E8F0;
-                border-radius: 12px;
-                padding: 12px;
-                background: #FFFFFF;
-                min-height: 105px;
-            }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def buscar_logo() -> Path | None:
-    return next(
-        (path for path in LOGO_CANDIDATES if path.exists() and path.is_file()),
-        None,
-    )
-
-
-def mostrar_logo() -> None:
-    path = buscar_logo()
-    if path is None:
-        return
-
-    try:
-        raw = path.read_bytes()
-        if path.suffix.lower() == ".svg":
-            mime = "image/svg+xml"
-        elif path.suffix.lower() == ".png":
-            mime = "image/png"
-        else:
-            mime = "image/jpeg"
-
-        encoded = base64.b64encode(raw).decode("utf-8")
-        st.markdown(
-            f'<div class="fl-logo-wrap"><img src="data:{mime};base64,{encoded}" '
-            'alt="Logo ENAEX"></div>',
-            unsafe_allow_html=True,
-        )
-    except (OSError, UnicodeError):
-        pass
-
-
-# ============================================================
-# LIMPIEZA
-# ============================================================
-
-def clean_text(value: Any) -> str:
+def clean_user(value: Any) -> str:
     if value is None:
         return ""
-
     try:
         if pd.isna(value):
             return ""
@@ -268,26 +114,22 @@ def clean_text(value: Any) -> str:
         pass
 
     text = str(value).strip()
-    return "" if text.lower() in {
-        "", "nan", "none", "null", "<na>", "n/a", "—", "-"
-    } else text
+    return "" if text.lower() in {"", "nan", "none", "null", "<na>", "n/a", "no usar", "—", "-"} else text
 
 
-def normalized_key(value: Any) -> str:
-    return clean_text(value).casefold()
+def strip_user_email(value: Any) -> str:
+    text = clean_user(value)
+    if not text or text == LS_LABEL:
+        return text
+
+    match = re.match(r"^(.*?)(?:\s*\(([^)]+)\))?$", text)
+    return match.group(1).strip() if match else text
 
 
-def normalize_column_name(value: Any) -> str:
-    text = clean_text(value)
-    text = re.sub(r"\s+", " ", text)
-    return text
-
-
-def parse_bound(value: Any, *, low: bool) -> float:
-    text = clean_text(value)
-
+def parse_bound(value: Any, low: bool = True) -> float:
+    text = clean_user(value)
     if text in {"", "*"}:
-        return 1.0 if low else 1e18
+        return 0.0 if low else 1e18
 
     normalized = text.replace(" ", "")
 
@@ -310,1029 +152,1149 @@ def parse_bound(value: Any, *, low: bool) -> float:
 
     try:
         return float(normalized)
-    except ValueError as error:
-        raise ValueError(f"Límite no válido: {value!r}") from error
+    except ValueError as exc:
+        raise ValueError(f"Valor de rango no válido: {value!r}") from exc
 
 
-def normalize_required(value: Any) -> str:
-    text = normalized_key(value)
-    if text in {"true", "verdadero", "1", "sí", "si", "x"}:
-        return "TRUE"
-    if text in {"false", "falso", "0", "no"}:
-        return "FALSE"
-    return clean_text(value) or "TRUE"
+def parse_amount(value: Any) -> int | None:
+    text = clean_user(value)
+    if not text:
+        return None
+
+    amount = parse_bound(text, low=True)
+    if amount < 0:
+        raise ValueError("El monto no puede ser negativo.")
+
+    return int(round(amount))
 
 
-def liberator_from_row(row: pd.Series) -> str:
-    group = clean_text(row.get("Group", ""))
-    user = clean_text(row.get("User", ""))
-
-    if normalized_key(group) in LS_GROUP_VALUES:
-        return LS_LABEL
-
-    return user
-
-
-# ============================================================
-# LECTURA DE CSV / PARQUET / EXCEL
-# ============================================================
-
-def read_csv_flexible(raw: bytes) -> pd.DataFrame:
-    attempts = [
-        {"sep": None, "engine": "python", "encoding": "utf-8-sig"},
-        {"sep": ";", "encoding": "utf-8-sig"},
-        {"sep": ",", "encoding": "utf-8-sig"},
-        {"sep": "\t", "encoding": "utf-8-sig"},
-        {"sep": None, "engine": "python", "encoding": "latin-1"},
-    ]
-
-    last_error: Exception | None = None
-
-    for options in attempts:
-        try:
-            frame = pd.read_csv(BytesIO(raw), dtype=object, **options)
-            if len(frame.columns) >= 2:
-                return frame
-        except Exception as error:
-            last_error = error
-
-    raise ValueError("No fue posible interpretar el CSV.") from last_error
-
-
-def read_uploaded_table(uploaded_file: Any) -> tuple[pd.DataFrame, bytes]:
-    raw = uploaded_file.getvalue()
-    if not raw:
-        raise ValueError("El archivo está vacío.")
-
-    suffix = Path(uploaded_file.name).suffix.lower()
+def fmt_bound(value: Any) -> str:
+    text = clean_user(value)
+    if text == "*":
+        return "*"
 
     try:
-        if suffix == ".csv":
-            frame = read_csv_flexible(raw)
-        elif suffix in {".parquet", ".pq"}:
-            frame = pd.read_parquet(BytesIO(raw))
-        elif suffix in {".xlsx", ".xls", ".xlsm"}:
-            frame = pd.read_excel(BytesIO(raw), dtype=object)
-        else:
-            raise ValueError(
-                "Formato no admitido. Usa CSV, Parquet, XLSX, XLS o XLSM."
-            )
-    except ValueError:
-        raise
-    except Exception as error:
-        raise ValueError(
-            f"No fue posible leer {uploaded_file.name}."
-        ) from error
+        number = parse_bound(value, low=False)
+        if number >= 1e15:
+            return "*"
+        return f"{int(number):,}".replace(",", ".")
+    except (TypeError, ValueError):
+        return text
 
-    frame.columns = [normalize_column_name(column) for column in frame.columns]
-    frame = frame.dropna(axis=0, how="all").dropna(axis=1, how="all")
 
-    return frame, raw
+def fmt_money(value: int | float) -> str:
+    return f"$ {int(value):,}".replace(",", ".")
+
 
 
 # ============================================================
-# VALIDACIÓN POR NIVEL
+# ESTILOS Y LOGO
 # ============================================================
 
-def expected_columns_for_level(level: int) -> list[str]:
-    # Group es opcional en cualquier nivel.
-    return COMMON_COLUMNS
-
-
-def normalize_level_dataframe(
-    dataframe: pd.DataFrame,
-    level: int,
-) -> tuple[pd.DataFrame, dict[str, Any]]:
-    frame = dataframe.copy()
-    frame.columns = [normalize_column_name(column) for column in frame.columns]
-
-    required = expected_columns_for_level(level)
-    missing = [column for column in required if column not in frame.columns]
-
-    if missing:
-        raise ValueError(
-            f"Liberador {level}: faltan columnas obligatorias: "
-            + ", ".join(missing)
-        )
-
-    if "Group" not in frame.columns:
-        frame.insert(
-            frame.columns.get_loc("User"),
-            "Group",
-            "",
-        )
-
-    frame = frame.loc[:, GROUP_COLUMNS].copy()
-
-    for column in GROUP_COLUMNS:
-        frame[column] = frame[column].map(clean_text)
-
-    frame["Required"] = frame["Required"].map(normalize_required)
-
-    invalid_ranges: list[dict[str, Any]] = []
-    empty_approver_rows: list[int] = []
-
-    lows: list[float] = []
-    highs: list[float] = []
-
-    for index, row in frame.iterrows():
-        excel_row = int(index) + 2
-
-        try:
-            low = parse_bound(row["TotalCost Bajo"], low=True)
-            high = parse_bound(row["TotalCost Alto"], low=False)
-        except ValueError as error:
-            invalid_ranges.append({
-                "Nivel": level,
-                "Fila": excel_row,
-                "Detalle": str(error),
-            })
-            low, high = 1.0, 1e18
-
-        if low > high:
-            invalid_ranges.append({
-                "Nivel": level,
-                "Fila": excel_row,
-                "Detalle": "TotalCost Bajo es mayor que TotalCost Alto.",
-            })
-
-        lows.append(low)
-        highs.append(high)
-
-        if not liberator_from_row(row):
-            empty_approver_rows.append(excel_row)
-
-    if invalid_ranges:
-        preview = "; ".join(
-            f"fila {item['Fila']}: {item['Detalle']}"
-            for item in invalid_ranges[:8]
-        )
-        raise ValueError(f"Liberador {level}: rangos inválidos. {preview}")
-
-    frame["_DesdeNum"] = lows
-    frame["_HastaNum"] = highs
-    frame["_Nivel"] = level
-    frame["_Liberador"] = frame.apply(liberator_from_row, axis=1)
-
-    explicit_mask = (
-        frame["CostCenter"].ne("")
-        & frame["CostCenter"].ne("*")
-        & frame["cus_POClasedeDocumento"].isin(DOC_TYPES)
-    )
-
-    duplicate_columns = [
-        *BASE_RULE_COLUMNS,
-        "Group",
-        "User",
-    ]
-    duplicate_rows = int(
-        frame.duplicated(subset=duplicate_columns, keep=False).sum()
-    )
-
-    report = {
-        "level": level,
-        "rows": len(frame),
-        "explicit_rows": int(explicit_mask.sum()),
-        "special_rows": int((~explicit_mask).sum()),
-        "empty_approver_rows": empty_approver_rows,
-        "duplicate_rows": duplicate_rows,
-        "service_group_rows": int(
-            frame["Group"].map(normalized_key).isin(LS_GROUP_VALUES).sum()
-        ),
-    }
-
-    return frame.reset_index(drop=True), report
-
-
-# ============================================================
-# DICCIONARIOS
-# ============================================================
-
-def normalize_ceco_dictionary(
-    dataframe: pd.DataFrame,
-) -> tuple[pd.DataFrame, dict[str, Any]]:
-    frame = dataframe.copy()
-    frame.columns = [normalize_column_name(column) for column in frame.columns]
-
-    missing = [
-        column
-        for column in ["CECO", "Planta"]
-        if column not in frame.columns
-    ]
-    if missing:
-        raise ValueError(
-            "Diccionario CECO-Plantas: faltan columnas obligatorias: "
-            + ", ".join(missing)
-        )
-
-    if "Centro" not in frame.columns:
-        frame["Centro"] = ""
-
-    frame = frame.loc[:, CECO_DICTIONARY_COLUMNS].copy()
-
-    for column in CECO_DICTIONARY_COLUMNS:
-        frame[column] = frame[column].map(clean_text)
-
-    frame = frame[frame["CECO"].ne("")].copy()
-
-    duplicate_rows = int(
-        frame.duplicated(subset=["CECO"], keep=False).sum()
-    )
-
-    conflicting_cecos: list[dict[str, Any]] = []
-    for ceco, group in frame.groupby("CECO", sort=False):
-        plants = [
-            value
-            for value in group["Planta"].drop_duplicates().tolist()
-            if value
-        ]
-        if len(plants) > 1:
-            conflicting_cecos.append({
-                "CECO": ceco,
-                "Plantas": " | ".join(plants),
-            })
-
-    result = (
-        frame.drop_duplicates(subset=["CECO"], keep="last")
-        .sort_values("CECO", kind="stable")
-        .reset_index(drop=True)
-    )
-
-    report = {
-        "rows": len(result),
-        "duplicate_rows": duplicate_rows,
-        "conflicts": pd.DataFrame(conflicting_cecos),
-        "empty_plants": int(result["Planta"].eq("").sum()),
-    }
-    return result, report
-
-
-def normalize_user_dictionary(
-    dataframe: pd.DataFrame,
-) -> tuple[pd.DataFrame, dict[str, Any]]:
-    frame = dataframe.copy()
-    frame.columns = [normalize_column_name(column) for column in frame.columns]
-
-    aliases = {
-        "Email": "Correo",
-        "Mail": "Correo",
-        "Usuario": "Correo",
-        "Rol": "Cargo",
-        "Role": "Cargo",
-    }
-    frame = frame.rename(
-        columns={
-            column: aliases.get(column, column)
-            for column in frame.columns
-        }
-    )
-
-    missing = [
-        column
-        for column in USER_DICTIONARY_COLUMNS
-        if column not in frame.columns
-    ]
-    if missing:
-        raise ValueError(
-            "Diccionario Usuarios-Cargos: faltan columnas obligatorias: "
-            + ", ".join(missing)
-        )
-
-    frame = frame.loc[:, USER_DICTIONARY_COLUMNS].copy()
-    frame["Correo"] = frame["Correo"].map(clean_text)
-    frame["Cargo"] = frame["Cargo"].map(clean_text)
-    frame = frame[frame["Correo"].ne("")].copy()
-
-    duplicate_rows = int(
-        frame.duplicated(subset=["Correo"], keep=False).sum()
-    )
-
-    result = (
-        frame.drop_duplicates(subset=["Correo"], keep="last")
-        .sort_values("Correo", key=lambda values: values.str.casefold())
-        .reset_index(drop=True)
-    )
-
-    report = {
-        "rows": len(result),
-        "duplicate_rows": duplicate_rows,
-        "empty_roles": int(result["Cargo"].eq("").sum()),
-    }
-    return result, report
-
-
-def apply_ceco_dictionary(
-    flow: pd.DataFrame,
-    ceco_dictionary: pd.DataFrame,
-) -> tuple[pd.DataFrame, list[str], list[str]]:
-    result = flow.copy()
-    plant_by_ceco = dict(
-        zip(
-            ceco_dictionary["CECO"],
-            ceco_dictionary["Planta"],
-        )
-    )
-    known_cecos = set(ceco_dictionary["CECO"].astype(str))
-
-    result["Planta"] = result["CECO"].map(plant_by_ceco).fillna("")
-
-    missing_cecos = sorted(
-        set(result["CECO"].astype(str)) - known_cecos
-    )
-    cecos_without_plant = sorted(
-        result.loc[
-            result["CECO"].isin(known_cecos)
-            & result["Planta"].eq(""),
-            "CECO",
-        ]
-        .drop_duplicates()
-        .astype(str)
-        .tolist()
-    )
-    return result, missing_cecos, cecos_without_plant
-
-
-# ============================================================
-# RECONSTRUCCIÓN DEL FLUJO INTERNO
-# ============================================================
-
-def company_from_ceco(ceco: str) -> str:
-    match = re.match(r"^(EC\d{2})", clean_text(ceco).upper())
-    return match.group(1) if match else ""
-
-
-def canonical_rule_key(row: pd.Series) -> tuple[str, str, float, float]:
-    return (
-        clean_text(row["CostCenter"]),
-        clean_text(row["cus_POClasedeDocumento"]).upper(),
-        float(row["_DesdeNum"]),
-        float(row["_HastaNum"]),
-    )
-
-
-def display_bound(value: float, *, high: bool) -> int | float:
-    if high and value >= 1e17:
-        return 999_999_999_999
-
-    if float(value).is_integer():
-        return int(value)
-
-    return float(value)
-
-
-def reconstruct_flow(
-    level_frames: dict[int, pd.DataFrame],
-) -> tuple[pd.DataFrame, dict[str, Any]]:
-    rule_keys: set[tuple[str, str, float, float]] = set()
-
-    explicit_by_level: dict[int, pd.DataFrame] = {}
-
-    for level, frame in level_frames.items():
-        explicit = frame[
-            frame["CostCenter"].ne("")
-            & frame["CostCenter"].ne("*")
-            & frame["cus_POClasedeDocumento"].isin(DOC_TYPES)
-        ].copy()
-
-        explicit_by_level[level] = explicit
-
-        for _, row in explicit.iterrows():
-            rule_keys.add(canonical_rule_key(row))
-
-    records: list[dict[str, Any]] = []
-    conflicts: list[dict[str, Any]] = []
-
-    for ceco, doc, low, high in sorted(rule_keys):
-        record: dict[str, Any] = {
-            "CECO": ceco,
-            "Planta": "",
-            "Desde": display_bound(low, high=False),
-            "Hasta": display_bound(high, high=True),
-            "TipoDoc": doc,
-            "Lib1": "",
-            "Lib2": "",
-            "Lib3": "",
-            "Lib4": "",
-            "Lib5": "",
-        }
-
-        expected_company = company_from_ceco(ceco)
-
-        for level in LEVELS:
-            level_rows = explicit_by_level[level]
-            matches = level_rows[
-                level_rows["CostCenter"].eq(ceco)
-                & level_rows["cus_POClasedeDocumento"].eq(doc)
-                & level_rows["_DesdeNum"].eq(low)
-                & level_rows["_HastaNum"].eq(high)
-            ].copy()
-
-            if expected_company:
-                preferred = matches[
-                    matches["CompanyCode"].isin({expected_company, "*", ""})
-                ]
-                if not preferred.empty:
-                    matches = preferred
-
-            values = [
-                value
-                for value in matches["_Liberador"].map(clean_text).tolist()
-                if value
-            ]
-
-            unique_values = list(dict.fromkeys(values))
-
-            if len(unique_values) == 1:
-                record[f"Lib{level}"] = unique_values[0]
-            elif len(unique_values) > 1:
-                conflicts.append({
-                    "CECO": ceco,
-                    "TipoDoc": doc,
-                    "Desde": display_bound(low, high=False),
-                    "Hasta": display_bound(high, high=True),
-                    "Nivel": level,
-                    "Liberadores": " | ".join(unique_values),
-                })
-                record[f"Lib{level}"] = unique_values[0]
-
-        records.append(record)
-
-    flow = pd.DataFrame(records, columns=FLOW_COLUMNS)
-
-    if not flow.empty:
-        flow = (
-            flow.sort_values(
-                ["CECO", "TipoDoc", "Desde", "Hasta"],
-                kind="stable",
-            )
-            .reset_index(drop=True)
-        )
-
-    duplicate_rule_rows = int(
-        flow.duplicated(subset=FLOW_KEY_COLUMNS, keep=False).sum()
-    )
-
-    empty_flow_rows = (
-        flow[LIB_COLS]
-        .apply(lambda row: not any(clean_text(value) for value in row), axis=1)
-        .sum()
-        if not flow.empty
-        else 0
-    )
-
-    report = {
-        "conflicts": pd.DataFrame(conflicts),
-        "duplicate_rule_rows": duplicate_rule_rows,
-        "empty_flow_rows": int(empty_flow_rows),
-        "rule_count": len(flow),
-        "ceco_count": int(flow["CECO"].nunique()) if not flow.empty else 0,
-    }
-
-    return flow, report
-
-
-# ============================================================
-# FIRMA, ESTADO Y CARGA
-# ============================================================
-
-def files_signature(files: dict[str, Any]) -> str:
-    parts: list[str] = []
-
-    for role in REQUIRED_FILE_ROLES:
-        uploaded = files[role]
-        raw = uploaded.getvalue()
-        digest = hashlib.sha1(raw).hexdigest()
-        parts.append(
-            f"{role}|{uploaded.name}|{len(raw)}|{digest}"
-        )
-
-    return "||".join(parts)
-
-
-
-def clear_active_files() -> None:
-    for key in [
-        SESSION_DATA_KEY,
-        SESSION_FILE_KEY,
-        SESSION_CASE_KEY,
-        SESSION_FILE_BYTES_KEY,
-        SESSION_SIGNATURE_KEY,
-        SESSION_VALIDATION_KEY,
-        SESSION_SOURCE_FILES_KEY,
-    ]:
-        st.session_state.pop(key, None)
-
-
-def load_seven_files(
-    uploaded_files: dict[str, Any],
-) -> tuple[dict[str, Any], dict[str, bytes], dict[str, Any]]:
-    level_frames: dict[int, pd.DataFrame] = {}
-    level_reports: dict[int, dict[str, Any]] = {}
-    source_bytes: dict[str, bytes] = {}
-
-    for level in LEVELS:
-        role = FILE_ROLE_LIBERATORS[level]
-        frame_raw, raw = read_uploaded_table(uploaded_files[role])
-        frame, report = normalize_level_dataframe(frame_raw, level)
-
-        level_frames[level] = frame
-        level_reports[level] = report
-        source_bytes[role] = raw
-
-    ceco_raw, ceco_bytes = read_uploaded_table(
-        uploaded_files[FILE_ROLE_CECO]
-    )
-    ceco_dictionary, ceco_report = normalize_ceco_dictionary(ceco_raw)
-    source_bytes[FILE_ROLE_CECO] = ceco_bytes
-
-    users_raw, users_bytes = read_uploaded_table(
-        uploaded_files[FILE_ROLE_USERS]
-    )
-    users_dictionary, users_report = normalize_user_dictionary(users_raw)
-    source_bytes[FILE_ROLE_USERS] = users_bytes
-
-    flow, flow_report = reconstruct_flow(level_frames)
-
-    if flow.empty:
-        raise ValueError(
-            "Los cinco archivos de liberadores no contienen reglas con "
-            "CostCenter explícito y TipoDoc AZNB/AZSR."
-        )
-
-    flow, missing_cecos, cecos_without_plant = apply_ceco_dictionary(
-        flow,
-        ceco_dictionary,
-    )
-    flow_report["cecos_without_dictionary"] = missing_cecos
-    flow_report["cecos_without_plant"] = cecos_without_plant
-
-    data: dict[str, Any] = {
-        "flujo": flow,
-        "liberadores": level_frames,
-        "liberador_1": level_frames[1],
-        "liberador_2": level_frames[2],
-        "liberador_3": level_frames[3],
-        "liberador_4": level_frames[4],
-        "liberador_5": level_frames[5],
-        "dic_users": users_dictionary,
-        "dic_ceco": ceco_dictionary,
-        "dic_rangos": pd.DataFrame(
-            columns=["Orden", "Desde", "Hasta"]
-        ),
-    }
-
-    validation = {
-        "levels": level_reports,
-        "flow": flow_report,
-        "dic_ceco": ceco_report,
-        "dic_users": users_report,
-    }
-
-    return data, source_bytes, validation
-
-
-
-# ============================================================
-# INTERFAZ
-# ============================================================
-
-def render_header() -> None:
-    mostrar_logo()
-
-    st.markdown(
-        '<div class="fl-title">01 Cargar Versión</div>',
-        unsafe_allow_html=True,
-    )
+def aplicar_estilos() -> None:
     st.markdown(
         """
-        <div class="fl-subtitle">
-            Selecciona una versión completa de siete archivos.
-        </div>
+        <style>
+            .stMainBlockContainer, .block-container {
+                padding-top: 6.5rem !important;
+                padding-bottom: 2.5rem;
+            }
+
+            .fl-logo-wrap {
+                width: 100%;
+                min-height: 90px;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                margin: .6rem 0 12px;
+                overflow: visible;
+            }
+
+            .fl-logo-wrap img {
+                width: 220px;
+                max-width: min(60vw, 220px);
+                max-height: 88px;
+                object-fit: contain;
+                display: block;
+            }
+
+            .fl-title {
+                text-align: center;
+                color: #17365D;
+                font-size: 2rem;
+                font-weight: 800;
+                margin: .2rem 0;
+            }
+
+            .fl-subtitle {
+                text-align: center;
+                color: #64748B;
+                font-size: 1rem;
+                margin-bottom: 1.2rem;
+            }
+
+            .fl-section-title {
+                color: #17365D;
+                font-size: 1.1rem;
+                font-weight: 800;
+                margin: .4rem 0 .6rem;
+            }
+
+            .fl-card {
+                font-family: Arial, sans-serif;
+                padding: 16px;
+                background: #F8FAFC;
+                border: 1px solid #E2E8F0;
+                border-radius: 14px;
+                box-shadow: 0 1px 2px rgba(15, 23, 42, .05);
+            }
+
+            .fl-metric {
+                border: 1px solid #E2E8F0;
+                border-radius: 12px;
+                padding: 11px 13px;
+                background: #FFFFFF;
+                min-height: 78px;
+            }
+
+            .fl-metric-label {
+                color: #64748B;
+                font-size: 11px;
+                font-weight: 700;
+                text-transform: uppercase;
+                letter-spacing: .03em;
+            }
+
+            .fl-metric-value {
+                color: #17365D;
+                font-size: 17px;
+                font-weight: 800;
+                margin-top: 5px;
+                word-break: break-word;
+            }
+
+            .fl-help-box {
+                padding: 12px 14px;
+                background: #F8FAFC;
+                border: 1px solid #E2E8F0;
+                border-left: 4px solid #175CD3;
+                border-radius: 10px;
+                color: #475467;
+                font-size: 13px;
+                margin-bottom: 12px;
+            }
+
+            .fl-doc-legend {
+                display: flex;
+                gap: 10px;
+                flex-wrap: wrap;
+                margin: 6px 0 10px;
+            }
+
+            .fl-doc-pill {
+                padding: 5px 10px;
+                border-radius: 999px;
+                font-size: 12px;
+                font-weight: 700;
+            }
+
+            .fl-question-node {
+                padding: 17px 19px;
+                border-radius: 16px;
+                border: 2px solid #93C5FD;
+                background: linear-gradient(135deg, #EFF6FF 0%, #F8FAFC 100%);
+                margin: .7rem 0 1rem;
+            }
+
+            .fl-question-number {
+                display: inline-flex;
+                width: 30px;
+                height: 30px;
+                align-items: center;
+                justify-content: center;
+                border-radius: 999px;
+                background: #17365D;
+                color: #FFFFFF;
+                font-weight: 800;
+                margin-right: 8px;
+            }
+
+            .fl-question-title {
+                color: #17365D;
+                font-size: 1.18rem;
+                font-weight: 800;
+            }
+
+            .fl-question-help {
+                color: #64748B;
+                font-size: .9rem;
+                margin-top: 7px;
+            }
+        </style>
         """,
         unsafe_allow_html=True,
     )
 
 
-def render_format_help() -> None:
-    columns = " | ".join(GROUP_COLUMNS)
+def mostrar_logo() -> None:
+    path = next((p for p in LOGO_CANDIDATES if p.exists() and p.is_file()), None)
+    if path is None:
+        return
+
+    try:
+        if path.suffix.lower() == ".svg":
+            raw = path.read_text(encoding="utf-8").encode("utf-8")
+            mime = "image/svg+xml"
+        else:
+            raw = path.read_bytes()
+            mime = "image/png" if path.suffix.lower() == ".png" else "image/jpeg"
+
+        encoded = base64.b64encode(raw).decode("utf-8")
+        st.markdown(
+            f'<div class="fl-logo-wrap"><img src="data:{mime};base64,{encoded}" alt="Logo"></div>',
+            unsafe_allow_html=True,
+        )
+    except (OSError, UnicodeError):
+        st.warning(f"No fue posible leer el logo: {path.name}")
+
+
+# ============================================================
+# DATOS Y REGLAS DEL FLUJO
+# ============================================================
+
+def data_runtime_signature(data: dict[str, Any]) -> tuple[int, ...]:
+    """Firma liviana para invalidar índices solo cuando cambia la versión."""
+    flow = data.get("flujo", pd.DataFrame())
+    users = data.get("dic_users", pd.DataFrame())
+    cecos = data.get("dic_ceco", pd.DataFrame())
+    liberadores = data.get("liberadores", {})
+
+    return (
+        id(flow), len(flow) if isinstance(flow, pd.DataFrame) else -1,
+        id(users), len(users) if isinstance(users, pd.DataFrame) else -1,
+        id(cecos), len(cecos) if isinstance(cecos, pd.DataFrame) else -1,
+        id(liberadores),
+    )
+
+
+def validate_flow_schema(data: dict[str, Any]) -> pd.DataFrame:
+    """Valida una vez por versión y reutiliza el resultado."""
+    if not isinstance(data, dict):
+        raise ValueError(
+            "No existe una versión activa. Carga los siete archivos "
+            "desde 01 Cargar Versión."
+        )
+
+    signature = data_runtime_signature(data)
+    cached = st.session_state.get(SESSION_RUNTIME_CACHE_KEY, {})
+    if cached.get("signature") == signature and cached.get("validated"):
+        return data["flujo"]
+
+    flow = data.get("flujo")
+    if not isinstance(flow, pd.DataFrame) or flow.empty:
+        raise ValueError(
+            "La versión activa no contiene un flujo reconstruido válido."
+        )
+
+    required = [
+        "CECO", "Planta", "Desde", "Hasta", "TipoDoc",
+        "Lib1", "Lib2", "Lib3", "Lib4", "Lib5",
+    ]
+    missing = [column for column in required if column not in flow.columns]
+    if missing:
+        raise ValueError(
+            "El flujo reconstruido no tiene la estructura requerida. "
+            f"Faltan: {', '.join(missing)}."
+        )
+
+    liberadores = data.get("liberadores")
+    if not isinstance(liberadores, dict):
+        raise ValueError("La versión activa no conserva los cinco liberadores.")
+
+    missing_levels = [
+        level for level in LEVELS
+        if not isinstance(liberadores.get(level), pd.DataFrame)
+    ]
+    if missing_levels:
+        raise ValueError(
+            "Faltan niveles: "
+            + ", ".join(f"Liberador {level}" for level in missing_levels)
+            + "."
+        )
+
+    ceco_dictionary = data.get("dic_ceco")
+    if not isinstance(ceco_dictionary, pd.DataFrame):
+        raise ValueError("No se encontró el Diccionario CECO-Plantas.")
+    ceco_missing = [
+        column for column in ["CECO", "Planta"]
+        if column not in ceco_dictionary.columns
+    ]
+    if ceco_missing:
+        raise ValueError(
+            "El Diccionario CECO-Plantas no tiene las columnas: "
+            + ", ".join(ceco_missing) + "."
+        )
+
+    users_dictionary = data.get("dic_users")
+    if not isinstance(users_dictionary, pd.DataFrame):
+        raise ValueError("No se encontró el Diccionario Usuarios-Cargos.")
+    user_missing = [
+        column for column in ["Correo", "Cargo"]
+        if column not in users_dictionary.columns
+    ]
+    if user_missing:
+        raise ValueError(
+            "El Diccionario Usuarios-Cargos no tiene las columnas: "
+            + ", ".join(user_missing) + "."
+        )
+
+    return flow
+
+
+def build_runtime_cache(data: dict[str, Any]) -> dict[str, Any]:
+    """Construye todos los índices costosos una sola vez por versión."""
+    flow = data["flujo"]
+    users = data.get("dic_users", pd.DataFrame())
+    cecos = data.get("dic_ceco", pd.DataFrame())
+
+    cargo_mapping: dict[str, str] = {}
+    if isinstance(users, pd.DataFrame) and not users.empty:
+        for correo, cargo in users[["Correo", "Cargo"]].itertuples(index=False, name=None):
+            email = strip_user_email(correo)
+            if email:
+                cargo_mapping[email.lower()] = clean_user(cargo)
+
+    ceco_mapping: dict[str, dict[str, str]] = {}
+    if isinstance(cecos, pd.DataFrame) and not cecos.empty:
+        columns = [column for column in ["CECO", "Planta", "Centro"] if column in cecos.columns]
+        for values in cecos[columns].itertuples(index=False, name=None):
+            row = dict(zip(columns, values))
+            ceco = clean_user(row.get("CECO", ""))
+            if ceco:
+                ceco_mapping[ceco] = {
+                    "planta": clean_user(row.get("Planta", "")),
+                    "centro": clean_user(row.get("Centro", "")),
+                }
+
+    rows_by_pair: dict[tuple[str, str], pd.DataFrame] = {}
+    for (ceco, doc), group in flow.groupby(["CECO", "TipoDoc"], sort=False):
+        rows_by_pair[(str(ceco), str(doc))] = group
+
+    pairs = [
+        pair for pair in rows_by_pair
+        if pair[1] in DOC_LABEL
+    ]
+    docs_by_ceco: dict[str, list[str]] = {}
+    for ceco, doc in pairs:
+        docs_by_ceco.setdefault(ceco, []).append(doc)
+    for ceco in docs_by_ceco:
+        docs_by_ceco[ceco] = [doc for doc in ["AZNB", "AZSR"] if doc in docs_by_ceco[ceco]]
+
+    flow_users = {
+        strip_user_email(value).lower()
+        for column in LIB_COLS
+        for value in flow[column].tolist()
+        if strip_user_email(value) and strip_user_email(value) != LS_LABEL
+    }
+
+    return {
+        "signature": data_runtime_signature(data),
+        "validated": True,
+        "cargo_map": cargo_mapping,
+        "ceco_map": ceco_mapping,
+        "rows_by_pair": rows_by_pair,
+        "pairs": pairs,
+        "docs_by_ceco": docs_by_ceco,
+        "ceco_values": sorted(docs_by_ceco),
+        "missing_users": sorted(flow_users - set(cargo_mapping)),
+    }
+
+
+def runtime_cache(data: dict[str, Any]) -> dict[str, Any]:
+    validate_flow_schema(data)
+    signature = data_runtime_signature(data)
+    cached = st.session_state.get(SESSION_RUNTIME_CACHE_KEY)
+    if not isinstance(cached, dict) or cached.get("signature") != signature:
+        cached = build_runtime_cache(data)
+        st.session_state[SESSION_RUNTIME_CACHE_KEY] = cached
+    return cached
+
+
+def cargo_map(data: dict[str, Any]) -> dict[str, str]:
+    return runtime_cache(data)["cargo_map"]
+
+
+def display_with_cargo(user: Any, data: dict[str, Any]) -> str:
+    email = strip_user_email(user)
+    if not email or email == LS_LABEL:
+        return email
+
+    cargo = runtime_cache(data)["cargo_map"].get(email.lower(), "")
+    return email if not cargo or cargo == LS_LABEL else f"{email} ({cargo})"
+
+
+def ceco_dictionary_map(data: dict[str, Any]) -> dict[str, dict[str, str]]:
+    return runtime_cache(data)["ceco_map"]
+
+
+def ceco_metadata(data: dict[str, Any], ceco: str) -> dict[str, str]:
+    return runtime_cache(data)["ceco_map"].get(
+        clean_user(ceco),
+        {"planta": "", "centro": ""},
+    )
+
+
+def users_not_in_dictionary(data: dict[str, Any]) -> list[str]:
+    return list(runtime_cache(data)["missing_users"])
+
+
+
+def pick_row(
+    flow: pd.DataFrame,
+    ceco: str,
+    doc_type: str,
+    amount: int | float,
+) -> pd.Series | None:
+    subset = flow[
+        flow["CECO"].eq(ceco)
+        & flow["TipoDoc"].eq(doc_type)
+    ]
+
+    for _, row in subset.iterrows():
+        desde = parse_bound(row["Desde"], low=True)
+        hasta = parse_bound(row["Hasta"], low=False)
+        if desde <= amount <= hasta:
+            return row
+
+    return None
+
+
+def libs_from_row(row: pd.Series) -> list[str]:
+    return [
+        strip_user_email(row[column])
+        for column in LIB_COLS
+        if strip_user_email(row[column])
+    ]
+
+
+def random_amount_for_row(row: pd.Series) -> int:
+    low = max(0, int(parse_bound(row["Desde"], low=True)))
+    high_value = parse_bound(row["Hasta"], low=False)
+
+    # Evita generar montos excesivamente alejados cuando el último tramo
+    # termina en 1E+12 o en un límite abierto.
+    high = min(int(high_value), low + 250_000_000)
+    if high_value >= 1e17:
+        high = low + 250_000_000
+
+    if high < low:
+        raise ValueError("El rango seleccionado tiene límites inconsistentes.")
+
+    return random.randint(low, high)
+
+
+def build_case(
+    data: dict[str, pd.DataFrame],
+    ceco: str,
+    doc_type: str | None = None,
+    amount: int | None = None,
+) -> dict[str, Any]:
+    flow = validate_flow_schema(data)
+    ceco = clean_user(ceco)
+
+    cache = runtime_cache(data)
+    docs = list(cache["docs_by_ceco"].get(ceco, []))
+
+    if not docs:
+        raise ValueError(f"No existen datos válidos para el CECO {ceco}.")
+
+    if doc_type is None:
+        doc_type = random.choice(docs)
+
+    if doc_type not in docs:
+        raise ValueError(
+            f"El CECO {ceco} no tiene registros para "
+            f"{DOC_LABEL.get(doc_type, doc_type)}."
+        )
+
+    rows = cache["rows_by_pair"].get((ceco, doc_type), pd.DataFrame())
+
+    if amount is None:
+        selected_row = rows.sample(n=1).iloc[0]
+        amount = random_amount_for_row(selected_row)
+    else:
+        selected_row = pick_row(flow, ceco, doc_type, amount)
+
+    if selected_row is None:
+        raise ValueError(
+            "No se encontró un tramo para la combinación de CECO, tipo y monto indicada. "
+            "Revisa la tabla de reglas del CECO."
+        )
+
+    metadata = ceco_metadata(data, ceco)
+
+    return {
+        "ceco": ceco,
+        "planta": metadata.get("planta", "")
+        or clean_user(selected_row.get("Planta", "")),
+        "centro": metadata.get("centro", ""),
+        "doc": doc_type,
+        "monto": int(amount),
+        "desde": selected_row["Desde"],
+        "hasta": selected_row["Hasta"],
+        "libs": libs_from_row(selected_row),
+    }
+
+
+def available_pairs(
+    data: dict[str, Any],
+    doc_filter: str,
+) -> list[tuple[str, str]]:
+    pairs = runtime_cache(data)["pairs"]
+    if doc_filter in DOC_LABEL:
+        return [pair for pair in pairs if pair[1] == doc_filter]
+    return list(pairs)
+
+
+def ceco_values(data: dict[str, Any]) -> list[str]:
+    return list(runtime_cache(data)["ceco_values"])
+
+
+def ceco_label(data: dict[str, Any], ceco: str) -> str:
+    metadata = runtime_cache(data)["ceco_map"].get(
+        clean_user(ceco),
+        {"planta": "", "centro": ""},
+    )
+    details = [
+        value for value in [metadata.get("planta", ""), metadata.get("centro", "")]
+        if value
+    ]
+    return f"{ceco} | {' | '.join(details)}" if details else ceco
+
+
+def docs_for_ceco(data: dict[str, Any], ceco: str) -> list[str]:
+    return list(runtime_cache(data)["docs_by_ceco"].get(ceco, []))
+
+
+
+# ============================================================
+# COMPONENTES VISUALES DEL RESULTADO
+# ============================================================
+
+def html_flow(case: dict[str, Any], data: dict[str, pd.DataFrame]) -> str:
+    users = [user for user in case["libs"] if clean_user(user)]
+
+    if not users:
+        return (
+            "<p style='font-family:Arial;color:#64748B;'>"
+            "El tramo no tiene liberadores registrados.</p>"
+        )
+
+    range_text = f"{fmt_bound(case['desde'])} – {fmt_bound(case['hasta'])}"
+    parts: list[str] = []
+
+    for index, user in enumerate(users, start=1):
+        parts.append(
+            compact_html(
+                f"""
+                <div style="min-width:170px;max-width:225px;background:#F8FAFC;
+                    border:2px solid #CBD5E1;border-radius:12px;padding:11px;
+                    font-family:Arial,sans-serif;">
+                    <div style="font-size:11px;color:#64748B;font-weight:700;">
+                        Liberador {index}
+                    </div>
+                    <div style="font-weight:700;color:#17365D;margin:6px 0;
+                        overflow-wrap:anywhere;font-size:12px;">
+                        {escape(display_with_cargo(user, data))}
+                    </div>
+                    <div style="font-size:10px;color:#64748B;">
+                        {escape(range_text)}
+                    </div>
+                </div>
+                """
+            )
+        )
+
+        if index < len(users):
+            parts.append(
+                "<div style='font-size:21px;color:#94A3B8;font-weight:700;'>→</div>"
+            )
+
+    return compact_html(
+        "<div style='font-family:Arial;margin-top:14px;'>"
+        "<div style='font-weight:800;color:#17365D;margin-bottom:8px;'>Flujo final</div>"
+        "<div style='display:flex;flex-wrap:wrap;align-items:center;gap:7px;'>"
+        + "".join(parts)
+        + "</div></div>"
+    )
+
+
+def html_case(
+    case: dict[str, Any],
+    data: dict[str, pd.DataFrame],
+    title: str,
+) -> str:
+    metrics = [
+        ("CECO", case["ceco"]),
+        ("Planta", case["planta"] or "—"),
+        ("Centro", case.get("centro", "") or "—"),
+        ("Tipo", DOC_LABEL.get(case["doc"], case["doc"])),
+        ("Monto", fmt_money(case["monto"])),
+        ("Tramo", f"{fmt_bound(case['desde'])} – {fmt_bound(case['hasta'])}"),
+        ("Liberadores", str(len(case["libs"]))),
+    ]
+
+    doc_color = DOC_COLOR.get(case["doc"], "#17365D")
+    doc_background = DOC_BG.get(case["doc"], "#FFFFFF")
+    doc_border = DOC_BORDER.get(case["doc"], "#E2E8F0")
+
+    metric_html = "".join(
+        compact_html(
+            f"""
+            <div class="fl-metric" style="{
+                'background:' + doc_background + ';border-color:' + doc_border + ';'
+                if label == 'Tipo' else ''
+            }">
+                <div class="fl-metric-label">{escape(label)}</div>
+                <div class="fl-metric-value" style="{
+                    'color:' + doc_color + ';' if label == 'Tipo' else ''
+                }">{escape(value)}</div>
+            </div>
+            """
+        )
+        for label, value in metrics
+    )
+
+    return compact_html(
+        f"""
+        <div class="fl-card" style="border-top:4px solid {doc_color};">
+            <div style="color:#17365D;font-size:17px;font-weight:800;">
+                {escape(title)}
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+                gap:9px;margin-top:13px;">
+                {metric_html}
+            </div>
+            {html_flow(case, data)}
+        </div>
+        """
+    )
+
+
+# ============================================================
+# TABLA DEL CECO
+# ============================================================
+
+def format_table_dataframe(flow: pd.DataFrame, ceco: str) -> pd.DataFrame:
+    table = flow[flow["CECO"].eq(ceco)].copy()
+
+    available_columns = [column for column in TABLE_COLS if column in table.columns]
+    table = table[available_columns]
+
+    if "Desde" in table.columns:
+        table["Desde"] = table["Desde"].map(fmt_bound)
+    if "Hasta" in table.columns:
+        table["Hasta"] = table["Hasta"].map(fmt_bound)
+
+    for column in LIB_COLS:
+        if column in table.columns:
+            table[column] = table[column].map(strip_user_email)
+
+
+    sort_columns = [column for column in ["TipoDoc", "Desde"] if column in table.columns]
+    if sort_columns:
+        # Se conserva una columna auxiliar numérica para ordenar correctamente los tramos.
+        original_subset = flow[flow["CECO"].eq(ceco)].copy()
+        original_subset["_DesdeOrden"] = original_subset["Desde"].map(
+            lambda value: parse_bound(value, low=True)
+        )
+        original_subset = original_subset.sort_values(["TipoDoc", "_DesdeOrden"])
+        table = table.loc[original_subset.index]
+
+    return table.reset_index(drop=True)
+
+
+def style_ceco_table(table: pd.DataFrame) -> pd.io.formats.style.Styler:
+    def style_row(row: pd.Series) -> list[str]:
+        doc = clean_user(row.get("TipoDoc", ""))
+
+        if doc == "AZNB":
+            style = "background-color: #FFF1F0; color: #7A271A;"
+        elif doc == "AZSR":
+            style = "background-color: #EFF8FF; color: #1849A9;"
+        else:
+            style = ""
+
+        return [style] * len(row)
+
+    return (
+        table.style
+        .apply(style_row, axis=1)
+        .set_properties(**{
+            "border-color": "#D0D5DD",
+            "font-size": "12px",
+        })
+    )
+
+
+def render_ceco_table(data: dict[str, pd.DataFrame], ceco: str) -> None:
+    st.markdown(
+        '<div class="fl-section-title">3. Tabla de reglas del CECO</div>',
+        unsafe_allow_html=True,
+    )
+
+    legend = compact_html(
+        f"""
+        <div class="fl-doc-legend">
+            <span class="fl-doc-pill" style="background:{DOC_BG['AZNB']};
+                color:{DOC_COLOR['AZNB']};border:1px solid {DOC_BORDER['AZNB']};">
+                Material · AZNB
+            </span>
+            <span class="fl-doc-pill" style="background:{DOC_BG['AZSR']};
+                color:{DOC_COLOR['AZSR']};border:1px solid {DOC_BORDER['AZSR']};">
+                Servicio · AZSR
+            </span>
+        </div>
+        """
+    )
+    st.markdown(legend, unsafe_allow_html=True)
+
+    table = format_table_dataframe(data["flujo"], ceco)
+
+    if table.empty:
+        st.info("No existen reglas para el CECO seleccionado.")
+        return
+
+    st.caption(
+        f"{len(table):,} reglas encontradas para {ceco}. "
+        "La tabla muestra todos los tramos de material y servicio.".replace(",", ".")
+    )
+
+    st.dataframe(
+        style_ceco_table(table),
+        use_container_width=True,
+        hide_index=True,
+        height=min(650, 85 + (len(table) * 35)),
+    )
+
+
+# ============================================================
+# ESTADO EDITABLE DEL CASO
+# ============================================================
+
+def set_editor_from_case(case: dict[str, Any]) -> None:
+    """Actualiza los campos antes de que sus widgets sean creados."""
+    st.session_state[SESSION_EDITOR_CECO] = case["ceco"]
+    st.session_state[SESSION_EDITOR_DOC] = case["doc"]
+    st.session_state[SESSION_EDITOR_AMOUNT] = str(case["monto"])
+
+
+def queue_editor_from_case(case: dict[str, Any]) -> None:
+    """Deja una actualización pendiente para aplicarla en el siguiente rerun."""
+    st.session_state[SESSION_PENDING_EDITOR] = {
+        "ceco": case["ceco"],
+        "doc": case["doc"],
+        "monto": str(case["monto"]),
+    }
+
+
+def apply_pending_editor() -> None:
+    """Aplica cambios pendientes antes de instanciar selectbox/text_input."""
+    pending = st.session_state.pop(SESSION_PENDING_EDITOR, None)
+    if not pending:
+        return
+
+    st.session_state[SESSION_EDITOR_CECO] = pending["ceco"]
+    st.session_state[SESSION_EDITOR_DOC] = pending["doc"]
+    st.session_state[SESSION_EDITOR_AMOUNT] = pending["monto"]
+
+
+def save_case(
+    case: dict[str, Any],
+    title: str,
+    *,
+    update_editor_next_run: bool = False,
+) -> None:
+    st.session_state[SESSION_CASE_KEY] = {
+        "case": case,
+        "title": title,
+    }
+
+    if update_editor_next_run:
+        queue_editor_from_case(case)
+
+
+def remember_current_case() -> None:
+    """Guarda el resultado actual para permitir retroceder."""
+    current = st.session_state.get(SESSION_CASE_KEY)
+    if not current:
+        return
+
+    history = st.session_state.setdefault(SESSION_HISTORY_KEY, [])
+    if not history or history[-1] != current:
+        history.append(current)
+        del history[:-20]
+
+
+def restore_previous_case() -> bool:
+    """Restaura el último caso guardado y sincroniza los editores."""
+    history = st.session_state.get(SESSION_HISTORY_KEY, [])
+    if not history:
+        return False
+
+    previous = history.pop()
+    st.session_state[SESSION_HISTORY_KEY] = history
+    st.session_state[SESSION_CASE_KEY] = previous
+    queue_editor_from_case(previous["case"])
+    return True
+
+
+def clear_case() -> None:
+    st.session_state.pop(SESSION_CASE_KEY, None)
+    st.session_state.pop(SESSION_EDITOR_CECO, None)
+    st.session_state.pop(SESSION_EDITOR_DOC, None)
+    st.session_state.pop(SESSION_EDITOR_AMOUNT, None)
+    st.session_state.pop(SESSION_PENDING_EDITOR, None)
+
+
+# ============================================================
+# ENCABEZADO Y SIMULADOR ALEATORIO
+# ============================================================
+
+def render_header() -> None:
+    mostrar_logo()
+    st.markdown(
+        '<div class="fl-title">02 Simulador Aleatorio</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="fl-subtitle">Simula rápidamente usando índices precalculados de CECO, rangos y usuarios.</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def render_random_generator(data: dict[str, pd.DataFrame]) -> None:
+    st.markdown(
+        '<div class="fl-section-title">1. Generar caso aleatorio</div>',
+        unsafe_allow_html=True,
+    )
 
     st.markdown(
         compact_html(
-            f"""
-            <div class="format-card">
-                <div class="format-title">Formato único desde ahora</div>
-                <div class="format-columns">{columns}</div>
+            """
+            <div class="fl-help-box">
+                Selecciona el tipo inicial y genera una combinación aleatoria.
+                Después podrás cambiar el CECO, el tipo de documento o el monto
+                para recalcular el flujo.
             </div>
             """
         ),
         unsafe_allow_html=True,
     )
 
-    st.caption(
-        "Cada nivel puede cargarse como CSV, Parquet o Excel. "
-        "La columna Group puede venir vacía, pero debe existir cuando el archivo "
-        "la utiliza para representar Liberacion Servicios."
-    )
+    col_doc, col_button = st.columns([1.7, 1.2], gap="medium")
 
-
-def detect_file_role(name: str) -> str | None:
-    """Identifica los cinco niveles y los dos diccionarios."""
-    text = Path(name).stem.casefold()
-    simplified = re.sub(r"[^a-z0-9]+", " ", text).strip()
-
-    ceco_terms = (
-        ("diccionario" in simplified or "dic" in simplified)
-        and ("ceco" in simplified or "centro costo" in simplified)
-        and ("planta" in simplified or "centro" in simplified)
-    )
-    if ceco_terms:
-        return FILE_ROLE_CECO
-
-    user_terms = (
-        ("diccionario" in simplified or "dic" in simplified)
-        and (
-            "usuario" in simplified
-            or "usuarios" in simplified
-            or "correo" in simplified
-        )
-        and (
-            "cargo" in simplified
-            or "cargos" in simplified
-            or "rol" in simplified
-        )
-    )
-    if user_terms:
-        return FILE_ROLE_USERS
-
-    patterns = [
-        r"liberador[_\-\s]*(\d)",
-        r"nivel[_\-\s]*(\d)",
-        r"lib[_\-\s]*(\d)",
-    ]
-
-    for pattern in patterns:
-        match = re.search(pattern, text)
-        if match:
-            level = int(match.group(1))
-            if level in LEVELS:
-                return FILE_ROLE_LIBERATORS[level]
-
-    return None
-
-
-def role_label(role: str) -> str:
-    if role == FILE_ROLE_CECO:
-        return "Diccionario CECO-Plantas"
-    if role == FILE_ROLE_USERS:
-        return "Diccionario Usuarios-Cargos"
-
-    for level in LEVELS:
-        if role == FILE_ROLE_LIBERATORS[level]:
-            return f"Liberador {level}"
-
-    return role
-
-
-def render_uploader() -> dict[str, Any]:
-    """Carga los siete archivos juntos y los clasifica por nombre."""
-    selected_files = st.file_uploader(
-        "Seleccionar los siete archivos",
-        type=["csv", "parquet", "pq", "xlsx", "xls", "xlsm"],
-        accept_multiple_files=True,
-        key="liberadores_diccionarios_uploader_v05",
-        label_visibility="collapsed",
-        help=(
-            "Selecciona juntos Liberador 1–5, Diccionario CECO-Plantas "
-            "y Diccionario Usuarios-Cargos."
-        ),
-    )
-
-    if not selected_files:
-        return {}
-
-    if len(selected_files) > 7:
-        st.error("Selecciona exactamente siete archivos.")
-        return {}
-
-    uploaded: dict[str, Any] = {}
-    unresolved: list[str] = []
-    duplicated_roles: list[str] = []
-
-    for uploaded_file in selected_files:
-        role = detect_file_role(uploaded_file.name)
-
-        if role is None:
-            unresolved.append(uploaded_file.name)
-            continue
-
-        if role in uploaded:
-            duplicated_roles.append(role)
-            continue
-
-        uploaded[role] = uploaded_file
-
-    if unresolved:
-        st.error(
-            "No pude identificar: "
-            + ", ".join(unresolved)
-            + ". Revisa los nombres de los archivos."
+    with col_doc:
+        doc_filter = st.selectbox(
+            "Tipo inicial",
+            ["RAND", "AZNB", "AZSR"],
+            format_func=lambda value: {
+                "RAND": "Material o Servicio",
+                "AZNB": "Material (AZNB)",
+                "AZSR": "Servicio (AZSR)",
+            }[value],
+            key="sim_doc_filter_v03",
         )
 
-    if duplicated_roles:
-        labels = ", ".join(
-            role_label(role)
-            for role in sorted(set(duplicated_roles))
-        )
-        st.error(f"Hay archivos duplicados para: {labels}.")
-
-    if unresolved or duplicated_roles:
-        return {}
-
-    return uploaded
-
-
-
-def render_validation_report(report: dict[str, Any]) -> None:
-    level_reports = report.get("levels", {})
-    flow_report = report.get("flow", {})
-
-    with st.expander("Informe de validación", expanded=False):
-        rows = []
-
-        for level in LEVELS:
-            item = level_reports.get(level, {})
-            rows.append({
-                "Nivel": level,
-                "Filas": item.get("rows", 0),
-                "Reglas CECO": item.get("explicit_rows", 0),
-                "Reglas especiales": item.get("special_rows", 0),
-                "Grupo Servicios": item.get("service_group_rows", 0),
-                "Duplicadas": item.get("duplicate_rows", 0),
-                "Sin liberador": len(item.get("empty_approver_rows", [])),
-            })
-
-        st.dataframe(
-            pd.DataFrame(rows),
+    with col_button:
+        st.write("")
+        st.write("")
+        random_button = st.button(
+            "🎲 Generar caso aleatorio",
+            type="primary",
             use_container_width=True,
-            hide_index=True,
+            key="sim_random_button_v03",
         )
 
-        dictionary_rows = [
-            {
-                "Archivo": "Diccionario CECO-Plantas",
-                "Filas": report.get("dic_ceco", {}).get("rows", 0),
-                "Duplicadas": report.get("dic_ceco", {}).get(
-                    "duplicate_rows", 0
-                ),
-                "Valores vacíos": report.get("dic_ceco", {}).get(
-                    "empty_plants", 0
-                ),
-            },
-            {
-                "Archivo": "Diccionario Usuarios-Cargos",
-                "Filas": report.get("dic_users", {}).get("rows", 0),
-                "Duplicadas": report.get("dic_users", {}).get(
-                    "duplicate_rows", 0
-                ),
-                "Valores vacíos": report.get("dic_users", {}).get(
-                    "empty_roles", 0
-                ),
-            },
-        ]
+    if random_button:
+        try:
+            pairs = available_pairs(data, doc_filter)
+            if not pairs:
+                raise ValueError(
+                    "No existen combinaciones CECO/tipo para los filtros seleccionados."
+                )
 
-        st.markdown("#### Diccionarios")
-        st.dataframe(
-            pd.DataFrame(dictionary_rows),
+            ceco, doc_type = random.choice(pairs)
+            case = build_case(data, ceco, doc_type, amount=None)
+            remember_current_case()
+            save_case(
+                case,
+                f"Caso aleatorio · {DOC_LABEL[doc_type]}",
+                update_editor_next_run=True,
+            )
+            st.rerun()
+
+        except ValueError as exc:
+            st.error(str(exc))
+
+
+def render_editable_case(data: dict[str, pd.DataFrame]) -> None:
+    # Los cambios pendientes deben aplicarse antes de crear los widgets.
+    apply_pending_editor()
+
+    result = st.session_state.get(SESSION_CASE_KEY)
+
+    st.markdown("---")
+    st.markdown(
+        '<div class="fl-section-title">2. Ajustar caso generado</div>',
+        unsafe_allow_html=True,
+    )
+
+    if not result:
+        st.info("Genera un caso aleatorio para habilitar los campos editables.")
+        return
+
+    current_case = result["case"]
+
+    if SESSION_EDITOR_CECO not in st.session_state:
+        set_editor_from_case(current_case)
+
+    all_cecos = ceco_values(data)
+    current_ceco = st.session_state.get(SESSION_EDITOR_CECO, current_case["ceco"])
+    if current_ceco not in all_cecos:
+        current_ceco = current_case["ceco"]
+        st.session_state[SESSION_EDITOR_CECO] = current_ceco
+
+    ceco_col, doc_col, amount_col = st.columns([1.5, 1.1, 1.1], gap="medium")
+
+    with ceco_col:
+        selected_ceco = st.selectbox(
+            "CECO",
+            all_cecos,
+            index=all_cecos.index(current_ceco),
+            format_func=lambda value: ceco_label(data, value),
+            key=SESSION_EDITOR_CECO,
+            help="Al cambiar el CECO, el resultado se recalcula automáticamente.",
+        )
+
+    available_docs = docs_for_ceco(data, selected_ceco)
+    if not available_docs:
+        available_docs = ["AZNB", "AZSR"]
+
+    current_doc = st.session_state.get(SESSION_EDITOR_DOC, current_case["doc"])
+    if current_doc not in available_docs:
+        current_doc = available_docs[0]
+        st.session_state[SESSION_EDITOR_DOC] = current_doc
+
+    with doc_col:
+        selected_doc = st.selectbox(
+            "Tipo de documento",
+            available_docs,
+            index=available_docs.index(current_doc),
+            format_func=lambda value: DOC_LABEL[value],
+            key=SESSION_EDITOR_DOC,
+            help="Material usa AZNB y Servicio usa AZSR.",
+        )
+
+    with amount_col:
+        selected_amount_text = st.text_input(
+            "Monto",
+            key=SESSION_EDITOR_AMOUNT,
+            help="Presiona Enter o sal del campo para recalcular.",
+        )
+
+    # Recalcula automáticamente cuando cambian CECO, tipo o monto.
+    try:
+        selected_amount = parse_amount(selected_amount_text)
+        editor_changed = (
+            selected_ceco != current_case["ceco"]
+            or selected_doc != current_case["doc"]
+            or (selected_amount is not None and float(selected_amount) != float(current_case["monto"]))
+        )
+
+        if editor_changed and selected_amount is not None:
+            updated_case = build_case(data, selected_ceco, selected_doc, selected_amount)
+            remember_current_case()
+            save_case(updated_case, "Caso modificado por el usuario")
+            result = st.session_state[SESSION_CASE_KEY]
+            current_case = result["case"]
+    except ValueError as exc:
+        st.warning(str(exc))
+
+    button_amount, button_back = st.columns([1.25, 1.0])
+
+    with button_amount:
+        random_amount_button = st.button(
+            "🎯 Nuevo monto del tramo",
             use_container_width=True,
-            hide_index=True,
+            key="sim_random_amount_v04",
         )
 
-        ceco_conflicts = report.get("dic_ceco", {}).get(
-            "conflicts", pd.DataFrame()
+    with button_back:
+        back_button = st.button(
+            "↩️ Retroceder",
+            use_container_width=True,
+            key="sim_back_v04",
+            disabled=not bool(st.session_state.get(SESSION_HISTORY_KEY)),
+            help="Vuelve al caso anterior.",
         )
-        if isinstance(ceco_conflicts, pd.DataFrame) and not ceco_conflicts.empty:
-            st.error(
-                "Hay CECO asociados a más de una planta en el diccionario."
-            )
-            st.dataframe(
-                ceco_conflicts,
-                use_container_width=True,
-                hide_index=True,
-            )
 
-        missing_cecos = flow_report.get("cecos_without_dictionary", [])
-        if missing_cecos:
-            st.error(
-                f"Hay {len(missing_cecos)} CECO del flujo que no existen "
-                "en el diccionario CECO-Plantas."
-            )
+    if random_amount_button:
+        try:
+            flow = validate_flow_schema(data)
+            rows = flow[
+                flow["CECO"].eq(selected_ceco)
+                & flow["TipoDoc"].eq(selected_doc)
+            ]
 
-        cecos_without_plant = flow_report.get("cecos_without_plant", [])
-        if cecos_without_plant:
-            st.warning(
-                f"Hay {len(cecos_without_plant)} CECO presentes en el "
-                "diccionario, pero con Planta vacía."
-            )
+            if rows.empty:
+                raise ValueError("No existen tramos para la selección actual.")
 
-        conflicts = flow_report.get("conflicts", pd.DataFrame())
+            selected_row = rows.sample(n=1).iloc[0]
+            new_amount = random_amount_for_row(selected_row)
+            case = build_case(data, selected_ceco, selected_doc, new_amount)
+            remember_current_case()
+            save_case(
+                case,
+                "Caso modificado · monto aleatorio",
+                update_editor_next_run=True,
+            )
+            st.rerun()
 
-        if isinstance(conflicts, pd.DataFrame) and not conflicts.empty:
-            st.error(
-                f"Se detectaron {len(conflicts)} conflictos: una misma regla "
-                "tiene más de un liberador en el mismo nivel."
-            )
-            st.dataframe(
-                conflicts,
-                use_container_width=True,
-                hide_index=True,
-            )
+        except ValueError as exc:
+            st.error(str(exc))
+
+    if back_button:
+        if restore_previous_case():
+            st.rerun()
         else:
-            st.success("No se detectaron conflictos de liberadores.")
+            st.info("No hay un caso anterior disponible.")
 
-        if flow_report.get("duplicate_rule_rows", 0):
-            st.error(
-                "La tabla interna contiene reglas CECO/TipoDoc/rango duplicadas."
-            )
-
-        if flow_report.get("empty_flow_rows", 0):
-            st.warning(
-                f"Hay {flow_report['empty_flow_rows']} reglas internas "
-                "sin ningún liberador."
-            )
+    result = st.session_state.get(SESSION_CASE_KEY)
+    if result:
+        case = result["case"]
+        st.markdown(
+            html_case(case, data, result["title"]),
+            unsafe_allow_html=True,
+        )
+        render_ceco_table(data, st.session_state.get(SESSION_EDITOR_CECO, case["ceco"]))
 
 
-def render_active_state() -> None:
-    data = st.session_state.get(SESSION_DATA_KEY)
+def render_simulator(data: dict[str, Any]) -> None:
+    flow = validate_flow_schema(data)
+    runtime_cache(data)
+    file_names = st.session_state.get(SESSION_FILE_KEY, {})
+    liberadores = data.get("liberadores", {})
+    dic_ceco = data.get("dic_ceco", pd.DataFrame())
+    dic_users = data.get("dic_users", pd.DataFrame())
 
-    if not isinstance(data, dict):
-        st.info("Carga los siete archivos para activar la aplicación.")
-        return
-
-    flow = data.get("flujo", pd.DataFrame())
-    liberators = data.get("liberadores", {})
-
-    if not isinstance(flow, pd.DataFrame) or flow.empty:
-        st.warning("No existe un flujo interno válido.")
-        return
+    loaded_levels = sum(
+        isinstance(liberadores.get(level), pd.DataFrame)
+        for level in LEVELS
+    )
+    dictionaries_loaded = int(
+        isinstance(dic_ceco, pd.DataFrame)
+    ) + int(
+        isinstance(dic_users, pd.DataFrame)
+    )
 
     st.success(
         (
-            f"Siete archivos activos · **{len(flow):,} reglas internas** · "
-            f"**{flow['CECO'].nunique():,} CECO**"
+            f"Versión activa: **{loaded_levels + dictionaries_loaded}/7 archivos** · "
+            f"**{len(flow):,} reglas reconstruidas** · "
+            f"**{flow['CECO'].nunique():,} CECO** · "
+            f"**{len(dic_users):,} usuarios**"
         ).replace(",", ".")
     )
 
-    metrics = st.columns(5)
-    for level, column in zip(LEVELS, metrics):
-        frame = liberators.get(level, pd.DataFrame())
-        column.metric(
-            f"Liberador {level}",
-            f"{len(frame):,}".replace(",", "."),
-        )
-
-    report = st.session_state.get(SESSION_VALIDATION_KEY, {})
-    if isinstance(report, dict):
-        render_validation_report(report)
-
-    with st.expander("Vista previa del flujo reconstruido", expanded=False):
-        st.dataframe(
-            flow.head(200),
-            use_container_width=True,
-            hide_index=True,
-        )
-
-    tabs = st.tabs(
-        [f"Liberador {level}" for level in LEVELS]
-        + ["CECO-Plantas", "Usuarios-Cargos"]
-    )
-
-    for level, tab in zip(LEVELS, tabs[:5]):
-        with tab:
-            frame = liberators.get(level, pd.DataFrame())
+    missing_users = users_not_in_dictionary(data)
+    if missing_users:
+        with st.expander(
+            f"Usuarios sin cargo en diccionario ({len(missing_users)})",
+            expanded=False,
+        ):
             st.dataframe(
-                frame.drop(
-                    columns=[
-                        "_DesdeNum",
-                        "_HastaNum",
-                        "_Nivel",
-                        "_Liberador",
-                    ],
-                    errors="ignore",
-                ).head(200),
+                pd.DataFrame({"Correo": missing_users}),
                 use_container_width=True,
                 hide_index=True,
             )
 
-    with tabs[5]:
-        st.dataframe(
-            data.get("dic_ceco", pd.DataFrame()).head(300),
-            use_container_width=True,
-            hide_index=True,
-        )
+    if isinstance(file_names, dict):
+        with st.expander("Archivos de la versión", expanded=False):
+            file_rows = [
+                {
+                    "Archivo lógico": f"Liberador {level}",
+                    "Archivo cargado": file_names.get(
+                        FILE_ROLE_LIBERATORS[level],
+                        file_names.get(level, ""),
+                    ),
+                    "Filas": len(
+                        liberadores.get(level, pd.DataFrame())
+                    ),
+                }
+                for level in LEVELS
+            ]
 
-    with tabs[6]:
-        st.dataframe(
-            data.get("dic_users", pd.DataFrame()).head(300),
-            use_container_width=True,
-            hide_index=True,
-        )
+            file_rows.extend([
+                {
+                    "Archivo lógico": "Diccionario CECO-Plantas",
+                    "Archivo cargado": file_names.get(
+                        FILE_ROLE_CECO,
+                        "",
+                    ),
+                    "Filas": len(dic_ceco),
+                },
+                {
+                    "Archivo lógico": "Diccionario Usuarios-Cargos",
+                    "Archivo cargado": file_names.get(
+                        FILE_ROLE_USERS,
+                        "",
+                    ),
+                    "Filas": len(dic_users),
+                },
+            ])
 
-    if st.button(
-        "🗑️ Quitar los siete archivos",
-        use_container_width=True,
-    ):
-        clear_active_files()
-        st.rerun()
+            st.dataframe(
+                pd.DataFrame(file_rows),
+                use_container_width=True,
+                hide_index=True,
+            )
 
+    render_random_generator(data)
+    render_editable_case(data)
+
+
+
+# ============================================================
+# EJECUCIÓN
+# ============================================================
 
 def main() -> None:
     aplicar_estilos()
     render_header()
 
-    st.markdown(
-        '<div class="fl-section-title">Cargar versión completa</div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        """
-        <div class="fl-help">
-            Selecciona juntos Liberador 1–5, el diccionario CECO–Plantas
-            y el diccionario Usuarios–Cargos. Se aceptan CSV, Parquet y Excel.
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    data = st.session_state.get(SESSION_DATA_KEY)
 
-    uploaded_files = render_uploader()
-
-    # Antes de cargar los siete archivos no se muestra ningún elemento adicional.
-    if not uploaded_files:
-        st.info(
-            "Los nombres deben identificar Liberador 1–5, "
-            "Diccionario_CECO_Plantas y Diccionario_Usuarios_Cargos."
-        )
-        return
-
-    missing = [
-        role
-        for role in REQUIRED_FILE_ROLES
-        if role not in uploaded_files
-    ]
-
-    if missing:
+    if data is None:
         st.warning(
-            "Faltan archivos: "
-            + ", ".join(role_label(role) for role in missing)
-            + "."
+            "No hay una versión activa. Primero carga los siete archivos en **01 Cargar Versión**."
         )
-        return
 
-    if len(uploaded_files) != 7:
-        st.warning("Debes seleccionar exactamente siete archivos.")
-        return
-
-    signature = files_signature(uploaded_files)
-
-    needs_load = (
-        st.session_state.get(SESSION_SIGNATURE_KEY) != signature
-        or SESSION_DATA_KEY not in st.session_state
-    )
-
-    if needs_load:
         try:
-            with st.spinner(
-                "Leyendo, validando y consolidando los siete archivos..."
-            ):
-                data, source_bytes, validation = load_seven_files(
-                    uploaded_files
-                )
+            if st.button("📤 Ir a 01 Cargar Versión", type="primary"):
+                st.switch_page("01_CARGAR_ARCHIVO_FLUJO.py")
+        except Exception:
+            st.info("Selecciona **01 Cargar Versión** desde el menú lateral.")
 
-            names = {
-                role: uploaded_files[role].name
-                for role in REQUIRED_FILE_ROLES
-            }
+        st.stop()
 
-            st.session_state[SESSION_DATA_KEY] = data
-            st.session_state[SESSION_FILE_KEY] = names
-            st.session_state[SESSION_SOURCE_FILES_KEY] = source_bytes
-            st.session_state[SESSION_FILE_BYTES_KEY] = source_bytes
-            st.session_state[SESSION_SIGNATURE_KEY] = signature
-            st.session_state[SESSION_VALIDATION_KEY] = validation
-            st.session_state.pop(SESSION_CASE_KEY, None)
+    try:
+        validate_flow_schema(data)
+    except ValueError as error:
+        st.error(str(error))
+        st.stop()
 
-            st.toast(
-                "Siete archivos cargados correctamente.",
-                icon="✅",
-            )
-            st.rerun()
-
-        except ValueError as error:
-            clear_active_files()
-            st.error(str(error))
-            return
-
-    # Solo después de una carga válida aparecen los demás elementos.
-    render_active_state()
+    render_simulator(data)
 
 
 if __name__ == "__main__":
