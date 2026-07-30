@@ -26,16 +26,19 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import importlib.util
 import re
 import zipfile
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
+from urllib.parse import urlparse
 from textwrap import dedent
 from typing import Any, Callable
 
 import pandas as pd
+import requests
 import streamlit as st
 
 
@@ -146,6 +149,8 @@ SESSION_SIGNATURE_KEY = "flujo_liberacion_upload_signature_v05"
 SESSION_VALIDATION_KEY = "flujo_liberacion_validation_v05"
 SESSION_SOURCE_FILES_KEY = "flujo_liberacion_source_files_v06"
 SESSION_CHANGES_KEY = "flujo_liberacion_changes_v01"
+SESSION_REMOTE_FILES_KEY = "flujo_liberacion_remote_files_v01"
+SESSION_REMOTE_SOURCE_KEY = "flujo_liberacion_remote_source_v01"
 
 
 # ============================================================
@@ -353,6 +358,304 @@ def liberator_from_row(row: pd.Series) -> str:
         return LS_LABEL
 
     return user
+
+
+# ============================================================
+# CONEXIÓN REMOTA MEDIANTE REQUESTS + SECRETS
+# ============================================================
+
+class RemoteUploadedFile:
+    """Adaptador mínimo compatible con read_uploaded_table."""
+    def __init__(self, name: str, raw: bytes):
+        self.name = Path(name).name
+        self._raw = bytes(raw)
+
+    def getvalue(self) -> bytes:
+        return self._raw
+
+
+def secret_value(
+    key: str,
+    default: Any = None,
+    *,
+    required: bool = False,
+) -> Any:
+    try:
+        section = st.secrets["sharepoint_flujo"]
+        value = section.get(key, default)
+    except Exception as error:
+        if required:
+            raise ValueError(
+                "No existe la sección [sharepoint_flujo] en Secrets."
+            ) from error
+        return default
+
+    if required and not clean_text(value):
+        raise ValueError(
+            f"Falta configurar sharepoint_flujo.{key} en Secrets."
+        )
+
+    return value
+
+
+def obtener_url_remota_segura() -> str:
+    url = clean_text(secret_value("url", required=True))
+    parsed = urlparse(url)
+
+    if parsed.scheme.lower() != "https" or not parsed.netloc:
+        raise ValueError(
+            "La URL remota debe ser una dirección HTTPS válida."
+        )
+
+    allowed_host = clean_text(
+        secret_value("allowed_host", "")
+    ).casefold()
+    if allowed_host and parsed.hostname:
+        hostname = parsed.hostname.casefold()
+        if hostname != allowed_host and not hostname.endswith(
+            "." + allowed_host
+        ):
+            raise ValueError(
+                "El host de la URL no coincide con allowed_host."
+            )
+
+    return url
+
+
+def calcular_sha256(texto: str) -> str:
+    return hashlib.sha256(texto.encode("utf-8")).hexdigest()
+
+
+def validar_clave_conexion(clave_ingresada: str) -> bool:
+    expected_hash = clean_text(
+        secret_value("access_key_sha256", required=True)
+    ).casefold()
+
+    if not clave_ingresada or not expected_hash:
+        return False
+
+    return hmac.compare_digest(
+        calcular_sha256(clave_ingresada).casefold(),
+        expected_hash,
+    )
+
+
+def preparar_url_descarga(url: str) -> str:
+    if "download=1" in url.casefold():
+        return url
+
+    separator = "&" if "?" in url else "?"
+    return f"{url}{separator}download=1"
+
+
+def request_headers_from_secrets() -> dict[str, str]:
+    headers = {
+        "User-Agent": "ENAEX-Estrategias-Liberacion/1.0",
+        "Accept": (
+            "application/zip, application/octet-stream, "
+            "application/x-zip-compressed"
+        ),
+    }
+
+    bearer_token = clean_text(
+        secret_value("bearer_token", "")
+    )
+    if bearer_token:
+        headers["Authorization"] = f"Bearer {bearer_token}"
+
+    return headers
+
+
+def request_auth_from_secrets() -> tuple[str, str] | None:
+    username = clean_text(secret_value("username", ""))
+    password = clean_text(secret_value("password", ""))
+
+    if username and password:
+        return username, password
+
+    return None
+
+
+def validate_remote_response(
+    response: requests.Response,
+    expected_host: str,
+) -> None:
+    response.raise_for_status()
+
+    final = urlparse(response.url)
+    if final.scheme.lower() != "https":
+        raise ValueError(
+            "La descarga fue redirigida a una URL no segura."
+        )
+
+    allow_redirect_host = bool(
+        secret_value("allow_redirect_host", False)
+    )
+    if (
+        not allow_redirect_host
+        and final.hostname
+        and final.hostname.casefold() != expected_host.casefold()
+    ):
+        raise ValueError(
+            "La descarga fue redirigida a otro host no autorizado."
+        )
+
+    content_type = response.headers.get(
+        "Content-Type",
+        "",
+    ).casefold()
+    beginning = response.content[:500].casefold()
+
+    if (
+        "text/html" in content_type
+        or b"<html" in beginning
+        or b"<!doctype html" in beginning
+    ):
+        raise ValueError(
+            "El servidor devolvió una página HTML, no el ZIP esperado."
+        )
+
+    max_mb = int(secret_value("max_download_mb", 250))
+    if len(response.content) > max_mb * 1024 * 1024:
+        raise ValueError(
+            f"La descarga supera el máximo configurado de {max_mb} MB."
+        )
+
+
+@st.cache_data(show_spinner=False, ttl=300)
+def descargar_zip_remoto_cache(
+    url: str,
+    headers_items: tuple[tuple[str, str], ...],
+    auth: tuple[str, str] | None,
+    timeout_seconds: int,
+    verify_ssl: bool,
+) -> bytes:
+    response = requests.get(
+        preparar_url_descarga(url),
+        headers=dict(headers_items),
+        auth=auth,
+        allow_redirects=True,
+        timeout=timeout_seconds,
+        verify=verify_ssl,
+    )
+
+    expected_host = urlparse(url).hostname or ""
+    validate_remote_response(response, expected_host)
+
+    raw = response.content
+    if not zipfile.is_zipfile(BytesIO(raw)):
+        raise ValueError(
+            "La URL configurada no devolvió un archivo ZIP válido."
+        )
+
+    return raw
+
+
+def archivos_desde_zip_remoto(
+    raw_zip: bytes,
+) -> dict[str, RemoteUploadedFile]:
+    supported = {
+        ".csv",
+        ".parquet",
+        ".pq",
+        ".xlsx",
+        ".xls",
+        ".xlsm",
+    }
+    uploaded: dict[str, RemoteUploadedFile] = {}
+    unresolved: list[str] = []
+    duplicated: list[str] = []
+
+    with zipfile.ZipFile(BytesIO(raw_zip), mode="r") as archive:
+        members = [
+            item
+            for item in archive.infolist()
+            if not item.is_dir()
+            and Path(item.filename).suffix.casefold() in supported
+            and not Path(item.filename).name.startswith("~$")
+            and "__MACOSX" not in Path(item.filename).parts
+        ]
+
+        if len(members) > 8:
+            raise ValueError(
+                "El ZIP contiene más de ocho archivos compatibles."
+            )
+
+        for member in members:
+            safe_name = Path(member.filename).name
+            role = detect_file_role(safe_name)
+
+            if role is None:
+                unresolved.append(safe_name)
+                continue
+
+            if role in uploaded:
+                duplicated.append(role)
+                continue
+
+            max_member_mb = int(
+                secret_value("max_file_mb", 100)
+            )
+            if member.file_size > max_member_mb * 1024 * 1024:
+                raise ValueError(
+                    f"{safe_name} supera el máximo de "
+                    f"{max_member_mb} MB."
+                )
+
+            uploaded[role] = RemoteUploadedFile(
+                safe_name,
+                archive.read(member),
+            )
+
+    if unresolved:
+        raise ValueError(
+            "No se pudo identificar dentro del ZIP: "
+            + ", ".join(unresolved)
+        )
+
+    if duplicated:
+        raise ValueError(
+            "El ZIP contiene roles duplicados: "
+            + ", ".join(
+                role_label(role)
+                for role in sorted(set(duplicated))
+            )
+        )
+
+    missing = [
+        role
+        for role in REQUIRED_FILE_ROLES
+        if role not in uploaded
+    ]
+    if missing:
+        raise ValueError(
+            "Faltan archivos obligatorios en el ZIP remoto: "
+            + ", ".join(role_label(role) for role in missing)
+        )
+
+    return uploaded
+
+
+def conectar_y_obtener_archivos(
+    clave_ingresada: str,
+) -> dict[str, RemoteUploadedFile]:
+    if not validar_clave_conexion(clave_ingresada):
+        raise ValueError("Clave de conexión incorrecta.")
+
+    url = obtener_url_remota_segura()
+    headers = request_headers_from_secrets()
+    auth = request_auth_from_secrets()
+    timeout_seconds = int(secret_value("timeout_seconds", 90))
+    verify_ssl = bool(secret_value("verify_ssl", True))
+
+    raw_zip = descargar_zip_remoto_cache(
+        url=url,
+        headers_items=tuple(sorted(headers.items())),
+        auth=auth,
+        timeout_seconds=timeout_seconds,
+        verify_ssl=verify_ssl,
+    )
+    return archivos_desde_zip_remoto(raw_zip)
 
 
 # ============================================================
@@ -902,6 +1205,8 @@ def clear_active_files() -> None:
         SESSION_VALIDATION_KEY,
         SESSION_SOURCE_FILES_KEY,
         SESSION_CHANGES_KEY,
+        SESSION_REMOTE_FILES_KEY,
+        SESSION_REMOTE_SOURCE_KEY,
     ]:
         st.session_state.pop(key, None)
 
@@ -1497,7 +1802,7 @@ def render_header() -> None:
     st.markdown(
         """
         <div class="fl-subtitle">
-            Selecciona siete archivos obligatorios y, opcionalmente, el historial de cambios.
+            Carga la versión manualmente o mediante Requests y Secrets.
         </div>
         """,
         unsafe_allow_html=True,
@@ -1594,6 +1899,66 @@ def role_label(role: str) -> str:
             return f"Liberador {level}"
 
     return role
+
+
+def render_remote_connection() -> dict[str, Any]:
+    st.caption(
+        "La URL y las credenciales técnicas se leen desde "
+        "`st.secrets[\"sharepoint_flujo\"]`."
+    )
+
+    with st.form("form_remote_flujo_v01"):
+        access_key = st.text_input(
+            "Clave de conexión",
+            type="password",
+            placeholder="Ingresa la clave autorizada",
+        )
+        connect = st.form_submit_button(
+            "Conectar y cargar versión",
+            use_container_width=True,
+            type="primary",
+        )
+
+    if connect:
+        try:
+            with st.spinner(
+                "Conectando y descargando el ZIP..."
+            ):
+                remote_files = conectar_y_obtener_archivos(
+                    access_key
+                )
+
+            st.session_state[SESSION_REMOTE_FILES_KEY] = (
+                remote_files
+            )
+            st.session_state[SESSION_REMOTE_SOURCE_KEY] = (
+                "requests_secrets"
+            )
+            st.success(
+                f"Conexión realizada. Se detectaron "
+                f"{len(remote_files)} archivos."
+            )
+        except requests.RequestException:
+            st.session_state.pop(
+                SESSION_REMOTE_FILES_KEY,
+                None,
+            )
+            st.error(
+                "No fue posible descargar la versión remota. "
+                "Revisa la URL, permisos y conectividad."
+            )
+        except ValueError as error:
+            st.session_state.pop(
+                SESSION_REMOTE_FILES_KEY,
+                None,
+            )
+            st.error(str(error))
+
+    value = st.session_state.get(
+        SESSION_REMOTE_FILES_KEY,
+        {},
+    )
+    return value if isinstance(value, dict) else {}
 
 
 def render_uploader() -> dict[str, Any]:
@@ -1903,20 +2268,39 @@ def main() -> None:
     st.markdown(
         """
         <div class="fl-help">
-            Selecciona Liberador 1–5, CECO–Plantas y Usuarios–Cargos. Puedes agregar un archivo de Cambios. Se aceptan CSV, Parquet y Excel.
+            Carga manualmente Liberador 1–5, CECO–Plantas y
+            Usuarios–Cargos, con Cambios opcional, o conecta un ZIP
+            remoto configurado mediante Requests y Secrets.
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    uploaded_files = render_uploader()
+    load_method = st.radio(
+        "Método de carga",
+        options=["Carga manual", "Conexión Requests + Secrets"],
+        horizontal=True,
+        key="flujo_load_method_v01",
+    )
+
+    if load_method == "Carga manual":
+        st.session_state.pop(SESSION_REMOTE_FILES_KEY, None)
+        uploaded_files = render_uploader()
+    else:
+        uploaded_files = render_remote_connection()
 
     # Antes de cargar los archivos obligatorios no se muestra contenido adicional.
     if not uploaded_files:
-        st.info(
-            "Los nombres deben identificar Liberador 1–5, CECO-Plantas, "
-            "Usuarios-Cargos y opcionalmente Cambios."
-        )
+        if load_method == "Carga manual":
+            st.info(
+                "Los nombres deben identificar Liberador 1–5, "
+                "CECO-Plantas, Usuarios-Cargos y opcionalmente Cambios."
+            )
+        else:
+            st.info(
+                "Configura Secrets, ingresa la clave autorizada "
+                "y conecta el ZIP remoto."
+            )
         return
 
     missing = [
@@ -1994,7 +2378,7 @@ def main() -> None:
             )
             st.rerun()
 
-        except ValueError as error:
+        except (ValueError, requests.RequestException) as error:
             progress_bar.progress(
                 0,
                 text="Carga interrumpida.",
