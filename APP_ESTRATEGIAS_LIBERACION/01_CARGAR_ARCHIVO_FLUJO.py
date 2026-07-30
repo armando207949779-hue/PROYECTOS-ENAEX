@@ -1934,7 +1934,7 @@ def render_header() -> None:
     st.markdown(
         """
         <div class="fl-subtitle">
-            Carga la versión manualmente o mediante Requests y Secrets.
+            Carga la versión manualmente o mediante conexión SharePoint.
         </div>
         """,
         unsafe_allow_html=True,
@@ -2033,6 +2033,94 @@ def role_label(role: str) -> str:
     return role
 
 
+def obtener_version_desde_nombre_archivo(
+    nombre_archivo: str,
+) -> dict[str, Any]:
+    """
+    Detecta versiones con fecha y hora en formatos:
+    - DDMMYYYY_HHMMSS
+    - YYYYMMDD_HHMMSS
+    """
+    stem = Path(clean_text(nombre_archivo)).stem
+
+    patterns = [
+        (r"(?<!\d)(\d{2})(\d{2})(\d{4})[_-](\d{2})(\d{2})(\d{2})(?!\d)", "DMY"),
+        (r"(?<!\d)(\d{4})(\d{2})(\d{2})[_-](\d{2})(\d{2})(\d{2})(?!\d)", "YMD"),
+    ]
+
+    for pattern, order in patterns:
+        matches = list(re.finditer(pattern, stem))
+        if not matches:
+            continue
+
+        match = matches[-1]
+        values = [int(value) for value in match.groups()]
+
+        try:
+            if order == "DMY":
+                day, month, year, hour, minute, second = values
+            else:
+                year, month, day, hour, minute, second = values
+
+            version_date = datetime(
+                year,
+                month,
+                day,
+                hour,
+                minute,
+                second,
+            )
+        except ValueError:
+            continue
+
+        return {
+            "version_detectada": True,
+            "fecha_version": version_date,
+            "texto_version": version_date.strftime(
+                "%d-%m-%Y %H:%M:%S"
+            ),
+            "fecha_corta": version_date.strftime("%d-%m-%Y"),
+        }
+
+    return {
+        "version_detectada": False,
+        "fecha_version": None,
+        "texto_version": "No detectada",
+        "fecha_corta": "No detectada",
+    }
+
+
+def obtener_version_archivos_activos(
+    file_names: dict[str, str],
+) -> dict[str, Any]:
+    """Obtiene la versión común o más reciente desde los nombres cargados."""
+    detected: list[datetime] = []
+
+    for name in file_names.values():
+        version = obtener_version_desde_nombre_archivo(name)
+        value = version.get("fecha_version")
+        if isinstance(value, datetime):
+            detected.append(value)
+
+    if not detected:
+        return {
+            "version_detectada": False,
+            "fecha_version": None,
+            "texto_version": "No detectada",
+            "fecha_corta": "No detectada",
+        }
+
+    # En una versión exportada todos los archivos normalmente comparten sello.
+    # Si hay diferencias, se muestra el más reciente.
+    version_date = max(detected)
+    return {
+        "version_detectada": True,
+        "fecha_version": version_date,
+        "texto_version": version_date.strftime("%d-%m-%Y %H:%M:%S"),
+        "fecha_corta": version_date.strftime("%d-%m-%Y"),
+    }
+
+
 def render_remote_connection() -> dict[str, Any]:
     st.caption(
         "Los enlaces y las credenciales técnicas se leen desde "
@@ -2071,7 +2159,7 @@ def render_remote_connection() -> dict[str, Any]:
                 progress_callback=remote_progress,
             )
             st.session_state[SESSION_REMOTE_FILES_KEY] = remote_files
-            st.session_state[SESSION_REMOTE_SOURCE_KEY] = "requests_secrets_urls"
+            st.session_state[SESSION_REMOTE_SOURCE_KEY] = "sharepoint_urls"
             progress_bar.progress(
                 100,
                 text=(
@@ -2306,6 +2394,11 @@ def render_active_state() -> None:
     )
     active_count = 8 if changes_count else 7
 
+    file_names = st.session_state.get(SESSION_FILE_KEY, {})
+    if not isinstance(file_names, dict):
+        file_names = {}
+    version = obtener_version_archivos_activos(file_names)
+
     st.success(
         (
             f"{active_count} archivos activos · "
@@ -2317,6 +2410,29 @@ def render_active_state() -> None:
                 else ""
             )
         ).replace(",", ".")
+    )
+
+    summary_metrics = st.columns(4)
+    summary_metrics[0].metric(
+        "Versión",
+        version["fecha_corta"],
+        help=version["texto_version"],
+    )
+    summary_metrics[1].metric(
+        "Archivos activos",
+        active_count,
+    )
+    summary_metrics[2].metric(
+        "Reglas internas",
+        f"{len(flow):,}".replace(",", "."),
+    )
+    summary_metrics[3].metric(
+        "CECO",
+        f"{flow['CECO'].nunique():,}".replace(",", "."),
+    )
+
+    st.caption(
+        f"Fecha y hora de la versión: **{version['texto_version']}**"
     )
 
     metrics = st.columns(5)
@@ -2408,7 +2524,7 @@ def main() -> None:
         """
         <div class="fl-help">
             Carga manualmente Liberador 1–5, CECO–Plantas y
-            Usuarios–Cargos, con Cambios opcional, o conecta enlaces remotos que se clasifican por el nombre real de cada archivo.
+            Usuarios–Cargos, con Cambios opcional, o conecta SharePoint y clasifica cada archivo por su nombre real.
         </div>
         """,
         unsafe_allow_html=True,
@@ -2416,7 +2532,7 @@ def main() -> None:
 
     load_method = st.radio(
         "Método de carga",
-        options=["Carga manual", "Conexión Requests + Secrets"],
+        options=["Carga manual", "Conexión SharePoint"],
         horizontal=True,
         key="flujo_load_method_v01",
     )
@@ -2463,18 +2579,50 @@ def main() -> None:
     )
 
     if needs_load:
-        progress_bar = st.progress(
+        st.markdown("#### 1. Lectura y validación de archivos")
+        file_progress_bar = st.progress(
             0,
-            text="0% · Preparando la carga...",
+            text="0% · Preparando los archivos...",
         )
-        status_placeholder = st.empty()
+        file_status = st.empty()
+
+        st.markdown("#### 2. Construcción del flujo")
+        flow_progress_bar = st.progress(
+            0,
+            text="Pendiente · Esperando la validación de archivos.",
+        )
+        flow_status = st.empty()
 
         def update_progress(percent: int, message: str) -> None:
-            progress_bar.progress(
-                percent,
-                text=f"{percent}% · {message}",
+            if percent <= 80:
+                file_percent = max(
+                    0,
+                    min(100, round(percent / 80 * 100)),
+                )
+                file_progress_bar.progress(
+                    file_percent,
+                    text=f"{file_percent}% · {message}",
+                )
+                file_status.caption(message)
+                return
+
+            file_progress_bar.progress(
+                100,
+                text="100% · Archivos leídos y validados.",
             )
-            status_placeholder.caption(message)
+            file_status.success(
+                "Etapa 1 completada. Todos los archivos fueron procesados."
+            )
+
+            flow_percent = max(
+                1,
+                min(100, round((percent - 80) / 20 * 100)),
+            )
+            flow_progress_bar.progress(
+                flow_percent,
+                text=f"{flow_percent}% · {message}",
+            )
+            flow_status.caption(message)
 
         try:
             data, source_bytes, validation = load_seven_files(
@@ -2500,15 +2648,22 @@ def main() -> None:
             st.session_state.pop(SESSION_CASE_KEY, None)
 
             loaded_count = len(uploaded_files)
-            progress_bar.progress(
+            file_progress_bar.progress(
                 100,
                 text=(
                     f"100% · {loaded_count} de {loaded_count} "
-                    "archivos cargados correctamente."
+                    "archivos validados correctamente."
                 ),
             )
-            status_placeholder.success(
-                "Versión validada y activada correctamente."
+            file_status.success(
+                "Etapa 1 completada: archivos cargados y validados."
+            )
+            flow_progress_bar.progress(
+                100,
+                text="100% · Flujo construido y versión activada.",
+            )
+            flow_status.success(
+                "Etapa 2 completada: flujo reconstruido correctamente."
             )
             st.toast(
                 f"{loaded_count} archivos cargados correctamente.",
@@ -2517,11 +2672,16 @@ def main() -> None:
             st.rerun()
 
         except (ValueError, requests.RequestException) as error:
-            progress_bar.progress(
+            file_progress_bar.progress(
                 0,
                 text="Carga interrumpida.",
             )
-            status_placeholder.empty()
+            flow_progress_bar.progress(
+                0,
+                text="Construcción interrumpida.",
+            )
+            file_status.empty()
+            flow_status.empty()
             clear_active_files()
             st.error(str(error))
             return
