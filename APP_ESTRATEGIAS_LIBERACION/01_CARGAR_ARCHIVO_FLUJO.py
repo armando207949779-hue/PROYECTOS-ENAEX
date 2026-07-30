@@ -4,10 +4,11 @@
 # APP_ESTRATEGIAS_LIBERACION
 #
 # NUEVO FORMATO ÚNICO:
-#   7 archivos independientes:
+#   7 archivos obligatorios y 1 opcional:
 #   - Liberador 1, 2, 3, 4 y 5.
 #   - Diccionario CECO-Plantas.
 #   - Diccionario Usuarios-Cargos.
+#   - Cambios (opcional).
 #   Cada archivo puede ser CSV, Parquet o Excel.
 #
 # La aplicación:
@@ -17,7 +18,8 @@
 #      CECO | Planta | Desde | Hasta | TipoDoc |
 #      Lib1 | Lib2 | Lib3 | Lib4 | Lib5
 #   4. incorpora Planta y cargos desde los dos diccionarios;
-#   5. deja los 7 DataFrame originales en session_state.
+#   5. deja los archivos normalizados en session_state;
+#   6. incorpora el historial de cambios cuando se adjunta.
 # ============================================================
 
 from __future__ import annotations
@@ -111,14 +113,30 @@ LS_GROUP_VALUES = {
 CECO_DICTIONARY_COLUMNS = ["CECO", "Planta", "Centro"]
 USER_DICTIONARY_COLUMNS = ["Correo", "Cargo"]
 
+CHANGE_COLUMNS = [
+    "FechaHora",
+    "Usuario",
+    "CECO",
+    "Desde",
+    "Hasta",
+    "TipoDoc",
+    "Campo",
+    "ValorAntes",
+    "ValorDespues",
+    "Nota",
+]
+
 FILE_ROLE_LIBERATORS = {level: f"liberador_{level}" for level in LEVELS}
 FILE_ROLE_CECO = "dic_ceco"
 FILE_ROLE_USERS = "dic_users"
+FILE_ROLE_CHANGES = "cambios"
 REQUIRED_FILE_ROLES = [
     *[FILE_ROLE_LIBERATORS[level] for level in LEVELS],
     FILE_ROLE_CECO,
     FILE_ROLE_USERS,
 ]
+OPTIONAL_FILE_ROLES = [FILE_ROLE_CHANGES]
+ALL_FILE_ROLES = [*REQUIRED_FILE_ROLES, *OPTIONAL_FILE_ROLES]
 
 SESSION_DATA_KEY = "flujo_liberacion_data"
 SESSION_FILE_KEY = "flujo_liberacion_file_name"
@@ -126,7 +144,8 @@ SESSION_CASE_KEY = "flujo_liberacion_last_case"
 SESSION_FILE_BYTES_KEY = "flujo_liberacion_file_bytes"
 SESSION_SIGNATURE_KEY = "flujo_liberacion_upload_signature_v05"
 SESSION_VALIDATION_KEY = "flujo_liberacion_validation_v05"
-SESSION_SOURCE_FILES_KEY = "flujo_liberacion_source_files_v05"
+SESSION_SOURCE_FILES_KEY = "flujo_liberacion_source_files_v06"
+SESSION_CHANGES_KEY = "flujo_liberacion_changes_v01"
 
 
 # ============================================================
@@ -655,6 +674,62 @@ def apply_ceco_dictionary(
     return result, missing_cecos, cecos_without_plant
 
 
+def normalize_changes_file(
+    dataframe: pd.DataFrame,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Normaliza el archivo opcional de historial de cambios."""
+    frame = dataframe.copy()
+    frame.columns = [
+        normalize_column_name(column)
+        for column in frame.columns
+    ]
+
+    aliases = {
+        "Fecha Hora": "FechaHora",
+        "Fecha_Hora": "FechaHora",
+        "Responsable": "Usuario",
+        "Tipo Documento": "TipoDoc",
+        "TipoDocumento": "TipoDoc",
+        "Valor Antes": "ValorAntes",
+        "Valor Después": "ValorDespues",
+        "Valor Despues": "ValorDespues",
+        "Observación": "Nota",
+        "Observacion": "Nota",
+        "Motivo": "Nota",
+    }
+    frame = frame.rename(
+        columns={
+            column: aliases.get(column, column)
+            for column in frame.columns
+        }
+    )
+
+    # El archivo puede venir de versiones anteriores con menos columnas.
+    for column in CHANGE_COLUMNS:
+        if column not in frame.columns:
+            frame[column] = ""
+
+    result = frame.loc[:, CHANGE_COLUMNS].copy()
+
+    for column in CHANGE_COLUMNS:
+        result[column] = result[column].map(clean_text)
+
+    result = result[
+        result.apply(
+            lambda row: any(clean_text(value) for value in row),
+            axis=1,
+        )
+    ].reset_index(drop=True)
+
+    report = {
+        "rows": len(result),
+        "empty_user": int(result["Usuario"].eq("").sum()),
+        "empty_ceco": int(result["CECO"].eq("").sum()),
+        "empty_note": int(result["Nota"].eq("").sum()),
+    }
+    return result, report
+
+
 # ============================================================
 # RECONSTRUCCIÓN DEL FLUJO INTERNO
 # ============================================================
@@ -801,8 +876,12 @@ def reconstruct_flow(
 def files_signature(files: dict[str, Any]) -> str:
     parts: list[str] = []
 
-    for role in REQUIRED_FILE_ROLES:
-        uploaded = files[role]
+    for role in ALL_FILE_ROLES:
+        uploaded = files.get(role)
+        if uploaded is None:
+            parts.append(f"{role}|NO_CARGADO")
+            continue
+
         raw = uploaded.getvalue()
         digest = hashlib.sha1(raw).hexdigest()
         parts.append(
@@ -822,6 +901,7 @@ def clear_active_files() -> None:
         SESSION_SIGNATURE_KEY,
         SESSION_VALIDATION_KEY,
         SESSION_SOURCE_FILES_KEY,
+        SESSION_CHANGES_KEY,
     ]:
         st.session_state.pop(key, None)
 
@@ -831,11 +911,8 @@ def load_seven_files(
     progress_callback: Callable[[int, str], None] | None = None,
 ) -> tuple[dict[str, Any], dict[str, bytes], dict[str, Any]]:
     """
-    Lee, valida y consolida los siete archivos.
-
-    progress_callback recibe:
-        porcentaje: entero entre 0 y 100
-        mensaje: descripción visible de la etapa
+    Lee y consolida siete archivos obligatorios y un archivo
+    de cambios opcional.
     """
     def report(percent: int, message: str) -> None:
         if progress_callback is not None:
@@ -848,30 +925,51 @@ def load_seven_files(
     level_reports: dict[int, dict[str, Any]] = {}
     source_bytes: dict[str, bytes] = {}
 
-    report(2, "Preparando la carga...")
+    ordered_roles = [
+        *[FILE_ROLE_LIBERATORS[level] for level in LEVELS],
+        FILE_ROLE_CECO,
+        FILE_ROLE_USERS,
+    ]
+    if FILE_ROLE_CHANGES in uploaded_files:
+        ordered_roles.append(FILE_ROLE_CHANGES)
 
-    # Los cinco liberadores representan 55% del avance total.
-    level_progress = {
-        1: (5, 13),
-        2: (15, 23),
-        3: (25, 33),
-        4: (35, 43),
-        5: (45, 55),
-    }
+    total_files = len(ordered_roles)
+    completed_files = 0
 
+    def file_progress(
+        file_number: int,
+        stage_fraction: float,
+    ) -> int:
+        base = (file_number - 1) / total_files
+        value = base + stage_fraction / total_files
+        # Reserva el 15% final para reconstrucción y activación.
+        return int(2 + value * 78)
+
+    report(
+        1,
+        f"Preparando carga de {total_files} archivos...",
+    )
+
+    # 1–5: liberadores.
     for level in LEVELS:
         role = FILE_ROLE_LIBERATORS[level]
-        read_percent, validated_percent = level_progress[level]
+        file_number = ordered_roles.index(role) + 1
 
         report(
-            read_percent,
-            f"Leyendo Liberador {level}...",
+            file_progress(file_number, 0.10),
+            (
+                f"Archivo {file_number} de {total_files} · "
+                f"Leyendo Liberador {level}..."
+            ),
         )
         frame_raw, raw = read_uploaded_table(uploaded_files[role])
 
         report(
-            min(validated_percent - 2, 53),
-            f"Validando Liberador {level}...",
+            file_progress(file_number, 0.55),
+            (
+                f"Archivo {file_number} de {total_files} · "
+                f"Validando Liberador {level}..."
+            ),
         )
         frame, validation_report = normalize_level_dataframe(
             frame_raw,
@@ -881,54 +979,133 @@ def load_seven_files(
         level_frames[level] = frame
         level_reports[level] = validation_report
         source_bytes[role] = raw
+        completed_files += 1
 
         report(
-            validated_percent,
+            file_progress(file_number, 1.0),
             (
-                f"Liberador {level} validado · "
-                f"{len(frame):,} filas"
+                f"Archivo {file_number} de {total_files} completado · "
+                f"Liberador {level} · {len(frame):,} filas"
             ).replace(",", "."),
         )
 
-    report(58, "Leyendo Diccionario CECO-Plantas...")
-    ceco_raw, ceco_bytes = read_uploaded_table(
-        uploaded_files[FILE_ROLE_CECO]
+    # Diccionario CECO.
+    role = FILE_ROLE_CECO
+    file_number = ordered_roles.index(role) + 1
+    report(
+        file_progress(file_number, 0.10),
+        (
+            f"Archivo {file_number} de {total_files} · "
+            "Leyendo Diccionario CECO-Plantas..."
+        ),
     )
-
-    report(63, "Validando Diccionario CECO-Plantas...")
+    ceco_raw, ceco_bytes = read_uploaded_table(
+        uploaded_files[role]
+    )
+    report(
+        file_progress(file_number, 0.55),
+        (
+            f"Archivo {file_number} de {total_files} · "
+            "Validando Diccionario CECO-Plantas..."
+        ),
+    )
     ceco_dictionary, ceco_report = normalize_ceco_dictionary(
         ceco_raw
     )
-    source_bytes[FILE_ROLE_CECO] = ceco_bytes
-
+    source_bytes[role] = ceco_bytes
+    completed_files += 1
     report(
-        67,
+        file_progress(file_number, 1.0),
         (
-            f"Diccionario CECO-Plantas validado · "
-            f"{len(ceco_dictionary):,} registros"
+            f"Archivo {file_number} de {total_files} completado · "
+            f"CECO-Plantas · {len(ceco_dictionary):,} registros"
         ).replace(",", "."),
     )
 
-    report(70, "Leyendo Diccionario Usuarios-Cargos...")
-    users_raw, users_bytes = read_uploaded_table(
-        uploaded_files[FILE_ROLE_USERS]
+    # Diccionario usuarios.
+    role = FILE_ROLE_USERS
+    file_number = ordered_roles.index(role) + 1
+    report(
+        file_progress(file_number, 0.10),
+        (
+            f"Archivo {file_number} de {total_files} · "
+            "Leyendo Diccionario Usuarios-Cargos..."
+        ),
     )
-
-    report(75, "Validando Diccionario Usuarios-Cargos...")
+    users_raw, users_bytes = read_uploaded_table(
+        uploaded_files[role]
+    )
+    report(
+        file_progress(file_number, 0.55),
+        (
+            f"Archivo {file_number} de {total_files} · "
+            "Validando Diccionario Usuarios-Cargos..."
+        ),
+    )
     users_dictionary, users_report = normalize_user_dictionary(
         users_raw
     )
-    source_bytes[FILE_ROLE_USERS] = users_bytes
-
+    source_bytes[role] = users_bytes
+    completed_files += 1
     report(
-        79,
+        file_progress(file_number, 1.0),
         (
-            f"Diccionario Usuarios-Cargos validado · "
-            f"{len(users_dictionary):,} registros"
+            f"Archivo {file_number} de {total_files} completado · "
+            f"Usuarios-Cargos · {len(users_dictionary):,} registros"
         ).replace(",", "."),
     )
 
-    report(82, "Reconstruyendo el flujo de liberación...")
+    # Archivo opcional de cambios.
+    changes_dataframe = pd.DataFrame(columns=CHANGE_COLUMNS)
+    changes_report = {
+        "rows": 0,
+        "empty_user": 0,
+        "empty_ceco": 0,
+        "empty_note": 0,
+        "loaded": False,
+    }
+
+    if FILE_ROLE_CHANGES in uploaded_files:
+        role = FILE_ROLE_CHANGES
+        file_number = ordered_roles.index(role) + 1
+        report(
+            file_progress(file_number, 0.10),
+            (
+                f"Archivo {file_number} de {total_files} · "
+                "Leyendo historial de cambios..."
+            ),
+        )
+        changes_raw, changes_bytes = read_uploaded_table(
+            uploaded_files[role]
+        )
+        report(
+            file_progress(file_number, 0.55),
+            (
+                f"Archivo {file_number} de {total_files} · "
+                "Validando historial de cambios..."
+            ),
+        )
+        changes_dataframe, changes_report = normalize_changes_file(
+            changes_raw
+        )
+        changes_report["loaded"] = True
+        source_bytes[role] = changes_bytes
+        completed_files += 1
+        report(
+            file_progress(file_number, 1.0),
+            (
+                f"Archivo {file_number} de {total_files} completado · "
+                f"Cambios · {len(changes_dataframe):,} registros"
+            ).replace(",", "."),
+        )
+
+    report(
+        82,
+        (
+            f"{completed_files} de {total_files} archivos procesados · "
+            "Reconstruyendo el flujo..."
+        ),
+    )
     flow, flow_report = reconstruct_flow(level_frames)
 
     if flow.empty:
@@ -938,13 +1115,12 @@ def load_seven_files(
         )
 
     report(
-        90,
+        91,
         (
-            f"Flujo reconstruido · {len(flow):,} reglas"
+            f"Flujo reconstruido · {len(flow):,} reglas · "
+            "Aplicando diccionarios..."
         ).replace(",", "."),
     )
-
-    report(92, "Aplicando plantas y centros a los CECO...")
     flow, missing_cecos, cecos_without_plant = apply_ceco_dictionary(
         flow,
         ceco_dictionary,
@@ -952,7 +1128,7 @@ def load_seven_files(
     flow_report["cecos_without_dictionary"] = missing_cecos
     flow_report["cecos_without_plant"] = cecos_without_plant
 
-    report(96, "Preparando la versión activa...")
+    report(97, "Preparando la versión activa...")
     data: dict[str, Any] = {
         "flujo": flow,
         "liberadores": level_frames,
@@ -963,6 +1139,7 @@ def load_seven_files(
         "liberador_5": level_frames[5],
         "dic_users": users_dictionary,
         "dic_ceco": ceco_dictionary,
+        "cambios": changes_dataframe,
         "dic_rangos": pd.DataFrame(
             columns=["Orden", "Desde", "Hasta"]
         ),
@@ -973,9 +1150,17 @@ def load_seven_files(
         "flow": flow_report,
         "dic_ceco": ceco_report,
         "dic_users": users_report,
+        "cambios": changes_report,
+        "file_count": total_files,
     }
 
-    report(100, "Carga completada correctamente.")
+    report(
+        100,
+        (
+            f"Carga completada · {total_files} de {total_files} "
+            "archivos procesados."
+        ),
+    )
     return data, source_bytes, validation
 
 
@@ -995,6 +1180,9 @@ def dataframe_for_export(
     elif role == FILE_ROLE_USERS:
         frame = data.get("dic_users", pd.DataFrame())
         columns = USER_DICTIONARY_COLUMNS
+    elif role == FILE_ROLE_CHANGES:
+        frame = data.get("cambios", pd.DataFrame())
+        columns = CHANGE_COLUMNS
     else:
         level = next(
             (
@@ -1128,6 +1316,8 @@ def export_file_name(
         stem = "Diccionario_CECO_Plantas"
     elif role == FILE_ROLE_USERS:
         stem = "Diccionario_Usuarios_Cargos"
+    elif role == FILE_ROLE_CHANGES:
+        stem = "Cambios"
     else:
         level = next(
             level
@@ -1162,7 +1352,12 @@ def build_export_zip(
         mode="w",
         compression=zipfile.ZIP_DEFLATED,
     ) as archive:
-        for role in REQUIRED_FILE_ROLES:
+        export_roles = list(REQUIRED_FILE_ROLES)
+        changes = data.get("cambios", pd.DataFrame())
+        if isinstance(changes, pd.DataFrame) and not changes.empty:
+            export_roles.append(FILE_ROLE_CHANGES)
+
+        for role in export_roles:
             dataframe = dataframe_for_export(data, role)
 
             if export_mode == "csv":
@@ -1302,7 +1497,7 @@ def render_header() -> None:
     st.markdown(
         """
         <div class="fl-subtitle">
-            Selecciona una versión completa de siete archivos.
+            Selecciona siete archivos obligatorios y, opcionalmente, el historial de cambios.
         </div>
         """,
         unsafe_allow_html=True,
@@ -1332,7 +1527,7 @@ def render_format_help() -> None:
 
 
 def detect_file_role(name: str) -> str | None:
-    """Identifica los cinco niveles y los dos diccionarios."""
+    """Identifica los cinco niveles, dos diccionarios y cambios opcionales."""
     text = Path(name).stem.casefold()
     simplified = re.sub(r"[^a-z0-9]+", " ", text).strip()
 
@@ -1360,6 +1555,16 @@ def detect_file_role(name: str) -> str | None:
     if user_terms:
         return FILE_ROLE_USERS
 
+    changes_terms = (
+        "cambio" in simplified
+        or "cambios" in simplified
+        or "historial" in simplified
+        or "auditoria" in simplified
+        or "auditoría" in simplified
+    )
+    if changes_terms:
+        return FILE_ROLE_CHANGES
+
     patterns = [
         r"liberador[_\-\s]*(\d)",
         r"nivel[_\-\s]*(\d)",
@@ -1381,6 +1586,8 @@ def role_label(role: str) -> str:
         return "Diccionario CECO-Plantas"
     if role == FILE_ROLE_USERS:
         return "Diccionario Usuarios-Cargos"
+    if role == FILE_ROLE_CHANGES:
+        return "Historial de Cambios (opcional)"
 
     for level in LEVELS:
         if role == FILE_ROLE_LIBERATORS[level]:
@@ -1390,24 +1597,27 @@ def role_label(role: str) -> str:
 
 
 def render_uploader() -> dict[str, Any]:
-    """Carga los siete archivos juntos y los clasifica por nombre."""
+    """Carga siete archivos obligatorios y un historial opcional."""
     selected_files = st.file_uploader(
-        "Seleccionar los siete archivos",
+        "Seleccionar 7 archivos obligatorios y 1 opcional",
         type=["csv", "parquet", "pq", "xlsx", "xls", "xlsm"],
         accept_multiple_files=True,
-        key="liberadores_diccionarios_uploader_v05",
+        key="liberadores_diccionarios_uploader_v06",
         label_visibility="collapsed",
         help=(
-            "Selecciona juntos Liberador 1–5, Diccionario CECO-Plantas "
-            "y Diccionario Usuarios-Cargos."
+            "Selecciona Liberador 1–5, Diccionario CECO-Plantas, "
+            "Diccionario Usuarios-Cargos y, opcionalmente, Cambios."
         ),
     )
 
     if not selected_files:
         return {}
 
-    if len(selected_files) > 7:
-        st.error("Selecciona exactamente siete archivos.")
+    if len(selected_files) > 8:
+        st.error(
+            "Selecciona como máximo ocho archivos: siete obligatorios "
+            "y el historial de cambios opcional."
+        )
         return {}
 
     uploaded: dict[str, Any] = {}
@@ -1496,7 +1706,20 @@ def render_validation_report(report: dict[str, Any]) -> None:
             },
         ]
 
-        st.markdown("#### Diccionarios")
+        changes_report = report.get("cambios", {})
+        if changes_report.get("loaded"):
+            dictionary_rows.append({
+                "Archivo": "Historial de Cambios",
+                "Filas": changes_report.get("rows", 0),
+                "Duplicadas": 0,
+                "Valores vacíos": (
+                    changes_report.get("empty_user", 0)
+                    + changes_report.get("empty_ceco", 0)
+                    + changes_report.get("empty_note", 0)
+                ),
+            })
+
+        st.markdown("#### Diccionarios e historial")
         st.dataframe(
             pd.DataFrame(dictionary_rows),
             use_container_width=True,
@@ -1571,10 +1794,24 @@ def render_active_state() -> None:
         st.warning("No existe un flujo interno válido.")
         return
 
+    changes = data.get("cambios", pd.DataFrame())
+    changes_count = (
+        len(changes)
+        if isinstance(changes, pd.DataFrame)
+        else 0
+    )
+    active_count = 8 if changes_count else 7
+
     st.success(
         (
-            f"Siete archivos activos · **{len(flow):,} reglas internas** · "
+            f"{active_count} archivos activos · "
+            f"**{len(flow):,} reglas internas** · "
             f"**{flow['CECO'].nunique():,} CECO**"
+            + (
+                f" · **{changes_count:,} cambios históricos**"
+                if changes_count
+                else ""
+            )
         ).replace(",", ".")
     )
 
@@ -1597,10 +1834,14 @@ def render_active_state() -> None:
             hide_index=True,
         )
 
-    tabs = st.tabs(
+    tab_labels = (
         [f"Liberador {level}" for level in LEVELS]
         + ["CECO-Plantas", "Usuarios-Cargos"]
     )
+    if changes_count:
+        tab_labels.append("Cambios")
+
+    tabs = st.tabs(tab_labels)
 
     for level, tab in zip(LEVELS, tabs[:5]):
         with tab:
@@ -1633,10 +1874,18 @@ def render_active_state() -> None:
             hide_index=True,
         )
 
+    if changes_count:
+        with tabs[7]:
+            st.dataframe(
+                changes.head(500),
+                use_container_width=True,
+                hide_index=True,
+            )
+
     render_export_section(data)
 
     if st.button(
-        "🗑️ Quitar los siete archivos",
+        "🗑️ Quitar la versión cargada",
         use_container_width=True,
     ):
         clear_active_files()
@@ -1654,8 +1903,7 @@ def main() -> None:
     st.markdown(
         """
         <div class="fl-help">
-            Selecciona juntos Liberador 1–5, el diccionario CECO–Plantas
-            y el diccionario Usuarios–Cargos. Se aceptan CSV, Parquet y Excel.
+            Selecciona Liberador 1–5, CECO–Plantas y Usuarios–Cargos. Puedes agregar un archivo de Cambios. Se aceptan CSV, Parquet y Excel.
         </div>
         """,
         unsafe_allow_html=True,
@@ -1663,11 +1911,11 @@ def main() -> None:
 
     uploaded_files = render_uploader()
 
-    # Antes de cargar los siete archivos no se muestra ningún elemento adicional.
+    # Antes de cargar los archivos obligatorios no se muestra contenido adicional.
     if not uploaded_files:
         st.info(
-            "Los nombres deben identificar Liberador 1–5, "
-            "Diccionario_CECO_Plantas y Diccionario_Usuarios_Cargos."
+            "Los nombres deben identificar Liberador 1–5, CECO-Plantas, "
+            "Usuarios-Cargos y opcionalmente Cambios."
         )
         return
 
@@ -1683,10 +1931,6 @@ def main() -> None:
             + ", ".join(role_label(role) for role in missing)
             + "."
         )
-        return
-
-    if len(uploaded_files) != 7:
-        st.warning("Debes seleccionar exactamente siete archivos.")
         return
 
     signature = files_signature(uploaded_files)
@@ -1717,8 +1961,8 @@ def main() -> None:
             )
 
             names = {
-                role: uploaded_files[role].name
-                for role in REQUIRED_FILE_ROLES
+                role: uploaded_file.name
+                for role, uploaded_file in uploaded_files.items()
             }
 
             st.session_state[SESSION_DATA_KEY] = data
@@ -1727,17 +1971,25 @@ def main() -> None:
             st.session_state[SESSION_FILE_BYTES_KEY] = source_bytes
             st.session_state[SESSION_SIGNATURE_KEY] = signature
             st.session_state[SESSION_VALIDATION_KEY] = validation
+            st.session_state[SESSION_CHANGES_KEY] = data.get(
+                "cambios",
+                pd.DataFrame(columns=CHANGE_COLUMNS),
+            )
             st.session_state.pop(SESSION_CASE_KEY, None)
 
+            loaded_count = len(uploaded_files)
             progress_bar.progress(
                 100,
-                text="100% · Siete archivos cargados correctamente.",
+                text=(
+                    f"100% · {loaded_count} de {loaded_count} "
+                    "archivos cargados correctamente."
+                ),
             )
             status_placeholder.success(
                 "Versión validada y activada correctamente."
             )
             st.toast(
-                "Siete archivos cargados correctamente.",
+                f"{loaded_count} archivos cargados correctamente.",
                 icon="✅",
             )
             st.rerun()
