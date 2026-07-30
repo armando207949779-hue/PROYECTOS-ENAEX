@@ -11,7 +11,6 @@
 # 02 Simulación
 # 03 Modificación de liberadores
 # 04 Diccionarios
-# 05 Búsqueda ejecutiva
 # ============================================================
 
 from __future__ import annotations
@@ -63,11 +62,11 @@ APPS = [
         "grupo": "Flujo de liberación",
         "nombre": "01_CARGAR_ARCHIVO_FLUJO",
         "archivo": "01_CARGAR_ARCHIVO_FLUJO.py",
-        "titulo": "01 Cargar archivo",
+        "titulo": "01 Cargar Versión",
         "icono": "📤",
         "descripcion": (
-            "Carga, normaliza y valida el Excel activo usando el formato "
-            "simplificado de flujo de liberación."
+            "Carga y valida los cinco liberadores y los dos diccionarios "
+            "de la versión activa."
         ),
     },
     {
@@ -99,19 +98,8 @@ APPS = [
         "titulo": "04 Diccionarios",
         "icono": "📚",
         "descripcion": (
-            "Consulta los catálogos de CECO, usuarios y rangos "
-            "contenidos en el Excel activo."
-        ),
-    },
-    {
-        "grupo": "Flujo de liberación",
-        "nombre": "05_BUSQUEDA_EJECUTIVA",
-        "archivo": "05_BUSQUEDA_EJECUTIVA.py",
-        "titulo": "05 Búsqueda Ejecutiva",
-        "icono": "🔎",
-        "descripcion": (
-            "Consulta por CECO, tipo y monto, o busca todos los CECO "
-            "en los que participa un usuario."
+            "Consulta los diccionarios activos de CECO–Plantas "
+            "y Usuarios–Cargos."
         ),
     },
 ]
@@ -290,7 +278,7 @@ def construir_paginas() -> dict[str, list[st.Page]]:
     Construye la navegación en el orden definido en APPS.
 
     Se utiliza un único grupo para asegurar que la barra lateral muestre
-    estrictamente las páginas 01, 02, 03, 04 y 05.
+    estrictamente las páginas 01, 02, 03 y 04.
     """
     return {
         "Flujo de liberación": [
@@ -341,8 +329,7 @@ def mostrar_error_archivos(
         "`01_CARGAR_ARCHIVO_FLUJO.py`, "
         "`02_APP_SIMULADOR_ALEATORIO.py`, "
         "`03_APP_MODIFICACION_LIBERADORES.py`, "
-        "`04_APP_DICCIONARIOS.py` y "
-        "`05_BUSQUEDA_EJECUTIVA.py`."
+        "`04_APP_DICCIONARIOS.py`."
     )
 
 
