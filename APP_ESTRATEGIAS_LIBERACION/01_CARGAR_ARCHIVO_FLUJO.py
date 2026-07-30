@@ -28,7 +28,7 @@ import re
 from io import BytesIO
 from pathlib import Path
 from textwrap import dedent
-from typing import Any
+from typing import Any, Callable
 
 import pandas as pd
 import streamlit as st
@@ -825,32 +825,107 @@ def clear_active_files() -> None:
 
 def load_seven_files(
     uploaded_files: dict[str, Any],
+    progress_callback: Callable[[int, str], None] | None = None,
 ) -> tuple[dict[str, Any], dict[str, bytes], dict[str, Any]]:
+    """
+    Lee, valida y consolida los siete archivos.
+
+    progress_callback recibe:
+        porcentaje: entero entre 0 y 100
+        mensaje: descripción visible de la etapa
+    """
+    def report(percent: int, message: str) -> None:
+        if progress_callback is not None:
+            progress_callback(
+                max(0, min(100, int(percent))),
+                message,
+            )
+
     level_frames: dict[int, pd.DataFrame] = {}
     level_reports: dict[int, dict[str, Any]] = {}
     source_bytes: dict[str, bytes] = {}
 
+    report(2, "Preparando la carga...")
+
+    # Los cinco liberadores representan 55% del avance total.
+    level_progress = {
+        1: (5, 13),
+        2: (15, 23),
+        3: (25, 33),
+        4: (35, 43),
+        5: (45, 55),
+    }
+
     for level in LEVELS:
         role = FILE_ROLE_LIBERATORS[level]
+        read_percent, validated_percent = level_progress[level]
+
+        report(
+            read_percent,
+            f"Leyendo Liberador {level}...",
+        )
         frame_raw, raw = read_uploaded_table(uploaded_files[role])
-        frame, report = normalize_level_dataframe(frame_raw, level)
+
+        report(
+            min(validated_percent - 2, 53),
+            f"Validando Liberador {level}...",
+        )
+        frame, validation_report = normalize_level_dataframe(
+            frame_raw,
+            level,
+        )
 
         level_frames[level] = frame
-        level_reports[level] = report
+        level_reports[level] = validation_report
         source_bytes[role] = raw
 
+        report(
+            validated_percent,
+            (
+                f"Liberador {level} validado · "
+                f"{len(frame):,} filas"
+            ).replace(",", "."),
+        )
+
+    report(58, "Leyendo Diccionario CECO-Plantas...")
     ceco_raw, ceco_bytes = read_uploaded_table(
         uploaded_files[FILE_ROLE_CECO]
     )
-    ceco_dictionary, ceco_report = normalize_ceco_dictionary(ceco_raw)
+
+    report(63, "Validando Diccionario CECO-Plantas...")
+    ceco_dictionary, ceco_report = normalize_ceco_dictionary(
+        ceco_raw
+    )
     source_bytes[FILE_ROLE_CECO] = ceco_bytes
 
+    report(
+        67,
+        (
+            f"Diccionario CECO-Plantas validado · "
+            f"{len(ceco_dictionary):,} registros"
+        ).replace(",", "."),
+    )
+
+    report(70, "Leyendo Diccionario Usuarios-Cargos...")
     users_raw, users_bytes = read_uploaded_table(
         uploaded_files[FILE_ROLE_USERS]
     )
-    users_dictionary, users_report = normalize_user_dictionary(users_raw)
+
+    report(75, "Validando Diccionario Usuarios-Cargos...")
+    users_dictionary, users_report = normalize_user_dictionary(
+        users_raw
+    )
     source_bytes[FILE_ROLE_USERS] = users_bytes
 
+    report(
+        79,
+        (
+            f"Diccionario Usuarios-Cargos validado · "
+            f"{len(users_dictionary):,} registros"
+        ).replace(",", "."),
+    )
+
+    report(82, "Reconstruyendo el flujo de liberación...")
     flow, flow_report = reconstruct_flow(level_frames)
 
     if flow.empty:
@@ -859,6 +934,14 @@ def load_seven_files(
             "CostCenter explícito y TipoDoc AZNB/AZSR."
         )
 
+    report(
+        90,
+        (
+            f"Flujo reconstruido · {len(flow):,} reglas"
+        ).replace(",", "."),
+    )
+
+    report(92, "Aplicando plantas y centros a los CECO...")
     flow, missing_cecos, cecos_without_plant = apply_ceco_dictionary(
         flow,
         ceco_dictionary,
@@ -866,6 +949,7 @@ def load_seven_files(
     flow_report["cecos_without_dictionary"] = missing_cecos
     flow_report["cecos_without_plant"] = cecos_without_plant
 
+    report(96, "Preparando la versión activa...")
     data: dict[str, Any] = {
         "flujo": flow,
         "liberadores": level_frames,
@@ -888,6 +972,7 @@ def load_seven_files(
         "dic_users": users_report,
     }
 
+    report(100, "Carga completada correctamente.")
     return data, source_bytes, validation
 
 
@@ -1299,13 +1384,24 @@ def main() -> None:
     )
 
     if needs_load:
+        progress_bar = st.progress(
+            0,
+            text="0% · Preparando la carga...",
+        )
+        status_placeholder = st.empty()
+
+        def update_progress(percent: int, message: str) -> None:
+            progress_bar.progress(
+                percent,
+                text=f"{percent}% · {message}",
+            )
+            status_placeholder.caption(message)
+
         try:
-            with st.spinner(
-                "Leyendo, validando y consolidando los siete archivos..."
-            ):
-                data, source_bytes, validation = load_seven_files(
-                    uploaded_files
-                )
+            data, source_bytes, validation = load_seven_files(
+                uploaded_files,
+                progress_callback=update_progress,
+            )
 
             names = {
                 role: uploaded_files[role].name
@@ -1320,6 +1416,13 @@ def main() -> None:
             st.session_state[SESSION_VALIDATION_KEY] = validation
             st.session_state.pop(SESSION_CASE_KEY, None)
 
+            progress_bar.progress(
+                100,
+                text="100% · Siete archivos cargados correctamente.",
+            )
+            status_placeholder.success(
+                "Versión validada y activada correctamente."
+            )
             st.toast(
                 "Siete archivos cargados correctamente.",
                 icon="✅",
@@ -1327,6 +1430,11 @@ def main() -> None:
             st.rerun()
 
         except ValueError as error:
+            progress_bar.progress(
+                0,
+                text="Carga interrumpida.",
+            )
+            status_placeholder.empty()
             clear_active_files()
             st.error(str(error))
             return
