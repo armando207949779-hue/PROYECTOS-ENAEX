@@ -2,12 +2,11 @@
 # 02_APP_SIMULADOR_ALEATORIO
 # APP_ESTRATEGIAS_LIBERACION
 #
-# Lee la base cargada por 01_CARGAR_ARCHIVO_FLUJO desde
-# st.session_state. Genera casos aleatorios y permite editar
-# CECO, tipo y monto, recalcular el flujo y consultar la tabla
-# completa de reglas asociadas al CECO seleccionado.
+# Lee los cinco archivos cargados por 01_CARGAR_ARCHIVO_FLUJO.
+# El cargador reconstruye data['flujo'] y conserva además
+# data['liberadores'][1..5] con las reglas originales.
 #
-# Formato esperado:
+# Flujo interno esperado:
 # CECO | Planta | Desde | Hasta | TipoDoc |
 # Lib1 | Lib2 | Lib3 | Lib4 | Lib5
 # ============================================================
@@ -78,6 +77,7 @@ LS_LABEL = "Liberador Servicios"
 SESSION_DATA_KEY = "flujo_liberacion_data"
 SESSION_FILE_KEY = "flujo_liberacion_file_name"
 SESSION_CASE_KEY = "flujo_liberacion_last_case"
+SESSION_SOURCE_FILES_KEY = "flujo_liberacion_source_files_v03"
 SESSION_EDITOR_CECO = "sim_editor_ceco_v03"
 SESSION_EDITOR_DOC = "sim_editor_doc_v03"
 SESSION_EDITOR_AMOUNT = "sim_editor_amount_v03"
@@ -353,12 +353,20 @@ def mostrar_logo() -> None:
 # DATOS Y REGLAS DEL FLUJO
 # ============================================================
 
-def validate_flow_schema(data: dict[str, pd.DataFrame]) -> pd.DataFrame:
-    """Valida que la base activa tenga el formato simplificado vigente."""
+def validate_flow_schema(data: dict[str, Any]) -> pd.DataFrame:
+    """Valida la versión reconstruida desde los cinco liberadores."""
+    if not isinstance(data, dict):
+        raise ValueError(
+            "No existe una versión activa. Carga los cinco archivos "
+            "desde 01 Cargar Liberadores."
+        )
+
     flow = data.get("flujo")
 
     if not isinstance(flow, pd.DataFrame) or flow.empty:
-        raise ValueError("La base activa no contiene registros de flujo.")
+        raise ValueError(
+            "La versión activa no contiene un flujo reconstruido válido."
+        )
 
     required = [
         "CECO", "Planta", "Desde", "Hasta", "TipoDoc",
@@ -368,18 +376,42 @@ def validate_flow_schema(data: dict[str, pd.DataFrame]) -> pd.DataFrame:
 
     if missing:
         raise ValueError(
-            "La base activa no tiene el formato vigente. "
+            "El flujo reconstruido no tiene la estructura requerida. "
             f"Faltan: {', '.join(missing)}. "
-            "Vuelve a cargar el Excel desde 01 Cargar Archivo."
+            "Vuelve a cargar los cinco archivos."
+        )
+
+    liberadores = data.get("liberadores")
+
+    if not isinstance(liberadores, dict):
+        raise ValueError(
+            "La versión activa no conserva los cinco archivos de liberadores."
+        )
+
+    missing_levels = [
+        level
+        for level in range(1, 6)
+        if not isinstance(liberadores.get(level), pd.DataFrame)
+    ]
+
+    if missing_levels:
+        raise ValueError(
+            "Faltan niveles en la versión activa: "
+            + ", ".join(f"Liberador {level}" for level in missing_levels)
+            + "."
         )
 
     return flow
 
 
-def cargo_map(data: dict[str, pd.DataFrame]) -> dict[str, str]:
+def cargo_map(data: dict[str, Any]) -> dict[str, str]:
     mapping: dict[str, str] = {}
+    users = data.get("dic_users", pd.DataFrame())
 
-    for _, row in data["dic_users"].iterrows():
+    if not isinstance(users, pd.DataFrame) or users.empty:
+        return mapping
+
+    for _, row in users.iterrows():
         email = strip_user_email(row.get("Correo", ""))
         cargo = clean_user(row.get("Cargo", ""))
         if email:
@@ -833,7 +865,7 @@ def render_header() -> None:
         unsafe_allow_html=True,
     )
     st.markdown(
-        '<div class="fl-subtitle">Genera un caso aleatorio y ajusta CECO, tipo de documento y monto.</div>',
+        '<div class="fl-subtitle">Simula sobre la versión consolidada de los cinco liberadores.</div>',
         unsafe_allow_html=True,
     )
 
@@ -1045,16 +1077,40 @@ def render_editable_case(data: dict[str, pd.DataFrame]) -> None:
         render_ceco_table(data, st.session_state.get(SESSION_EDITOR_CECO, case["ceco"]))
 
 
-def render_simulator(data: dict[str, pd.DataFrame]) -> None:
+def render_simulator(data: dict[str, Any]) -> None:
     flow = validate_flow_schema(data)
-    file_name = st.session_state.get(SESSION_FILE_KEY, "Archivo cargado")
+    file_names = st.session_state.get(SESSION_FILE_KEY, {})
+    liberadores = data.get("liberadores", {})
 
-    st.success(
-        f"Usando archivo activo: **{file_name}** · **{len(flow):,} reglas** · "
-        f"**{flow['CECO'].nunique():,} CECO**".replace(",", ".")
+    loaded_levels = sum(
+        isinstance(liberadores.get(level), pd.DataFrame)
+        for level in range(1, 6)
     )
 
-    # El simulador abre directamente en modo aleatorio.
+    st.success(
+        (
+            f"Versión activa: **{loaded_levels}/5 liberadores** · "
+            f"**{len(flow):,} reglas reconstruidas** · "
+            f"**{flow['CECO'].nunique():,} CECO**"
+        ).replace(",", ".")
+    )
+
+    if isinstance(file_names, dict):
+        with st.expander("Archivos de la versión", expanded=False):
+            file_rows = [
+                {
+                    "Nivel": f"Liberador {level}",
+                    "Archivo": file_names.get(level, ""),
+                    "Filas": len(liberadores.get(level, pd.DataFrame())),
+                }
+                for level in range(1, 6)
+            ]
+            st.dataframe(
+                pd.DataFrame(file_rows),
+                use_container_width=True,
+                hide_index=True,
+            )
+
     render_random_generator(data)
     render_editable_case(data)
 
@@ -1071,14 +1127,14 @@ def main() -> None:
 
     if data is None:
         st.warning(
-            "No hay un archivo activo. Primero carga la base en **01 Cargar Archivo**."
+            "No hay una versión activa. Primero carga los cinco archivos en **01 Cargar Liberadores**."
         )
 
         try:
-            if st.button("📤 Ir a 01 Cargar Archivo", type="primary"):
+            if st.button("📤 Ir a 01 Cargar Liberadores", type="primary"):
                 st.switch_page("01_CARGAR_ARCHIVO_FLUJO.py")
         except Exception:
-            st.info("Selecciona **01 Cargar Archivo** desde el menú lateral.")
+            st.info("Selecciona **01 Cargar Liberadores** desde el menú lateral.")
 
         st.stop()
 
