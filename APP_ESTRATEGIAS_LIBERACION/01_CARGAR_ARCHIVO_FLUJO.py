@@ -421,12 +421,13 @@ def validar_clave_conexion(clave_ingresada: str) -> bool:
     )
 
 
-def obtener_urls_remotas() -> list[str]:
+def obtener_urls_remotas() -> dict[str, str]:
     """
-    Lee una colección de URLs sin asociarlas previamente a ningún rol.
+    Lee las URLs remotas conservando el rol configurado en Secrets.
 
-    El rol se determina exclusivamente después de descargar cada archivo,
-    usando el nombre real entregado por SharePoint.
+    La clave de cada entrada de [sharepoint_flujo.urls] debe coincidir con
+    uno de los roles admitidos: liberador_1 ... liberador_5, dic_ceco,
+    dic_users y cambios (opcional).
     """
     section = secret_section()
 
@@ -437,31 +438,12 @@ def obtener_urls_remotas() -> list[str]:
             "Falta configurar [sharepoint_flujo.urls] en Secrets."
         ) from error
 
-    urls: list[str] = []
-
-    # Admite claves arbitrarias: archivo_a, enlace_01, version_actual, etc.
     try:
         items = urls_section.items()
     except Exception as error:
         raise ValueError(
-            "[sharepoint_flujo.urls] debe contener enlaces con claves únicas."
+            "[sharepoint_flujo.urls] debe contener pares rol = URL."
         ) from error
-
-    for _, configured_url in items:
-        url = clean_text(configured_url)
-        if url:
-            urls.append(url)
-
-    if len(urls) < 7:
-        raise ValueError(
-            "Debes configurar al menos siete enlaces remotos."
-        )
-
-    if len(urls) > 8:
-        raise ValueError(
-            "Solo se admiten siete archivos obligatorios "
-            "y un archivo de Cambios opcional."
-        )
 
     allowed_host = clean_text(
         secret_value(
@@ -470,15 +452,32 @@ def obtener_urls_remotas() -> list[str]:
         )
     ).casefold()
 
-    validated: list[str] = []
-    seen: set[str] = set()
+    configured: dict[str, str] = {}
+    seen_urls: set[str] = set()
 
-    for url in urls:
+    for configured_role, configured_url in items:
+        role = clean_text(configured_role).casefold()
+        url = clean_text(configured_url)
+
+        if not url:
+            continue
+
+        if role not in ALL_FILE_ROLES:
+            raise ValueError(
+                f"Rol no reconocido en Secrets: {configured_role}. "
+                "Usa liberador_1 ... liberador_5, dic_ceco, "
+                "dic_users o cambios."
+            )
+
+        if role in configured:
+            raise ValueError(
+                f"El rol {role_label(role)} está configurado más de una vez."
+            )
+
         parsed = urlparse(url)
-
         if parsed.scheme.casefold() != "https" or not parsed.netloc:
             raise ValueError(
-                "Existe una URL remota que no es HTTPS válida."
+                f"La URL de {role_label(role)} no es una URL HTTPS válida."
             )
 
         hostname = (parsed.hostname or "").casefold()
@@ -487,19 +486,37 @@ def obtener_urls_remotas() -> list[str]:
             and not hostname.endswith("." + allowed_host)
         ):
             raise ValueError(
-                "Existe una URL que no pertenece al host autorizado."
+                f"La URL de {role_label(role)} no pertenece al host autorizado."
             )
 
         normalized_url = url.casefold()
-        if normalized_url in seen:
+        if normalized_url in seen_urls:
             raise ValueError(
-                "La configuración contiene enlaces duplicados."
+                f"La URL configurada para {role_label(role)} está duplicada."
             )
 
-        seen.add(normalized_url)
-        validated.append(url)
+        configured[role] = url
+        seen_urls.add(normalized_url)
 
-    return validated
+    missing = [
+        role
+        for role in REQUIRED_FILE_ROLES
+        if role not in configured
+    ]
+    if missing:
+        raise ValueError(
+            "Faltan enlaces remotos para: "
+            + ", ".join(role_label(role) for role in missing)
+            + "."
+        )
+
+    if len(configured) not in {7, 8}:
+        raise ValueError(
+            "Debes configurar los siete archivos obligatorios "
+            "y, opcionalmente, el archivo de Cambios."
+        )
+
+    return configured
 
 
 def preparar_url_descarga(url: str) -> str:
@@ -721,8 +738,8 @@ def conectar_y_obtener_archivos(
     if not validar_clave_conexion(clave_ingresada):
         raise ValueError("Clave de conexión incorrecta.")
 
-    urls = obtener_urls_remotas()
-    total = len(urls)
+    configured_files = obtener_urls_remotas()
+    total = len(configured_files)
 
     headers = request_headers_from_secrets()
     auth = request_auth_from_secrets()
@@ -732,11 +749,17 @@ def conectar_y_obtener_archivos(
     uploaded: dict[str, RemoteUploadedFile] = {}
     downloaded_names: list[str] = []
 
-    for index, url in enumerate(urls, start=1):
+    for index, (expected_role, url) in enumerate(
+        configured_files.items(),
+        start=1,
+    ):
         if progress_callback is not None:
             progress_callback(
                 int((index - 1) / total * 100),
-                f"Descargando archivo {index} de {total}...",
+                (
+                    f"Descargando archivo {index} de {total} · "
+                    f"{role_label(expected_role)}..."
+                ),
             )
 
         file_name, raw = descargar_archivo_remoto_cache(
@@ -747,15 +770,24 @@ def conectar_y_obtener_archivos(
             verify_ssl=verify_ssl,
         )
 
-        role = validar_nombre_y_rol_remoto(file_name)
+        detected_role = validar_nombre_y_rol_remoto(file_name)
 
-        if role in uploaded:
+        if detected_role != expected_role:
             raise ValueError(
-                "Se descargaron dos archivos para el mismo rol: "
-                f"{role_label(role)}. Revisa sus nombres."
+                f"El enlace configurado como {role_label(expected_role)} "
+                f"descargó el archivo '{file_name}', identificado por su "
+                f"nombre como {role_label(detected_role)}. Revisa ese enlace "
+                "o el nombre real del archivo en SharePoint."
             )
 
-        uploaded[role] = RemoteUploadedFile(file_name, raw)
+        if expected_role in uploaded:
+            previous_name = uploaded[expected_role].name
+            raise ValueError(
+                f"Dos archivos fueron asignados a {role_label(expected_role)}: "
+                f"'{previous_name}' y '{file_name}'."
+            )
+
+        uploaded[expected_role] = RemoteUploadedFile(file_name, raw)
         downloaded_names.append(file_name)
 
         if progress_callback is not None:
@@ -763,7 +795,7 @@ def conectar_y_obtener_archivos(
                 int(index / total * 100),
                 (
                     f"Archivo {index} de {total} descargado · "
-                    f"{file_name} → {role_label(role)}."
+                    f"{file_name} → {role_label(expected_role)}."
                 ),
             )
 
@@ -774,7 +806,7 @@ def conectar_y_obtener_archivos(
     ]
     if missing:
         raise ValueError(
-            "Después de clasificar por nombre faltan: "
+            "Después de descargar faltan: "
             + ", ".join(role_label(role) for role in missing)
             + ". Archivos detectados: "
             + ", ".join(downloaded_names)
