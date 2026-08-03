@@ -12,10 +12,26 @@
 # 06 Performances
 # ============================================================
 
+import sys
 import base64
 from pathlib import Path
 
 import streamlit as st
+
+
+# ============================================================
+# RUTAS DEL PROYECTO
+# ============================================================
+
+BASE_DIR = Path(__file__).resolve().parent
+PROJECT_DIR = BASE_DIR.parent
+
+LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
+
+if str(PROJECT_DIR) not in sys.path:
+    sys.path.insert(0, str(PROJECT_DIR))
+
+from assets.configurar_espanol import configurar_espanol
 
 
 # ============================================================
@@ -28,15 +44,7 @@ st.set_page_config(
     layout="wide",
 )
 
-
-# ============================================================
-# RUTAS DEL PROYECTO
-# ============================================================
-
-BASE_DIR = Path(__file__).resolve().parent
-PROJECT_DIR = BASE_DIR.parent
-
-LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
+configurar_espanol()
 
 
 # ============================================================

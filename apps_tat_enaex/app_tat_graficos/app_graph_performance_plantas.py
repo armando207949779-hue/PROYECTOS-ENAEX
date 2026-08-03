@@ -2406,7 +2406,7 @@ try:
     # -----------------------------------------------------
     # 5) Dashboard
     # -----------------------------------------------------
-    tab_dashboard, tab_datos = st.tabs(["Dashboard", "Datos"])
+    tab_dashboard, tab_datos = st.tabs(["Panel", "Datos"])
 
     with tab_dashboard:
         total_original = len(df_original)

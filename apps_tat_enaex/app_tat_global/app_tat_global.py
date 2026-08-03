@@ -4,6 +4,7 @@
 # análisis gráfico y alertas TAT
 # ============================================================
 
+import sys
 import base64
 from pathlib import Path
 
@@ -18,6 +19,11 @@ BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
 
 LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
+
+if str(PROJECT_DIR) not in sys.path:
+    sys.path.insert(0, str(PROJECT_DIR))
+
+from assets.configurar_espanol import configurar_espanol
 
 APP_TAT_CARGAR_ARCHIVO = (
     PROJECT_DIR
@@ -95,6 +101,8 @@ st.set_page_config(
     page_icon="🏢",
     layout="wide"
 )
+
+configurar_espanol()
 
 
 # =========================

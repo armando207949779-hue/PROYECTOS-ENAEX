@@ -4,6 +4,7 @@
 # Dashboard modular de datos financieros
 # ============================================================
 
+import sys
 import base64
 from pathlib import Path
 
@@ -28,6 +29,11 @@ APP_INDICADORES_FINANCIEROS = BASE_DIR / "02_APP_INDICADORES_FINANCIEROS_BANCO_C
 # PROYECTOS-ENAEX/assets/logo.svg
 LOGO_PATH = PROJECT_DIR / "assets" / "logo.svg"
 
+if str(PROJECT_DIR) not in sys.path:
+    sys.path.insert(0, str(PROJECT_DIR))
+
+from assets.configurar_espanol import configurar_espanol
+
 
 # ============================================================
 # Configuración general
@@ -38,6 +44,8 @@ st.set_page_config(
     page_icon="💱",
     layout="wide",
 )
+
+configurar_espanol()
 
 
 # ============================================================
